@@ -1,0 +1,50 @@
+.mark {
+  color: var(--dsw-static-amber-500);
+  flex: none;
+}
+
+.face {
+  fill: var(--dsw-alias-bg-base);
+}
+
+.wordmark {
+  color: var(--dsw-alias-label-primary);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.company {
+  display: flex;
+  flex-direction: column;
+  line-height: 1;
+}
+
+.company strong {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .03em;
+}
+
+.company span {
+  margin-top: 2px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 7px;
+  font-weight: 600;
+  letter-spacing: .16em;
+}
+
+.leon {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--dsw-static-amber-500);
+  border-radius: 7px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-static-amber-500);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .1em;
+}

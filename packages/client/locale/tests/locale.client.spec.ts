@@ -164,10 +164,10 @@ describe('LocaleRuntime', () => {
     stubLanguages('fr-FR')
     const host = stubSettingsScope<LocaleSettings>()
     const { svc } = make(host)
-    expect(svc.getLocale().active).toBe('en')
+    expect(svc.getLocale().active).toBe('pt')
     expect(host.set).not.toHaveBeenCalled()
-    svc.setLocale('en')
-    expect(host.set).toHaveBeenCalledWith('preference', 'en')
+    svc.setLocale('pt')
+    expect(host.set).toHaveBeenCalledWith('preference', 'pt')
   })
 
   it('setLocale without a host scope stays process-local', () => {
@@ -227,9 +227,9 @@ describe('LocaleRuntime', () => {
     vi.stubGlobal('navigator', { language: 'en-US' })
     expect(make().svc.getLocale().active).toBe('en')
     // No shipped language anywhere in the browser's preferences: en is the
-    // product default rather than an arbitrary near-match.
+    // Leon's Brazilian Portuguese default rather than an arbitrary near-match.
     stubLanguages('fr-FR', 'de')
-    expect(make().svc.getLocale().active).toBe('en')
+    expect(make().svc.getLocale().active).toBe('pt')
   })
 
   it('runs outside a browser (node boots): the default decides and the machine language does not', () => {
@@ -238,7 +238,7 @@ describe('LocaleRuntime', () => {
     // reach the resolution at all.
     stubLanguages('zh-CN')
     const { svc } = make()
-    expect(svc.getLocale().active).toBe('en')
+    expect(svc.getLocale().active).toBe('pt')
     svc.setLocale('zh')
     expect(svc.getLocale().active).toBe('zh')
   })
@@ -250,19 +250,14 @@ describe('LocaleRuntime', () => {
     expect(svc.getLocale().active).toBe('zh')
   })
 
-  it('serves English as both the opening locale and the dictionary fallback', () => {
-    // One constant covers both jobs: the locale the UI opens in with no usable
-    // browser signal, and the dictionary backing a key the active locale
-    // misses. Safe to share only because the shipped zh/en dictionaries carry
-    // identical key sets (asserted below on a registered pair).
+  it('opens in Brazilian Portuguese while English remains the dictionary fallback', () => {
     expect(FALLBACK_LOCALE).toBe('en')
     vi.stubGlobal('window', undefined)
     const { svc } = make()
-    // A key present only in en resolves for a zh reader through the fallback.
+    expect(svc.getLocale().active).toBe('pt')
+    // A key present only in en resolves for a pt reader through the fallback.
     svc.register('ns', 'zh', {})
     svc.register('ns', 'en', { onlyEn: 'English only' })
-    svc.setLocale('zh')
-    expect(svc.getLocale().active).toBe('zh')
     expect(svc.bind('ns')('onlyEn')).toBe('English only')
     // The reverse no longer resolves: a zh-only key is unreachable from en, so
     // the key itself surfaces (fail loud) rather than silently rendering zh.
@@ -272,11 +267,21 @@ describe('LocaleRuntime', () => {
     expect(svc.bind('ns2')('onlyZh')).toBe('onlyZh')
   })
 
-  it('exposes the two shipped locales with self-described labels', () => {
+  it('exposes the three shipped locales with self-described labels', () => {
     const { svc } = make()
     expect(svc.getLocale().locales).toEqual([
+      { id: 'pt', label: 'Português (Brasil)' },
       { id: 'zh', label: '中文' },
       { id: 'en', label: 'English' },
     ])
+  })
+
+  it('translates English feature fallbacks through the Brazilian Portuguese pack', () => {
+    stubLanguages('pt-BR')
+    const { svc } = make()
+    svc.register('feature', 'en', { settings: 'Settings', session: 'New Session' })
+    const t = svc.bind('feature')
+    expect(t('settings')).toBe('Configurações')
+    expect(t('session')).toBe('Nova sessão')
   })
 })

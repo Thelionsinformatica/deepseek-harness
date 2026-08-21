@@ -1,14 +1,14 @@
-# DeepSeek Harness
+# Leon — The Lions Informática
 
 [English](README.md) | 中文
 
-DeepSeek Harness（`dsh`）是由 [DeepSeek AI](https://deepseek.com) 开发的开源 agent harness（智能体框架）。
+Leon 是 The Lions Informática 维护的本地优先 AI 工作空间，默认启用巴西葡萄牙语，并拥有独立的产品标识。本仓库是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的维护分支；DeepSeek Harness 是由 [DeepSeek AI](https://deepseek.com) 开发的开源 agent harness（智能体框架）。
 
 它采用**一切皆插件**的架构，并由 [Cordis](https://github.com/cordiverse/cordis) 驱动，其设计参见论文 [_A Programming Paradigm for Spatiotemporal Composability_](https://github.com/cordiverse/paper)。
 
 ## 开发者预览
 
-DeepSeek Harness 目前处于 _开发者预览_ 阶段，正在快速迭代。**未来将出现破坏兼容性的变更。**
+Leon 及其 DeepSeek Harness 基础目前处于 _开发者预览_ 阶段，正在快速迭代。**未来将出现破坏兼容性的变更。**
 
 <a id="run"></a>
 
@@ -31,7 +31,7 @@ npx @deepseek-ai/dsh web
 如需从仓库源码运行：
 
 ```sh
-git clone https://github.com/deepseek-ai/deepseek-harness.git
+git clone https://github.com/Thelionsinformatica/deepseek-harness.git
 cd deepseek-harness
 pnpm install
 pnpm run build
@@ -40,9 +40,10 @@ pnpm dsh web
 
 `pnpm run build` 会准备仓库产物。`pnpm dsh web` 会直接使用这些已构建产物，不会重新构建。
 
-## 社区与支持
+## Leon 项目与上游社区
 
-- 欢迎通过 [GitHub Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions) 提交反馈或 bug 报告。
+- 欢迎通过 [The Lions Informática 仓库](https://github.com/Thelionsinformatica/deepseek-harness/issues) 提交 Leon 反馈或 bug 报告。
+- 上游讨论仍可通过 [DeepSeek Harness 社区](https://github.com/deepseek-ai/deepseek-harness/discussions) 参与。
 - 为你的插件仓库添加 [`dsh-plugin`](https://github.com/topics/dsh-plugin) 话题，便于被发现。
 - 欢迎加入 DeepSeek Harness 企微群：扫码添加企微小助手并填写入群问卷，完成后小助手会邀请你入群。
 

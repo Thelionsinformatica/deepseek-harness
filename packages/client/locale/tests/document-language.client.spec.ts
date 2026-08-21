@@ -77,6 +77,8 @@ describe('document language', () => {
   it('follows a locale switch in both directions with BCP 47 tags', async () => {
     const { locale } = await bench()
     expect(langOf()).toBe('zh-CN')
+    locale.setLocale('pt')
+    expect(langOf()).toBe('pt-BR')
     locale.setLocale('en')
     // `en` needs no region; `zh` names its script variant, which bare `zh`
     // leaves ambiguous for pronunciation and font selection.

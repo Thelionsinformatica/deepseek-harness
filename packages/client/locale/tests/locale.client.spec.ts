@@ -285,6 +285,8 @@ describe('LocaleRuntime', () => {
       preset: 'Agent preset',
       access: 'Access mode, current: {name}',
       details: 'Click a tool row in the message flow to view its details',
+      provider: 'Edit {provider}',
+      apiKey: 'API key configured',
     })
     const t = svc.bind('feature')
     expect(t('settings')).toBe('Configurações')
@@ -292,5 +294,7 @@ describe('LocaleRuntime', () => {
     expect(t('preset')).toBe('Predefinição do agente')
     expect(t('access', { name: 'Workspace Write' })).toBe('Modo de acesso, atual: Workspace Write')
     expect(t('details')).toBe('Clique em uma ferramenta no fluxo de mensagens para ver os detalhes')
+    expect(t('provider', { provider: 'Gemini Cloud - Leon' })).toBe('Editar Gemini Cloud - Leon')
+    expect(t('apiKey')).toBe('Chave de API configurada')
   })
 })

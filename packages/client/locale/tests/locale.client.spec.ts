@@ -279,9 +279,18 @@ describe('LocaleRuntime', () => {
   it('translates English feature fallbacks through the Brazilian Portuguese pack', () => {
     stubLanguages('pt-BR')
     const { svc } = make()
-    svc.register('feature', 'en', { settings: 'Settings', session: 'New Session' })
+    svc.register('feature', 'en', {
+      settings: 'Settings',
+      session: 'New Session',
+      preset: 'Agent preset',
+      access: 'Access mode, current: {name}',
+      details: 'Click a tool row in the message flow to view its details',
+    })
     const t = svc.bind('feature')
     expect(t('settings')).toBe('Configurações')
     expect(t('session')).toBe('Nova sessão')
+    expect(t('preset')).toBe('Predefinição do agente')
+    expect(t('access', { name: 'Workspace Write' })).toBe('Modo de acesso, atual: Workspace Write')
+    expect(t('details')).toBe('Clique em uma ferramenta no fluxo de mensagens para ver os detalhes')
   })
 })

@@ -1,50 +1,55 @@
 .mark {
-  color: var(--dsw-static-amber-500);
+  display: inline-block;
+  overflow: hidden;
+  border-radius: 50%;
   flex: none;
+  filter: drop-shadow(0 0 5px rgb(249 91 46 / .28));
 }
 
-.face {
-  fill: var(--dsw-alias-bg-base);
+.mark img {
+  display: block;
+  width: auto;
+  max-width: none;
+  height: 100%;
 }
 
 .wordmark {
   color: var(--dsw-alias-label-primary);
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   white-space: nowrap;
 }
 
 .company {
   display: flex;
   flex-direction: column;
+  padding-left: 8px;
+  border-left: 1px solid rgb(249 115 47 / .46);
   line-height: 1;
 }
 
 .company strong {
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: .03em;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: .08em;
 }
 
 .company span {
-  margin-top: 2px;
+  margin-top: 3px;
   color: var(--dsw-alias-label-secondary);
-  font-size: 7px;
+  font-size: 6px;
   font-weight: 600;
-  letter-spacing: .16em;
+  letter-spacing: .19em;
 }
 
 .leon {
-  display: inline-flex;
-  align-items: center;
-  height: 22px;
-  padding: 0 8px;
-  border: 1px solid var(--dsw-static-amber-500);
-  border-radius: 7px;
-  background: var(--dsw-alias-bg-module-platform);
-  color: var(--dsw-static-amber-500);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: .1em;
+  background: linear-gradient(105deg, #f3313b 0%, #ff6a2f 48%, #ffb72e 100%);
+  background-clip: text;
+  color: transparent;
+  font-size: 17px;
+  font-weight: 850;
+  letter-spacing: .06em;
+  line-height: 1;
+  filter: drop-shadow(0 0 8px rgb(249 91 46 / .18));
 }

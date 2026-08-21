@@ -1,5 +1,7 @@
 # Leon — The Lions Informática
 
+![Leon brand concept](docs/assets/leon-brand-concept.png)
+
 English | [中文](README.zh.md)
 
 Leon is The Lions Informática's local-first AI workspace, with Brazilian Portuguese enabled by default and a dedicated product identity. This repository is our maintained fork of [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), the open-source agent harness developed by [DeepSeek AI](https://deepseek.com).

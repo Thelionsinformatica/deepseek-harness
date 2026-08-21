@@ -67,15 +67,15 @@ describe('official browser-brand plugin', () => {
 
   it('renders the Leon wordmark independently from both requested mark sizes', () => {
     const name = render(<OfficialBrandName />)
-    expect(name.getByLabelText('The Lions Informática — Leon').textContent).toBe('THE LIONSINFORMÁTICALEON')
+    expect(name.getByLabelText('The Lions Informática — Leon').textContent).toBe('LEONTHE LIONSINFORMÁTICA')
     name.unmount()
 
     const mark = render(<OfficialBrandMark size={34} className="hero-mark" />)
-    expect(mark.getByRole('img', { name: 'The Lions Informática — Leon' })).not.toBeNull()
-    expect(mark.container.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 32 32')
-    expect(mark.container.querySelector('svg')?.getAttribute('width')).toBe('34')
-    expect(mark.container.querySelector('svg')?.classList.contains('hero-mark')).toBe(true)
+    const logo = mark.getByRole('img', { name: 'The Lions Informática — Leon' })
+    expect(logo.querySelector('img')?.getAttribute('src')).toContain('the-lions-logo.png')
+    expect(logo.getAttribute('style')).toContain('width: 34px')
+    expect(logo.classList.contains('hero-mark')).toBe(true)
     mark.rerender(<OfficialBrandMark size={24} />)
-    expect(mark.container.querySelector('svg')?.getAttribute('width')).toBe('24')
+    expect(mark.getByRole('img', { name: 'The Lions Informática — Leon' }).getAttribute('style')).toContain('width: 24px')
   })
 })

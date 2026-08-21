@@ -1,6 +1,5 @@
 import type { HeroBrandMarkOwnerProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SidebarBrandMarkOwnerProps } from '@deepseek-ai/dsh-client-ui-sidebar/client'
-import officialLogo from './assets/the-lions-logo.png'
 import styles from './Brand.module.css'
 
 type OfficialBrandMarkProps = HeroBrandMarkOwnerProps & SidebarBrandMarkOwnerProps
@@ -19,7 +18,7 @@ export function OfficialBrandMark({ size, className }: OfficialBrandMarkProps) {
       role="img"
       aria-label="The Lions Informática — Leon"
     >
-      <img src={officialLogo} alt="" aria-hidden="true" />
+      <img src="/favicon.ico" alt="" aria-hidden="true" />
     </span>
   )
 }

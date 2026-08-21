@@ -7,7 +7,9 @@ const DIST_ROOT = fileURLToPath(new URL('../dist', import.meta.url))
 
 it('ships install metadata with the built web application', async () => {
   const index = await readFile(join(DIST_ROOT, 'index.html'), 'utf8')
+  expect(index).toContain('<html lang="pt-BR">')
   expect(index).toContain('<link rel="manifest" href="/manifest.webmanifest" />')
+  expect(index).toContain('<meta name="theme-color" content="#181818" />')
 
   const manifest: unknown = JSON.parse(await readFile(join(DIST_ROOT, 'manifest.webmanifest'), 'utf8'))
   expect(manifest).toEqual({
@@ -16,7 +18,9 @@ it('ships install metadata with the built web application', async () => {
     short_name: 'Leon',
     start_url: '/',
     scope: '/',
-    display: 'fullscreen',
+    display: 'standalone',
+    theme_color: '#181818',
+    background_color: '#181818',
     icons: [{
       src: '/favicon.ico',
       sizes: '16x16 32x32 48x48',

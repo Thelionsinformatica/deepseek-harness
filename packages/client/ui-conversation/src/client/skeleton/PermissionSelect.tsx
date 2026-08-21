@@ -46,19 +46,23 @@ function permissionGlyph(value: string): ReactNode | undefined {
 }
 
 /**
- * Display transform: kebab-case machine names render as title-case labels
- * (`workspace-write` → `Workspace Write`); non-kebab host-configured names
- * pass through. Full access intentionally overrides the machine-name
- * transform so both permission surfaces use the product label `Full access`;
- * the warning body remains locale-aware.
+ * Display transform for host-configured names outside the built-in permission
+ * set. Conventional kebab-case names render in title case; custom labels pass
+ * through unchanged.
  */
 function displayName(name: string): string {
   if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name)) return name
   return name.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
 }
 
-function optionLabel(option: PermissionSelectValue['options'][number]): string {
-  return option.value === FULL_ACCESS ? 'Full access' : displayName(option.name)
+function optionLabel(
+  option: PermissionSelectValue['options'][number],
+  t: ComposerBarProps['t'],
+): string {
+  if (option.value === 'read-only') return t('access.readOnly')
+  if (option.value === 'workspace-write') return t('access.workspaceWrite')
+  if (option.value === FULL_ACCESS) return t('access.fullAccess')
+  return displayName(option.name)
 }
 
 export interface PermissionSelectProps {
@@ -92,7 +96,7 @@ export function PermissionSelect({ value, locked, command, t }: PermissionSelect
     .filter(o => o.value !== 'custom')
     .map((option) => {
       const icon = permissionGlyph(option.value)
-      return { id: option.value, label: optionLabel(option), ...icon === undefined ? {} : { icon } }
+      return { id: option.value, label: optionLabel(option, t), ...icon === undefined ? {} : { icon } }
     })
 
   const submit = (id: string): void => {
@@ -138,7 +142,7 @@ export function PermissionSelect({ value, locked, command, t }: PermissionSelect
           <button
             type="button"
             className={css.trigger}
-            aria-label={t('input.accessMode', { name: current === undefined ? displayName(currentValue) : optionLabel(current) })}
+            aria-label={t('input.accessMode', { name: current === undefined ? displayName(currentValue) : optionLabel(current, t) })}
             title={current?.description}
             disabled={locked || busy}
             onClick={() => { setOpen(!open) }}
@@ -146,7 +150,7 @@ export function PermissionSelect({ value, locked, command, t }: PermissionSelect
             {permissionGlyph(currentValue) !== undefined && (
               <span className={css.triggerIcon} aria-hidden>{permissionGlyph(currentValue)}</span>
             )}
-            <span className={css.triggerLabel}>{current === undefined ? displayName(currentValue) : optionLabel(current)}</span>
+            <span className={css.triggerLabel}>{current === undefined ? displayName(currentValue) : optionLabel(current, t)}</span>
             {/* Same glyph + open rotation as the sibling ModelSelect trigger. */}
             <span className={clsx(css.chevron, open && css.chevronOpen)} aria-hidden>
               <IconChevronDownOutline14 />

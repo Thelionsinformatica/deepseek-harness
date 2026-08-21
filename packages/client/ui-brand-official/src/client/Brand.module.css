@@ -30,7 +30,7 @@
 }
 
 .company strong {
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 750;
   letter-spacing: .08em;
 }
@@ -38,7 +38,7 @@
 .company span {
   margin-top: 3px;
   color: var(--dsw-alias-label-secondary);
-  font-size: 6px;
+  font-size: 7px;
   font-weight: 600;
   letter-spacing: .19em;
 }
@@ -46,10 +46,19 @@
 .leon {
   background: linear-gradient(105deg, #f3313b 0%, #ff6a2f 48%, #ffb72e 100%);
   background-clip: text;
+  -webkit-background-clip: text;
   color: transparent;
   font-size: 17px;
   font-weight: 850;
   letter-spacing: .06em;
   line-height: 1;
   filter: drop-shadow(0 0 8px rgb(249 91 46 / .18));
+}
+
+@media (forced-colors: active) {
+  .leon {
+    background: none;
+    color: CanvasText;
+    filter: none;
+  }
 }

@@ -4,7 +4,9 @@
   "short_name": "Leon",
   "start_url": "/",
   "scope": "/",
-  "display": "fullscreen",
+  "display": "standalone",
+  "theme_color": "#181818",
+  "background_color": "#181818",
   "icons": [
     {
       "src": "/favicon.ico",

@@ -72,7 +72,7 @@ describe('official browser-brand plugin', () => {
 
     const mark = render(<OfficialBrandMark size={34} className="hero-mark" />)
     const logo = mark.getByRole('img', { name: 'The Lions Informática — Leon' })
-    expect(logo.querySelector('img')?.getAttribute('src')).toContain('the-lions-logo.png')
+    expect(logo.querySelector('img')?.getAttribute('src')).toBe('/favicon.ico')
     expect(logo.getAttribute('style')).toContain('width: 34px')
     expect(logo.classList.contains('hero-mark')).toBe(true)
     mark.rerender(<OfficialBrandMark size={24} />)

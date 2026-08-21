@@ -8,6 +8,7 @@ export type AgentPresetSettingsKey =
   | 'presetCodeName' | 'presetCodeDescription'
   | 'presetMinimalName' | 'presetMinimalDescription'
   | 'presetCordisName' | 'presetCordisDescription'
+  | 'presetLeonName' | 'presetLeonDescription'
   | 'duplicate' | 'duplicateUnavailable' | 'delete' | 'presetId' | 'presetIdPlaceholder' | 'copyOf'
   | 'displayName' | 'displayNamePlaceholder'
   | 'inUse' | 'noDescription' | 'builtInGroup' | 'customGroup'
@@ -46,6 +47,9 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   presetCordisName: 'Creator mode',
   presetCordisDescription:
     'Built for creating custom agent presets, with all Standard mode capabilities plus runtime inspection, plugin experiments, and preset-authoring guidance.',
+  presetLeonName: 'Leon',
+  presetLeonDescription:
+    'The Lions Informática local assistant in Brazilian Portuguese, with coding, files, terminal, search, planning, and automation tools.',
   duplicate: 'Duplicate',
   duplicateUnavailable: 'This deployment has no writable preset directory',
   delete: 'Delete',
@@ -84,6 +88,74 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   deleting: 'Deleting…',
 }
 
+/** Brazilian Portuguese copy. */
+export const pt: Record<AgentPresetSettingsKey, string> = {
+  title: 'Preset do agente',
+  description: 'Aplica-se às novas sessões. Sessões em andamento mantêm o preset com que foram iniciadas.',
+  loading: 'Carregando presets…',
+  error: 'Não foi possível carregar os presets do agente.',
+  userTrust: 'Personalizado',
+  seatHint: 'Preset do agente para a sessão que você iniciará',
+  headerHint: 'Preset usado por esta sessão, definido quando ela foi iniciada',
+  nav: 'Presets do agente',
+  sectionIntro:
+    'Um preset reúne as ferramentas, instruções e capacidades usadas pelo agente em uma sessão. '
+    + 'Duplique um preset existente para personalizá-lo ou use o modo Criador para preparar um novo.',
+  builtIn: 'Integrado',
+  setDefault: 'Definir como padrão',
+  view: 'Visualizar',
+  presetStandardName: 'Modo padrão',
+  presetStandardDescription:
+    'Agente completo para programação, com edição de arquivos, terminal, pesquisa local e na web, skills, planos, metas, subagentes e fluxos de trabalho.',
+  presetCodeName: 'Modo PTC',
+  presetCodeDescription:
+    'Inclui todos os recursos do modo padrão e permite combinar operações em várias etapas por meio do SDK do Modo Código.',
+  presetMinimalName: 'Modo mínimo',
+  presetMinimalDescription: 'Agente de programação com terminal persistente e edição estruturada de arquivos.',
+  presetCordisName: 'Modo Criador',
+  presetCordisDescription:
+    'Inclui os recursos do modo padrão e ferramentas para inspecionar o sistema, experimentar plugins e criar presets.',
+  presetLeonName: 'Leon',
+  presetLeonDescription:
+    'Assistente local da The Lions Informática em português do Brasil, com ferramentas de programação, arquivos, terminal, pesquisa, planejamento e automação.',
+  duplicate: 'Duplicar',
+  duplicateUnavailable: 'Esta implantação não possui uma pasta de presets gravável',
+  delete: 'Excluir',
+  presetId: 'Identificador',
+  presetIdPlaceholder: 'meu-agente',
+  displayName: 'Nome',
+  displayNamePlaceholder: 'Exibido no seletor; usa o identificador quando vazio',
+  inUse: 'Em uso',
+  builtInGroup: 'Integrados',
+  customGroup: 'Personalizados',
+  noDescription: 'Sem descrição.',
+  brokenBadge: 'Falha ao carregar',
+  brokenNoCopy: 'Um preset que falhou ao carregar não pode ser duplicado',
+  copyOf: 'Copiado de',
+  composition: 'Composição (agent.cordis.yml)',
+  cancel: 'Cancelar',
+  close: 'Fechar',
+  retry: 'Tentar novamente',
+  copyTitle: 'Duplicar preset',
+  copyIntro:
+    'O preset completo será copiado neste computador. O identificador se tornará o nome da pasta e não poderá '
+    + 'ser alterado depois; os demais dados ficam nos arquivos do próprio preset.',
+  create: 'Criar',
+  creating: 'Criando…',
+  creatorDraft: 'Criar um preset personalizado no modo Criador',
+  openLocation: 'Abrir pasta',
+  showLocation: 'Mostrar local',
+  revealedPathLabel: 'Arquivos do preset:',
+  idRequired: 'Informe um identificador para o preset.',
+  idInvalid: 'Use letras minúsculas, números e hífens, começando com uma letra ou número.',
+  idTaken: 'Já existe um preset com este identificador.',
+  deleteTitle: 'Excluir este preset?',
+  deleteDescription:
+    'A pasta do preset será excluída. Sessões que já o utilizam continuam funcionando; novas sessões não poderão selecioná-lo.',
+  deleteConfirm: 'Excluir',
+  deleting: 'Excluindo…',
+}
+
 /** Simplified Chinese copy. */
 export const zh: Record<AgentPresetSettingsKey, string> = {
   title: 'Agent 预设',
@@ -106,6 +178,8 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   presetMinimalDescription: '仅提供持久 bash 与 str_replace_editor 的双工具编码 Agent。',
   presetCordisName: '创造模式',
   presetCordisDescription: '用于创建自定义 Agent preset：具备标准模式的全部能力，并提供运行时检查、插件实验和 preset 创作指导。',
+  presetLeonName: 'Leon',
+  presetLeonDescription: 'The Lions Informática 的巴西葡萄牙语本地助手，提供编程、文件、终端、搜索、规划和自动化工具。',
   duplicate: '复制',
   duplicateUnavailable: '此部署未配置可写的预设目录',
   delete: '删除',
@@ -171,6 +245,7 @@ const BUILT_IN_PRESET_KEYS: Readonly<Partial<Record<string, PresetLocaleKeys>>> 
   code: { name: 'presetCodeName', description: 'presetCodeDescription' },
   minimal: { name: 'presetMinimalName', description: 'presetMinimalDescription' },
   cordis: { name: 'presetCordisName', description: 'presetCordisDescription' },
+  leon: { name: 'presetLeonName', description: 'presetLeonDescription' },
 }
 
 /**

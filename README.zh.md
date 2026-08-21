@@ -1,5 +1,7 @@
 # Leon — The Lions Informática
 
+![Leon 品牌概念](docs/assets/leon-brand-concept.png)
+
 [English](README.md) | 中文
 
 Leon 是 The Lions Informática 维护的本地优先 AI 工作空间，默认启用巴西葡萄牙语，并拥有独立的产品标识。本仓库是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的维护分支；DeepSeek Harness 是由 [DeepSeek AI](https://deepseek.com) 开发的开源 agent harness（智能体框架）。

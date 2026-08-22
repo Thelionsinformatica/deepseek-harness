@@ -92,11 +92,14 @@
 
 # The skill REGISTRY lives in the host composition and is layered per scope:
 # these rows register into THIS preset's layer of it, so they need no realm.
-# `skill-filesystem` contributes local-root discovery for agents on this preset, and
-# `tool-skill` gives them the catalog and loader; the merged catalog also
-# carries whatever the deployment registered globally (repository plugins).
+# `skill-filesystem` contributes local-root discovery plus the skills shipped
+# with Leon, and `tool-skill` gives agents the catalog and loader; the merged
+# catalog also carries whatever the deployment registered globally.
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'
+  config:
+    customSkillDirs:
+      - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
 
 - id: tool-skill
   name: '@deepseek-ai/dsh-tool-skill'

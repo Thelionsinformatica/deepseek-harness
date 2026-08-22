@@ -377,6 +377,35 @@ describe('the shipped Web composition', () => {
     expect((await readFile(skill, 'utf8')).startsWith('---\nname: editing-cordis-compositions')).toBe(true)
   })
 
+  it('ships and scopes the project-engineering skill with Leon', async () => {
+    const skill = join(
+      CONFIG_DIR, 'agent-presets', 'leon', 'skills', 'leon-project-engineer', 'SKILL.md',
+    )
+    expect((await readFile(skill, 'utf8')).startsWith('---\nname: leon-project-engineer')).toBe(true)
+
+    const handle = await ctx.agents.create({
+      sessionId: SessionId(`preset-skills-leon-${randomUUID()}`),
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'leon').then(() => undefined),
+    })
+    try {
+      const scoped = (await ctx.skills.list({ scope: handle.agent })).map(item => item.name)
+      expect(scoped).toContain('leon-project-engineer')
+      expect((await ctx.skills.list()).map(item => item.name)).not.toContain('leon-project-engineer')
+
+      const loaded = await ctx.tools.execute({
+        callId: CallId('preset-leon-project-engineer-load'),
+        name: 'skill',
+        arguments: { name: 'leon-project-engineer' },
+        signal: new AbortController().signal,
+        agent: handle.agent,
+      })
+      expect(loaded.isError).toBe(false)
+      expect(JSON.stringify(loaded.content)).toContain('Verificação e entrega')
+    } finally {
+      await handle.dispose()
+    }
+  })
+
   it('merges the global skill layer into a preset agent\'s catalog, keeping local discovery preset-side', async () => {
     const proj = await mkdtemp(join(tmpdir(), 'dsh-preset-skill-proj-'))
     await mkdir(join(proj, '.dsh', 'skills', 'project-proof'), { recursive: true })

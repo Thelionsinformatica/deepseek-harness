@@ -1095,6 +1095,8 @@ export function defineAcpSnapshotSuite(options: SnapshotSuiteOptions): void {
   const RECORDING = mode === 'record'
   const REFRESHING = mode === 'refresh'
   const childMode: 'replay' | 'record' = RECORDING ? 'record' : 'replay'
+  const scenarioSuite = mode === 'replay' ? describe.concurrent : describe
+
   /** The class a scenario's header composition belongs to (see {@link Scenario.headerClass}). */
   const classOf = (scenario: Scenario): string => scenario.headerClass ?? 'default'
 
@@ -1163,295 +1165,281 @@ export function defineAcpSnapshotSuite(options: SnapshotSuiteOptions): void {
   const promptClaims = new Map<string, SharedSnapshotClaim>()
   const schemaClaims = new Map<string, SharedSnapshotClaim>()
 
-  const registerScenario = (scenario: Scenario, concurrent: boolean): void => {
-    // In RECORD mode, only re-run the `recorded` (live-API) scenarios; the `authored` ones
-    // (sidecar-driven errors/cancel) are never re-recorded. `posixOnly` scenarios skip on Windows;
-    // `pwshOnly` scenarios skip when the caller's `hasPwsh` probe is false. Real PowerShell
-    // scenarios stay sequential inside the concurrent replay suite because they share host
-    // terminal resources and overlapping PTYs corrupt each other's retained scrollback.
-    it.skipIf(scenarioSkipped(scenario, RECORDING, process.platform, options.hasPwsh))(
-      `snapshot: ${scenario.name} matches the expected outputs`,
-      { concurrent },
-      async ({ expect }) => {
-        const dir = join(snapshotsDir, scenario.name)
-        const input = JSON.parse(await readFile(join(dir, 'input.json'), 'utf8')) as InputScript
-        const overrideFile = join(dir, 'replay.override.json')
-        const workspaceDir = join(dir, 'workspace')
-        // Replay/refresh need the committed inventory up front because those
-        // files drive the model scripts. Record mode creates that inventory
-        // from the harvested live logs, so it must also work for a brand-new
-        // scenario with no session.jsonl yet.
-        let fixtureFiles = RECORDING ? [] : await sessionFixtures(dir)
-        const childFixtureFiles = fixtureFiles.slice(1)
-        const comparesLog = scenario.comparesLog ?? scenario.hasModelTurn
-        const result = await runScenario(input, {
-          agent,
-          mode: childMode,
-          fixtureFile: join(dir, 'session.jsonl'),
-          ...scenario.env !== undefined ? { env: scenario.env } : {},
-          ...existsSync(overrideFile) ? { overrideFile } : {},
-          // In REPLAY, forward the recorded child fixtures so each subagent session
-          // replays from its own script. In RECORD they are harvested, not read.
-          ...!RECORDING && childFixtureFiles.length > 0 ? { childFiles: childFixtureFiles.map(file => join(dir, file)) } : {},
-          ...existsSync(workspaceDir) ? { workspaceDir } : {},
-          ...scenario.prepareWorkspace !== undefined ? { prepareWorkspace: scenario.prepareWorkspace } : {},
-          ...scenario.workspaceParent !== undefined ? { workspaceParent: scenario.workspaceParent } : {},
-          // A scenario booting an overlay tree passes its own live config; the
-          // bin's replay swap derives the sibling `*cordis.snapshot.yml` from it.
-          ...scenario.configPath !== undefined ? { configPath: scenario.configPath } : {},
-        })
+  scenarioSuite('snapshot scenarios', () => {
+    for (const scenario of scenarios) {
+      // In RECORD mode, only re-run the `recorded` (live-API) scenarios; the `authored` ones
+      // (sidecar-driven errors/cancel) are never re-recorded. `posixOnly` scenarios skip on Windows;
+      // `pwshOnly` scenarios skip when the caller's `hasPwsh` probe is false. Real PowerShell
+      // scenarios stay sequential inside the concurrent replay suite because they share host
+      // terminal resources and overlapping PTYs corrupt each other's retained scrollback.
+      it.skipIf(scenarioSkipped(scenario, RECORDING, process.platform, options.hasPwsh))(
+        `snapshot: ${scenario.name} matches the expected outputs`,
+        { concurrent: mode === 'replay' && scenario.pwshOnly !== true },
+        async ({ expect }) => {
+          const dir = join(snapshotsDir, scenario.name)
+          const input = JSON.parse(await readFile(join(dir, 'input.json'), 'utf8')) as InputScript
+          const overrideFile = join(dir, 'replay.override.json')
+          const workspaceDir = join(dir, 'workspace')
+          // Replay/refresh need the committed inventory up front because those
+          // files drive the model scripts. Record mode creates that inventory
+          // from the harvested live logs, so it must also work for a brand-new
+          // scenario with no session.jsonl yet.
+          let fixtureFiles = RECORDING ? [] : await sessionFixtures(dir)
+          const childFixtureFiles = fixtureFiles.slice(1)
+          const comparesLog = scenario.comparesLog ?? scenario.hasModelTurn
+          const result = await runScenario(input, {
+            agent,
+            mode: childMode,
+            fixtureFile: join(dir, 'session.jsonl'),
+            ...scenario.env !== undefined ? { env: scenario.env } : {},
+            ...existsSync(overrideFile) ? { overrideFile } : {},
+            // In REPLAY, forward the recorded child fixtures so each subagent session
+            // replays from its own script. In RECORD they are harvested, not read.
+            ...!RECORDING && childFixtureFiles.length > 0 ? { childFiles: childFixtureFiles.map(file => join(dir, file)) } : {},
+            ...existsSync(workspaceDir) ? { workspaceDir } : {},
+            ...scenario.prepareWorkspace !== undefined ? { prepareWorkspace: scenario.prepareWorkspace } : {},
+            ...scenario.workspaceParent !== undefined ? { workspaceParent: scenario.workspaceParent } : {},
+            // A scenario booting an overlay tree passes its own live config; the
+            // bin's replay swap derives the sibling `*cordis.snapshot.yml` from it.
+            ...scenario.configPath !== undefined ? { configPath: scenario.configPath } : {},
+          })
 
-        for (const log of result.sessionLogs) {
-          expect(unknownToolCallIds(log.content), `session ${log.id}: snapshot scenarios must not accept UNKNOWN_TOOL`)
-            .toEqual([])
-        }
-
-        // Scrub every volatile id the run produced: the ACP server-issued session id plus every
-        // harvested log's recorded id (a subagent child id never surfaces over ACP, but it
-        // appears in the child's own log header).
-        const ctx: NormalizeContext = {
-          sessionIds: [
-            ...result.sessionId !== undefined ? [result.sessionId] : [],
-            ...result.sessionLogs.map(l => l.id),
-          ],
-          cwd: result.cwd,
-          cwdAliases: result.cwdAliases,
-        }
-
-        const childSchemaPins = new Set(scenario.pinsChildToolSchemas ?? [])
-        const childPromptPins = new Set(scenario.pinsChildSystemPrompts ?? [])
-
-        // Record writes live model fixtures; keyless refresh writes every comparable replayed
-        // fixture. Pinning JSONL keeps prefixes but moves prompts and schemas into sidecars.
-        const portableFixture = scenario.workspaceParent === undefined
-          ? tokenizeSessionFixtureCwd
-          : (log: string): string => log
-        const writesSessionFixtures = (RECORDING && scenario.recorded && scenario.hasModelTurn)
-          || (REFRESHING && comparesLog)
-        if (writesSessionFixtures) {
-          expect(result.sessionLogs.length, `${mode} produced no session log to harvest`).toBeGreaterThan(0)
-          if (REFRESHING) {
-            expect(result.sessionLogs.length, `expected ${fixtureFiles.length} session logs (parent + children)`)
-              .toBe(fixtureFiles.length)
+          for (const log of result.sessionLogs) {
+            expect(unknownToolCallIds(log.content), `session ${log.id}: snapshot scenarios must not accept UNKNOWN_TOOL`)
+              .toEqual([])
           }
-          const outputFixtureFiles = [
-            'session.jsonl',
-            ...Array.from({ length: result.sessionLogs.length - 1 }, (_, i) => `session.${i + 1}.jsonl`),
-          ]
-          const existingFixtures = await Promise.all(outputFixtureFiles.map(async (file) => {
-            const path = join(dir, file)
-            return existsSync(path) ? readFile(path, 'utf8') : ''
-          }))
-          const refreshReplacements = REFRESHING
-            ? refreshFixtureReplacements(result.sessionLogs, existingFixtures)
-            : []
-          const freshFixtures = REFRESHING
-            ? result.sessionLogs.map((log, index) => scrubSessionSnapshot(portableFixture(stabilizeRefreshLog(
-              log.content,
-              existingFixtures[index] as string,
-              refreshReplacements,
-              ctx,
-            ))))
-            : result.sessionLogs.map(log => scrubSessionSnapshot(portableFixture(log.content)))
-          const outputFixtures = stabilizeFixtureMessageIds(freshFixtures, existingFixtures)
-          await Promise.all(outputFixtures.map((fixture, index) =>
-            writeFile(join(dir, outputFixtureFiles[index] as string), fixture)))
-          if (RECORDING) {
-            const outputNames = new Set(outputFixtureFiles)
-            const entries = await readdir(dir, { withFileTypes: true })
-            await Promise.all(entries
-              .filter(entry => entry.isFile()
+
+          // Scrub every volatile id the run produced: the ACP server-issued session id plus every
+          // harvested log's recorded id (a subagent child id never surfaces over ACP, but it
+          // appears in the child's own log header).
+          const ctx: NormalizeContext = {
+            sessionIds: [
+              ...result.sessionId !== undefined ? [result.sessionId] : [],
+              ...result.sessionLogs.map(l => l.id),
+            ],
+            cwd: result.cwd,
+            cwdAliases: result.cwdAliases,
+          }
+
+          const childSchemaPins = new Set(scenario.pinsChildToolSchemas ?? [])
+          const childPromptPins = new Set(scenario.pinsChildSystemPrompts ?? [])
+
+          // Record writes live model fixtures; keyless refresh writes every comparable replayed
+          // fixture. Pinning JSONL keeps prefixes but moves prompts and schemas into sidecars.
+          const portableFixture = scenario.workspaceParent === undefined
+            ? tokenizeSessionFixtureCwd
+            : (log: string): string => log
+          const writesSessionFixtures = (RECORDING && scenario.recorded && scenario.hasModelTurn)
+          || (REFRESHING && comparesLog)
+          if (writesSessionFixtures) {
+            expect(result.sessionLogs.length, `${mode} produced no session log to harvest`).toBeGreaterThan(0)
+            if (REFRESHING) {
+              expect(result.sessionLogs.length, `expected ${fixtureFiles.length} session logs (parent + children)`)
+                .toBe(fixtureFiles.length)
+            }
+            const outputFixtureFiles = [
+              'session.jsonl',
+              ...Array.from({ length: result.sessionLogs.length - 1 }, (_, i) => `session.${i + 1}.jsonl`),
+            ]
+            const existingFixtures = await Promise.all(outputFixtureFiles.map(async (file) => {
+              const path = join(dir, file)
+              return existsSync(path) ? readFile(path, 'utf8') : ''
+            }))
+            const refreshReplacements = REFRESHING
+              ? refreshFixtureReplacements(result.sessionLogs, existingFixtures)
+              : []
+            const freshFixtures = REFRESHING
+              ? result.sessionLogs.map((log, index) => scrubSessionSnapshot(portableFixture(stabilizeRefreshLog(
+                log.content,
+                existingFixtures[index] as string,
+                refreshReplacements,
+                ctx,
+              ))))
+              : result.sessionLogs.map(log => scrubSessionSnapshot(portableFixture(log.content)))
+            const outputFixtures = stabilizeFixtureMessageIds(freshFixtures, existingFixtures)
+            await Promise.all(outputFixtures.map((fixture, index) =>
+              writeFile(join(dir, outputFixtureFiles[index] as string), fixture)))
+            if (RECORDING) {
+              const outputNames = new Set(outputFixtureFiles)
+              const entries = await readdir(dir, { withFileTypes: true })
+              await Promise.all(entries
+                .filter(entry => entry.isFile()
                 // Only valid numbered children are record-owned stale output.
                 // Malformed session-like names stay for the inventory guard to
                 // reject instead of being silently deleted during mutation.
                 && /^session\.[1-9]\d*\.jsonl$/.test(entry.name)
                 && !outputNames.has(entry.name))
-              .map(entry => rm(join(dir, entry.name))))
-            fixtureFiles = outputFixtureFiles
-          }
-          if (scenario.pinsHeader === true) {
-            const primary = result.sessionLogs[0] as HarvestedLog
-            const prompts = normalizedSystemPrompts(primary.content, ctx)
-            expect(prompts.length, `${mode} produced no system prompt to snapshot`).toBeGreaterThan(0)
-            const promptSnapshot = formatSystemPromptSnapshot(prompts[0] as string, prompts.slice(1))
-            /* v8 ignore next -- registration guarantees every scenario class has resolved sources. */
-            const promptSource = promptSourceByClass.get(classOf(scenario)) ?? scenario
-            const promptPath = join(snapshotsDir, promptSource.name, SYSTEM_PROMPT_SNAPSHOT)
-            claimSharedSnapshot(promptClaims, promptPath, scenario.name, promptSnapshot)
-            await writeFile(promptPath, promptSnapshot)
+                .map(entry => rm(join(dir, entry.name))))
+              fixtureFiles = outputFixtureFiles
+            }
+            if (scenario.pinsHeader === true) {
+              const primary = result.sessionLogs[0] as HarvestedLog
+              const prompts = normalizedSystemPrompts(primary.content, ctx)
+              expect(prompts.length, `${mode} produced no system prompt to snapshot`).toBeGreaterThan(0)
+              const promptSnapshot = formatSystemPromptSnapshot(prompts[0] as string, prompts.slice(1))
+              /* v8 ignore next -- registration guarantees every scenario class has resolved sources. */
+              const promptSource = promptSourceByClass.get(classOf(scenario)) ?? scenario
+              const promptPath = join(snapshotsDir, promptSource.name, SYSTEM_PROMPT_SNAPSHOT)
+              claimSharedSnapshot(promptClaims, promptPath, scenario.name, promptSnapshot)
+              await writeFile(promptPath, promptSnapshot)
 
-            const schemaSets = normalizedToolSchemas(primary.content, ctx)
-            expect(schemaSets.length, `${mode} produced no tool schemas to snapshot`).toBeGreaterThan(0)
-            expect(schemaSets.length, `${mode} produced a tool-schema sequence that differs from its prompt sequence`)
-              .toBe(prompts.length)
-            const toolSchemasSnapshot = formatToolSchemasSnapshot(
-              schemaSets[0] as unknown[],
-              schemaSets.slice(1),
-            )
-            /* v8 ignore next -- registration guarantees every scenario class has resolved sources. */
-            const schemaSource = schemaSourceByClass.get(classOf(scenario)) ?? scenario
-            const schemaPath = join(snapshotsDir, schemaSource.name, TOOL_SCHEMAS_SNAPSHOT)
-            claimSharedSnapshot(schemaClaims, schemaPath, scenario.name, toolSchemasSnapshot)
-            await writeFile(schemaPath, toolSchemasSnapshot)
-          }
-          for (const index of childSchemaPins) {
-            const log = result.sessionLogs[index]
-            expect(log, `${mode}: no child session log at index ${index} to snapshot schemas from`)
-              .toBeDefined()
-            const schemaSets = normalizedToolSchemas((log as HarvestedLog).content, ctx)
-            expect(schemaSets.length, `${mode}: child ${index} produced no tool schemas to snapshot`)
-              .toBeGreaterThan(0)
-            await writeFile(join(dir, childToolSchemasSnapshot(index)), formatToolSchemasSnapshot(
-              schemaSets[0] as unknown[],
-              schemaSets.slice(1),
-            ))
-          }
-          for (const index of childPromptPins) {
-            const log = result.sessionLogs[index]
-            expect(log, `${mode}: no child session log at index ${index} to snapshot a prompt from`)
-              .toBeDefined()
-            const prompts = normalizedSystemPrompts((log as HarvestedLog).content, ctx)
-            expect(prompts.length, `${mode}: child ${index} produced no system prompt to snapshot`)
-              .toBeGreaterThan(0)
-            await writeFile(
-              join(dir, childSystemPromptSnapshot(index)),
-              formatSystemPromptSnapshot(prompts[0] as string),
-            )
-          }
-        }
-
-        for (const expected of stdoutExpectedVariants(scenario)) {
-          const stdout = normalizeStdout(result.rawStdout, ctx, { cwdPathMode: expected.cwdPathMode })
-          if (REFRESHING) {
-            await writeFile(join(dir, expected.file), stdout)
-          }
-          await expect(stdout, `${expected.file} mismatch`).toMatchFileSnapshot(join(dir, expected.file))
-        }
-
-        // A model turn always produces a log worth comparing; an explicitly
-        // authored non-model scenario may opt in independently.
-        if (comparesLog) {
-          // The harvested logs (primary-first) must match their committed fixtures 1:1.
-          expect(result.sessionLogs.length, 'this scenario must persist one log per session fixture').toBe(fixtureFiles.length)
-          for (let i = 0; i < fixtureFiles.length; i++) {
-            const harvested = scrubSessionSnapshot((result.sessionLogs[i] as HarvestedLog).content)
-            const fixture = scrubSessionSnapshot(await readFile(join(dir, fixtureFiles[i] as string), 'utf8'))
-            expect(normalizeSessionLog(harvested, ctx), `${fixtureFiles[i]} mismatch`)
-              .toEqual(normalizeSessionLog(fixture, fixtureContext(fixture)))
-          }
-        }
-
-        // Every live full header must equal its class pin reconstructed from
-        // tokenized JSONL plus readable prompt and structured schema sidecars.
-        /* v8 ignore next -- construction guarantees the pin exists; a miss would fail the one-header assertion loudly. */
-        const pinningScenario = pinningByClass.get(classOf(scenario)) ?? scenario
-        /* v8 ignore next -- registration guarantees every scenario class has resolved sources. */
-        const promptSource = promptSourceByClass.get(classOf(scenario)) ?? pinningScenario
-        /* v8 ignore next -- registration guarantees every scenario class has resolved sources. */
-        const schemaSource = schemaSourceByClass.get(classOf(scenario)) ?? pinningScenario
-        const pinningDir = join(snapshotsDir, pinningScenario.name)
-        const pinnedFixture = await readFile(join(pinningDir, 'session.jsonl'), 'utf8')
-        const pinned = normalizedHeaders(pinnedFixture, fixtureContext(pinnedFixture))
-        const promptSnapshot = await readFile(
-          join(snapshotsDir, promptSource.name, SYSTEM_PROMPT_SNAPSHOT),
-          'utf8',
-        )
-        const initialPromptSnapshot = initialSystemPromptSnapshot(promptSnapshot)
-        expect(pinned.length, `the pinning fixture (${pinningScenario.name}) has an unexpected request/header count`)
-          .toBe(1 + (pinningScenario.expectedHeaderChanges ?? 0))
-        const toolSchemasSnapshot = await readFile(
-          join(snapshotsDir, schemaSource.name, TOOL_SCHEMAS_SNAPSHOT),
-          'utf8',
-        )
-        const toolSchemas = parseToolSchemasSnapshot(toolSchemasSnapshot)
-        const pinnedSchemaSets = [toolSchemas.initial, ...toolSchemas.changes]
-        expect(pinnedSchemaSets.length, `the schema source (${schemaSource.name}) has an unexpected tool-schema count`)
-          .toBe(pinned.length)
-        const pinnedHeaders = pinned.map((header, index) => restorePinnedToolSchemas(
-          header,
-          pinnedSchemaSets[index] as unknown[],
-        ))
-        const childPinnedSchemas = new Map<number, unknown[][]>()
-        for (const index of childSchemaPins) {
-          const sidecar = await readFile(join(dir, childToolSchemasSnapshot(index)), 'utf8')
-          const parsed = parseToolSchemasSnapshot(sidecar)
-          childPinnedSchemas.set(index, [parsed.initial, ...parsed.changes])
-        }
-        const childPinnedPrompts = new Map<number, string>()
-        for (const index of childPromptPins) {
-          childPinnedPrompts.set(
-            index,
-            await readFile(join(dir, childSystemPromptSnapshot(index)), 'utf8'),
-          )
-        }
-        for (const [logIndex, log] of result.sessionLogs.entries()) {
-          const childSchemas = childPinnedSchemas.get(logIndex)
-          const expectedChanges = scenario.pinsHeader === true && logIndex === 0
-            ? scenario.expectedHeaderChanges ?? 0
-            : 0
-          expect(headerChangeCount(log.content), `session ${log.id}: changed request/header count`)
-            .toBe(expectedChanges)
-          const headers = normalizedHeaders(scrubSystemPrompts(log.content), ctx)
-          const prompts = normalizedSystemPrompts(log.content, ctx)
-          const schemaSets = normalizedToolSchemas(log.content, ctx)
-          expect(prompts.length, `session ${log.id}: every request/header must carry a string system prompt`)
-            .toBe(headers.length)
-          expect(schemaSets.length, `session ${log.id}: every request/header must carry an array-valued tools field`)
-            .toBe(headers.length)
-          if (childSchemas !== undefined) {
-            expect(childSchemas.length, `session ${log.id}: ${childToolSchemasSnapshot(logIndex)} has an unexpected tool-schema count`)
-              .toBe(schemaSets.length)
-          }
-          for (const [k, header] of headers.entries()) {
-            const classPin = expectedChanges > 0 ? pinnedHeaders[k] : pinnedHeaders[0]
-            const expected = childSchemas === undefined
-              ? classPin
-              : { ...classPin as Record<string, unknown>, tools: childSchemas[k] }
-            expect(header, `session ${log.id}: request/header #${k + 1} diverged from the pinned (${pinningScenario.name}) header`)
-              .toEqual(expected)
-            if (expectedChanges === 0) {
-              // A pinned child owns its whole prompt: its scope-local sections
-              // are exactly what the class pin cannot describe.
-              const childPrompt = childPinnedPrompts.get(logIndex)
-              const promptOrigin = childPrompt === undefined
-                ? `${promptSource.name}/${SYSTEM_PROMPT_SNAPSHOT}`
-                : childSystemPromptSnapshot(logIndex)
-              expect(formatSystemPromptSnapshot(prompts[k] as string), `session ${log.id}: initial system prompt #${k + 1} diverged from ${promptOrigin}`)
-                .toEqual(childPrompt ?? initialPromptSnapshot)
+              const schemaSets = normalizedToolSchemas(primary.content, ctx)
+              expect(schemaSets.length, `${mode} produced no tool schemas to snapshot`).toBeGreaterThan(0)
+              expect(schemaSets.length, `${mode} produced a tool-schema sequence that differs from its prompt sequence`)
+                .toBe(prompts.length)
+              const toolSchemasSnapshot = formatToolSchemasSnapshot(
+                schemaSets[0] as unknown[],
+                schemaSets.slice(1),
+              )
+              /* v8 ignore next -- registration guarantees every scenario class has resolved sources. */
+              const schemaSource = schemaSourceByClass.get(classOf(scenario)) ?? scenario
+              const schemaPath = join(snapshotsDir, schemaSource.name, TOOL_SCHEMAS_SNAPSHOT)
+              claimSharedSnapshot(schemaClaims, schemaPath, scenario.name, toolSchemasSnapshot)
+              await writeFile(schemaPath, toolSchemasSnapshot)
+            }
+            for (const index of childSchemaPins) {
+              const log = result.sessionLogs[index]
+              expect(log, `${mode}: no child session log at index ${index} to snapshot schemas from`)
+                .toBeDefined()
+              const schemaSets = normalizedToolSchemas((log as HarvestedLog).content, ctx)
+              expect(schemaSets.length, `${mode}: child ${index} produced no tool schemas to snapshot`)
+                .toBeGreaterThan(0)
+              await writeFile(join(dir, childToolSchemasSnapshot(index)), formatToolSchemasSnapshot(
+                schemaSets[0] as unknown[],
+                schemaSets.slice(1),
+              ))
+            }
+            for (const index of childPromptPins) {
+              const log = result.sessionLogs[index]
+              expect(log, `${mode}: no child session log at index ${index} to snapshot a prompt from`)
+                .toBeDefined()
+              const prompts = normalizedSystemPrompts((log as HarvestedLog).content, ctx)
+              expect(prompts.length, `${mode}: child ${index} produced no system prompt to snapshot`)
+                .toBeGreaterThan(0)
+              await writeFile(
+                join(dir, childSystemPromptSnapshot(index)),
+                formatSystemPromptSnapshot(prompts[0] as string),
+              )
             }
           }
-          if (scenario.pinsHeader === true && logIndex === 0) {
-            expect(formatSystemPromptSnapshot(
-              prompts[0] as string,
-              prompts.slice(1),
-            ), `session ${log.id}: changed system prompts diverged from ${promptSource.name}/${SYSTEM_PROMPT_SNAPSHOT}`)
-              .toEqual(promptSnapshot)
-            expect(formatToolSchemasSnapshot(
-              schemaSets[0] as unknown[],
-              schemaSets.slice(1),
-            ), `session ${log.id}: changed tool schemas diverged from ${schemaSource.name}/${TOOL_SCHEMAS_SNAPSHOT}`)
-              .toEqual(toolSchemasSnapshot)
-          }
-        }
-      },
-    )
-  }
 
-  // Keep the high-volume replay cases concurrent, but finish that suite before
-  // starting either real PowerShell PTY scenario. A merely non-concurrent test
-  // inside a concurrent suite may still overlap concurrent siblings in Vitest.
-  describe('snapshot scenarios', () => {
-    for (const scenario of scenarios.filter(candidate => candidate.pwshOnly !== true)) {
-      registerScenario(scenario, mode === 'replay')
+          for (const expected of stdoutExpectedVariants(scenario)) {
+            const stdout = normalizeStdout(result.rawStdout, ctx, { cwdPathMode: expected.cwdPathMode })
+            if (REFRESHING) {
+              await writeFile(join(dir, expected.file), stdout)
+            }
+            await expect(stdout, `${expected.file} mismatch`).toMatchFileSnapshot(join(dir, expected.file))
+          }
+
+          // A model turn always produces a log worth comparing; an explicitly
+          // authored non-model scenario may opt in independently.
+          if (comparesLog) {
+          // The harvested logs (primary-first) must match their committed fixtures 1:1.
+            expect(result.sessionLogs.length, 'this scenario must persist one log per session fixture').toBe(fixtureFiles.length)
+            for (let i = 0; i < fixtureFiles.length; i++) {
+              const harvested = scrubSessionSnapshot((result.sessionLogs[i] as HarvestedLog).content)
+              const fixture = scrubSessionSnapshot(await readFile(join(dir, fixtureFiles[i] as string), 'utf8'))
+              expect(normalizeSessionLog(harvested, ctx), `${fixtureFiles[i]} mismatch`)
+                .toEqual(normalizeSessionLog(fixture, fixtureContext(fixture)))
+            }
+          }
+
+          // Every live full header must equal its class pin reconstructed from
+          // tokenized JSONL plus readable prompt and structured schema sidecars.
+          /* v8 ignore next -- construction guarantees the pin exists; a miss would fail the one-header assertion loudly. */
+          const pinningScenario = pinningByClass.get(classOf(scenario)) ?? scenario
+          /* v8 ignore next -- registration guarantees every scenario class has resolved sources. */
+          const promptSource = promptSourceByClass.get(classOf(scenario)) ?? pinningScenario
+          /* v8 ignore next -- registration guarantees every scenario class has resolved sources. */
+          const schemaSource = schemaSourceByClass.get(classOf(scenario)) ?? pinningScenario
+          const pinningDir = join(snapshotsDir, pinningScenario.name)
+          const pinnedFixture = await readFile(join(pinningDir, 'session.jsonl'), 'utf8')
+          const pinned = normalizedHeaders(pinnedFixture, fixtureContext(pinnedFixture))
+          const promptSnapshot = await readFile(
+            join(snapshotsDir, promptSource.name, SYSTEM_PROMPT_SNAPSHOT),
+            'utf8',
+          )
+          const initialPromptSnapshot = initialSystemPromptSnapshot(promptSnapshot)
+          expect(pinned.length, `the pinning fixture (${pinningScenario.name}) has an unexpected request/header count`)
+            .toBe(1 + (pinningScenario.expectedHeaderChanges ?? 0))
+          const toolSchemasSnapshot = await readFile(
+            join(snapshotsDir, schemaSource.name, TOOL_SCHEMAS_SNAPSHOT),
+            'utf8',
+          )
+          const toolSchemas = parseToolSchemasSnapshot(toolSchemasSnapshot)
+          const pinnedSchemaSets = [toolSchemas.initial, ...toolSchemas.changes]
+          expect(pinnedSchemaSets.length, `the schema source (${schemaSource.name}) has an unexpected tool-schema count`)
+            .toBe(pinned.length)
+          const pinnedHeaders = pinned.map((header, index) => restorePinnedToolSchemas(
+            header,
+            pinnedSchemaSets[index] as unknown[],
+          ))
+          const childPinnedSchemas = new Map<number, unknown[][]>()
+          for (const index of childSchemaPins) {
+            const sidecar = await readFile(join(dir, childToolSchemasSnapshot(index)), 'utf8')
+            const parsed = parseToolSchemasSnapshot(sidecar)
+            childPinnedSchemas.set(index, [parsed.initial, ...parsed.changes])
+          }
+          const childPinnedPrompts = new Map<number, string>()
+          for (const index of childPromptPins) {
+            childPinnedPrompts.set(
+              index,
+              await readFile(join(dir, childSystemPromptSnapshot(index)), 'utf8'),
+            )
+          }
+          for (const [logIndex, log] of result.sessionLogs.entries()) {
+            const childSchemas = childPinnedSchemas.get(logIndex)
+            const expectedChanges = scenario.pinsHeader === true && logIndex === 0
+              ? scenario.expectedHeaderChanges ?? 0
+              : 0
+            expect(headerChangeCount(log.content), `session ${log.id}: changed request/header count`)
+              .toBe(expectedChanges)
+            const headers = normalizedHeaders(scrubSystemPrompts(log.content), ctx)
+            const prompts = normalizedSystemPrompts(log.content, ctx)
+            const schemaSets = normalizedToolSchemas(log.content, ctx)
+            expect(prompts.length, `session ${log.id}: every request/header must carry a string system prompt`)
+              .toBe(headers.length)
+            expect(schemaSets.length, `session ${log.id}: every request/header must carry an array-valued tools field`)
+              .toBe(headers.length)
+            if (childSchemas !== undefined) {
+              expect(childSchemas.length, `session ${log.id}: ${childToolSchemasSnapshot(logIndex)} has an unexpected tool-schema count`)
+                .toBe(schemaSets.length)
+            }
+            for (const [k, header] of headers.entries()) {
+              const classPin = expectedChanges > 0 ? pinnedHeaders[k] : pinnedHeaders[0]
+              const expected = childSchemas === undefined
+                ? classPin
+                : { ...classPin as Record<string, unknown>, tools: childSchemas[k] }
+              expect(header, `session ${log.id}: request/header #${k + 1} diverged from the pinned (${pinningScenario.name}) header`)
+                .toEqual(expected)
+              if (expectedChanges === 0) {
+              // A pinned child owns its whole prompt: its scope-local sections
+              // are exactly what the class pin cannot describe.
+                const childPrompt = childPinnedPrompts.get(logIndex)
+                const promptOrigin = childPrompt === undefined
+                  ? `${promptSource.name}/${SYSTEM_PROMPT_SNAPSHOT}`
+                  : childSystemPromptSnapshot(logIndex)
+                expect(formatSystemPromptSnapshot(prompts[k] as string), `session ${log.id}: initial system prompt #${k + 1} diverged from ${promptOrigin}`)
+                  .toEqual(childPrompt ?? initialPromptSnapshot)
+              }
+            }
+            if (scenario.pinsHeader === true && logIndex === 0) {
+              expect(formatSystemPromptSnapshot(
+                prompts[0] as string,
+                prompts.slice(1),
+              ), `session ${log.id}: changed system prompts diverged from ${promptSource.name}/${SYSTEM_PROMPT_SNAPSHOT}`)
+                .toEqual(promptSnapshot)
+              expect(formatToolSchemasSnapshot(
+                schemaSets[0] as unknown[],
+                schemaSets.slice(1),
+              ), `session ${log.id}: changed tool schemas diverged from ${schemaSource.name}/${TOOL_SCHEMAS_SNAPSHOT}`)
+                .toEqual(toolSchemasSnapshot)
+            }
+          }
+        },
+      )
     }
   })
-
-  const powerShellScenarios = scenarios.filter(candidate => candidate.pwshOnly === true)
-  if (powerShellScenarios.length > 0) {
-    describe('PowerShell snapshot scenarios', () => {
-      for (const scenario of powerShellScenarios) registerScenario(scenario, false)
-    })
-  }
 
   describe('snapshot fixtures', () => {
     it('every scenario directory is registered (no orphans)', async () => {

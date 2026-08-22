@@ -16,6 +16,8 @@ Leon is a source-owned product profile in this fork. The CLI ships a `leon` pres
 
 The preset bundles the `leon-project-engineer` skill and resolves its directory relative to the preset itself. Only agents using Leon receive that catalog entry, alongside user and project skills. The skill distinguishes explanation, diagnosis, implementation, and external publication; it guides project inspection, scoped edits, proportional verification, diff review, progress reporting, and evidence-backed handoff without granting another tool or permission.
 
+The preset settings page promotes the deployment default into an always-visible Primary assistant group and keeps the remaining shipped presets in a collapsed Advanced modes group. The Leon description names project engineering and optional persistent memory without implying that the disabled-by-default Letta integration is always active. Secondary card actions carry visible text labels beside their icons.
+
 The official brand renders the already-public `/favicon.ico` instead of importing the large raster asset into the client bundle. Its small company label remains legible, including in forced-colors mode. The Web document declares `pt-BR`, and the manifest uses `standalone` display with colors that match the dark application shell.
 
 Security fixes use range-scoped workspace overrides for compatible patched releases of affected transitive packages. This keeps the existing package API boundaries while removing the audited production advisories. The lockfile records the resolved versions.
@@ -27,6 +29,8 @@ The built fork is the runtime source of truth. Local startup code may select a d
 ## Testing
 
 The shipped Web composition test mounts Leon, confirms the skill remains absent from the global layer, and loads its full instructions through the real skill tool. A keyless Loader snapshot pins the model-visible catalog summary, bundled source metadata, resource directory, and loaded content.
+
+The agent-preset client suite pins the primary/advanced grouping, disclosure accessibility state, localized Leon description, and labeled actions. The keyless Web authoring lane captures the collapsed roster through the real settings page and expands Advanced modes before exercising shipped-preset actions.
 
 ## Alternatives considered
 
@@ -49,6 +53,8 @@ The shipped Web composition test mounts Leon, confirms the skill remains absent 
 A clean official build now produces the Leon identity and Brazilian Portuguese interface without a post-install mutation. The same preset is available to new installations, while an existing local preset with the same id can still be selected according to the roster's normal root precedence.
 
 Leon sessions automatically discover the bundled project workflow without affecting other presets. The model sees one additional catalog summary on those sessions and pays for the full instructions only after the task matches the skill or the user invokes it.
+
+When Leon is the deployment default, it is the only shipped preset card initially expanded in settings. The other built-in modes remain available on demand without competing with the main assistant, and their actions are understandable without hover.
 
 Only the highest-use namespaces are native Portuguese in this increment. The existing fallback dictionary continues to cover unported strings, so later packages can move to owner-local dictionaries independently.
 

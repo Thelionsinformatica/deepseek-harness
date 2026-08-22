@@ -11,7 +11,8 @@ export type AgentPresetSettingsKey =
   | 'presetLeonName' | 'presetLeonDescription'
   | 'duplicate' | 'duplicateUnavailable' | 'delete' | 'presetId' | 'presetIdPlaceholder' | 'copyOf'
   | 'displayName' | 'displayNamePlaceholder'
-  | 'inUse' | 'noDescription' | 'builtInGroup' | 'customGroup'
+  | 'inUse' | 'noDescription' | 'primaryGroup' | 'advancedGroup' | 'customGroup'
+  | 'showAdvanced' | 'hideAdvanced'
   | 'brokenBadge' | 'brokenNoCopy'
   | 'composition' | 'cancel' | 'close' | 'retry'
   | 'copyTitle' | 'copyIntro' | 'create' | 'creating' | 'creatorDraft'
@@ -49,7 +50,7 @@ export const en: Record<AgentPresetSettingsKey, string> = {
     'Built for creating custom agent presets, with all Standard mode capabilities plus runtime inspection, plugin experiments, and preset-authoring guidance.',
   presetLeonName: 'Leon',
   presetLeonDescription:
-    'The Lions Informática local assistant in Brazilian Portuguese, with coding, files, terminal, search, planning, and automation tools.',
+    'The Lions Informática assistant for coding, project engineering, automation, and optional persistent memory.',
   duplicate: 'Duplicate',
   duplicateUnavailable: 'This deployment has no writable preset directory',
   delete: 'Delete',
@@ -58,8 +59,11 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   displayName: 'Name',
   displayNamePlaceholder: 'Shown in the picker; defaults to the identifier',
   inUse: 'In use',
-  builtInGroup: 'Built-in',
+  primaryGroup: 'Primary assistant',
+  advancedGroup: 'Advanced modes',
   customGroup: 'Custom',
+  showAdvanced: 'Show',
+  hideAdvanced: 'Hide',
   noDescription: 'No description.',
   brokenBadge: 'Failed to load',
   brokenNoCopy: 'A preset that failed to load cannot be duplicated',
@@ -117,7 +121,7 @@ export const pt: Record<AgentPresetSettingsKey, string> = {
     'Inclui os recursos do modo padrão e ferramentas para inspecionar o sistema, experimentar plugins e criar presets.',
   presetLeonName: 'Leon',
   presetLeonDescription:
-    'Assistente local da The Lions Informática em português do Brasil, com ferramentas de programação, arquivos, terminal, pesquisa, planejamento e automação.',
+    'Assistente da The Lions Informática para programação, engenharia de projetos, automação e memória persistente opcional.',
   duplicate: 'Duplicar',
   duplicateUnavailable: 'Esta implantação não possui uma pasta de presets gravável',
   delete: 'Excluir',
@@ -126,8 +130,11 @@ export const pt: Record<AgentPresetSettingsKey, string> = {
   displayName: 'Nome',
   displayNamePlaceholder: 'Exibido no seletor; usa o identificador quando vazio',
   inUse: 'Em uso',
-  builtInGroup: 'Integrados',
+  primaryGroup: 'Assistente principal',
+  advancedGroup: 'Modos avançados',
   customGroup: 'Personalizados',
+  showAdvanced: 'Mostrar',
+  hideAdvanced: 'Ocultar',
   noDescription: 'Sem descrição.',
   brokenBadge: 'Falha ao carregar',
   brokenNoCopy: 'Um preset que falhou ao carregar não pode ser duplicado',
@@ -179,7 +186,7 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   presetCordisName: '创造模式',
   presetCordisDescription: '用于创建自定义 Agent preset：具备标准模式的全部能力，并提供运行时检查、插件实验和 preset 创作指导。',
   presetLeonName: 'Leon',
-  presetLeonDescription: 'The Lions Informática 的巴西葡萄牙语本地助手，提供编程、文件、终端、搜索、规划和自动化工具。',
+  presetLeonDescription: 'The Lions Informática 助手，面向编程、项目工程和自动化，并支持可选持久记忆。',
   duplicate: '复制',
   duplicateUnavailable: '此部署未配置可写的预设目录',
   delete: '删除',
@@ -188,8 +195,11 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   displayName: '名称',
   displayNamePlaceholder: '选择器中显示的名字，缺省用标识符',
   inUse: '当前使用',
-  builtInGroup: '内置',
+  primaryGroup: '主要助手',
+  advancedGroup: '高级模式',
   customGroup: '自定义',
+  showAdvanced: '显示',
+  hideAdvanced: '收起',
   noDescription: '暂无描述。',
   brokenBadge: '加载失败',
   brokenNoCopy: '预设加载失败，不能复制',

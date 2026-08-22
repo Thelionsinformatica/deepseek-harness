@@ -26,13 +26,15 @@ Options and the current default both come from one `agentPreset.list` call. The 
 
 A locally authored preset is exactly as privileged as the plugins it names, so the list marks `user` rows rather than presenting every preset as shipped and vetted.
 
-Preset files publish one unlocalized `name` and `description`, which Web uses for every `user` row and unknown `system` row. For the four shipped ids (`standard`, `code`, `minimal`, and `cordis`), Web resolves both fields from its active locale only when the roster marks the row `system`; an identically named `user` preset keeps its file metadata.
+Preset files publish one unlocalized `name` and `description`, which Web uses for every `user` row and unknown `system` row. For the five shipped ids (`standard`, `code`, `minimal`, `cordis`, and `leon`), Web resolves both fields from its active locale only when the roster marks the row `system`; an identically named `user` preset keeps its file metadata.
 
 The row re-reads on `settings/changed` for its own namespace and on `connection/reset`: the roster is a live directory and the default is a settings field, so an external edit or a reconnect can both move it.
 
 ## The management section
 
 A fourth surface, its own settings page (`settings.section` id `agent-presets`, ordered after Models — choosing a model is routine, composing an agent is the deployment-shaping act behind it): the roster as cards, a copy dialog as the only way a preset is created, and a read-only viewer over the shipped compositions.
+
+The current default occupies the always-visible Primary assistant group because that is what a new session actually receives. Other shipped presets start inside a collapsed Advanced modes group, while user-owned presets and the Creator entry remain separate. Card actions pair their icon with a visible label, so viewing, opening, copying, and deleting do not depend on icon recognition or hover.
 
 The browser edits no composition text. Editing YAML in a web textarea was a weak surface (no completion, no highlighting, no diff), so a new preset is a host-side copy of an existing one — the dialog collects an id (it becomes the directory name, which is why it must be named up front and cannot change later) and an optional display name, and `{ from, id, name? }` is all that crosses the wire. Everything else — description, composition, skills — is edited in the preset's own files, and the page's other job is getting the user TO those files: the copy completes by opening the new directory, and every custom row keeps a location action. Where the host has no desktop opener (`hasDocument: false` on the roster; remote and container deployments), the same actions answer the directory as text on the row instead of offering a button that would spawn into nothing.
 

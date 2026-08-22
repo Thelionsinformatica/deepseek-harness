@@ -33,12 +33,68 @@
 }
 
 .groupHead {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   margin: 0;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: .06em;
   text-transform: uppercase;
   color: var(--dsw-alias-label-tertiary);
+}
+
+.groupCount {
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.advancedHead {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 4px 4px 0;
+}
+
+.advancedToggle {
+  appearance: none;
+  border: 0;
+  border-radius: 8px;
+  padding: 5px 7px;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.advancedToggle:hover {
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+}
+
+.advancedToggle:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 1px;
+}
+
+.advancedToggle svg {
+  transition: transform .16s;
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
 }
 
 .cards {
@@ -191,46 +247,54 @@
 .cardFoot {
   display: flex;
   justify-content: flex-end;
-  gap: 2px;
+  flex-wrap: wrap;
+  gap: 3px;
   padding: 6px 10px;
   border-top: 1px solid var(--dsw-alias-border-l2);
 }
 
-/* Icon-only actions: the label rides `title` so the row stays quiet until
-   someone reaches for it. */
-.iconButton {
+/* Secondary card actions stay compact, but their labels remain visible: the
+   user should not need to decode icons before opening or copying a preset. */
+.actionButton {
   position: relative;
   appearance: none;
   border: 0;
   border-radius: 7px;
-  padding: 6px;
+  padding: 5px 7px;
   background: none;
   color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: 11px;
+  line-height: 17px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
+  gap: 4px;
 }
 
-.iconButton:disabled {
+.actionButton:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
-.iconButton:hover:not(:disabled) {
+.actionButton:hover:not(:disabled) {
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
 }
 
-.iconButton:focus-visible {
+.actionButton:focus-visible {
   outline: 2px solid var(--dsw-alias-brand-primary);
   outline-offset: -1px;
 }
 
-.iconButton::after {
+/* A disabled copy action still explains why it is unavailable. Keeping the
+   detail on disabled actions only avoids repeating every visible label. */
+.actionButton[data-tip]::after {
   content: attr(data-tip);
   position: absolute;
   bottom: calc(100% + 6px);
   left: 50%;
+  z-index: 1;
   transform: translateX(-50%);
   padding: 3px 8px;
   border-radius: 6px;
@@ -244,8 +308,8 @@
   transition: opacity .12s;
 }
 
-.iconButton:hover::after,
-.iconButton:focus-visible::after {
+.actionButton[data-tip]:hover::after,
+.actionButton[data-tip]:focus-visible::after {
   opacity: 1;
 }
 

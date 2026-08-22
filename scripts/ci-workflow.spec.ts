@@ -129,8 +129,8 @@ describe('CI workflow', () => {
       DSH_WEB_SNAPSHOT_WORKERS: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '2' || '6' }}",
     })
     expect(node24Coverage.env).toMatchObject({
-      DSH_COVERAGE_MAX_WORKERS: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '3' || '6' }}",
-      DSH_COVERAGE_PARTITIONS: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '2' || '4' }}",
+      DSH_COVERAGE_MAX_WORKERS: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '6' }}",
+      DSH_COVERAGE_PARTITIONS: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '4' }}",
       DSH_GATE_CONCURRENCY: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '3' }}",
     })
     const snapshotConcurrency = node24Consumers.env.DSH_SNAPSHOT_MAX_CONCURRENCY

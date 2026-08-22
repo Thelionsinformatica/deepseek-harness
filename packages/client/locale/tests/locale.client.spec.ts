@@ -158,16 +158,16 @@ describe('LocaleRuntime', () => {
   })
 
   it('persists an explicit pick of the provisional locale, so a shared DSH home agrees', () => {
-    // A browser naming no shipped language opens at FALLBACK_LOCALE with
+    // A browser naming no shipped language opens at the English default with
     // nothing stored. Choosing that same language in the menu must become
     // durable, or a Chinese browser sharing the home still opens Chinese.
     stubLanguages('fr-FR')
     const host = stubSettingsScope<LocaleSettings>()
     const { svc } = make(host)
-    expect(svc.getLocale().active).toBe('pt')
+    expect(svc.getLocale().active).toBe('en')
     expect(host.set).not.toHaveBeenCalled()
-    svc.setLocale('pt')
-    expect(host.set).toHaveBeenCalledWith('preference', 'pt')
+    svc.setLocale('en')
+    expect(host.set).toHaveBeenCalledWith('preference', 'en')
   })
 
   it('setLocale without a host scope stays process-local', () => {
@@ -226,10 +226,10 @@ describe('LocaleRuntime', () => {
     expect(make().svc.getLocale().active).toBe('en')
     vi.stubGlobal('navigator', { language: 'en-US' })
     expect(make().svc.getLocale().active).toBe('en')
-    // No shipped language anywhere in the browser's preferences: en is the
-    // Leon's Brazilian Portuguese default rather than an arbitrary near-match.
+    // No shipped language anywhere in the browser's preferences: English is
+    // the product default rather than an arbitrary near-match.
     stubLanguages('fr-FR', 'de')
-    expect(make().svc.getLocale().active).toBe('pt')
+    expect(make().svc.getLocale().active).toBe('en')
   })
 
   it('runs outside a browser (node boots): the default decides and the machine language does not', () => {
@@ -238,7 +238,7 @@ describe('LocaleRuntime', () => {
     // reach the resolution at all.
     stubLanguages('zh-CN')
     const { svc } = make()
-    expect(svc.getLocale().active).toBe('pt')
+    expect(svc.getLocale().active).toBe('en')
     svc.setLocale('zh')
     expect(svc.getLocale().active).toBe('zh')
   })
@@ -250,12 +250,12 @@ describe('LocaleRuntime', () => {
     expect(svc.getLocale().active).toBe('zh')
   })
 
-  it('opens in Brazilian Portuguese while English remains the dictionary fallback', () => {
+  it('serves English as both the opening locale and the dictionary fallback', () => {
     expect(FALLBACK_LOCALE).toBe('en')
     vi.stubGlobal('window', undefined)
     const { svc } = make()
-    expect(svc.getLocale().active).toBe('pt')
-    // A key present only in en resolves for a pt reader through the fallback.
+    expect(svc.getLocale().active).toBe('en')
+    // A key present only in en resolves directly for an English reader.
     svc.register('ns', 'zh', {})
     svc.register('ns', 'en', { onlyEn: 'English only' })
     expect(svc.bind('ns')('onlyEn')).toBe('English only')

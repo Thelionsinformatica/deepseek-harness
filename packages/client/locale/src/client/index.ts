@@ -91,8 +91,8 @@ declare module '@deepseek-ai/cordis' {
  */
 export const FALLBACK_LOCALE: LocaleId = 'en'
 
-/** Leon opens in Brazilian Portuguese when the browser names no shipped language. */
-const DEFAULT_LOCALE: LocaleId = 'pt'
+/** English opens when the browser names no shipped language. */
+const DEFAULT_LOCALE: LocaleId = 'en'
 
 /** Shared namespace for shell-level texts. */
 export const COMMON_NS = 'common'

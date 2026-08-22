@@ -60,8 +60,11 @@ describe('CI workflow', () => {
     const node24Coverage = workflow.jobs['node-24-coverage']
     const node24Consumers = workflow.jobs['node-24-consumers']
     const aggregate = workflow.jobs['all-checks-passed']
-    if (!Array.isArray(windows.steps) || !Array.isArray(aggregate.needs)) {
-      throw new TypeError('Windows job must define steps and the aggregate must define needs')
+    if (!Array.isArray(windows.steps)
+      || !Array.isArray(aggregate.needs)
+      || !isRecord(node24Coverage.env)
+      || !isRecord(node24Consumers.env)) {
+      throw new TypeError('Windows job must define steps, coverage and consumers must define env, and the aggregate must define needs')
     }
     const commandSteps = windows.steps.filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
@@ -125,9 +128,16 @@ describe('CI workflow', () => {
       DSH_PUBLINT_CONCURRENCY: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '4' || '8' }}",
       DSH_WEB_SNAPSHOT_WORKERS: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '2' || '6' }}",
     })
-    expect(node24Consumers.env).toMatchObject({
-      DSH_SNAPSHOT_MAX_CONCURRENCY: expect.stringContaining("github.repository != 'deepseek-ai/deepseek-harness'"),
+    expect(node24Coverage.env).toMatchObject({
+      DSH_COVERAGE_MAX_WORKERS: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '3' || '6' }}",
+      DSH_COVERAGE_PARTITIONS: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '2' || '4' }}",
+      DSH_GATE_CONCURRENCY: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '3' }}",
     })
+    const snapshotConcurrency = node24Consumers.env.DSH_SNAPSHOT_MAX_CONCURRENCY
+    if (typeof snapshotConcurrency !== 'string') {
+      throw new TypeError('consumer snapshot concurrency must be a workflow expression')
+    }
+    expect(snapshotConcurrency).toContain("github.repository != 'deepseek-ai/deepseek-harness'")
     expect(aggregate['runs-on']).toContain('DSH_CI_FAILOVER_LINUX')
     expect(aggregate['runs-on']).not.toContain('DSH_CI_FAILOVER_WINDOWS')
     expect(aggregate['runs-on']).toContain('vm-backup')

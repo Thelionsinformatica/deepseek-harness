@@ -768,7 +768,7 @@ export function fixtureUserPrompts(fixtureText: string): string[] {
 export function realizeSeedFixture(scaffold: WebScaffold, fixtureText: string, id: string): string {
   const realized = fixtureText
     .split('{{sessionId}}').join(id)
-    .split('{{cwd}}').join(scaffold.workspaceCwd)
+    .split('{{cwd}}').join(JSON.stringify(scaffold.workspaceCwd).slice(1, -1))
   const fixtureCwd = (JSON.parse(realized.split('\n', 1)[0]!) as { cwd?: string }).cwd
   return fixtureCwd === undefined
     ? realized

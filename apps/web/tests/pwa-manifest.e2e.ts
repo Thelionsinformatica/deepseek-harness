@@ -9,7 +9,7 @@ it('ships install metadata with the built web application', async () => {
   const index = await readFile(join(DIST_ROOT, 'index.html'), 'utf8')
   expect(index).toContain('<html lang="pt-BR">')
   expect(index).toContain('<link rel="manifest" href="/manifest.webmanifest" />')
-  expect(index).toContain('<meta name="theme-color" content="#181818" />')
+  expect(index).not.toContain('<meta name="theme-color"')
 
   const manifest: unknown = JSON.parse(await readFile(join(DIST_ROOT, 'manifest.webmanifest'), 'utf8'))
   expect(manifest).toEqual({

@@ -22,6 +22,16 @@
   - heading "内置" [level=3]
   - list:
     - listitem:
+      - 'button "设为默认: Leon"':
+        - text: Leon 内置 The Lions Informática 的巴西葡萄牙语本地助手，提供编程、文件、终端、搜索、规划和自动化工具。
+        - code: leon
+      - 'button "查看: Leon"':
+        - img
+        - text: 查看
+      - 'button "复制: Leon"':
+        - img
+        - text: 复制
+    - listitem:
       - 'button "当前使用: 标准模式" [disabled] [pressed]':
         - text: 标准模式 内置 当前使用 功能完整的编码 Agent，支持文件编辑、Shell、文件与网页检索、Skills、计划、目标、子代理和工作流。
         - code: standard

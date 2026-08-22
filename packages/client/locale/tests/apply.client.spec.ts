@@ -133,7 +133,7 @@ describe('locale apply', () => {
     const b = await bench()
     // The shared mirror read once at bench time; a Host-side change reaches it
     // through the document invalidation, exactly as production announces one.
-    // Preference must differ from the provisional locale (DEFAULT_LOCALE = pt
+    // Preference must differ from the provisional locale (DEFAULT_LOCALE = en
     // with no window), or clearing it below would be unobservable.
     b.setHostPreference('zh')
     b.ctx.remote.$dispatch('settings/document-updated', [LOCALE_SETTINGS_NAMESPACE, 0])
@@ -144,7 +144,7 @@ describe('locale apply', () => {
     // Cleared preference falls back to the provisional locale.
     b.setHostPreference(undefined)
     b.ctx.remote.$dispatch('settings/document-updated', [LOCALE_SETTINGS_NAMESPACE, 0])
-    await vi.waitFor(() => { expect(locale.getLocale().active).toBe('pt') })
+    await vi.waitFor(() => { expect(locale.getLocale().active).toBe('en') })
     // Re-selecting zh after the clear is an explicit pick of the provisional
     // value and must persist as a written preference.
     b.setHostPreference('zh')

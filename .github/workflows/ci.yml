@@ -103,11 +103,12 @@ jobs:
           || 'dsh-ubuntu-24-04-16core' }}
     name: node 24 / coverage
     env:
-      # Hosted fork runners serialize the coverage partitions and workers so
-      # their real PowerShell PTY suites cannot compete for terminal state.
+      # Hosted fork runners serialize coverage and leave real PowerShell PTY
+      # coverage to the native Windows lane, where the shell is authoritative.
       DSH_COVERAGE_MAX_WORKERS: ${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '6' }}
       DSH_COVERAGE_PARTITIONS: ${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '4' }}
       DSH_GATE_CONCURRENCY: ${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '3' }}
+      DSH_SKIP_REAL_PWSH: ${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '0' }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -169,15 +170,16 @@ jobs:
     env:
       # Forks use GitHub's smaller standard runner; keep the upstream 16-core
       # tuning only where that capacity exists.
-      DSH_GATE_CONCURRENCY: ${{ github.repository != 'deepseek-ai/deepseek-harness' && '2' || '8' }}
+      DSH_GATE_CONCURRENCY: ${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '8' }}
       DSH_NODE_COMPAT_SKIP_TYPECHECK: '1'
       DSH_OXLINT_THREADS: ${{ github.repository != 'deepseek-ai/deepseek-harness' && '4' || '8' }}
       DSH_PUBLINT_CONCURRENCY: ${{ github.repository != 'deepseek-ai/deepseek-harness' && '4' || '8' }}
+      DSH_SKIP_REAL_PWSH: ${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '0' }}
       DSH_WEB_SNAPSHOT_WORKERS: ${{ github.repository != 'deepseek-ai/deepseek-harness' && '2' || '6' }}
       # Failover halves snapshot concurrency for the shared 64-core VM.
       DSH_SNAPSHOT_MAX_CONCURRENCY: >-
         ${{ github.repository != 'deepseek-ai/deepseek-harness'
-            && '8'
+            && '2'
             || vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
             && github.event.pull_request.user.login != 'dependabot[bot]'
             && '12'

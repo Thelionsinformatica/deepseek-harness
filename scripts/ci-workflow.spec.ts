@@ -126,21 +126,24 @@ describe('CI workflow', () => {
       expect(job['runs-on']).toContain('ubuntu-latest')
     }
     expect(node24Consumers.env).toMatchObject({
-      DSH_GATE_CONCURRENCY: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '2' || '8' }}",
+      DSH_GATE_CONCURRENCY: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '8' }}",
       DSH_OXLINT_THREADS: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '4' || '8' }}",
       DSH_PUBLINT_CONCURRENCY: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '4' || '8' }}",
+      DSH_SKIP_REAL_PWSH: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '0' }}",
       DSH_WEB_SNAPSHOT_WORKERS: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '2' || '6' }}",
     })
     expect(node24Coverage.env).toMatchObject({
       DSH_COVERAGE_MAX_WORKERS: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '6' }}",
       DSH_COVERAGE_PARTITIONS: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '4' }}",
       DSH_GATE_CONCURRENCY: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '3' }}",
+      DSH_SKIP_REAL_PWSH: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '0' }}",
     })
     const snapshotConcurrency = node24Consumers.env.DSH_SNAPSHOT_MAX_CONCURRENCY
     if (typeof snapshotConcurrency !== 'string') {
       throw new TypeError('consumer snapshot concurrency must be a workflow expression')
     }
     expect(snapshotConcurrency).toContain("github.repository != 'deepseek-ai/deepseek-harness'")
+    expect(snapshotConcurrency).toContain("&& '2'")
     expect(aggregate['runs-on']).toContain('DSH_CI_FAILOVER_LINUX')
     expect(aggregate['runs-on']).not.toContain('DSH_CI_FAILOVER_WINDOWS')
     expect(aggregate['runs-on']).toContain('vm-backup')

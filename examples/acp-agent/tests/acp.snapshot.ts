@@ -692,7 +692,8 @@ const SCENARIOS: Scenario[] = [
 // Hosts without a usable PowerShell skip the pwsh-tool-turn run (its fixtures
 // stay guarded); the probe follows the executor's own resolution so a Windows
 // host with only an install-location pwsh still runs the scenario.
-const hasPwsh = spawnSync(resolvePwshPath(), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$true'], { encoding: 'utf8' }).status === 0
+const hasPwsh = process.env.DSH_SKIP_REAL_PWSH !== '1'
+  && spawnSync(resolvePwshPath(), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$true'], { encoding: 'utf8' }).status === 0
 
 defineAcpSnapshotSuite({
   agent: AGENT,

@@ -125,6 +125,23 @@ describe('mcp-client plugin module exports', () => {
     expect(resolved.serverName).toBe('github-prod_1')
   })
 
+  it('Config schema accepts a non-empty allowedTools list and rejects an empty one', () => {
+    const resolved = ConfigSchema({
+      transport: 'stdio',
+      serverName: 'memory',
+      command: 'echo',
+      allowedTools: ['memory_search'],
+    } as never)
+    expect(resolved.allowedTools).toEqual(['memory_search'])
+
+    expect(() => ConfigSchema({
+      transport: 'stdio',
+      serverName: 'memory',
+      command: 'echo',
+      allowedTools: [],
+    } as never)).toThrow()
+  })
+
   it('Config schema materializes reconnect defaults and merges partial overrides', () => {
     const omitted = ConfigSchema({
       transport: 'stdio',
@@ -179,6 +196,21 @@ describe('apply (plugin lifecycle)', () => {
     expect(mockSetNotificationHandler).toHaveBeenCalled()
     expect(ctx.tools.get('mcp__srv__remote')).toBeDefined()
     expect(ctx.tools.get('remote')).toBeUndefined()
+  })
+
+  it('publishes only configured raw tool names', async () => {
+    mockListTools.mockResolvedValue({
+      tools: [
+        { name: 'memory', inputSchema: { type: 'object' } },
+        { name: 'administration', inputSchema: { type: 'object' } },
+      ],
+      nextCursor: undefined,
+    })
+
+    await apply(ctx, { ...stdioConfig, allowedTools: ['memory'] })
+
+    expect(ctx.tools.get('mcp__srv__memory')).toBeDefined()
+    expect(ctx.tools.get('mcp__srv__administration')).toBeUndefined()
   })
 
   it('keeps the Cordis plugin loading until initial discovery publishes its tools', async () => {

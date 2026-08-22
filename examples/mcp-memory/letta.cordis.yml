@@ -1,0 +1,14 @@
+# Opt-in reference for letta-mcp-server 3.0.3. Install the pinned bridge and
+# run a Letta API server first; only the consolidated memory tool is exposed.
+- insert:
+    - id: memory-letta
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: letta
+        transport: stdio
+        command: letta-mcp
+        cwd: !!js process.cwd()
+        allowedTools: [letta_memory_unified]
+        env:
+          LETTA_BASE_URL: !!js process.env.LETTA_BASE_URL?.trim() || 'http://127.0.0.1:8283'
+          LETTA_PASSWORD: !!js process.env.LETTA_PASSWORD?.trim() || ''

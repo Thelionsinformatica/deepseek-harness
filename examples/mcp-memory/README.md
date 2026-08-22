@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-These three **default-off reference configurations** connect one memory system to DSH through [`@deepseek-ai/dsh-mcp-client`](../../packages/mcp/mcp-client/README.md). Pick one, or copy the same generic MCP row for another server.
+These four **default-off reference configurations** connect one memory system to DSH through [`@deepseek-ai/dsh-mcp-client`](../../packages/mcp/mcp-client/README.md). Pick one, or copy the same generic MCP row for another server.
 
 These third-party configurations are provided as interoperability examples only. Their inclusion does not imply endorsement, recommendation, partnership, or ongoing support by DeepSeek.
 
@@ -19,6 +19,7 @@ The stdio bridge deliberately removes ambient variables whose names usually iden
 | [Memorix](https://github.com/AVIDS2/memorix) | `memorix@1.3.0` (`500792cad3144142293bfbb20acb4841c9f7fcfa`) | stdio | Node 22.18+ and `npm install --global memorix@1.3.0` |
 | [MCP Reference Memory](https://github.com/modelcontextprotocol/servers/tree/main/src/memory) | `@modelcontextprotocol/server-memory@2026.7.4` (`6dd0a683e198783e30feabf7abaf42f925bd18b1`) | stdio | `npm install --global @modelcontextprotocol/server-memory@2026.7.4` |
 | [Engram](https://github.com/Gentleman-Programming/engram) | `v1.20.0` (`ba9e46ced152c37a7cb9e576153c41995873e2fc`) | stdio | Go 1.25.10+ and `go install github.com/Gentleman-Programming/engram/cmd/engram@v1.20.0`, or the matching release binary |
+| [Letta](https://github.com/letta-ai/letta) through [Letta MCP Server](https://github.com/oculairmedia/Letta-MCP-server) | `letta-mcp-server@3.0.3` (`ea8b0b19fa689bb303207e027d3fbd06b8b377e2`) | stdio | A reachable Letta API server and `npm install --global letta-mcp-server@3.0.3` |
 
 ## Enable one
 
@@ -28,7 +29,7 @@ Pass one overlay to DSH:
 dsh web --patch "$PWD/examples/mcp-memory/memorix.cordis.yml"
 ```
 
-Replace the filename with `mcp-reference-memory.cordis.yml` or `engram.cordis.yml`. The path may point to a copied file anywhere on disk. No memory server is present in the shipped composition, so omitting `--patch` keeps all three disabled.
+Replace the filename with `mcp-reference-memory.cordis.yml`, `engram.cordis.yml`, or `letta.cordis.yml`. The path may point to a copied file anywhere on disk. No memory server is present in the shipped composition, so omitting `--patch` keeps all four disabled.
 
 To keep the selection across runs, merge the chosen file's single `insert` patch into a user patch layer — `$DSH_HOME/profiles/<name>/cordis.patch.yml` for one profile, or `$DSH_HOME/cordis.patch.yml` for every profile on the machine. Do not copy over an existing file: it may already contain unrelated user patches.
 
@@ -63,6 +64,22 @@ dsh web --patch "$PWD/examples/mcp-memory/engram.cordis.yml"
 
 Engram owns storage and project selection: it uses `~/.engram` by default, detects the Git project from the DSH working directory, and accepts `ENGRAM_DATA_DIR` or `ENGRAM_PROJECT` as ambient overrides.
 
+### Letta
+
+Run a self-hosted Letta API server or choose a Letta endpoint whose data policy you accept, then install the pinned community MCP bridge:
+
+```sh
+npm install --global letta-mcp-server@3.0.3
+```
+
+Set `LETTA_BASE_URL` to the API server (the example defaults to `http://127.0.0.1:8283`) and set `LETTA_PASSWORD` to its password before starting DSH:
+
+```sh
+dsh web --patch "$PWD/examples/mcp-memory/letta.cordis.yml"
+```
+
+The overlay passes only these two variables to the scrubbed child environment and exposes only `letta_memory_unified`. The bridge's agent, tool, source, job, file, and MCP administration tools stay hidden from Leon. Letta owns its agent IDs, blocks, archives, embeddings, model connection, database, and migrations; this overlay does not reuse or transmit DSH's Ollama or Gemini credentials. Configure Ollama separately in Letta when both services should use the same local model server.
+
 ## Optional shared model instruction
 
 Add this short, vendor-neutral instruction to your existing model instructions if the server's tool descriptions do not trigger memory use reliably:
@@ -79,7 +96,7 @@ Use one unique value and keep the provider's storage scope unchanged throughout:
 2. Create DSH session B in the same running Host. Do not copy session A's conversation. Ask: `What is my validation drink? Check memory.` Confirm the model called the provider's search or recall tool and returned the value.
 3. Still in session B, ask: `Use that preference to suggest one drink for the meeting.` Confirm the answer uses the recalled value.
 
-A new DSH session is required; a Host restart is not. Restart or HMR is needed only after an MCP child crashes because the current generic client does not auto-reconnect; its tool registrations remain until plugin disposal or a successful re-sync, and calls can fail against the closed transport. Initial discovery is asynchronous, so wait for the provider's `mcp__...` tools before sending the first validation prompt.
+A new DSH session is required; a Host restart is not. The generic client reconnects with a bounded retry budget after a child crash; it keeps the last good registrations during recovery and removes them if the budget is exhausted. HMR or a Host restart is then required to start a new budget. Initial discovery is asynchronous, so wait for the provider's `mcp__...` tools before sending the first validation prompt.
 
 ## Bring another MCP server
 

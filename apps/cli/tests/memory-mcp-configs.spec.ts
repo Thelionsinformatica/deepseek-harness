@@ -21,6 +21,7 @@ interface ExampleContract {
   serverName: string
   transport: 'stdio' | 'streamable-http'
   pin: string
+  allowedTools?: string[]
 }
 
 interface InsertedRow {
@@ -56,6 +57,14 @@ const examples: ExampleContract[] = [
     transport: 'stdio',
     pin: '1.20.0',
   },
+  {
+    file: 'letta.cordis.yml',
+    id: 'memory-letta',
+    serverName: 'letta',
+    transport: 'stdio',
+    pin: '3.0.3',
+    allowedTools: ['letta_memory_unified'],
+  },
 ]
 
 const liveContexts = new Set<Context>()
@@ -90,9 +99,18 @@ describe('third-party memory MCP example overlays', () => {
     expect(row.name).toBe('@deepseek-ai/dsh-mcp-client')
     expect(row.config?.serverName).toBe(contract.serverName)
     expect(row.config?.transport).toBe(contract.transport)
+    expect(row.config?.allowedTools).toEqual(contract.allowedTools)
     expect(source.split('\n', 1)[0]).toContain(contract.pin)
     expect(source).not.toMatch(/\bsk-[A-Za-z0-9_-]{8,}\b/)
     expect(source).not.toContain('DEEPSEEK_API_KEY')
+    if (contract.file === 'letta.cordis.yml') {
+      expect(Object.keys(row.config?.env as Record<string, unknown>).sort()).toEqual([
+        'LETTA_BASE_URL',
+        'LETTA_PASSWORD',
+      ])
+      expect(source).not.toContain('GEMINI_API_KEY')
+      expect(source).not.toContain('OLLAMA_')
+    }
   })
 
   it.each(examples)('loads $file and discovers a keyless fixture tool', async (contract) => {
@@ -113,6 +131,7 @@ describe('third-party memory MCP example overlays', () => {
         args: [fixtureServer],
         env: {},
         cwd: root,
+        allowedTools: ['greet'],
         toolCallTimeoutMs: 5_000,
       },
     }

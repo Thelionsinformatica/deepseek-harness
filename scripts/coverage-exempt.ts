@@ -39,4 +39,15 @@ export const coverageExemptHeavySuites: readonly CoverageExemptSuite[] = [
   { filter: 'scripts/oxlint-contract.spec.ts', exclude: 'scripts/oxlint-contract.spec.ts' },
   { filter: 'scripts/change-scope.spec.ts', exclude: 'scripts/change-scope.spec.ts' },
   { filter: 'scripts/translation-pairing-merge.spec.ts', exclude: 'scripts/translation-pairing-merge.spec.ts' },
+  // Real PowerShell PTY fixtures are timing-sensitive under v8 instrumentation.
+  // Their runtime sources are fully exercised by deterministic unit suites;
+  // keep the real-shell integration signal in the uninstrumented gate.
+  {
+    filter: 'packages/terminal/terminal-bash/tests/local.spec.ts',
+    exclude: 'packages/terminal/terminal-bash/tests/local.spec.ts',
+  },
+  {
+    filter: 'packages/shell/tool-pwsh-persistent/tests/loader-composition.spec.ts',
+    exclude: 'packages/shell/tool-pwsh-persistent/tests/loader-composition.spec.ts',
+  },
 ]

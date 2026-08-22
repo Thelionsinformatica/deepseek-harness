@@ -198,9 +198,9 @@ describe('gate graph validation', () => {
   })
 
   it('rejects an invalid coverage partition count before starting a gate', () => {
-    expect(() => withEnv('DSH_COVERAGE_PARTITIONS', '1', () =>
+    expect(() => withEnv('DSH_COVERAGE_PARTITIONS', '0', () =>
       withPnpmEntrypoint(() => gatesForMode('ci-windows-complete'))))
-      .toThrow('DSH_COVERAGE_PARTITIONS must be an integer greater than 1')
+      .toThrow('DSH_COVERAGE_PARTITIONS must be a positive integer')
   })
 
   it.each([

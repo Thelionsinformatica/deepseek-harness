@@ -178,7 +178,7 @@ class StubTerminalSession implements TerminalBackendSession {
     if (this.mode === 'with-echo') {
       // The PSReadLine echo renders the submitted wrapper before the real
       // markers; the tool must strip it from the captured result.
-      const output = `${sent}\n${start ?? ''}\nhello from stub\n${end ?? ''}0\n${this.motd}`
+      const output = `${sent}\n${start ?? ''}\nhello from stub\n${end ?? ''}0   \n${this.motd}`
       this.scrollback += output
       return this.operation(Promise.resolve(this.result(output, 'stdin_read')))
     }

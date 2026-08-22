@@ -1169,8 +1169,11 @@ export function defineAcpSnapshotSuite(options: SnapshotSuiteOptions): void {
     for (const scenario of scenarios) {
       // In RECORD mode, only re-run the `recorded` (live-API) scenarios; the `authored` ones
       // (sidecar-driven errors/cancel) are never re-recorded. `posixOnly` scenarios skip on Windows;
-      // `pwshOnly` scenarios skip when the caller's `hasPwsh` probe is false.
-      it.skipIf(scenarioSkipped(scenario, RECORDING, process.platform, options.hasPwsh))(`snapshot: ${scenario.name} matches the expected outputs`, async ({ expect }) => {
+      // `pwshOnly` scenarios skip when the caller's `hasPwsh` probe is false. Real PowerShell
+      // scenarios stay sequential inside the concurrent replay suite because they share host
+      // terminal resources and overlapping PTYs corrupt each other's retained scrollback.
+      const scenarioTest: typeof it = mode === 'replay' && scenario.pwshOnly !== true ? it.concurrent : it
+      scenarioTest.skipIf(scenarioSkipped(scenario, RECORDING, process.platform, options.hasPwsh))(`snapshot: ${scenario.name} matches the expected outputs`, async ({ expect }) => {
         const dir = join(snapshotsDir, scenario.name)
         const input = JSON.parse(await readFile(join(dir, 'input.json'), 'utf8')) as InputScript
         const overrideFile = join(dir, 'replay.override.json')

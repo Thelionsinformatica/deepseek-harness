@@ -89,7 +89,10 @@ describe('CI workflow', () => {
     expect(windowsNative.name).toBe('windows node 24 / native complete')
     expect(windowsNative.if).toBe("github.event_name == 'pull_request'")
     expect(windowsNative.env).toMatchObject({
-      DSH_COVERAGE_TEST_TIMEOUT_MS: '30000',
+      DSH_COVERAGE_MAX_WORKERS: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '6' }}",
+      DSH_COVERAGE_PARTITIONS: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '8' }}",
+      DSH_COVERAGE_TEST_TIMEOUT_MS: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '60000' || '30000' }}",
+      DSH_GATE_CONCURRENCY: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '4' }}",
     })
     const nativeSteps = windowsNative.steps as unknown[]
     const nativeCommandSteps = nativeSteps.filter((step): step is Record<string, unknown> & { run: string } => (

@@ -411,6 +411,16 @@ describe('Node 24 lane ownership', () => {
       env: { DSH_SNAPSHOT: 'replay' },
     })
   })
+
+  it('accepts one web snapshot worker for constrained hosted runners', () => {
+    const web = withEnv('DSH_WEB_SNAPSHOT_WORKERS', '1', () =>
+      withPnpmEntrypoint(() => gatesForMode('ci-consumers').find(item => item.id === 'web-snapshot')))
+
+    expect(web).toMatchObject({
+      displayCommand: 'DSH_SNAPSHOT=replay DSH_WEB_SNAPSHOT_WORKERS=1 pnpm run test:web:ci',
+      env: { DSH_SNAPSHOT: 'replay' },
+    })
+  })
 })
 
 describe('Linux primary graph', () => {

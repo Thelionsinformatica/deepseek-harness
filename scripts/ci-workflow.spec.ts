@@ -130,7 +130,7 @@ describe('CI workflow', () => {
       DSH_OXLINT_THREADS: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '4' || '8' }}",
       DSH_PUBLINT_CONCURRENCY: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '4' || '8' }}",
       DSH_SKIP_REAL_PWSH: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '0' }}",
-      DSH_WEB_SNAPSHOT_WORKERS: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '2' || '6' }}",
+      DSH_WEB_SNAPSHOT_WORKERS: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '6' }}",
     })
     expect(node24Coverage.env).toMatchObject({
       DSH_COVERAGE_MAX_WORKERS: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '6' }}",

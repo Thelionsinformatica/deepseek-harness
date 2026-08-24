@@ -452,6 +452,7 @@ describe('the shipped Web composition', () => {
       })
       expect(browserLoaded.isError).toBe(false)
       expect(JSON.stringify(browserLoaded.content)).toContain('Navegação visível e segura')
+      expect(JSON.stringify(browserLoaded.content)).toContain('Contexto persistente da página')
 
       const knowledgeLoaded = await ctx.tools.execute({
         callId: CallId('preset-leon-knowledge-base-load'),
@@ -473,6 +474,8 @@ describe('the shipped Web composition', () => {
       })
       expect(windowsLoaded.isError).toBe(false)
       expect(JSON.stringify(windowsLoaded.content)).toContain('Operação segura do Windows')
+      expect(JSON.stringify(windowsLoaded.content)).toContain('Interface gráfica por acessibilidade')
+      expect(JSON.stringify(windowsLoaded.content)).toContain('AllowWindowId')
 
       if (process.platform === 'win32') {
         const assembly = await ctx.systemPrompt.assemble({ scope: handle.agent })

@@ -11,6 +11,7 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { agentEvents, type AgentFactory } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { createUserMessage, markAgentLoopRequest, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId, type Session } from '@deepseek-ai/dsh-session'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import { RpcId, type RpcRequest } from '../src/api/rpc.ts'
@@ -21,7 +22,7 @@ import {
 import type {} from '@deepseek-ai/dsh-agent-presets/types'
 import { GoalId } from '@deepseek-ai/dsh-goal'
 import { createApiProxy } from '../src/api-proxy.ts'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 let nextRpc = 0
 function request<P>(payload: P): RpcRequest<P> {
@@ -342,6 +343,79 @@ describe('agentPreset.list', () => {
 })
 
 describe('automatic model failover', () => {
+  it('records a content-free shadow recommendation without changing the request or stream', async () => {
+    const { api, ctx } = await harness(undefined, undefined, {
+      defaults: {
+        adaptiveModelSelection: () => ({ provider: 'test', model: 'local-model' }),
+        adaptiveRoutingShadow: {
+          policyVersion: 'integration-shadow-v1',
+          externalPolicy: 'fallback-only',
+          routes: [
+            { provider: 'test', model: 'local-model', residency: 'local', quality: 1, priority: 10 },
+            { provider: 'cloud', model: 'api-model', residency: 'external', quality: 3, priority: 20 },
+          ],
+        },
+      },
+    })
+    ctx.provide('llm', {
+      resolveCallConfig: (selection: { provider: string; model: string }) => Promise.resolve(selection),
+      resolveModelInfo: (provider: string, model: string) => Promise.resolve({
+        provider,
+        id: model,
+        name: model,
+        context: { contextWindow: provider === 'test' ? 32768 : 262144 },
+        defaultMaxTokens: provider === 'test' ? 8192 : 32768,
+        inputModalities: ['text'],
+      }),
+    } as never)
+    const sessionId = SessionId('automatic-shadow')
+    await api.sessions.create(request({ sessionId }))
+    const agent = ctx.agents.get(sessionId)
+    if (agent === undefined) throw new Error('unreachable')
+    agent.session.append('turn/start', { turn: 1 })
+    agent.session.append('step/start', { turn: 1, step: 0 })
+    const message = createUserMessage({
+      content: [{ type: 'text', text: 'sensitive prompt that must not enter routing telemetry' }],
+      source: { kind: 'user' },
+    })
+    const options = markAgentLoopRequest({
+      provider: 'test',
+      model: 'local-model',
+      messages: [message],
+      maxTokens: 4096,
+      sessionId,
+    })
+    const terminal: StreamChunk = { type: 'finish', reason: { kind: 'stop' } }
+    const stream = ctx.waterfall(
+      'llm/stream',
+      options,
+      () => (async function* (): AsyncGenerator<StreamChunk> { yield terminal })(),
+    )
+    const received: StreamChunk[] = []
+    for await (const chunk of stream) received.push(chunk)
+
+    expect(received).toEqual([terminal])
+    expect(options.provider).toBe('test')
+    expect(options.model).toBe('local-model')
+    await vi.waitFor(() => {
+      expect(agent.session.events.some(event => event.type === 'llm/routing-shadow')).toBe(true)
+    })
+    const recorded = agent.session.events.find(event => event.type === 'llm/routing-shadow')
+    expect(recorded?.data).toMatchObject({
+      schemaVersion: 1,
+      policyVersion: 'integration-shadow-v1',
+      mode: 'shadow',
+      turn: 1,
+      step: 0,
+      observed: { provider: 'test', model: 'local-model' },
+      recommendation: { kind: 'route', provider: 'test', model: 'local-model' },
+      wouldChange: false,
+      request: { messageCount: 1, toolCount: 0, imageCount: 0 },
+    })
+    expect(JSON.stringify(recorded?.data)).not.toContain('sensitive prompt')
+    await ctx.fiber.dispose()
+  })
+
   it('continues the same request through the configured replacement before provider retries', async () => {
     const { api, ctx } = await harness(undefined, undefined, {
       defaults: {

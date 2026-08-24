@@ -131,7 +131,9 @@ describe('GoogleSearchProvider', () => {
     expect(url).toBe('https://generativelanguage.test/v1beta/interactions')
     expect(init).toMatchObject({ method: 'POST', redirect: 'error' })
     expect(init.headers).toMatchObject({ 'x-goog-api-key': 'google-key' })
-    const body = JSON.parse(String(init.body)) as Record<string, unknown>
+    expect(typeof init.body).toBe('string')
+    if (typeof init.body !== 'string') throw new TypeError('Google request body must be JSON text')
+    const body = JSON.parse(init.body) as Record<string, unknown>
     expect(body).toMatchObject({
       model: 'gemini-test',
       tools: [{ type: 'google_search' }],

@@ -81,7 +81,7 @@ function outputSteps(response: GoogleInteractionResponse): GoogleModelOutputStep
 
 /** Return text blocks from one model-output step. */
 function textBlocks(step: GoogleModelOutputStep): GoogleTextBlock[] {
-  return (step.content ?? []).filter(block => block.type === 'text')
+  return step.content ?? []
 }
 
 /** Derive the cited answer segment when the provider supplied valid text indexes. */
@@ -113,7 +113,7 @@ export function mapGoogleInteraction(response: GoogleInteractionResponse): WebSe
   for (const block of blocks) {
     const text = block.text ?? ''
     for (const citation of block.annotations ?? []) {
-      if (citation.type !== 'url_citation' || citation.url.length === 0 || byUrl.has(citation.url)) continue
+      if (citation.url.length === 0 || byUrl.has(citation.url)) continue
       const snippet = citationSnippet(text, citation)
       byUrl.set(citation.url, {
         url: citation.url,
@@ -163,6 +163,8 @@ export class GoogleSearchProvider implements WebSearchProvider {
     throwIfSearchAborted(signal)
 
     let response: Response
+    /* jscpd:ignore-start -- credential-bearing providers intentionally share the same
+     * redirect rejection and abort/error boundary; provider-specific wire details stay local. */
     try {
       response = await fetch(endpoint, {
         method: 'POST',
@@ -180,7 +182,10 @@ export class GoogleSearchProvider implements WebSearchProvider {
       if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
       throw new WebError(`Gemini Google Search request failed: ${String(error)}`, 'WEB_PROVIDER_ERROR', { cause: error })
     }
+    /* jscpd:ignore-end */
 
+    /* jscpd:ignore-start -- HTTP error parsing mirrors the DeepSeek adapter by contract,
+     * while each provider retains its own response envelope and diagnostic text. */
     if (!response.ok) {
       const status = response.status
       let message = `Gemini API error (HTTP ${String(status)})`
@@ -193,6 +198,7 @@ export class GoogleSearchProvider implements WebSearchProvider {
       }
       throw new WebError(message, 'WEB_PROVIDER_ERROR')
     }
+    /* jscpd:ignore-end */
 
     try {
       return mapGoogleInteraction(await response.json() as GoogleInteractionResponse)
@@ -204,6 +210,8 @@ export class GoogleSearchProvider implements WebSearchProvider {
   }
 
   /** Resolve one operation's credential without retaining it on the provider. */
+  /* jscpd:ignore-start -- provider-local credential resolution deliberately follows the
+   * common fail-closed sequence but owns its credential reference and user guidance. */
   private async apiKey(options: GoogleSearchProviderOptions, signal?: AbortSignal): Promise<string> {
     throwIfSearchAborted(signal)
     if (options.apiKey !== undefined && options.apiKey.length > 0) return options.apiKey
@@ -214,6 +222,7 @@ export class GoogleSearchProvider implements WebSearchProvider {
       if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
       throw new WebError(`Gemini Google Search credential resolution failed: ${String(error)}`, 'WEB_PROVIDER_ERROR', { cause: error })
     }
+    /* jscpd:ignore-end */
     if (resolved !== undefined && resolved.length > 0) return resolved
     const ref = options.apiKeyEnv ?? 'GOOGLE_API_KEY'
     throw new WebError(
@@ -224,6 +233,8 @@ export class GoogleSearchProvider implements WebSearchProvider {
 }
 
 /** Race asynchronous credential resolution against caller cancellation. */
+/* jscpd:ignore-start -- each separately publishable provider keeps the small abort helpers
+ * local so it does not acquire a runtime dependency solely for identical platform plumbing. */
 function abortable<T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> {
   if (signal === undefined) return operation
   if (signal.aborted) return Promise.reject(searchAborted(signal))
@@ -259,3 +270,4 @@ function searchAborted(signal?: AbortSignal, fallback?: unknown): WebError {
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError'
 }
+/* jscpd:ignore-end */

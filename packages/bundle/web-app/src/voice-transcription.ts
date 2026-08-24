@@ -69,17 +69,17 @@ async function readAudio(req: IncomingMessage, maxBytes: number): Promise<Buffer
       throw new VoiceTranscriptionError('The recording is too large.', 413, 'AUDIO_TOO_LARGE')
     }
   }
-  const chunks: Buffer[] = []
+  const chunks: Uint8Array[] = []
   let total = 0
-  for await (const chunk of req) {
-    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+  for await (const chunk of req as AsyncIterable<Uint8Array>) {
+    const bytes = Buffer.from(chunk)
     total += bytes.length
     if (total > maxBytes) {
       throw new VoiceTranscriptionError('The recording is too large.', 413, 'AUDIO_TOO_LARGE')
     }
     chunks.push(bytes)
   }
-  if (req.aborted) throw new VoiceTranscriptionError('The audio upload was interrupted.', 400, 'AUDIO_ABORTED')
+  if (!req.complete) throw new VoiceTranscriptionError('The audio upload was interrupted.', 400, 'AUDIO_ABORTED')
   if (total === 0) throw new VoiceTranscriptionError('The recording is empty.', 400, 'EMPTY_AUDIO')
   return Buffer.concat(chunks, total)
 }

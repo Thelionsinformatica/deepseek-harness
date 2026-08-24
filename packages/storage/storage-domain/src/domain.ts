@@ -34,6 +34,11 @@ export interface DomainGlobal<G> {
   set(value: G): Promise<void>
 }
 
+/** Decision returned by one atomic per-record mutation. */
+export type KvRecordMutation<V, R> =
+  | { readonly kind: 'keep'; readonly result: R }
+  | { readonly kind: 'put'; readonly value: V; readonly result: R }
+
 /**
  * Handle on one declared table. Records are plain immutable data: returned
  * values are the stored objects themselves (no defensive copies) and must not
@@ -87,6 +92,18 @@ export interface KvTable<K extends string, V> {
    * @returns the stored next record.
    */
   update(key: K, fn: (current: V) => V): Promise<V>
+
+  /**
+   * Atomically inspect a possibly missing record and either keep it unchanged
+   * or durably replace it. The callback runs at the record's slot on the
+   * domain write chain, so concurrent creators and conditional writers cannot
+   * both commit from the same observed state. `keep` performs no backend write
+   * and emits no change event.
+   * @param key - Record key whose current value may be absent.
+   * @param fn - Synchronous pure decision from the current value.
+   * @returns the decision's caller-owned result after any requested put is durable.
+   */
+  mutate<R>(key: K, fn: (current: V | undefined) => KvRecordMutation<V, R>): Promise<R>
 }
 
 /** Global handle of a spec: typed when declared, `never` (inaccessible) when not. */
@@ -342,6 +359,17 @@ class KvTableImpl<K extends string, V> implements KvTable<K, V> {
       this.records.set(key, next)
       this.emitPut(key, next)
       return next
+    })
+  }
+
+  mutate<R>(key: K, fn: (current: V | undefined) => KvRecordMutation<V, R>): Promise<R> {
+    return this.host.enqueue(async () => {
+      const decision = fn(this.records.get(key) as V | undefined)
+      if (decision.kind === 'keep') return decision.result
+      await this.host.unit.putRecord(this.tableName, key, decision.value)
+      this.records.set(key, decision.value)
+      this.emitPut(key, decision.value)
+      return decision.result
     })
   }
 

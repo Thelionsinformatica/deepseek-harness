@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-repeat-tool-reminder",
-  "description": "Repeat-tool-call guard plugin: advisory reminders when an agent loops on identical tool calls",
+  "description": "Advisory reminders when an agent loops on identical successful tool calls",
   "version": "0.1.1-rc.2",
   "publishConfig": {
     "access": "public"

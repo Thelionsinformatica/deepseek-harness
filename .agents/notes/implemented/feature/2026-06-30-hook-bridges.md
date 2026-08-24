@@ -25,13 +25,15 @@ Each bridge maps the neutral `MergedHookOutcome` from the shared lib onto each e
 |---|---|---|
 | `agent/session-start` (emit) | additionalContext → `agent.inject()` | plain-stdout output → additionalContext → `agent.inject()` |
 | `agent/pre-step` | `deny`→`reject`; context-only→delegate+fold into `enter` | `block`→`reject`; context-only→delegate+fold into `enter` |
-| `tools/pre-execute` | `deny`→`deny`; `ask`→`ask` | `block`→`deny` (no allow/ask) |
+| `tools/pre-execute` | `continue:false`→`deny`; otherwise `deny`→`deny`, `ask`→`ask` | `continue:false`→`deny`; otherwise `block`→`deny` (no allow/ask) |
 | `tools/post-execute` | `deny`→`block`+feedback; context-only→delegate+fold | same |
 | `agent/turn-stopping` | blocking Stop → next-step steering | same |
 | `subagent/start` (emit) | additionalContext → inject into a live in-process child; a remote child has no local injection target | unsupported by this bridge |
 | `subagent/end` (emit) | observe-only | unsupported by this bridge |
 
 The CC bridge's `ask` result is a real permission path, not a terminal bridge decision: `dsh-tools` resolves it through the optional [approval seam](2026-07-06-approval-seam.md). An ACP automation client may answer the owning session's one-shot machine-policy request and `allowed-once` proceeds; without an ApprovalService or answerer, the call fails closed to `deny`.
+
+At `PreToolUse`, a merged `stop` takes precedence over the dialect permission decision and becomes a per-call `deny`. The bridge forwards `stopReason` verbatim, falls back to `stopped by PreToolUse hook`, and does not call the registered tool body. This is deliberately a veto of the current call, not an agent-wide halt: the resulting tool error remains in the loop and the model may choose a later step.
 
 ### Context source is always the plugin (the mislabel guard)
 
@@ -59,7 +61,7 @@ Hooks run in the agent's session workspace, so relative paths target the user's 
 
 - **Tool-input rewrite.** A CC/Codex `updatedInput` is logged + warned, not honored — input rewrite is a deferred consistency-design problem ([the pre-tool-input-rewrite Agent Note](../../proposed/feature/2026-06-30-pre-tool-input-rewrite.md)), because the pre-execution args are read by `tool/call` audit + `assistant/message` history + tool presentation, so an honest rewrite is a design unit, not a field.
 - **Stop loop-guard** (`TODO(stop-loop-guard)`). Claude Code supplies `stop_hook_active` and overrides a hook after eight consecutive blocks; Codex supplies `stop_hook_active` but documents no equivalent cap. Both bridges always report `false`, so a Stop hook that unconditionally blocks force-continues every step — a hook author must self-limit until state tracking lands.
-- **Hook `continue:false` (hard halt).** A hook can ask to halt the whole run (CC/Codex `continue:false`); the shared merge folds it into `MergedHookOutcome.stop`/`stopReason`, but no bridge acts on it (`TODO(hook-continue-false)`) — the interception points have no "hard-halt the agent" primitive yet (a Decision blocks/steers a single point, not the run). Deferred with the loop-guard work; mid-turn requests record the halt in `hook/result`, and the hook keeps its per-point effect (decision/context) meanwhile.
+- **Hook `continue:false` (agent-wide hard halt).** The shared merge folds this request into `MergedHookOutcome.stop`/`stopReason`, and both bridges now enforce it at `PreToolUse` as a per-call veto. Other mapped points still only record the request because the interception seams have no "hard-halt the agent" primitive (a Decision blocks or steers one point, not the whole run). Agent-wide cancellation remains deferred under `TODO(hook-continue-false)`.
 - **Config discovery.** The path is explicit in `cordis.yml` and process-level (see above); the full multi-layer CC/Codex precedence walk, per-session project-local discovery, and the trust/hash model are not reimplemented (`TODO(per-session-hook-config)`).
 - **Session-start / subagent-start context is best-effort (`TODO(session-start-gating)`).** Both hooks run detached from startup, so their context is injected when ready but may miss the first request or a short-lived child. Guaranteeing first-request delivery requires an awaited startup extension point.
 
@@ -69,4 +71,4 @@ Hooks run in the agent's session workspace, so relative paths target the user's 
 
 ## Consequences
 
-Matcher semantics, exit-code handling, and merge precedence live in `dsh-hook-protocol`; each bridge only parses config, builds dialect payloads, and maps outcomes. Per-file coverage includes config branches plus end-to-end mappings through a real loop, `dsh-bash-local`, and shell scripts, while a real-Loader smoke guards the package export shape. Native plugins bypass the wire protocol and return typed decisions directly.
+Matcher semantics, exit-code handling, and merge precedence live in `dsh-hook-protocol`; each bridge only parses config, builds dialect payloads, and maps outcomes. Per-file coverage includes config branches plus end-to-end mappings through a real loop, `dsh-bash-local`, and shell scripts, including an assertion that a `continue:false` pre-tool hook records `stop` while the registered tool body remains uncalled. A real-Loader smoke guards the package export shape. Native plugins bypass the wire protocol and return typed decisions directly.

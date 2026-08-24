@@ -394,10 +394,7 @@ export function defineCoverageCases(groups: CoverageGroup | readonly CoverageGro
       expect(events(agent).some(e => e.type === 'hook/invoked')).toBe(false)
     })
 
-    it('a {"continue":false} hook is RECORDED as "stop" but does not halt the run (TODO(hook-continue-false))', async () => {
-    // Honoring `continue:false` is deferred — the extension points have no hard-halt
-    // primitive. Assert the LOG records the halt request AND that the run is not
-    // actually halted (the tool still runs, the turn completes).
+    it('a {"continue":false} PreToolUse hook records stop and vetoes the tool body', async () => {
       const d = dir()
       hooks(d, { PreToolUse: [{ hooks: [{ type: 'command', command: sh(d, 's.sh', '#!/usr/bin/env bash\necho \'{"continue":false,"stopReason":"halt"}\'\n') }] }] })
       const adapter = new MockAdapter([toolCallResponse('c1', 'Bash', { command: 'x' }), textResponse('done')])
@@ -407,8 +404,26 @@ export function defineCoverageCases(groups: CoverageGroup | readonly CoverageGro
       const agent = ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
       agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } })); await waitForIdle(ctx, agent)
       const res = events(agent).find(e => e.type === 'hook/result')
-      expect(res?.type === 'hook/result' && res.data.decision).toBe('stop') // recorded
-      expect(ran).toBe(true) // NOT honored: the tool still ran (halt is deferred)
+      expect(res?.type === 'hook/result' && res.data.decision).toBe('stop')
+      expect(ran).toBe(false)
+      const result = events(agent).find(e => e.type === 'tool/result')
+      expect(result?.type === 'tool/result' && result.data.message.content[0].content
+        .some(block => block.type === 'text' && block.text.includes('halt'))).toBe(true)
+    })
+
+    it('a {"continue":false} PreToolUse hook without stopReason uses the stable fallback', async () => {
+      const d = dir()
+      hooks(d, { PreToolUse: [{ hooks: [{ type: 'command', command: sh(d, 's.sh', '#!/usr/bin/env bash\necho \'{"continue":false}\'\n') }] }] })
+      const adapter = new MockAdapter([toolCallResponse('c1', 'Bash', { command: 'x' }), textResponse('done')])
+      const ctx = await harness(join(d, 'hooks.json'), adapter)
+      let ran = false
+      ctx.tools.register(defineContentToolFixture({ name: 'Bash', description: 'b', parameters: {}, async execute() { ran = true; return [{ type: 'text', text: 'ran' }] } }))
+      const agent = ctx.agentLoop.create(SessionId('a1-default-stop'), { provider: 'mock', model: 'mock' })
+      agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } })); await waitForIdle(ctx, agent)
+      expect(ran).toBe(false)
+      const result = events(agent).find(e => e.type === 'tool/result')
+      expect(result?.type === 'tool/result' && result.data.message.content[0].content
+        .some(block => block.type === 'text' && block.text.includes('stopped by PreToolUse hook'))).toBe(true)
     })
 
     it('PreToolUse deny with EMPTY stderr uses the default reason (?? right arm)', async () => {

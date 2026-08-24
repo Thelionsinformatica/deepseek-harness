@@ -120,6 +120,10 @@ describe('web-app runtime glue', () => {
     expect(gateway).toContain('provider: google')
     expect(gateway).toContain('provider: openai')
     expect(gateway).toContain('- TRANSPORT')
+    expect(gateway).toContain('policyVersion: leon-shadow-v1')
+    expect(gateway).toContain('externalPolicy: fallback-only')
+    expect(gateway).toContain('residency: local')
+    expect(gateway).toContain('residency: external')
     expect(gateway).not.toMatch(/(?:provider|fastModel|mainModel|expertModel|model):.*deepseek/iu)
     expect(patch).toContain("- id: ui-voice\n      name: '@deepseek-ai/dsh-client-ui-voice'")
     expect(patch).toContain("- id: lsp\n      name: '@deepseek-ai/dsh-lsp'")
@@ -158,6 +162,26 @@ describe('web-app runtime glue', () => {
         ],
       },
     })
+    const shadow = (rows.find(row => row.id === 'api-gateway')?.config as {
+      adaptiveRouting?: {
+        shadow?: {
+          policyVersion: string
+          externalPolicy: string
+          routes: Array<{ provider: string; model: string; residency: string }>
+        }
+      }
+    } | undefined)?.adaptiveRouting?.shadow
+    expect(shadow).toMatchObject({
+      policyVersion: 'leon-shadow-v1',
+      externalPolicy: 'fallback-only',
+    })
+    expect(shadow?.routes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ provider: 'ollama', model: 'qwen3.5:9b', residency: 'local' }),
+      expect.objectContaining({ provider: 'ollama', model: 'ornith-1.5:9b', residency: 'local' }),
+      expect.objectContaining({ provider: 'omniroute', model: 'auto', residency: 'external' }),
+      expect.objectContaining({ provider: 'google', model: 'gemini-3.6-flash', residency: 'external' }),
+      expect.objectContaining({ provider: 'openai', model: 'gpt-5.6-terra', residency: 'external' }),
+    ]))
     const prices = rows.find(row => row.id === 'session-stats')?.config?.prices as unknown[]
     expect(prices).toContainEqual({
       provider: 'ollama', model: 'qwen3.5:9b',
@@ -228,16 +252,13 @@ describe('web-app runtime glue', () => {
     // reloads additionally need the rebuild watcher.
     expect(section?.text).toContain('pnpm run dev:web')
     const webRuntime = contributions.find(contribution => contribution.name === 'web-runtime')
-    expect(webRuntime?.variables).toEqual(expect.objectContaining({
-      DSH_NODE: expect.any(Object),
-      DSH_PLAYWRIGHT_CLI: expect.any(Object),
-      DSH_WEB_URL: expect.any(Object),
-    }))
-    expect(webRuntime?.resolve()).toEqual({
-      DSH_NODE: process.execPath,
-      DSH_PLAYWRIGHT_CLI: expect.stringMatching(/[\\/]@playwright[\\/]cli[\\/]playwright-cli\.js$/u),
-      DSH_WEB_URL: 'http://127.0.0.1:4567',
-    })
+    expect(Object.keys(webRuntime?.variables ?? {}).sort()).toEqual([
+      'DSH_NODE', 'DSH_PLAYWRIGHT_CLI', 'DSH_WEB_URL',
+    ])
+    const resolvedRuntime = webRuntime?.resolve()
+    expect(resolvedRuntime?.DSH_NODE).toBe(process.execPath)
+    expect(resolvedRuntime?.DSH_PLAYWRIGHT_CLI).toMatch(/[\\/]@playwright[\\/]cli[\\/]playwright-cli\.js$/u)
+    expect(resolvedRuntime?.DSH_WEB_URL).toBe('http://127.0.0.1:4567')
     await ctx.fiber.dispose()
   })
 

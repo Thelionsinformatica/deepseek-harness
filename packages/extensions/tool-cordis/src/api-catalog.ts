@@ -3649,8 +3649,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface KvFacet {\n    open(descriptor: KvUnitDescriptor): Promise<KvUnit>;\n}',
   },
   {
+    name: 'KvRecordMutation',
+    declaration: 'export type KvRecordMutation<V, R> = {\n    readonly kind: \'keep\';\n    readonly result: R;\n} | {\n    readonly kind: \'put\';\n    readonly value: V;\n    readonly result: R;\n};',
+  },
+  {
     name: 'KvTable',
-    declaration: 'export interface KvTable<K extends string, V> {\n    get(key: K): V | undefined;\n    entries(): IterableIterator<[\n        K,\n        V\n    ]>;\n    keys(): IterableIterator<K>;\n    readonly size: number;\n    put(key: K, value: V): Promise<void>;\n    delete(key: K): Promise<boolean>;\n    update(key: K, fn: (current: V) => V): Promise<V>;\n}',
+    declaration: 'export interface KvTable<K extends string, V> {\n    get(key: K): V | undefined;\n    entries(): IterableIterator<[\n        K,\n        V\n    ]>;\n    keys(): IterableIterator<K>;\n    readonly size: number;\n    put(key: K, value: V): Promise<void>;\n    delete(key: K): Promise<boolean>;\n    update(key: K, fn: (current: V) => V): Promise<V>;\n    mutate<R>(key: K, fn: (current: V | undefined) => KvRecordMutation<V, R>): Promise<R>;\n}',
   },
   {
     name: 'KvUnit',

@@ -426,6 +426,17 @@ const SCENARIOS: Scenario[] = [
   // the fixture scripts five identical todo_write calls and pins BOTH reminder
   // tiers (gentle at 3, detailed at 5) as injected user/message in transcript and log.
   { name: 'repeat-tool-reminder', hasModelTurn: true, recorded: false },
+  // Keyless authored replay: two identical reads of a missing file establish
+  // an equivalent failure chain and inject one logged recovery notice. A third
+  // unchanged model request is denied before dispatch, after which the model
+  // changes strategy and concludes. This pins the shipped base composition,
+  // not only the package-level event harness.
+  {
+    name: 'tool-failure-recovery-policy',
+    hasModelTurn: true,
+    recorded: false,
+    overridden: true,
+  },
   // Authored replay: a root AGENTS.md pins the session prefix, then a read in
   // nested/ discovers its narrower AGENTS.md as a raw, metadata-bearing
   // injected user/message. Both portable AGENTS.md fixtures are symlinks to a sibling
@@ -605,6 +616,7 @@ const SCENARIOS: Scenario[] = [
   { name: 'hook-cc-stop-continue', hasModelTurn: true, recorded: true },
   { name: 'hook-codex-promptsubmit-context', hasModelTurn: true, recorded: true },
   { name: 'hook-codex-pretool-block', hasModelTurn: true, recorded: true },
+  { name: 'hook-codex-pretool-stop', hasModelTurn: true, recorded: false },
   { name: 'hook-codex-posttool-block', hasModelTurn: true, recorded: true },
   { name: 'hook-codex-posttool-context', hasModelTurn: true, recorded: true },
   { name: 'hook-codex-stop-continue', hasModelTurn: true, recorded: true },

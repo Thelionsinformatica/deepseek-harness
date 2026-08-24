@@ -39,6 +39,9 @@
       "path": "../../llm/llm-retry"
     },
     {
+      "path": "../../llm/token-meter"
+    },
+    {
       "path": "../../core/agent"
     },
     {

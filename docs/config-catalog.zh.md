@@ -644,6 +644,26 @@ export interface Config {
 
 来源：[`packages/experimental/tool-agent-team/src/index.ts:17`](../packages/experimental/tool-agent-team/src/index.ts)
 
+<a id="deepseek-aidsh-failure-recovery-policy"></a>
+
+## `@deepseek-ai/dsh-failure-recovery-policy`
+
+依赖：`tools` · `storageDomain`
+
+```ts config-catalog
+/** Deployment policy for equivalent failures of one exact model-requested tool call. */
+export interface Config {
+  /** Failures permitted before the recovery notice and later denial (default 2). */
+  maxEquivalentFailures?: number
+  /** Tool-name wildcard patterns eligible for recovery; empty tracks every tool. */
+  include?: string[]
+  /** Tool-name wildcard patterns omitted from recovery tracking. */
+  exclude?: string[]
+}
+```
+
+来源：[`packages/guard/failure-recovery-policy/src/index.ts:61`](../packages/guard/failure-recovery-policy/src/index.ts)
+
 <a id="deepseek-aidsh-file-reference-local"></a>
 
 ## `@deepseek-ai/dsh-file-reference-local`
@@ -883,6 +903,8 @@ export interface AdaptiveRoutingConfig {
   goalRoundTiers?: AdaptiveGoalRoundTier[]
   /** Ordered replacements for unavailable automatic routes. First eligible route wins. */
   failovers?: AdaptiveFailoverConfig[]
+  /** Passive preflight that records recommendations without changing the active route. */
+  shadow?: AdaptiveRoutingShadowConfig
 }
 
 /** One explicitly configured route used from a numbered goal round onward. */
@@ -910,9 +932,59 @@ export interface AdaptiveFailoverConfig {
   /** Provider-neutral failure codes that prove the active route is unavailable. */
   failureCodes: string[]
 }
+
+/** Shadow-only policy. It never grants authority to replace a model route. */
+export interface AdaptiveRoutingShadowConfig {
+  /** Human-readable policy revision persisted with every decision. */
+  policyVersion: string
+  /** Explicit candidate catalog in deployment preference order. */
+  routes: AdaptiveShadowRouteConfig[]
+  /** Whether an external candidate may be recommended. */
+  externalPolicy?: 'deny' | 'fallback-only' | 'allow'
+  /** Output allowance added to current input pressure. */
+  outputReserveTokens?: number
+  /** Additional allowance for tool-result growth within an autonomous loop. */
+  toolLoopReserveTokens?: number
+  /** Structural threshold that raises the minimum route quality to two. */
+  mediumInputTokens?: number
+  /** Structural threshold that raises the minimum route quality to three. */
+  expertInputTokens?: number
+  /** Message-count threshold that raises the minimum route quality to three. */
+  expertMessageCount?: number
+  /** Tool-count threshold that raises the minimum route quality to three. */
+  expertToolCount?: number
+  /** Consecutive provider failures required before the shadow circuit opens. */
+  circuitBreakerFailures?: number
+  /** Samples required before measured latency can mark a route degraded. */
+  latencyMinSamples?: number
+  /** Route-relative TTFT multiple that marks a measured route degraded. */
+  latencyDegradedMultiplier?: number
+  /** How long a same-session capacity failure remains relevant to routing. */
+  capacityFailureCooldownMs?: number
+}
+
+/** One route the deployment authorizes the shadow policy to consider. */
+export interface AdaptiveShadowRouteConfig {
+  /** Registered provider route. */
+  provider: string
+  /** Provider-owned model id. */
+  model: string
+  /** Local execution or a route that may transmit request content externally. */
+  residency: 'local' | 'external'
+  /** Relative task-quality tier; higher values represent stronger routes. */
+  quality: number
+  /** Deployment preference after hard capability filters; lower values win. */
+  priority: number
+  /** Cold-start TTFT baseline used until this deployment has measured the route. */
+  coldStartTtftMs?: number
+  /** Optional input price used only for a projected, non-billing estimate. */
+  inputUsdPerMillion?: number
+  /** Optional output price used only for a projected, non-billing estimate. */
+  outputUsdPerMillion?: number
+}
 ```
 
-来源：[`packages/host/apiproxy/src/index.ts:43`](../packages/host/apiproxy/src/index.ts)
+来源：[`packages/host/apiproxy/src/index.ts:44`](../packages/host/apiproxy/src/index.ts)
 
 <a id="deepseek-aidsh-host-directory-picker-browse"></a>
 

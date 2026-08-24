@@ -49,19 +49,6 @@
     - id: code-runtime
       name: '@deepseek-ai/dsh-code-runtime-worker-thread'
 
-    - id: storage
-      name: '@deepseek-ai/dsh-storage'
-
-    - id: storage-json
-      name: '@deepseek-ai/dsh-storage-json'
-      config:
-        root: !!js dshHomePath('storages')
-
-    - id: storage-domain
-      name: '@deepseek-ai/dsh-storage-domain'
-      config:
-        backend: json
-
     # Leon-owned long-term memory: the seam is provider-neutral while this
     # deployment selects the local storage-domain provider explicitly.
     - id: memory
@@ -270,6 +257,62 @@
                 - INVALID_CREDENTIAL
                 - MISSING_CREDENTIAL
                 - UNKNOWN_MODEL
+          # The next-generation preflight is deliberately passive. It reads
+          # exact assembled-request pressure and registered route capabilities,
+          # persists a content-free recommendation, and never replaces the
+          # provider/model selected by the policy above.
+          shadow:
+            policyVersion: leon-shadow-v1
+            externalPolicy: fallback-only
+            outputReserveTokens: 8192
+            toolLoopReserveTokens: 4096
+            mediumInputTokens: 12000
+            expertInputTokens: 24000
+            expertMessageCount: 20
+            expertToolCount: 8
+            circuitBreakerFailures: 3
+            latencyMinSamples: 3
+            latencyDegradedMultiplier: 2.5
+            capacityFailureCooldownMs: 600000
+            routes:
+              - provider: ollama
+                model: qwen3.5:9b
+                residency: local
+                quality: 1
+                priority: 10
+                coldStartTtftMs: 12000
+                inputUsdPerMillion: 0
+                outputUsdPerMillion: 0
+              - provider: ollama
+                model: ornith-1.5:9b
+                residency: local
+                quality: 2
+                priority: 20
+                coldStartTtftMs: 12000
+                inputUsdPerMillion: 0
+                outputUsdPerMillion: 0
+              - provider: omniroute
+                model: auto
+                residency: external
+                quality: 3
+                priority: 30
+                coldStartTtftMs: 15000
+              - provider: google
+                model: gemini-3.6-flash
+                residency: external
+                quality: 3
+                priority: 40
+                coldStartTtftMs: 13000
+                inputUsdPerMillion: 0.75
+                outputUsdPerMillion: 3.75
+              - provider: openai
+                model: gpt-5.6-terra
+                residency: external
+                quality: 4
+                priority: 50
+                coldStartTtftMs: 10000
+                inputUsdPerMillion: 2
+                outputUsdPerMillion: 12
 
     - id: cordis-host-runner
       name: '@deepseek-ai/dsh-cordis-host-runner'

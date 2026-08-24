@@ -6,7 +6,8 @@ Behavioral guard plugins watch the agent loop for unproductive patterns and enfo
 
 | Package | Role | ctx key |
 |---|---|---|
-| [`repeat-tool-reminder/`](repeat-tool-reminder/README.md) | Advisory reminders for repeated tool calls | listens on tool and agent events |
+| [`repeat-tool-reminder/`](repeat-tool-reminder/README.md) | Advisory reminders for repeated successful tool calls | listens on tool and agent events |
+| [`failure-recovery-policy/`](failure-recovery-policy/README.md) | Durable recovery notice, atomic failure state, and monotonic denial | registers a tool guard and listens on tool and agent events |
 | [`timeout-policy/`](timeout-policy/README.md) | Arms per-call tool deadlines as deployment policy | registers a `tools/execute` listener |
 
-Reminders travel as `additionalContexts` on the `tools/post-execute` decision and are appended as logged plugin-sourced `user/message` events ([tools](../../docs/subsystems/tools.md)); the timeout split across `dsh-timeout`, capability termination, and this policy layer is recorded in the [timeout-library Agent Note](../../.agents/notes/implemented/architecture/2026-07-06-timeout-deadline-library.md).
+Reminders and recovery guidance travel as `additionalContexts` on the `tools/post-execute` decision and are appended as logged plugin-sourced `user/message` events ([tools](../../docs/subsystems/tools.md)). Successful repetition stays advisory; equivalent failures receive one recovery notice and then a pre-dispatch denial of the unchanged call. The timeout split across `dsh-timeout`, capability termination, and this policy layer is recorded in the [timeout-library Agent Note](../../.agents/notes/implemented/architecture/2026-07-06-timeout-deadline-library.md).

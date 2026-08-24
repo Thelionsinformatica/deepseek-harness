@@ -41,6 +41,13 @@ describe('dsh-base bundle', () => {
       provider: 'ollama',
       model: 'qwen3.5:9b',
     })
+    expect(rows.find(row => row.id === 'failure-recovery-policy')?.config).toEqual({
+      maxEquivalentFailures: 2,
+    })
+    expect(rows.find(row => row.id === 'storage-json')?.config).toEqual({
+      root: { __jsExpr: "dshHomePath('storages')" },
+    })
+    expect(rows.find(row => row.id === 'storage-domain')?.config).toEqual({ backend: 'json' })
     expect(rows.find(row => row.id === 'subagent-opencode')?.config).toMatchObject({
       providerName: 'opencode',
       args: ['acp'],
@@ -66,6 +73,7 @@ describe('dsh-base bundle', () => {
         omniroute: {
           api: 'openai-completions',
           baseURL: 'http://127.0.0.1:20128/v1',
+          headers: { Authorization: 'Bearer omniroute-local' },
           models: [{ id: 'auto' }],
         },
         openai: {
@@ -89,6 +97,10 @@ describe('dsh-base bundle', () => {
     expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-subagent-codex')
     expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-subagent-claude-code')
     expect(manifest.dependencies).toHaveProperty('@deepseek-ai/dsh-subagent-acp')
+    expect(manifest.dependencies).toHaveProperty('@deepseek-ai/dsh-failure-recovery-policy')
+    expect(manifest.dependencies).toHaveProperty('@deepseek-ai/dsh-storage')
+    expect(manifest.dependencies).toHaveProperty('@deepseek-ai/dsh-storage-domain')
+    expect(manifest.dependencies).toHaveProperty('@deepseek-ai/dsh-storage-json')
     // Compatibility packages remain installable through an explicit profile;
     // neither provider is mounted in Leon's shipped catalog above.
     expect(manifest.dependencies).toHaveProperty('@deepseek-ai/dsh-llm-deepseek')

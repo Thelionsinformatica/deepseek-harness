@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-24-leon-shadow-routing-preflight.md
+2026-08-24-leon-shadow-routing-preflight.md: e2e1bd83e549b42fec4e4c101d0ec4d9e294424f
+2026-08-24-leon-shadow-routing-preflight.zh.md: 7773eb8295c267670031f78e48c9c7d1b692b6e9

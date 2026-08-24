@@ -113,6 +113,10 @@ import {
   inspectApiRemoteSession,
 } from '@deepseek-ai/dsh-api-remotes'
 import { canOpenNativePath, openNativePath, openNativeTextFile } from './native-path-opener.ts'
+import {
+  installAdaptiveRoutingShadow,
+  type AdaptiveRoutingShadowConfig,
+} from './adaptive-routing-shadow.ts'
 
 /** Page size when history is called without maxMessages. */
 const DEFAULT_MAX_MESSAGES = 50
@@ -601,6 +605,8 @@ export interface ApiProxyDefaults {
   adaptiveModelFailover?: (
     input: { provider: string; failure: LlmFailure },
   ) => ModelSelection | undefined | Promise<ModelSelection | undefined>
+  /** Passive provider-neutral preflight; records recommendations but never replaces the selected route. */
+  adaptiveRoutingShadow?: AdaptiveRoutingShadowConfig
   /** Default project directory for new sessions whose create request carries no cwd. */
   cwd: string
   /** Native open-with-default-application; injectable for carrier tests. */
@@ -1085,6 +1091,10 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   const pendingApprovals = new Map<RpcId, PendingApproval>()
   const muxQueues = new Set<FrameQueue<RpcRequest<MuxFrame>>>()
   const imageAdmissionChains = new WeakMap<Agent, Promise<void>>()
+
+  if (defaults.adaptiveRoutingShadow !== undefined) {
+    installAdaptiveRoutingShadow(ctx, defaults.adaptiveRoutingShadow, automaticFor)
+  }
 
   /** Serialize image admission with model selection for one agent. */
   function serializeImageAdmission<T>(agent: Agent, operation: () => Promise<T>): Promise<T> {

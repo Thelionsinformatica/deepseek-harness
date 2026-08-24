@@ -131,6 +131,8 @@
             displayName: OmniRoute Local Gateway
             api: openai-completions
             baseURL: http://127.0.0.1:20128/v1
+            headers:
+              Authorization: Bearer omniroute-local
             defaultContextWindow: 262144
             defaultMaxTokens: 32768
             defaultInput: [text, image]
@@ -158,6 +160,21 @@
       name: '@deepseek-ai/dsh-session-persistence-jsonl'
       config:
         root: !!js dshHomePath('sessions')
+
+    # Shared durable domain storage belongs to the host foundation so recovery
+    # policy, headless runs, and Web sessions use the same atomic state path.
+    - id: storage
+      name: '@deepseek-ai/dsh-storage'
+
+    - id: storage-json
+      name: '@deepseek-ai/dsh-storage-json'
+      config:
+        root: !!js dshHomePath('storages')
+
+    - id: storage-domain
+      name: '@deepseek-ai/dsh-storage-domain'
+      config:
+        backend: json
 
     # Durable image bytes live outside the append-only session log. Messages
     # keep content-addressed references that this shared backend resolves for
@@ -490,6 +507,13 @@
       config:
         thresholds: [3, 5, 8]
         argumentsPreviewChars: 500
+
+    # Two equivalent failures land in durable atomic state and add logged
+    # recovery context; an unchanged later call is denied before dispatch.
+    - id: failure-recovery-policy
+      name: '@deepseek-ai/dsh-failure-recovery-policy'
+      config:
+        maxEquivalentFailures: 2
 
     # Leon keeps network retrieval opt-in. The provider-neutral seam remains
     # mounted so a deployment can add Exa, Perplexity, DeepSeek, or another

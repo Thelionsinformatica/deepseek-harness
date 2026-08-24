@@ -23,10 +23,28 @@ Em outros sistemas:
 
 Depois da abertura, use a mesma sessão `-s=leon` em todas as chamadas. Leia o snapshot retornado, use as referências dos elementos e execute uma ação por vez. Exemplos: `snapshot`, `find`, `click`, `fill`, `type`, `press`, `select`, `check`, `upload`, `tab-list`, `screenshot`, `console` e `requests`.
 
+## Contexto persistente da página
+
+Quando o usuário disser “esta página”, “a página aberta”, “essa tela” ou fizer outro pedido explícito sobre o navegador atual, não peça a URL. Resolva `scripts/context.mjs` a partir do diretório desta Skill e consulte primeiro a sessão `leon`:
+
+```powershell
+& $env:DSH_NODE "<skill>\scripts\context.mjs" inspect --session leon
+```
+
+Em outros sistemas:
+
+```bash
+"$DSH_NODE" "<skill>/scripts/context.mjs" inspect --session leon
+```
+
+O resultado contém URL, título, rota, carregamento, abas, resumo do console e uma árvore de acessibilidade limitada. Ele também mantém o último contexto em `$DSH_HOME/browser-context/` somente no computador local. Se nenhuma navegação, recarga, troca de aba ou ação ocorreu desde a inspeção, um acompanhamento pode consultar `status` e reutilizar o mesmo `snapshotId`; depois de qualquer mudança na página, execute `inspect` novamente. Use `clear` somente quando o usuário pedir para apagar esse cache.
+
+Execute o helper apenas em uma solicitação explícita relacionada ao navegador. Ele não lê cookies, armazenamento, cabeçalhos ou corpos de requisição, não captura screenshot e não se conecta automaticamente ao navegador pessoal. Se retornar `SESSION_UNAVAILABLE`, abra uma página somente quando o usuário forneceu ou autorizou a URL; caso contrário, informe que a janela do Leon não está aberta.
+
 ## Fluxo de trabalho
 
 1. Abra ou navegue até a URL solicitada em modo visível.
-2. Inspecione `snapshot` ou `find` antes de clicar ou preencher.
+2. Consulte o contexto persistente ou inspecione `snapshot`/`find` antes de clicar ou preencher.
 3. Execute a menor ação necessária e confira o novo estado.
 4. Para testes de uma entrega, valide o fluxo principal, mensagens de erro, console e resultado visual.
 5. Informe ao usuário o que foi confirmado e o que ainda depende de autenticação ou decisão humana.

@@ -59,6 +59,8 @@ export const Config: z<Config> = z.object({
 export const WEB_SEARCH_GOOGLE_SETTINGS_NAMESPACE = settingsNamespace('web-search-google')
 
 /** Resolve the current settings section into one operation's provider options. */
+/* jscpd:ignore-start -- provider plugins deliberately mirror the same credential/settings
+ * lifecycle while retaining dialect-specific defaults, request events, and package ownership. */
 function resolveOptions(ctx: Context, config: Config): GoogleSearchProviderOptions {
   const apiKeyEnv = credentialRef(config.apiKeyEnv ?? DEFAULT_API_KEY_ENV)
   const literalApiKey = config.apiKey !== undefined && config.apiKey.length > 0
@@ -83,6 +85,7 @@ function resolveOptions(ctx: Context, config: Config): GoogleSearchProviderOptio
     },
   }
 }
+/* jscpd:ignore-end */
 
 /** Register the Google Search provider with `ctx.web`. */
 export function apply(ctx: Context, config: Config): void {

@@ -59,12 +59,15 @@ interface ApiCostSnapshot {
 
 /** Read the optional cross-package projection defensively from one list row. */
 function apiCostOf(session: SessionSummary): ApiCostSnapshot | undefined {
-  const candidate = session.projectionValues?.sessionStats
-  if (typeof candidate !== 'object' || candidate === null) return undefined
-  const stats = candidate as Partial<ApiCostSnapshot>
+  const stats = session.projectionValues?.sessionStats
+  if (stats === undefined) return undefined
   if (![stats.estimatedApiCostUsdNanos, stats.pricedModelCalls, stats.unpricedModelCalls]
-    .every(value => typeof value === 'number' && Number.isFinite(value) && value >= 0)) return undefined
-  return stats as ApiCostSnapshot
+    .every(value => Number.isFinite(value) && value >= 0)) return undefined
+  return {
+    estimatedApiCostUsdNanos: stats.estimatedApiCostUsdNanos,
+    pricedModelCalls: stats.pricedModelCalls,
+    unpricedModelCalls: stats.unpricedModelCalls,
+  }
 }
 
 /** Format accumulated nanodollars for the wider dashboard card. */

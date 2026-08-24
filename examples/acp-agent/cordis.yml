@@ -161,6 +161,27 @@
 - id: repeat-tool-reminder
   name: '@deepseek-ai/dsh-repeat-tool-reminder'
 
+# Recovery state uses the same durable domain stack as the shipped base bundle.
+# Snapshot runs keep it below their disposable DSH_HOME; ordinary demo runs use
+# a local fallback instead of scattering storage in an implicit working folder.
+- id: storage
+  name: '@deepseek-ai/dsh-storage'
+
+- id: storage-json
+  name: '@deepseek-ai/dsh-storage-json'
+  config:
+    root: !!js "process.env.DSH_HOME === undefined ? './.storage' : process.env.DSH_HOME + '/storages'"
+
+- id: storage-domain
+  name: '@deepseek-ai/dsh-storage-domain'
+  config:
+    backend: json
+
+# Repeated equivalent tool failures receive one logged recovery notice; the
+# unchanged call is denied before a third dispatch.
+- id: failure-recovery-policy
+  name: '@deepseek-ai/dsh-failure-recovery-policy'
+
 # The filesystem stack rides the SAME sandbox policy as bash: dsh-fs-sandbox
 # replaces dsh-fs-local behind ctx.fs and fences write/edit by the effective
 # mode (read-only denies, workspace-write contains to the workspace + temp

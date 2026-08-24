@@ -7,6 +7,7 @@
 
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { PromptContentPart } from './api/sessions.ts'
+import type { AdaptiveRoutingShadowConfig } from './adaptive-routing-shadow.ts'
 
 /** One explicitly configured route used from a numbered goal round onward. */
 export interface AdaptiveGoalRoundTier {
@@ -64,6 +65,8 @@ export interface AdaptiveRoutingConfig {
   goalRoundTiers?: AdaptiveGoalRoundTier[]
   /** Ordered replacements for unavailable automatic routes. First eligible route wins. */
   failovers?: AdaptiveFailoverConfig[]
+  /** Passive preflight that records recommendations without changing the active route. */
+  shadow?: AdaptiveRoutingShadowConfig
 }
 
 /** Prompt facts available before the durable user message is admitted. */

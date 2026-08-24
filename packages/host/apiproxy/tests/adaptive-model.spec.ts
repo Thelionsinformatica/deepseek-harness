@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { chooseAdaptiveFailover, chooseAdaptiveModel, type AdaptiveRoutingConfig } from '../src/adaptive-model.ts'
+import {
+  evaluateAdaptiveRoutingShadow,
+  validateAdaptiveRoutingShadowConfig,
+  type AdaptiveRoutingShadowConfig,
+  type AdaptiveShadowCandidateFacts,
+  type AdaptiveShadowRequestFacts,
+} from '../src/adaptive-routing-shadow.ts'
 import ApiProxyService from '../src/index.ts'
 
 const config: AdaptiveRoutingConfig = {
@@ -45,6 +52,60 @@ const config: AdaptiveRoutingConfig = {
       ],
     },
   ],
+}
+
+const shadowConfig: AdaptiveRoutingShadowConfig = {
+  policyVersion: 'test-shadow-v1',
+  externalPolicy: 'fallback-only',
+  routes: [
+    {
+      provider: 'ollama', model: 'qwen', residency: 'local', quality: 1, priority: 10,
+      inputUsdPerMillion: 0, outputUsdPerMillion: 0,
+    },
+    {
+      provider: 'ollama', model: 'ornith', residency: 'local', quality: 2, priority: 20,
+      inputUsdPerMillion: 0, outputUsdPerMillion: 0,
+    },
+    { provider: 'omniroute', model: 'auto', residency: 'external', quality: 3, priority: 30 },
+    {
+      provider: 'google', model: 'gemini', residency: 'external', quality: 3, priority: 40,
+      inputUsdPerMillion: 0.75, outputUsdPerMillion: 3.75,
+    },
+  ],
+}
+
+const healthy = { status: 'healthy' as const, samples: 10, consecutiveProviderFailures: 0 }
+
+function candidate(
+  provider: string,
+  model: string,
+  extra: Partial<AdaptiveShadowCandidateFacts> = {},
+): AdaptiveShadowCandidateFacts {
+  const configured = shadowConfig.routes.find(route => route.provider === provider && route.model === model)
+  if (configured === undefined) throw new Error(`missing candidate ${provider}/${model}`)
+  return {
+    ...configured,
+    available: true,
+    contextWindow: configured.residency === 'local' ? 32768 : 262144,
+    maxOutputTokens: configured.residency === 'local' ? 8192 : 32768,
+    inputModalities: ['text', 'image'],
+    health: healthy,
+    ...extra,
+  }
+}
+
+function requestFacts(extra: Partial<AdaptiveShadowRequestFacts> = {}): AdaptiveShadowRequestFacts {
+  return {
+    estimatedInputTokens: 4000,
+    reservedOutputTokens: 4096,
+    toolLoopReserveTokens: 0,
+    projectedTokens: 8096,
+    messageCount: 2,
+    toolCount: 0,
+    imageCount: 0,
+    minimumQuality: 1,
+    ...extra,
+  }
 }
 
 describe('chooseAdaptiveModel()', () => {
@@ -181,5 +242,114 @@ describe('adaptive routing configuration', () => {
         failovers: [{ ...failover, failureCodes: [] }],
       },
     })).toThrow()
+  })
+})
+
+describe('adaptive routing shadow preflight', () => {
+  it('recommends the cheapest capable local route and keeps external routes as fallback only', () => {
+    const decision = evaluateAdaptiveRoutingShadow(shadowConfig, requestFacts(), [
+      candidate('ollama', 'qwen'),
+      candidate('ollama', 'ornith'),
+      candidate('omniroute', 'auto'),
+      candidate('google', 'gemini'),
+    ])
+
+    expect(decision.recommendation).toEqual({
+      kind: 'route', provider: 'ollama', model: 'qwen', projectedCostUsd: 0,
+    })
+    expect(decision.candidates.find(route => route.provider === 'omniroute')?.reasons)
+      .toContain('local-capable')
+  })
+
+  it('detects projected context overflow before dispatch and recommends the configured external gateway', () => {
+    const request = requestFacts({
+      estimatedInputTokens: 23702,
+      reservedOutputTokens: 8192,
+      toolLoopReserveTokens: 4096,
+      projectedTokens: 35990,
+      messageCount: 39,
+      toolCount: 8,
+      minimumQuality: 3,
+    })
+    const decision = evaluateAdaptiveRoutingShadow(shadowConfig, request, [
+      candidate('ollama', 'qwen'),
+      candidate('ollama', 'ornith'),
+      candidate('omniroute', 'auto'),
+      candidate('google', 'gemini'),
+    ])
+
+    expect(decision.recommendation).toEqual({ kind: 'route', provider: 'omniroute', model: 'auto' })
+    expect(decision.candidates.find(route => route.model === 'qwen')?.reasons)
+      .toEqual(expect.arrayContaining(['context-capacity', 'quality-below-required']))
+  })
+
+  it('treats a same-session capacity failure separately from provider health', () => {
+    const qwen = candidate('ollama', 'qwen', {
+      recentCapacityFailure: 'CONTEXT_WINDOW_EXCEEDED',
+      health: { status: 'healthy', samples: 12, consecutiveProviderFailures: 0 },
+    })
+    const decision = evaluateAdaptiveRoutingShadow(shadowConfig, requestFacts(), [
+      qwen,
+      candidate('ollama', 'ornith'),
+      candidate('omniroute', 'auto'),
+    ])
+
+    expect(decision.recommendation).toMatchObject({ kind: 'route', provider: 'ollama', model: 'ornith' })
+    expect(decision.candidates.find(route => route.model === 'qwen')).toMatchObject({
+      health: { status: 'healthy', consecutiveProviderFailures: 0 },
+      reasons: ['recent-capacity-failure'],
+    })
+  })
+
+  it('fails closed when external routes are denied and no local route is capable', () => {
+    const decision = evaluateAdaptiveRoutingShadow(
+      { ...shadowConfig, externalPolicy: 'deny' },
+      requestFacts({ minimumQuality: 3 }),
+      [
+        candidate('ollama', 'qwen'),
+        candidate('ollama', 'ornith'),
+        candidate('omniroute', 'auto'),
+      ],
+    )
+
+    expect(decision.recommendation).toEqual({ kind: 'blocked', reason: 'no-capable-route' })
+    expect(decision.candidates.find(route => route.provider === 'omniroute')?.reasons)
+      .toContain('external-denied')
+  })
+
+  it('projects price only from numeric metadata and persists no prompt field', () => {
+    const request = requestFacts({
+      estimatedInputTokens: 100000,
+      reservedOutputTokens: 10000,
+      projectedTokens: 110000,
+      minimumQuality: 3,
+    })
+    const decision = evaluateAdaptiveRoutingShadow(
+      { ...shadowConfig, externalPolicy: 'allow' },
+      request,
+      [candidate('google', 'gemini')],
+    )
+
+    expect(decision.recommendation).toEqual({
+      kind: 'route', provider: 'google', model: 'gemini', projectedCostUsd: 0.1125,
+    })
+    expect(Object.keys(request)).not.toContain('prompt')
+    expect(Object.keys(request)).not.toContain('content')
+  })
+
+  it('rejects duplicate routes and accepts the deployed policy through the service schema', () => {
+    expect(() => {
+      validateAdaptiveRoutingShadowConfig({
+        ...shadowConfig,
+        routes: [shadowConfig.routes[0]!, shadowConfig.routes[0]!],
+      })
+    }).toThrow(/repeats route/)
+    expect(ApiProxyService.Config({
+      adaptiveRouting: { ...config, shadow: shadowConfig },
+    }).adaptiveRouting?.shadow).toMatchObject({
+      policyVersion: 'test-shadow-v1',
+      externalPolicy: 'fallback-only',
+      outputReserveTokens: 8192,
+    })
   })
 })

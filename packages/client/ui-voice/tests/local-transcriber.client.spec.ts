@@ -17,7 +17,7 @@ describe('local voice transcriber', () => {
       status: 200,
       headers: { 'content-type': 'application/json' },
     }))
-    const transcribe = createLocalVoiceTranscriber(request as typeof fetch)
+    const transcribe = createLocalVoiceTranscriber(request)
 
     await expect(transcribe(clip)).resolves.toBe('bom dia Leon')
     expect(request).toHaveBeenCalledWith(LOCAL_VOICE_TRANSCRIPTION_PATH, {
@@ -37,7 +37,7 @@ describe('local voice transcriber', () => {
       status,
       headers: { 'content-type': 'application/json' },
     }))
-    const transcribe = createLocalVoiceTranscriber(request as typeof fetch)
+    const transcribe = createLocalVoiceTranscriber(request)
 
     await expect(transcribe(clip)).rejects.toMatchObject({ name, message: 'offline worker failed' })
   })

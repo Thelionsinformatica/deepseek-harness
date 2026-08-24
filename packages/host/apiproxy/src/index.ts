@@ -19,6 +19,7 @@ import { resolveDefaultWorkspace } from '@deepseek-ai/dsh-home-paths'
 import type { ApiProxy } from './api/index.ts'
 import { createApiProxy, DEFAULT_COLD_BLANK_PROBE_MAX_BYTES } from './api-proxy.ts'
 import { chooseAdaptiveFailover, chooseAdaptiveModel, type AdaptiveRoutingConfig } from './adaptive-model.ts'
+import { validateAdaptiveRoutingShadowConfig } from './adaptive-routing-shadow.ts'
 import {
   DEFAULT_SESSION_LOG_COMPRESSION_LEVEL,
   type SessionLogCompressionLevel,
@@ -111,6 +112,30 @@ export class ApiProxyService extends Service implements ApiProxy {
         reasoningEffort: z.string(),
         failureCodes: z.array(z.string().min(1)).min(1),
       })).default([]),
+      shadow: z.union([z.object({
+        policyVersion: z.string().required(),
+        routes: z.array(z.object({
+          provider: z.string().required(),
+          model: z.string().required(),
+          residency: z.union(['local', 'external'] as const).required(),
+          quality: z.number().step(1).min(1).required(),
+          priority: z.number().step(1).min(0).required(),
+          coldStartTtftMs: z.number().min(0),
+          inputUsdPerMillion: z.number().min(0),
+          outputUsdPerMillion: z.number().min(0),
+        })).min(1),
+        externalPolicy: z.union(['deny', 'fallback-only', 'allow'] as const).default('fallback-only'),
+        outputReserveTokens: z.number().step(1).min(1).default(8192),
+        toolLoopReserveTokens: z.number().step(1).min(0).default(4096),
+        mediumInputTokens: z.number().step(1).min(1).default(12000),
+        expertInputTokens: z.number().step(1).min(1).default(24000),
+        expertMessageCount: z.number().step(1).min(1).default(20),
+        expertToolCount: z.number().step(1).min(1).default(8),
+        circuitBreakerFailures: z.number().step(1).min(1).default(3),
+        latencyMinSamples: z.number().step(1).min(1).default(3),
+        latencyDegradedMultiplier: z.number().min(1).default(2.5),
+        capacityFailureCooldownMs: z.number().step(1).min(0).default(600000),
+      })]),
     })]),
   })
 
@@ -130,6 +155,9 @@ export class ApiProxyService extends Service implements ApiProxy {
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'apiProxy')
+    if (config.adaptiveRouting?.shadow !== undefined) {
+      validateAdaptiveRoutingShadowConfig(config.adaptiveRouting.shadow)
+    }
     const api = createApiProxy(ctx, {
       defaultModelSelection: () => ctx.agentDefaultModel.currentSelection(),
       saveDefaultModelSelection: selection => ctx.agentDefaultModel.saveSelection(selection),
@@ -141,6 +169,9 @@ export class ApiProxyService extends Service implements ApiProxy {
             provider: input.provider,
             failureCode: input.failure.code,
           }),
+          ...config.adaptiveRouting.shadow === undefined
+            ? {}
+            : { adaptiveRoutingShadow: config.adaptiveRouting.shadow },
         },
       cwd: resolveDefaultWorkspace(),
       ...config.nativeOpen === undefined ? {} : { canOpenPath: () => config.nativeOpen as boolean },

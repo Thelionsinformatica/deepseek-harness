@@ -52,6 +52,12 @@ flowchart LR
   cfg --> plugin_dsh_base_gpt_5_6_terra
   plugin_dsh_base_session_persistence_jsonl["session-persistence-jsonl<br/>@deepseek-ai/dsh-session-persistence-jsonl"]
   cfg --> plugin_dsh_base_session_persistence_jsonl
+  plugin_dsh_base_storage["storage<br/>@deepseek-ai/dsh-storage"]
+  cfg --> plugin_dsh_base_storage
+  plugin_dsh_base_storage_json["storage-json<br/>@deepseek-ai/dsh-storage-json"]
+  cfg --> plugin_dsh_base_storage_json
+  plugin_dsh_base_storage_domain["storage-domain<br/>@deepseek-ai/dsh-storage-domain"]
+  cfg --> plugin_dsh_base_storage_domain
   plugin_dsh_base_attachment_local["attachment-local<br/>@deepseek-ai/dsh-attachment-local"]
   cfg --> plugin_dsh_base_attachment_local
   plugin_dsh_base_session_query_sqlite["session-query-sqlite<br/>@deepseek-ai/dsh-session-query-sqlite"]
@@ -160,6 +166,8 @@ flowchart LR
   cfg --> plugin_dsh_base_tool_str_replace_editor
   plugin_dsh_base_repeat_tool_reminder["repeat-tool-reminder<br/>@deepseek-ai/dsh-repeat-tool-reminder"]
   cfg --> plugin_dsh_base_repeat_tool_reminder
+  plugin_dsh_base_failure_recovery_policy["failure-recovery-policy<br/>@deepseek-ai/dsh-failure-recovery-policy"]
+  cfg --> plugin_dsh_base_failure_recovery_policy
   plugin_dsh_base_web["web<br/>@deepseek-ai/dsh-web"]
   cfg --> plugin_dsh_base_web
   plugin_dsh_base_tool_web["tool-web<br/>@deepseek-ai/dsh-tool-web"]
@@ -198,6 +206,9 @@ flowchart LR
 | `auto` | `OmniRoute Automatic` |
 | `gpt-5.6-terra` | `GPT-5.6 Terra` |
 | `session-persistence-jsonl` | `@deepseek-ai/dsh-session-persistence-jsonl` |
+| `storage` | `@deepseek-ai/dsh-storage` |
+| `storage-json` | `@deepseek-ai/dsh-storage-json` |
+| `storage-domain` | `@deepseek-ai/dsh-storage-domain` |
 | `attachment-local` | `@deepseek-ai/dsh-attachment-local` |
 | `session-query-sqlite` | `@deepseek-ai/dsh-session-query-sqlite` |
 | `session-projection` | `@deepseek-ai/dsh-session-projection` |
@@ -252,6 +263,7 @@ flowchart LR
 | `tool-ralph` | `@deepseek-ai/dsh-tool-ralph` |
 | `tool-str-replace-editor` | `@deepseek-ai/dsh-tool-str-replace-editor` |
 | `repeat-tool-reminder` | `@deepseek-ai/dsh-repeat-tool-reminder` |
+| `failure-recovery-policy` | `@deepseek-ai/dsh-failure-recovery-policy` |
 | `web` | `@deepseek-ai/dsh-web` |
 | `tool-web` | `@deepseek-ai/dsh-tool-web` |
 | `tools` | `@deepseek-ai/dsh-tools` |

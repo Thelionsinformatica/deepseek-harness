@@ -509,6 +509,17 @@ Source: [`packages/llm/llm-retry/src/types.ts:9`](../packages/llm/llm-retry/src/
 
 Source: [`packages/llm/llm-retry/src/types.ts:11`](../packages/llm/llm-retry/src/types.ts)
 
+<a id="llmrouting-shadow--log-only"></a>
+
+#### `llm/routing-shadow` — log-only
+
+```ts persistence-catalog
+/** Durable, non-surface recommendation from a router that has no authority to change the active model. */
+'llm/routing-shadow': AdaptiveRoutingShadowEventData
+```
+
+Source: [`packages/host/apiproxy/src/adaptive-routing-shadow.ts:160`](../packages/host/apiproxy/src/adaptive-routing-shadow.ts)
+
 ### `permission/*`
 
 <a id="permissionpreset--log-only"></a>

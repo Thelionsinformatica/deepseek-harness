@@ -8,7 +8,9 @@ import type {} from '@deepseek-ai/dsh-skill'
 import type {} from '@deepseek-ai/dsh-tools'
 
 const overlayPath = process.argv[2]
-if (overlayPath === undefined) throw new Error('Leon project engineer snapshot requires an overlay path')
+const skillName = process.argv[3]
+if (overlayPath === undefined) throw new Error('Leon skill snapshot requires an overlay path')
+if (skillName === undefined) throw new Error('Leon skill snapshot requires a skill name')
 const rootConfigPath = fileURLToPath(new URL('../../../../../packages/bundle/base/tests/fixtures/root.cordis.yml', import.meta.url))
 const basePatchPath = fileURLToPath(new URL('../../../../../packages/bundle/base/cordis.patch.yml', import.meta.url))
 const ctx = await boot('leon-project-engineer-snapshot', rootConfigPath, [
@@ -43,11 +45,11 @@ try {
     ? decision.messages.find(message => message.role === 'user'
       && message.source.kind === 'skill-catalog')?.content
     : undefined
-  const summary = (await ctx.skills.list()).find(skill => skill.name === 'leon-project-engineer')
+  const summary = (await ctx.skills.list()).find(skill => skill.name === skillName)
   const result = await ctx.tools.execute({
     callId: CallId('leon-project-engineer-snapshot'),
     name: 'skill',
-    arguments: { name: 'leon-project-engineer' },
+    arguments: { name: skillName },
     signal: new AbortController().signal,
   })
   process.stdout.write(`${JSON.stringify({ catalog: catalog ?? null, summary: summary ?? null, result })}\n`)

@@ -396,6 +396,10 @@ describe('the shipped Web composition', () => {
       CONFIG_DIR, 'agent-presets', 'leon', 'skills', 'leon-windows', 'SKILL.md',
     )
     expect((await readFile(windowsSkill, 'utf8')).startsWith('---\nname: leon-windows')).toBe(true)
+    const knowledgeSkill = join(
+      CONFIG_DIR, 'agent-presets', 'leon', 'skills', 'leon-knowledge-base', 'SKILL.md',
+    )
+    expect((await readFile(knowledgeSkill, 'utf8')).startsWith('---\nname: leon-knowledge-base')).toBe(true)
 
     const handle = await ctx.agents.create({
       sessionId: SessionId(`preset-skills-leon-${randomUUID()}`),
@@ -422,9 +426,11 @@ describe('the shipped Web composition', () => {
       const scoped = (await ctx.skills.list({ scope: handle.agent })).map(item => item.name)
       expect(scoped).toContain('leon-project-engineer')
       expect(scoped).toContain('leon-browser')
+      expect(scoped).toContain('leon-knowledge-base')
       expect(scoped).toContain('leon-windows')
       expect((await ctx.skills.list()).map(item => item.name)).not.toContain('leon-project-engineer')
       expect((await ctx.skills.list()).map(item => item.name)).not.toContain('leon-browser')
+      expect((await ctx.skills.list()).map(item => item.name)).not.toContain('leon-knowledge-base')
       expect((await ctx.skills.list()).map(item => item.name)).not.toContain('leon-windows')
 
       const loaded = await ctx.tools.execute({
@@ -446,6 +452,17 @@ describe('the shipped Web composition', () => {
       })
       expect(browserLoaded.isError).toBe(false)
       expect(JSON.stringify(browserLoaded.content)).toContain('Navegação visível e segura')
+
+      const knowledgeLoaded = await ctx.tools.execute({
+        callId: CallId('preset-leon-knowledge-base-load'),
+        name: 'skill',
+        arguments: { name: 'leon-knowledge-base' },
+        signal: new AbortController().signal,
+        agent: handle.agent,
+      })
+      expect(knowledgeLoaded.isError).toBe(false)
+      expect(JSON.stringify(knowledgeLoaded.content)).toContain('Base de conhecimento do Leon')
+      expect(JSON.stringify(knowledgeLoaded.content)).toContain('cópias imutáveis')
 
       const windowsLoaded = await ctx.tools.execute({
         callId: CallId('preset-leon-windows-load'),

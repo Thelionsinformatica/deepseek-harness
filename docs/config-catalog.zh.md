@@ -867,7 +867,7 @@ export interface AdaptiveRoutingConfig {
   fastModel: string
   /** Stronger local model used for contextual or medium-complexity work. */
   mainModel: string
-  /** Optional cloud model reserved for the most complex work. */
+  /** Optional specialist model reserved for the most complex work. */
   expertModel?: string
   /** Provider-owned reasoning effort used with the fast tier. */
   fastReasoningEffort?: string
@@ -881,8 +881,8 @@ export interface AdaptiveRoutingConfig {
   expertMinCharacters?: number
   /** Ordered escalation policy; the highest eligible `fromRound` wins. */
   goalRoundTiers?: AdaptiveGoalRoundTier[]
-  /** Optional immediate replacement for an unavailable automatic route. */
-  failover?: AdaptiveFailoverConfig
+  /** Ordered replacements for unavailable automatic routes. First eligible route wins. */
+  failovers?: AdaptiveFailoverConfig[]
 }
 
 /** One explicitly configured route used from a numbered goal round onward. */

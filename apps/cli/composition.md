@@ -44,6 +44,12 @@ flowchart LR
   cfg --> plugin_dsh_base_llm_pi_ai
   plugin_dsh_base_qwen3_5_9b["qwen3.5:9b<br/>Qwen 3.5 9B (Local)"]
   cfg --> plugin_dsh_base_qwen3_5_9b
+  plugin_dsh_base_ornith_1_5_9b["ornith-1.5:9b<br/>Ornith 1.5 9B (Local Specialist)"]
+  cfg --> plugin_dsh_base_ornith_1_5_9b
+  plugin_dsh_base_auto["auto<br/>OmniRoute Automatic"]
+  cfg --> plugin_dsh_base_auto
+  plugin_dsh_base_gpt_5_6_terra["gpt-5.6-terra<br/>GPT-5.6 Terra"]
+  cfg --> plugin_dsh_base_gpt_5_6_terra
   plugin_dsh_base_session_persistence_jsonl["session-persistence-jsonl<br/>@deepseek-ai/dsh-session-persistence-jsonl"]
   cfg --> plugin_dsh_base_session_persistence_jsonl
   plugin_dsh_base_attachment_local["attachment-local<br/>@deepseek-ai/dsh-attachment-local"]
@@ -116,6 +122,8 @@ flowchart LR
   cfg --> plugin_dsh_base_subagent_spawn_in_process
   plugin_dsh_base_subagent_fork_in_process["subagent-fork-in-process<br/>@deepseek-ai/dsh-subagent-fork-in-process"]
   cfg --> plugin_dsh_base_subagent_fork_in_process
+  plugin_dsh_base_subagent_opencode["subagent-opencode<br/>@deepseek-ai/dsh-subagent-acp"]
+  cfg --> plugin_dsh_base_subagent_opencode
   plugin_dsh_base_tool_subagent_control["tool-subagent-control<br/>@deepseek-ai/dsh-tool-subagent-control"]
   cfg --> plugin_dsh_base_tool_subagent_control
   plugin_dsh_base_tool_subagent_list_agents["tool-subagent-list-agents<br/>@deepseek-ai/dsh-tool-subagent-control/list-agents"]
@@ -124,6 +132,8 @@ flowchart LR
   cfg --> plugin_dsh_base_tool_subagent
   plugin_dsh_base_tool_subagent_fork["tool-subagent-fork<br/>@deepseek-ai/dsh-tool-subagent"]
   cfg --> plugin_dsh_base_tool_subagent_fork
+  plugin_dsh_base_tool_subagent_opencode["tool-subagent-opencode<br/>@deepseek-ai/dsh-tool-subagent"]
+  cfg --> plugin_dsh_base_tool_subagent_opencode
   plugin_dsh_base_tool_subagent_report["tool-subagent-report<br/>@deepseek-ai/dsh-tool-subagent-report"]
   cfg --> plugin_dsh_base_tool_subagent_report
   plugin_dsh_base_workflow_worker_thread["workflow-worker-thread<br/>@deepseek-ai/dsh-workflow-worker-thread"]
@@ -184,6 +194,9 @@ flowchart LR
 | `credentials` | `@deepseek-ai/dsh-credentials-local` |
 | `llm-pi-ai` | `@deepseek-ai/dsh-llm-pi-ai` |
 | `qwen3.5:9b` | `Qwen 3.5 9B (Local)` |
+| `ornith-1.5:9b` | `Ornith 1.5 9B (Local Specialist)` |
+| `auto` | `OmniRoute Automatic` |
+| `gpt-5.6-terra` | `GPT-5.6 Terra` |
 | `session-persistence-jsonl` | `@deepseek-ai/dsh-session-persistence-jsonl` |
 | `attachment-local` | `@deepseek-ai/dsh-attachment-local` |
 | `session-query-sqlite` | `@deepseek-ai/dsh-session-query-sqlite` |
@@ -220,10 +233,12 @@ flowchart LR
 | `subagent` | `@deepseek-ai/dsh-subagent` |
 | `subagent-spawn-in-process` | `@deepseek-ai/dsh-subagent-spawn-in-process` |
 | `subagent-fork-in-process` | `@deepseek-ai/dsh-subagent-fork-in-process` |
+| `subagent-opencode` | `@deepseek-ai/dsh-subagent-acp` |
 | `tool-subagent-control` | `@deepseek-ai/dsh-tool-subagent-control` |
 | `tool-subagent-list-agents` | `@deepseek-ai/dsh-tool-subagent-control/list-agents` |
 | `tool-subagent` | `@deepseek-ai/dsh-tool-subagent` |
 | `tool-subagent-fork` | `@deepseek-ai/dsh-tool-subagent` |
+| `tool-subagent-opencode` | `@deepseek-ai/dsh-tool-subagent` |
 | `tool-subagent-report` | `@deepseek-ai/dsh-tool-subagent-report` |
 | `workflow-worker-thread` | `@deepseek-ai/dsh-workflow-worker-thread` |
 | `tool-workflow` | `@deepseek-ai/dsh-tool-workflow` |

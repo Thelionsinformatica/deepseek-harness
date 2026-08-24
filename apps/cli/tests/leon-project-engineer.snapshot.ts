@@ -35,7 +35,10 @@ describe('Leon project engineer assembled snapshot', () => {
       A skill is a reusable set of task-specific instructions. The following skills are available in this session:
 
       <available_skills>
+      - \`leon-browser\`: Navegar, ler, testar e interagir com sites em uma janela visível do navegador. Use quando o usuário pedir para abrir uma página, acompanhar uma tarefa no navegador, preencher um formulário, testar uma interface web ou operar um site.
+      - \`leon-knowledge-base\`: Criar, alimentar, consultar e auditar a base de conhecimento persistente de um projeto. Carregue com a ferramenta \`skill\` usando o nome \`leon-knowledge-base\`; não chame esse nome como ferramenta. Use para guardar documentos, construir uma wiki, relacionar fontes, pesquisar conhecimento acumulado ou verificar a integridade da base.
       - \`leon-project-engineer\`: Analisar, diagnosticar, corrigir, implementar e verificar mudanças em projetos de software. Use quando o usuário pedir auditoria técnica, correção de erro, refatoração, nova funcionalidade ou preparação de uma mudança para entrega.
+      - \`leon-windows\`: Diagnosticar e operar o computador Windows com PowerShell, incluindo arquivos, processos, serviços, rede, aplicativos e ambiente local. Use quando o usuário pedir para verificar, configurar, abrir ou automatizar algo no próprio PC.
       </available_skills>
 
       If the user names a skill, or the task clearly matches a skill's description, call the \`skill\` tool with the exact skill name before taking task actions. Load all applicable skills, then follow their full instructions. This catalog contains summaries only; do not infer or follow a skill's instructions until it has been loaded.
@@ -62,6 +65,7 @@ describe('Leon project engineer assembled snapshot', () => {
 
       - Identifique o resultado esperado e os limites do pedido. Resolva pelo próprio projeto fatos que possam ser descobertos com leitura e busca.
       - Leia as instruções do workspace e inspecione a estrutura, o estado do controle de versão e os padrões usados pelos arquivos relacionados.
+      - Use busca e leitura para navegação comum. Antes de uma refatoração estrutural, use \`lsp\` para confirmar definições, implementações e referências quando a linguagem for suportada; trate resultados vazios como inconclusivos e valide a mudança com build e testes.
       - Diferencie explicação, diagnóstico e implementação. Um pedido de diagnóstico autoriza investigar e explicar, mas não alterar arquivos.
       - Para trabalhos com várias etapas dependentes, registre um plano curto e mantenha somente uma etapa em andamento. Não crie um plano para uma alteração trivial.
 
@@ -94,6 +98,7 @@ describe('Leon project engineer assembled snapshot', () => {
 
       - Identifique o resultado esperado e os limites do pedido. Resolva pelo próprio projeto fatos que possam ser descobertos com leitura e busca.
       - Leia as instruções do workspace e inspecione a estrutura, o estado do controle de versão e os padrões usados pelos arquivos relacionados.
+      - Use busca e leitura para navegação comum. Antes de uma refatoração estrutural, use \`lsp\` para confirmar definições, implementações e referências quando a linguagem for suportada; trate resultados vazios como inconclusivos e valide a mudança com build e testes.
       - Diferencie explicação, diagnóstico e implementação. Um pedido de diagnóstico autoriza investigar e explicar, mas não alterar arquivos.
       - Para trabalhos com várias etapas dependentes, registre um plano curto e mantenha somente uma etapa em andamento. Não crie um plano para uma alteração trivial.
 

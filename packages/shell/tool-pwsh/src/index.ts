@@ -52,11 +52,17 @@ export const inject = ['tools', 'shell', 'systemPrompt', 'shellEnv']
 export interface Config {
   /** Expose `run_in_background` (default true); disabled calls are also rejected. */
   enableRunInBackground?: boolean
+  /** Permit direct host process/service termination syntax (default true). */
+  allowHostProcessTermination?: boolean
+  /** Require local servers and HTTP checks to use separate managed calls (default false). */
+  enforceManagedServerValidation?: boolean
 }
 
 /** Runtime configuration schema for the pwsh tool plugin. */
 export const Config: z<Config> = z.object({
   enableRunInBackground: z.boolean().default(true),
+  allowHostProcessTermination: z.boolean().default(true),
+  enforceManagedServerValidation: z.boolean().default(false),
 })
 
 /** Parsed tool args; execute validates value constraints absent from ParameterSchemaSpec. */
@@ -100,9 +106,58 @@ function validatePwshArgs(args: PwshToolArgs): void {
 }
 /* jscpd:ignore-end */
 
-function pwshDescription(backgroundEnabled: boolean, escalationModes: readonly SandboxMode[]): string {
+const HOST_PROCESS_TERMINATION_PATTERNS = [
+  /(?:^|[|;&{}\r\n])\s*(?:&\s*)?(?:stop-process|taskkill(?:\.exe)?|tskill(?:\.exe)?|kill|spps)\b/iu,
+  /\.\s*(?:kill|terminate)\s*\(/iu,
+  /(?:^|[|;&{}\r\n])\s*(?:stop-service|restart-service|sc(?:\.exe)?\s+stop|net(?:\.exe)?\s+stop)\b/iu,
+  /\b(?:invoke-cimmethod|invoke-wmimethod)\b[^;\r\n]*\b(?:-methodname|-name)\s+['"]?terminate\b/iu,
+  /\bwmic(?:\.exe)?\b[^;\r\n]*\bcall\s+terminate\b/iu,
+] as const
+
+/** Detect common PowerShell forms that can terminate host processes or services. */
+function controlsHostProcessLifetime(command: string): boolean {
+  return HOST_PROCESS_TERMINATION_PATTERNS.some(pattern => pattern.test(command))
+}
+
+const LOCAL_SERVER_START_PATTERNS = [
+  /\bnode(?:\.exe)?\b(?![^;\r\n]*\s--(?:check|test)\b)[^;\r\n]*\b(?:server|app|index)\.(?:[cm]?js|ts)\b/iu,
+  /\b(?:npm|pnpm|yarn)(?:\.cmd)?\s+(?:run\s+)?(?:start|dev)\b/iu,
+  /\bpython(?:\.exe)?\s+-m\s+http\.server\b/iu,
+] as const
+const HTTP_HEALTH_CHECK_PATTERN = /\b(?:invoke-webrequest|iwr|invoke-restmethod|irm|curl|wget)(?:\.exe)?\b/iu
+const NESTED_POWERSHELL_JOB_PATTERN = /\bstart-job\b/iu
+
+/** Detect commands that appear to launch a long-lived local development server. */
+function startsLocalServer(command: string): boolean {
+  return LOCAL_SERVER_START_PATTERNS.some(pattern => pattern.test(command))
+}
+
+const HOST_PROCESS_TERMINATION_DENIAL = 'host process termination is disabled for this agent; '
+  + 'do not free a port by stopping its owner. Start long-running commands with run_in_background and stop '
+  + 'the returned job with job_kill, or choose another port'
+const HOST_PROCESS_TERMINATION_GUIDANCE = 'Direct host process and service termination commands are rejected. '
+  + 'Never free a port by killing its owner; choose another port, or start the server with '
+  + '`run_in_background` and stop only its returned job with `job_kill`.'
+const BACKGROUND_SERVER_GUIDANCE = 'For a local server, make one background call containing only the server '
+  + 'start command. Run the HTTP health check in a separate foreground call, then stop the returned job with '
+  + '`job_kill`. Never place the health check after the server start in the same command. If the HTTP check '
+  + 'fails or the connection is refused, read the returned server job with `job_output` before changing ports; '
+  + 'its stderr is the primary runtime evidence.'
+const MANAGED_SERVER_BACKGROUND_DENIAL = 'local server starts must use run_in_background; make one background '
+  + 'call containing only the server start command, run the HTTP health check in a separate foreground call, '
+  + 'then stop the returned job with job_kill'
+const MANAGED_SERVER_COMBINATION_DENIAL = 'local server start must not create a nested PowerShell job or include '
+  + 'its HTTP health check; make one run_in_background call containing only the server start command, run the '
+  + 'HTTP health check in a separate foreground call, then stop the returned job with job_kill'
+
+function pwshDescription(
+  backgroundEnabled: boolean,
+  allowHostProcessTermination: boolean,
+  escalationModes: readonly SandboxMode[],
+): string {
   const background = backgroundEnabled
-    ? 'Set `run_in_background: true` for long-running commands: the call returns a job id immediately; read its output with `job_output` and stop it with `job_kill`.'
+    ? 'Set `run_in_background: true` for long-running commands: the call returns a job id immediately; read its output with `job_output` and stop it with `job_kill`. '
+      + BACKGROUND_SERVER_GUIDANCE
     : 'Background execution is not available; long-running commands must finish within the timeout.'
   const base = 'Execute a PowerShell command (`pwsh -Command`) and return its stdout/stderr. '
     + 'Each call runs in a fresh pwsh process: no state (cwd, variables, functions) persists between calls — '
@@ -113,6 +168,9 @@ function pwshDescription(backgroundEnabled: boolean, escalationModes: readonly S
     + 'Long output is truncated to its tail; the full output is saved to a file whose path is reported when available. '
     + 'On Windows a force-killed command settles as `[exit code: 1]` without a signal marker — treat it as an interruption, not a command failure. '
     + background
+    + (allowHostProcessTermination
+      ? ''
+      : ` ${HOST_PROCESS_TERMINATION_GUIDANCE}`)
   if (escalationModes.length === 0) return base
   // The language-mode and named-pipe contracts below are Windows-restricted-token
   // behavior, but the gate is 'any confining executor is mounted'
@@ -195,6 +253,8 @@ const BACKGROUND_OUTPUT_PROPERTIES = {
 /* jscpd:ignore-start -- deliberate mirror of dsh-tool-bash's apply() preamble (pwsh-tool-and-executor Agent Note). */
 export function apply(ctx: Context, config: Config = {}): void {
   const backgroundEnabled = config.enableRunInBackground ?? true
+  const allowHostProcessTermination = config.allowHostProcessTermination ?? true
+  const enforceManagedServerValidation = config.enforceManagedServerValidation ?? false
   const defaultMode = ctx.shell.sandboxMode
   const escalationModes: readonly SandboxMode[] = defaultMode === undefined ? [] : ESCALATION_TARGETS
   const sandboxPolicy: SandboxPolicyService | undefined = defaultMode === undefined ? undefined : ctx.get('sandboxPolicy')
@@ -246,12 +306,14 @@ export function apply(ctx: Context, config: Config = {}): void {
     name: 'tool:pwsh',
     order: 105,
     text: 'Non-zero exits are reported as `[exit code: N]` markers; investigate failures before moving on. '
-      + 'On Windows a killed process settles as `[exit code: 1]` without a signal marker; treat a bare exit 1 after an interruption as a termination, not a command failure.',
+      + 'On Windows a killed process settles as `[exit code: 1]` without a signal marker; treat a bare exit 1 after an interruption as a termination, not a command failure.'
+      + (backgroundEnabled ? ` ${BACKGROUND_SERVER_GUIDANCE}` : '')
+      + (allowHostProcessTermination ? '' : ` ${HOST_PROCESS_TERMINATION_GUIDANCE}`),
   })
 
   ctx.tools.register(defineTool({
     name: 'pwsh',
-    description: pwshDescription(backgroundEnabled, escalationModes),
+    description: pwshDescription(backgroundEnabled, allowHostProcessTermination, escalationModes),
     /* jscpd:ignore-start -- deliberate mirror of dsh-tool-bash's parameter surface (pwsh-tool-and-executor Agent Note). */
     parameters: {
       command: { type: 'string', required: true, description: 'The PowerShell command to execute.' },
@@ -347,6 +409,17 @@ export function apply(ctx: Context, config: Config = {}): void {
     /* jscpd:ignore-start -- the execute path mirrors dsh-tool-bash's by design (see the pwsh-tool-and-executor Agent Note). */
     async execute(args: PwshToolArgs, exec) {
       validatePwshArgs(args)
+      if (!allowHostProcessTermination && controlsHostProcessLifetime(args.command)) {
+        throw new Error(HOST_PROCESS_TERMINATION_DENIAL)
+      }
+      if (enforceManagedServerValidation && startsLocalServer(args.command)) {
+        if (args.run_in_background !== true) {
+          throw new Error(MANAGED_SERVER_BACKGROUND_DENIAL)
+        }
+        if (HTTP_HEALTH_CHECK_PATTERN.test(args.command) || NESTED_POWERSHELL_JOB_PATTERN.test(args.command)) {
+          throw new Error(MANAGED_SERVER_COMBINATION_DENIAL)
+        }
+      }
       // Description is display metadata; workdir defaults to the caller's session.
       const standingPolicy = resolveSandboxPolicy(exec)
       const approvedMode = args.sandbox_permissions !== undefined && args.justification !== undefined

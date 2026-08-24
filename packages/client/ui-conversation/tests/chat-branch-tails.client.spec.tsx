@@ -843,7 +843,7 @@ describe('MessageItem arms', () => {
           retryState: 'scheduled',
           turn: 1,
           step: 0,
-          provider: 'mock',
+          provider: 'ollama',
           mode: 'normal',
           policyKey: 'mock-normal',
           retry: 1,
@@ -857,14 +857,14 @@ describe('MessageItem arms', () => {
     const summary = view.container.querySelector('summary')
     expect(details?.open).toBe(false)
     expect(details?.dataset.active).toBe('true')
-    expect(view.getByRole('status').textContent).toBe('正在重试模型请求（1/2） · 3s')
+    expect(view.getByRole('status').textContent).toBe('正在重试本地模型（1/2）… · 3s')
     expect(view.getByText('重试延迟：').parentElement?.textContent).toBe('重试延迟：2500ms')
     expect(view.getByText('失败原因：').parentElement?.textContent).toBe('失败原因：连接被重置')
 
     act(() => { vi.advanceTimersByTime(1_100) })
-    expect(view.getByRole('status').textContent).toBe('正在重试模型请求（1/2） · 2s')
+    expect(view.getByRole('status').textContent).toBe('正在重试本地模型（1/2）… · 2s')
     act(() => { vi.advanceTimersByTime(1_000) })
-    expect(view.getByRole('status').textContent).toBe('正在重试模型请求（1/2） · 1s')
+    expect(view.getByRole('status').textContent).toBe('正在重试本地模型（1/2）… · 1s')
 
     view.rerender(
       <MessageItem
@@ -877,7 +877,7 @@ describe('MessageItem arms', () => {
           retryState: 'scheduled',
           turn: 2,
           step: 0,
-          provider: 'mock',
+          provider: 'ollama',
           mode: 'normal',
           policyKey: 'mock-normal',
           retry: 2,
@@ -887,7 +887,7 @@ describe('MessageItem arms', () => {
         }}
       />,
     )
-    expect(view.getByRole('status').textContent).toBe('正在重试模型请求（2/2） · 4s')
+    expect(view.getByRole('status').textContent).toBe('正在重试本地模型（2/2）… · 4s')
 
     if (summary === null) throw new Error('retry summary missing')
     fireEvent.click(summary)
@@ -902,7 +902,7 @@ describe('MessageItem arms', () => {
         retryState: 'started',
         turn: 2,
         step: 0,
-        provider: 'mock',
+        provider: 'ollama',
         mode: 'normal',
         policyKey: 'mock-normal',
         retry: 2,
@@ -913,7 +913,7 @@ describe('MessageItem arms', () => {
       />,
     )
     expect(details?.dataset.active).toBeUndefined()
-    expect(view.getByRole('status').textContent).toBe('已重试模型请求（2/2） · 4s')
+    expect(view.getByRole('status').textContent).toBe('已重试本地模型（2/2） · 4s')
 
     view.rerender(
       <MessageItem t={t} node={{

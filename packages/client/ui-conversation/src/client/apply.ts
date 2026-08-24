@@ -2,7 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { resolveSlotLabel, type BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
 import {
-  resolveWorkspacePath, type ISessions, type SessionId,
+  resolveWorkspacePath, type ISessions, type SessionId, type WorkspaceId,
 } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: the ctx.settingsScope Context merge. Cross-plugin collaboration
 // goes through the service, never a value import (client bundle purity gate).
@@ -169,6 +169,30 @@ export function apply(ctx: Context): void {
   // ctx.conversation.input by the service below sharing this one instance).
   const inputHub = new InputHub(ctx, t)
 
+  /** Connect one Workspace while preserving the current composer's unsent work. */
+  const selectWorkspace = async (
+    sessionId: SessionId | undefined,
+    workspaceId: WorkspaceId,
+  ): Promise<void> => {
+    const nextId = await workspaces.connectWorkspace(workspaceId)
+    if (sessionId !== undefined && nextId !== sessionId) {
+      const from = inputHub.shell(sessionId)
+      const draft = from.snapshot.draft
+      const imageIds = from.snapshot.imageIds
+      const next = inputHub.shell(nextId)
+      if (imageIds.length === 0 || next.addImages(imageIds)) {
+        if (draft !== '') {
+          next.setDraft(draft)
+          from.setDraft('')
+        }
+        if (imageIds.length > 0) {
+          for (const id of imageIds) from.removeImage(id)
+        }
+      }
+    }
+    sessions.open(nextId)
+  }
+
   // The composer-block registry: a plugin that knows a session cannot send —
   // ui-model-selection, when no adapter serves the session's route — raises a block
   // here, and the bar reads its own session's store. It cannot flow the other
@@ -207,30 +231,13 @@ export function apply(ctx: Context): void {
       'conversation.input.left': { kind: 'list', scope: 'session' },
       'conversation.input.right': { kind: 'list', scope: 'session' },
       'conversation.hero.brand.mark': { kind: 'single', scope: 'root' },
+      'conversation.hero.dashboard': { kind: 'single', scope: 'root' },
       'conversation.hero.workspace': { kind: 'single', scope: 'root' },
       'conversation.hero.agentPreset': { kind: 'single', scope: 'root' },
     },
     inject: (sessionId: SessionId | undefined): ConversationInjected => ({
       hooks: { composerBlock: sessionId === undefined ? ABSENT_BLOCK : composerBlocks.storeFor(sessionId) },
-      selectWorkspace: async (workspaceId) => {
-        const nextId = await workspaces.connectWorkspace(workspaceId)
-        if (sessionId !== undefined && nextId !== sessionId) {
-          const from = inputHub.shell(sessionId)
-          const draft = from.snapshot.draft
-          const imageIds = from.snapshot.imageIds
-          const next = inputHub.shell(nextId)
-          if (imageIds.length === 0 || next.addImages(imageIds)) {
-            if (draft !== '') {
-              next.setDraft(draft)
-              from.setDraft('')
-            }
-            if (imageIds.length > 0) {
-              for (const id of imageIds) from.removeImage(id)
-            }
-          }
-        }
-        sessions.open(nextId)
-      },
+      selectWorkspace: workspaceId => selectWorkspace(sessionId, workspaceId),
     }),
   }, ConversationRoot)
 
@@ -298,6 +305,10 @@ export function apply(ctx: Context): void {
           resolveSubmitMode: (running, gesture, steeringAvailable) =>
             submissionPolicy.resolve(running, gesture, steeringAvailable),
           toggleCommandMenu: undefined,
+          toggleReferenceMenu: undefined,
+          toggleSkillMenu: undefined,
+          selectWorkspace: undefined,
+          createWorkspace: undefined,
           stop: undefined,
           command: undefined,
           hooks: { notices: ABSENT_NOTICES, lexicon: ABSENT_LEXICON, menuLauncher: ABSENT_MENU_LAUNCHER },
@@ -306,6 +317,23 @@ export function apply(ctx: Context): void {
       const conversation = concreteConversation(ctx)
       const shell = inputHub.shell(sessionId)
       const inputTriggers = inputHub.inputTriggers(sessionId)
+      const toggleSourceMenu = (
+        source: 'command' | 'reference' | 'skill',
+        trigger: '/' | '@',
+        selection: { start: number; end: number },
+        quoted = false,
+      ): void => {
+        if (inputTriggers === undefined) return
+        shell.dismissPopup()
+        const snapshot = shell.snapshot
+        inputTriggers.toggleSource(source, {
+          trigger,
+          query: '',
+          quoted,
+          position: snapshot.draft.slice(0, selection.start).trim() === '' ? 'leading' : 'inline',
+          span: { ...selection, draftRev: snapshot.draftRev },
+        })
+      }
       return {
         keyboard: shell,
         addImages: (files) => {
@@ -333,17 +361,20 @@ export function apply(ctx: Context): void {
           submissionPolicy.resolve(running, gesture, steeringAvailable),
         toggleCommandMenu: inputTriggers === undefined
           ? undefined
-          : (selection) => {
-            shell.dismissPopup()
-            const snapshot = shell.snapshot
-            inputTriggers.toggleSource('command', {
-              trigger: '/',
-              query: '',
-              quoted: false,
-              position: snapshot.draft.slice(0, selection.start).trim() === '' ? 'leading' : 'inline',
-              span: { ...selection, draftRev: snapshot.draftRev },
-            })
-          },
+          : (selection) => { toggleSourceMenu('command', '/', selection) },
+        toggleReferenceMenu: inputTriggers === undefined
+          ? undefined
+          : (selection) => { toggleSourceMenu('reference', '@', selection, true) },
+        toggleSkillMenu: inputTriggers === undefined
+          ? undefined
+          : (selection) => { toggleSourceMenu('skill', '/', selection) },
+        selectWorkspace: workspaceId => selectWorkspace(sessionId, workspaceId),
+        createWorkspace: async () => {
+          const path = await workspaces.pickDirectory()
+          if (path === null) return
+          const workspace = await workspaces.create({ path })
+          await selectWorkspace(sessionId, workspace.workspaceId)
+        },
         stop: () => {
           scopedConversation(sessions, sessionId).cancel().catch(() => {
             // Stop failure surfaces via snapshot.promptError; nothing to restore.

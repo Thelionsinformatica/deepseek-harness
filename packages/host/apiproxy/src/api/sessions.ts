@@ -165,6 +165,10 @@ export interface SessionModels {
    * blocks input must read this rather than the groups.
    */
   routable: boolean
+  /** Whether Leon currently chooses between the configured tiers. */
+  automatic: boolean
+  /** Whether this deployment exposes a local adaptive policy. */
+  automaticAvailable: boolean
   /** Successfully loaded provider groups. */
   groups: ModelProviderGroup[]
   /** Provider-local failures; successful groups remain usable. */
@@ -302,8 +306,10 @@ export interface SessionsApi {
     provider: string
     model: string
     reasoningEffort?: string
+    /** Enable local adaptive routing; omission selects this model manually. */
+    automatic?: boolean
   }>):
-  Promise<RpcResponse<{ selected: ModelSelection }>>
+  Promise<RpcResponse<{ selected: ModelSelection; automatic: boolean }>>
 
   /**
    * Renames a session: appends a `session/title` event with the `user`

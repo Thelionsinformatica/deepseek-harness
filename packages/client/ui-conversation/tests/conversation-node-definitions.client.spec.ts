@@ -9,6 +9,7 @@ import { chatViewDefinition } from '../src/client/conversation-nodes/chat-snapsh
 import { commandDefinition } from '../src/client/conversation-nodes/command.ts'
 import { compactionDefinition } from '../src/client/conversation-nodes/compaction.ts'
 import { unknownFallbackDefinition } from '../src/client/conversation-nodes/fallback.ts'
+import { failoverDefinition } from '../src/client/conversation-nodes/failover.ts'
 import { nextStepInboxDefinition, nextTurnInboxDefinition } from '../src/client/conversation-nodes/inbox.ts'
 import { messageDefinition } from '../src/client/conversation-nodes/message.ts'
 import { retryDefinition } from '../src/client/conversation-nodes/retry.ts'
@@ -28,6 +29,7 @@ const DEFINITIONS: readonly ConversationNodeDefinition[] = [
   toolDefinition,
   commandDefinition,
   compactionDefinition,
+  failoverDefinition,
   retryDefinition,
   turnErrorDefinition,
   turnMaxTokensDefinition,
@@ -693,6 +695,26 @@ describe('built-in conversation node Definitions', () => {
       turn: 1,
       message: 'failed',
       code: 'TRANSPORT',
+    })
+
+    const failover = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      at(3, 'llm/failover', {
+        turn: 1,
+        step: 1,
+        from: { provider: 'ollama', model: 'qwen3.5:9b' },
+        to: { provider: 'google', model: 'gemini-3.6-flash' },
+        failure: { code: 'TRANSPORT', message: 'connection refused' },
+        reason: 'provider-unavailable',
+      }),
+    ])
+    expect(node(snapshot(failover), 'model-failover')?.data).toMatchObject({
+      kind: 'model-failover',
+      seq: 3,
+      from: { provider: 'ollama', model: 'qwen3.5:9b' },
+      to: { provider: 'google', model: 'gemini-3.6-flash' },
+      reason: 'provider-unavailable',
     })
 
     const compactions = assembler([

@@ -10,13 +10,16 @@ import { dirname } from 'node:path'
 import { z as zod } from 'zod'
 import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
-import type { Agent, ModelSelection, ModelSelectionRef, AgentOptions, AgentStatus } from '@deepseek-ai/dsh-agent'
+import type {
+  Agent, AgentOptions, AgentStatus, ModelSelection, ModelSelectionRef, RequestErrorAction,
+} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-presets/types'
 import { AttachmentError, admitEncodedImages } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { createUserMessage, freezeMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { errorChain } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, MessageSource } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, LlmFailure, MessageSource } from '@deepseek-ai/dsh-llm'
+import type {} from '@deepseek-ai/dsh-llm-retry/types'
 import { isAppendSurfaceEvent, isJsonValue } from '@deepseek-ai/dsh-session'
 import type { JsonValue, Session, SessionEvent, SessionEventMap, SessionHeader, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
@@ -590,6 +593,14 @@ export interface ApiProxyDefaults {
    * and undoing it because storage failed would be the worse outcome.
    */
   saveDefaultModelSelection?: (selection: ModelSelection) => Promise<void>
+  /** Optional provider-neutral policy for prompts and automatic goal rounds. */
+  adaptiveModelSelection?: (
+    input: { content: readonly PromptContentPart[]; hasHistory: boolean; goalRound?: number },
+  ) => ModelSelection | undefined | Promise<ModelSelection | undefined>
+  /** Optional replacement policy consulted before ordinary retries in automatic mode. */
+  adaptiveModelFailover?: (
+    input: { provider: string; failure: LlmFailure },
+  ) => ModelSelection | undefined | Promise<ModelSelection | undefined>
   /** Default project directory for new sessions whose create request carries no cwd. */
   cwd: string
   /** Native open-with-default-application; injectable for carrier tests. */
@@ -1056,6 +1067,8 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   }
   type WebModelSelectionRef = ModelSelectionRef & { current: ModelSelection }
   const selections = new WeakMap<Agent, WebModelSelectionRef>()
+  /** Process-local mode choice; automatic is the configured default. */
+  const automaticSelections = new WeakMap<Agent, boolean>()
   /**
    * Serializes `agentPreset.select` per session. Two concurrent selects both
    * pass the blank check, and the second `unmountPresetFor` then finds nothing
@@ -1121,11 +1134,131 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     return selection
   }
 
+  /** Whether Leon may choose between the configured tiers for this session. */
+  function automaticFor(agent: Agent): boolean {
+    return automaticSelections.get(agent) ?? defaults.adaptiveModelSelection !== undefined
+  }
+
+  /** Positive goal round admitted inside the currently open turn, if any. */
+  function goalRoundInTurn(agent: Agent, turn: number): number | undefined {
+    const start = agent.session.events.findLastIndex(
+      event => event.type === 'turn/start' && event.data.turn === turn,
+    )
+    if (start < 0) return undefined
+    for (const event of agent.session.events.slice(start + 1)) {
+      if (event.type === 'user/message' && event.data.source.kind === 'goal' && event.data.source.round > 0) {
+        return event.data.source.round
+      }
+    }
+    return undefined
+  }
+
+  /** Resolve one adaptive proposal through the ordinary route availability boundary. */
+  async function resolveAdaptiveSelection(
+    agent: Agent,
+    input: { content: readonly PromptContentPart[]; hasHistory: boolean; goalRound?: number },
+  ): Promise<ModelSelection | undefined> {
+    const select = defaults.adaptiveModelSelection
+    if (select === undefined || !automaticFor(agent)) return undefined
+    const proposed = await select(input)
+    if (proposed === undefined) return undefined
+    const resolved = await ctx.llm.resolveCallConfig(proposed)
+    return {
+      provider: resolved.provider,
+      model: resolved.model,
+      ...resolved.reasoningEffort === undefined ? {} : { reasoningEffort: resolved.reasoningEffort },
+    }
+  }
+
+  /**
+   * Resolve and install the adaptive route before direct prompt admission.
+   * A classifier or route-resolution failure degrades to the current model;
+   * the ordinary availability check below remains the enforcement boundary.
+   */
+  async function applyAdaptiveSelection(agent: Agent, content: readonly PromptContentPart[]): Promise<void> {
+    // A queued/steering prompt must not reroute an already running turn. Its
+    // eventual turn keeps the active route; idle admissions are classified.
+    if (agent.status === 'running') return
+    try {
+      const resolved = await resolveAdaptiveSelection(agent, {
+        content,
+        hasHistory: agent.session.events.some(event => event.type === 'turn/start'),
+      })
+      if (resolved !== undefined) selectionFor(agent).current = resolved
+    } catch (error: unknown) {
+      ctx.logger.warn(`api-proxy: adaptive model selection failed; preserving the current route: ${String(error)}`)
+    }
+  }
+
   /** Pre-publication setup used by both fresh and resumed Web agents. */
   function installSelection(agentCtx: Context): void {
     const agent = agentCtx.agent
     if (agent === undefined) throw new Error('api-proxy: agent setup has no scoped agent')
-    selectionFor(agent)
+    const selection = selectionFor(agent)
+    agentCtx.on('agent/request-error', async ({ turn, step, provider, failure, signal }, next): Promise<RequestErrorAction> => {
+      const select = defaults.adaptiveModelFailover
+      if (select === undefined || !automaticFor(agent)) return await next()
+      const from = selection.assembled ?? selection.current
+      if (from.provider !== provider) return await next()
+      try {
+        const proposed = await select({ provider, failure })
+        if (proposed === undefined) return await next()
+        const resolvedCall = await ctx.llm.resolveCallConfig(proposed)
+        if (signal.aborted) return
+        const resolved: ModelSelection = {
+          provider: resolvedCall.provider,
+          model: resolvedCall.model,
+          ...resolvedCall.reasoningEffort === undefined ? {} : { reasoningEffort: resolvedCall.reasoningEffort },
+        }
+        if (resolved.provider === from.provider && resolved.model === from.model) return await next()
+        agent.session.append('llm/failover', {
+          turn,
+          step,
+          from: { provider: from.provider, model: from.model },
+          to: { provider: resolved.provider, model: resolved.model },
+          failure,
+          reason: 'provider-unavailable',
+        })
+        selection.current = resolved
+        selection.assembled = resolved
+        return { kind: 'retry' }
+      } catch (error: unknown) {
+        ctx.logger.warn(
+          `api-proxy: automatic model failover failed; delegating to provider retry policy: ${String(error)}`,
+        )
+        return await next()
+      }
+    }, { prepend: true })
+    agentCtx.on('agent/request', async ({ turn }, next) => {
+      const goalRound = goalRoundInTurn(agent, turn)
+      if (goalRound === undefined) return await next()
+      try {
+        const resolved = await resolveAdaptiveSelection(agent, {
+          content: [],
+          hasHistory: true,
+          goalRound,
+        })
+        if (resolved === undefined) return await next()
+        // Goal-round escalation intentionally crosses the ordinary assembly
+        // snapshot: the continuation source becomes durable only after that
+        // assembly, while request routing is still safely replaceable here.
+        selection.current = resolved
+        selection.assembled = resolved
+        const base = await next()
+        const { reasoningEffort: _previousEffort, ...withoutPreviousEffort } = base
+        return {
+          ...withoutPreviousEffort,
+          provider: resolved.provider,
+          model: resolved.model,
+          ...resolved.reasoningEffort === undefined ? {} : { reasoningEffort: resolved.reasoningEffort },
+        }
+      } catch (error: unknown) {
+        ctx.logger.warn(
+          `api-proxy: goal-round model escalation failed; preserving the current route: ${String(error)}`,
+        )
+        return await next()
+      }
+    })
   }
 
   /**
@@ -1779,34 +1912,6 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     return llm === undefined || llm.listProviders().some(entry => entry.id === provider)
   }
 
-  /**
-   * Resolve the addressed agent for a turn-starting method and refuse when no
-   * adapter serves its current selection: a provider nothing serves cannot start a
-   * turn, and letting it try spends the whole pre-step path to fail inside
-   * the adapter with a message about registration. Refusing here names the
-   * model the session is pointed at while the draft is still in the composer.
-   * This is `session.prompt`'s enforcement boundary: a client that disables
-   * its input is an affordance, and the method stays callable regardless.
-   */
-  async function turnAgentFor<T>(
-    request: RpcRequest<unknown>, sessionId: SessionId,
-  ): Promise<{ agent: Agent } | { refused: RpcResponse<T> }> {
-    const found = await agentFor(sessionId)
-    if ('error' in found) return { refused: err(request, found.error) }
-    const agent = found.agent
-    const selection = selectionFor(agent).current
-    if (!routeServed(selection.provider)) {
-      return {
-        refused: err(request, {
-          code: 'model-unavailable',
-          message: `no adapter serves provider "${selection.provider}"; select a model for this session`,
-          details: { provider: selection.provider, model: selection.model },
-        }),
-      }
-    }
-    return { agent }
-  }
-
   /** Missing-service report shared by the settings domain (skills-domain stance). */
   function settingsAbsent(): RpcError {
     return { code: 'internal', message: 'settings service is absent: this deployment does not mount a settings provider (e.g. @deepseek-ai/dsh-settings-file) in its composition', details: {} }
@@ -2185,18 +2290,35 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const { sessionId } = request.payload
         const found = await agentFor(sessionId)
         if ('error' in found) return err(request, found.error)
+        // A blank automatic session advertises the same cheap local baseline
+        // its first simple prompt will use. This prevents a new chat from
+        // visually inheriting a stronger manual/default effort from another
+        // session before the first adaptive admission occurs.
+        if (!found.agent.session.events.some(event => event.type === 'turn/start')) {
+          await applyAdaptiveSelection(found.agent, [])
+        }
         const current = selectionFor(found.agent).current
         const { groups, failures } = await buildModelCatalog(ctx)
         const routable = routeServed(current.provider)
-        return ok(request, { current: { ...current }, routable, groups, failures })
+        return ok(request, {
+          current: { ...current },
+          routable,
+          automatic: automaticFor(found.agent),
+          automaticAvailable: defaults.adaptiveModelSelection !== undefined,
+          groups,
+          failures,
+        })
       },
 
       async selectModel(request) {
-        const { sessionId, provider, model, reasoningEffort } = request.payload
+        const { sessionId, provider, model, reasoningEffort, automatic = false } = request.payload
         const found = await agentFor(sessionId)
         if ('error' in found) return err(request, found.error)
         return serializeImageAdmission(found.agent, async () => {
           try {
+            if (automatic && defaults.adaptiveModelSelection === undefined) {
+              throw new Error('automatic model routing is unavailable in this deployment')
+            }
             const resolved = await ctx.llm.resolveCallConfig({
               provider,
               model,
@@ -2212,14 +2334,17 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
                 : { reasoningEffort: resolved.reasoningEffort },
             }
             selectionFor(found.agent).current = selected
-            try {
-              await defaults.saveDefaultModelSelection?.(selected)
-            } catch (error: unknown) {
-              ctx.logger.warn(
-                `api-proxy: the model switch applies to this session but was not saved as the default: ${String(error)}`,
-              )
+            automaticSelections.set(found.agent, automatic)
+            if (!automatic) {
+              try {
+                await defaults.saveDefaultModelSelection?.(selected)
+              } catch (error: unknown) {
+                ctx.logger.warn(
+                  `api-proxy: the model switch applies to this session but was not saved as the default: ${String(error)}`,
+                )
+              }
             }
-            return ok(request, { selected: { ...selected } })
+            return ok(request, { selected: { ...selected }, automatic })
           } catch (error: unknown) {
             return err(request, {
               code: 'model-unavailable',
@@ -2370,9 +2495,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             details: { value: clientTimeZone },
           })
         }
-        const resolved = await turnAgentFor<{ accepted: true }>(request, sessionId)
-        if ('refused' in resolved) return resolved.refused
-        const agent = resolved.agent
+        const found = await agentFor(sessionId)
+        if ('error' in found) return err(request, found.error)
+        const agent = found.agent
         // Request identity and optional browser zone ride the exact durable user message.
         const source: MessageSource = {
           kind: 'user',
@@ -2382,8 +2507,17 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const hasImage = content.some(part => part.type === 'image')
         const admit = async (): Promise<RpcResponse<{ accepted: true }>> => {
           try {
+            await applyAdaptiveSelection(agent, content)
+            const active = selectionFor(agent).current
+            if (!routeServed(active.provider)) {
+              return err(request, {
+                code: 'model-unavailable',
+                message: `no adapter serves provider "${active.provider}"; select a model for this session`,
+                details: { provider: active.provider, model: active.model },
+              })
+            }
             if (hasImage) {
-              const current = selectionFor(agent).current
+              const current = active
               const modelInfo = await ctx.llm.resolveModelInfo(current.provider, current.model)
               if (modelInfo.inputModalities !== undefined && !modelInfo.inputModalities.includes('image')) {
                 return err(request, {
@@ -2413,7 +2547,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           }
           return ok(request, { accepted: true as const })
         }
-        return hasImage ? serializeImageAdmission(agent, admit) : admit()
+        return hasImage || automaticFor(agent) ? serializeImageAdmission(agent, admit) : admit()
       },
 
       async attachment(request) {

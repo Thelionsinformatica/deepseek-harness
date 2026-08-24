@@ -2468,6 +2468,8 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         // The fixture's routes all serve; a surface exercising the blocked
         // posture drives it through its own stub.
         routable: true,
+        automatic: false,
+        automaticAvailable: false,
         groups: fixtureModelGroups(),
         failures: [],
       }),
@@ -2480,7 +2482,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
             : { reasoningEffort: request.payload.reasoningEffort },
         }
         modelSelections.set(request.payload.sessionId, selected)
-        return ok(request, { selected })
+        return ok(request, { selected, automatic: request.payload.automatic ?? false })
       },
       prompt: (request) => {
         const { sessionId: id, mode, content } = request.payload

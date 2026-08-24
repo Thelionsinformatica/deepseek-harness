@@ -2,7 +2,9 @@
 
 [English](README.md) | 中文
 
-所有客户端共用的 API 网关由三部分组成：TypeScript API 约定（`src/api/`，不依赖 Node，可从浏览器导入）、fetch 载体对（`src/fetch/`：宿主侧的 `toFetchHandler`，以及客户端侧的 `AbstractApiClient` 与平台子类）和宿主侧实现（`src/api-proxy.ts`：`createApiProxy` 加上默认导出的 `ApiProxyService` 网关插件，其配置为 `{nativeOpen?, sessionExportCompressionLevel?, coldBlankProbeMaxBytes?}`，提供 `ctx.apiProxy`）。该包不注册任何路由；HTTP 等载体自行包装 `ctx.apiProxy`。随发行版交付的 Web 组合位于 [`packages/bundle/web-app/cordis.patch.yml`](../../bundle/web-app/cordis.patch.yml)，其默认 Agent（智能体）模型选择属于 base 组合包中的 [`@deepseek-ai/dsh-agent-default-model`](../../core/agent-default-model/README.zh.md)。
+所有客户端共用的 API 网关由三部分组成：TypeScript API 约定（`src/api/`，不依赖 Node，可从浏览器导入）、fetch 载体对（`src/fetch/`：宿主侧的 `toFetchHandler`，以及客户端侧的 `AbstractApiClient` 与平台子类）和宿主侧实现（`src/api-proxy.ts`：`createApiProxy` 加上默认导出的 `ApiProxyService` 网关插件，其配置为 `{nativeOpen?, sessionExportCompressionLevel?, coldBlankProbeMaxBytes?, adaptiveRouting?}`，提供 `ctx.apiProxy`）。该包不注册任何路由；HTTP 等载体自行包装 `ctx.apiProxy`。随发行版交付的 Web 组合位于 [`packages/bundle/web-app/cordis.patch.yml`](../../bundle/web-app/cordis.patch.yml)，其默认 Agent（智能体）模型选择属于 base 组合包中的 [`@deepseek-ai/dsh-agent-default-model`](../../core/agent-default-model/README.zh.md)。
+
+Web 会话创建时如未显式指定 workspace，`ApiProxyService` 会为其分配 `resolveDefaultWorkspace()`。Leon 在 Windows 上的默认值是 `E:/computador`；部署环境覆盖值与非 Windows 行为由 [`dsh-home-paths`](../../util/home-paths/README.zh.md)负责。客户端显式选择的 workspace 始终具有最终效力。
 
 ## 共享 Agent 默认值（`agent-default-model` Settings 分节）
 
@@ -35,6 +37,10 @@ Settings 分节中的 `reasoningEffort` 在 agent-default-model 插件配置中�
 `session.fork` 将可选事件锚点映射到该锚点处或其后的首个 `turn/end`，使消息操作可包含该消息所在的完整轮次。锚点省略或超过末尾时，选择最后一个已完成轮次；若锚点已在日志中，而其所在轮次仍开放，则返回 `fork-unavailable`，不会向较早位置裁剪。发布后的子会话会先继承源会话的种子历史、cwd、日志中最新的 `ModelSelection` 及谱系，再加入源 Workspace。如果附加到 Workspace 失败，`workspace-attach-failed` 会携带已发布的子会话 id，供客户端对账。[SessionStore fork 决策](../../../.agents/notes/implemented/feature/2026-06-30-session-store-fork-api.zh.md)记录了为何锚点要映射到该 `turn/end`。
 
 会话模型选择属于会话领域约定。`session.models` 将当前 `ModelSelection` 与按提供方分组的建议性模型、精确模型的推理元数据和逐提供方查询失败记录分开返回。该选择可能不在这些分组中，也绝不会作为合成行注入；客户端可以提示用户作出另一项选择，而无需把目录变成路由白名单。`session.selectModel` 校验由适配器持有的可选推理强度，并指定下次组装提示词时使用的完整选择。目录成员关系不构成校验：适配器可以解析未列出的模型，而不可用的提供方或不受支持的推理强度会返回 `model-unavailable`。`session.models` 还会报告 `routable`，即当前是否有适配器为所选提供方提供服务。该值刻意不从分组推导，因为适配器可以服务未公布的模型。`session.prompt` 会依据同一事实，在开启轮次之前以 `model-unavailable` 拒绝；客户端禁用 composer 只是提示性设计，这个方法始终可被调用。
+
+配置 `adaptiveRouting` 后，每个普通会话默认进入自动模式。空白会话公布模型状态前，网关会在无历史条件下预置已配置的快速路由，因此新的 Leon 会话会明确显示将处理简单请求的路由。在空闲提示词的接纳边界，确定性的分类器会选择已配置的快速、主或可选专家路由，并在可用性与图片检查之前安装该路由。`fastProvider`、`mainProvider` 与 `expertProvider` 可以指定不同的已注册提供方；省略时各自使用 `provider`。分类器不访问网络，也不会依据提示词推导出已配置层级之外的路由。随附 Leon 策略让简短请求使用最低推理力度的 `ollama/qwen3.5:9b`，让较长、多行、代码、技术及依赖上下文的继续工作使用该模型的中等推理力度，并把图片、超大结构化提示词和明确的高复杂度工作保留给用户已配置的 Google Gemini 路由。`session.models` 会在实际当前路由旁公开 `automatic` 与 `automaticAvailable`，让客户端显示真正进入请求的模型。手动调用 `session.selectModel` 会停用自动路由，并照常持久化显式选择；传入 `automatic: true` 则重新启用已配置策略，而不替换保存的默认值。排队或 steering 输入绝不会改路由一个已经运行的 turn。
+
+可选的 `adaptiveRouting.failover` 配置块会指定允许替换的失败提供方、提供方无关的失败代码，以及一个替代提供方／模型／推理强度。自动模式中的合格请求失败会先追加 `llm/failover`，安装已验证的替代路由，并在普通提供方退避之前通过该路由重试同一请求；随附 Web 策略会把 Ollama 的 `TRANSPORT`、`TIMEOUT` 和 `SERVER` 失败替换为 `google/gemini-3.6-flash`。替代路由缺失或无效时会继续委托给原提供方重试策略。手动模型选择绝不会自动跨提供方切换。
 
 `session.prompt` 和 `subagent.prompt` 接受可选的请求本地 `clientTimeZone` 来源信息。若提供该值，Host 会在进入 Agent 前校验 `UTC` 或 IANA Area/Location 并将其规范化；无效输入以 `invalid-time-zone` 拒绝，规范值则与 `rpcId` 一起记录在这条确切的 `user-rpc` 消息上。该值不属于 Session、连接、create、resume 或 fork 状态；非浏览器调用方可以省略它。
 

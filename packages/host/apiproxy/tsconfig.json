@@ -36,6 +36,9 @@
       "path": "../../llm/llm"
     },
     {
+      "path": "../../llm/llm-retry"
+    },
+    {
       "path": "../../core/agent"
     },
     {
@@ -100,6 +103,9 @@
     },
     {
       "path": "../../util/native-command"
+    },
+    {
+      "path": "../../util/home-paths"
     }
   ]
 }

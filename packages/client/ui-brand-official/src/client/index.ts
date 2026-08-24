@@ -9,10 +9,11 @@ export const inject = ['slots']
 
 /**
  * Fill every shipped brand slot as one declaration-aware registration set.
+ * Product composition controls whether this package is mounted; build profiles
+ * must not silently replace Leon with upstream fallback branding.
  * @param ctx - Client root context.
  */
 export function apply(ctx: ClientContext): void {
-  if (process.env.DSH_CLIENT_BUILD_PROFILE !== 'official') return
   ctx.slots.inject('sidebar.brand.mark', () =>
     ctx.slots.inject('sidebar.brand.name', () =>
       ctx.slots.inject('conversation.hero.brand.mark', function* () {

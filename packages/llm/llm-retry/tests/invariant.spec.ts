@@ -59,6 +59,44 @@ const always = {
 }
 
 describe('llm-retry invariants', () => {
+  it('accepts an automatic provider replacement that matches the active request route', async () => {
+    const ctx = await setup()
+    const session = openStep(ctx, 'failover-invariant-valid')
+
+    expect(() => session.append('llm/failover', {
+      turn: 1,
+      step: 1,
+      from: { provider: 'mock', model: 'mock' },
+      to: { provider: 'google', model: 'gemini-3.6-flash' },
+      failure: { code: 'TRANSPORT', message: 'connection refused' },
+      reason: 'provider-unavailable',
+    })).not.toThrow()
+    await ctx.fiber.dispose()
+  })
+
+  it('rejects failover records that mismatch or reuse the active provider', async () => {
+    const ctx = await setup()
+    const mismatch = openStep(ctx, 'failover-invariant-mismatch')
+    expect(() => mismatch.append('llm/failover', {
+      turn: 1,
+      step: 1,
+      from: { provider: 'other', model: 'mock' },
+      to: { provider: 'google', model: 'gemini-3.6-flash' },
+      failure: { code: 'TRANSPORT', message: 'connection refused' },
+      reason: 'provider-unavailable',
+    })).toThrow(/does not match the active request route/)
+    const loop = openStep(ctx, 'failover-invariant-loop')
+    expect(() => loop.append('llm/failover', {
+      turn: 1,
+      step: 1,
+      from: { provider: 'mock', model: 'mock' },
+      to: { provider: 'mock', model: 'backup' },
+      failure: { code: 'TRANSPORT', message: 'connection refused' },
+      reason: 'provider-unavailable',
+    })).toThrow(/replacement provider must differ/)
+    await ctx.fiber.dispose()
+  })
+
   it('has no provider without the requested open step or a route marker', () => {
     expect(providerForOpenStep([], 1, 1)).toBeUndefined()
     expect(providerForOpenStep([{

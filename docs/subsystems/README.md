@@ -39,6 +39,11 @@ One page per subsystem of the DeepSeek Harness: what it is, the data structures 
 | [compaction.md](compaction.md) | the compaction seam: the `compaction/*` session events, `CompactionResult`, the `CompactionEngine` interface |
 | [subagent.md](subagent.md) | the subagent seam: the named-provider registry, `SubagentStartRequest`/`Result`/`Run`, the start-time-vs-runtime capability split |
 | [agent-team.md](agent-team.md) | Agent Teams: implicit Lead identity, named continuable teammates, durable peer mailbox, and shared task DAG |
+| [memory.md](memory.md) | durable workspace memory: provider-neutral records, explicit remember/search/correct/forget operations, revision safety, and isolation |
+| [memory-v2-architecture.md](memory-v2-architecture.md) | controlled Memory V2 reference architecture and staged evolution plan |
+| [memory-v2-current-state.md](memory-v2-current-state.md) | audited Leon baseline, test coverage, implemented capabilities, and remaining Memory V2 gaps |
+| [memory-v2-retrieval.md](memory-v2-retrieval.md) | local-first lexical-to-hybrid retrieval pipeline, context controls, and metrics |
+| [memory-v2-security-policy.md](memory-v2-security-policy.md) | deterministic memory policy, sensitive-data controls, decision traces, and cloud consent |
 | [web.md](web.md) | the web access seam: `WebSearchRequest`/`Result`, `WebFetchRequest`/`Result`, `WebFetchBody`, provider availability, `WebError` |
 | [spill.md](spill.md) | the spill storage seam: `SaveTextSpill`, `SpillOwner`/`SpillSource`, `SpillRef`, the branded `SpillLocator` |
 | [workflow.md](workflow.md) | the workflow seam: `WorkflowStartRequest`, `WorkflowMeta`, `WorkflowRun`/`Result`, the `workflow/*` event payloads, `WorkflowError` fatality |

@@ -11,6 +11,7 @@ Transforme o pedido em uma mudança verificável, preservando o trabalho existen
 
 - Identifique o resultado esperado e os limites do pedido. Resolva pelo próprio projeto fatos que possam ser descobertos com leitura e busca.
 - Leia as instruções do workspace e inspecione a estrutura, o estado do controle de versão e os padrões usados pelos arquivos relacionados.
+- Use busca e leitura para navegação comum. Antes de uma refatoração estrutural, use `lsp` para confirmar definições, implementações e referências quando a linguagem for suportada; trate resultados vazios como inconclusivos e valide a mudança com build e testes.
 - Diferencie explicação, diagnóstico e implementação. Um pedido de diagnóstico autoriza investigar e explicar, mas não alterar arquivos.
 - Para trabalhos com várias etapas dependentes, registre um plano curto e mantenha somente uma etapa em andamento. Não crie um plano para uma alteração trivial.
 

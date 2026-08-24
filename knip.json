@@ -637,7 +637,8 @@
         "tests/**/*.ts"
       ],
       "ignoreDependencies": [
-        "@deepseek-ai/.+"
+        "@deepseek-ai/.+",
+        "@modelcontextprotocol/server-filesystem"
       ]
     },
     "packages/subagent/subagent-dsh-sdk": {
@@ -662,7 +663,8 @@
     },
     "packages/bundle/web-app": {
       "ignoreDependencies": [
-        "@deepseek-ai/.+"
+        "@deepseek-ai/.+",
+        "typescript-language-server"
       ]
     }
   }

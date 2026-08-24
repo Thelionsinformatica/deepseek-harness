@@ -169,6 +169,11 @@ export function apply(ctx: ClientContext): void {
           select: (selection: ModelSelection) => available
             ? directory.select(selection).then(() => true, () => false)
             : Promise.resolve(false),
+          selectAutomatic: () => {
+            const current = directory.store.getSnapshot().current
+            if (!available || current === null) return Promise.resolve(false)
+            return directory.select(current, true).then(() => true, () => false)
+          },
         }
       },
     }, ModelSelect))

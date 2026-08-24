@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { CallId, MessageId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
@@ -26,11 +26,11 @@ function agentWithSession(id = 'parent-1'): Agent & { session: Session } {
   return { id: SessionId(id), session } as unknown as Agent & { session: Session }
 }
 
-async function setup(allowParallelInProgress: boolean): Promise<Context> {
+async function setup(allowParallelInProgress: boolean, preserveExistingItems = false): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
-  await ctx.plugin(tool, { allowParallelInProgress })
+  await ctx.plugin(tool, { allowParallelInProgress, preserveExistingItems })
   return ctx
 }
 
@@ -184,6 +184,88 @@ describe('dsh-tool-todo', () => {
     })
   })
 
+  describe('preserveExistingItems', () => {
+    it('retains existing items in order, permits discoveries, and keeps completed work complete', async () => {
+      const ctx = await setup(true, true)
+      const agent = agentWithSession('preserved-plan')
+      await callTodo(ctx, { todos: [
+        { content: 'build', status: 'completed' },
+        { content: 'test', status: 'in_progress' },
+      ] }, { agent })
+
+      const result = await callTodo(ctx, { todos: [
+        { content: 'build', status: 'completed' },
+        { content: 'inspect runtime', status: 'pending' },
+        { content: 'test', status: 'completed' },
+      ] }, { agent })
+
+      expect(result.isError).toBe(false)
+      expect(agent.session.events.findLast(e => e.type === 'todo/write')?.data.todos).toHaveLength(3)
+    })
+
+    it.each([
+      {
+        label: 'removing an item',
+        next: [{ content: 'build', status: 'completed' }],
+        error: 'preserved plan must retain existing item "test"',
+      },
+      {
+        label: 'renaming an item',
+        next: [
+          { content: 'build', status: 'completed' },
+          { content: 'run tests', status: 'in_progress' },
+        ],
+        error: 'preserved plan must retain existing item "test"',
+      },
+      {
+        label: 'reopening completed work',
+        next: [
+          { content: 'build', status: 'pending' },
+          { content: 'test', status: 'in_progress' },
+        ],
+        error: 'completed item cannot move backward "build"',
+      },
+    ])('rejects $label without appending a replacement snapshot', async ({ next, error }) => {
+      const ctx = await setup(true, true)
+      const agent = agentWithSession(`preserve-${callCounter}`)
+      await callTodo(ctx, { todos: [
+        { content: 'build', status: 'completed' },
+        { content: 'test', status: 'in_progress' },
+      ] }, { agent })
+
+      const result = await callTodo(ctx, { todos: next }, { agent })
+
+      expect(result.isError).toBe(true)
+      expect(text(result)).toContain(error)
+      expect(agent.session.events.filter(e => e.type === 'todo/write')).toHaveLength(1)
+    })
+
+    it('starts a fresh preservable plan after a later direct-human message', async () => {
+      const ctx = await setup(true, true)
+      const agent = agentWithSession('fresh-human-task')
+      await callTodo(ctx, { todos: [{ content: 'old task', status: 'in_progress' }] }, { agent })
+      agent.session.append('user/message', {
+        content: [{ type: 'text', text: 'new task' }],
+        source: { kind: 'user' },
+        role: 'user',
+        id: MessageId('new-human-task'),
+      }, { surfaceOp: 'append' })
+
+      const result = await callTodo(ctx, {
+        todos: [{ content: 'new task', status: 'in_progress' }],
+      }, { agent })
+
+      expect(result.isError).toBe(false)
+    })
+
+    it('describes the additive plan policy only when enabled', async () => {
+      const preserved = (await setup(true, true)).tools.schemas().find(s => s.name === 'todo_write')!.description
+      const replaceable = (await setup(true, false)).tools.schemas().find(s => s.name === 'todo_write')!.description
+      expect(preserved).toContain('Retain every existing todo')
+      expect(replaceable).not.toContain('Retain every existing todo')
+    })
+  })
+
   it.each([
     { label: 'empty content', todos: [{ content: '   ', status: 'pending' }], fragment: 'non-empty' },
     { label: 'duplicate content', todos: [{ content: 'dup', status: 'pending' }, { content: 'dup', status: 'completed' }], fragment: 'duplicate' },
@@ -213,7 +295,7 @@ describe('dsh-tool-todo', () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
-    const fiber = await ctx.plugin(tool, { allowParallelInProgress: true })
+    const fiber = await ctx.plugin(tool, { allowParallelInProgress: true, preserveExistingItems: false })
     expect(ctx.tools.schemas().some(s => s.name === 'todo_write')).toBe(true)
     await fiber.dispose()
     expect(ctx.tools.schemas().some(s => s.name === 'todo_write')).toBe(false)

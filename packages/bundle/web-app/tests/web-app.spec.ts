@@ -7,12 +7,14 @@
 
 import { EventEmitter } from 'node:events'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import * as yaml from 'js-yaml'
 import { Context } from '@deepseek-ai/cordis'
+import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import { createLaunchEnvironmentSnapshot, DSH_LAUNCH_ENVIRONMENT_KEY } from '@deepseek-ai/dsh-launch-environment'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import type { WebServer } from '@deepseek-ai/dsh-host-webserver'
@@ -74,6 +76,7 @@ function fakeHttpServer(host: '127.0.0.1' | '0.0.0.0' = '127.0.0.1'): { server: 
   const server = {
     host,
     port: 4567,
+    register: () => () => {},
     registerFallback: (handler: unknown) => {
       fallback = handler
       return () => { fallback = undefined }
@@ -95,6 +98,58 @@ interface BashContribution {
 }
 
 describe('web-app runtime glue', () => {
+  it('pins Leon Automatic to local fast/main tiers and a Gemini expert tier', () => {
+    const patch = readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
+    const start = patch.indexOf('    - id: api-gateway')
+    const end = patch.indexOf('\n    - id:', start + 1)
+    const gateway = patch.slice(start, end)
+    expect(gateway).toContain('provider: ollama')
+    expect(gateway).toContain('fastProvider: ollama')
+    expect(gateway).toContain('mainProvider: ollama')
+    expect(gateway).toContain('expertProvider: google')
+    expect(gateway).toContain('fastModel: qwen3.5:9b')
+    expect(gateway).toContain('mainModel: qwen3.5:9b')
+    expect(patch).not.toContain('qwen3.5:4b')
+    expect(gateway).toContain('expertModel: gemini-3.6-flash')
+    expect(gateway).toContain('mainReasoningEffort: medium')
+    expect(gateway).toContain('fromRound: 1')
+    expect(gateway).toContain('model: gemini-3.6-flash')
+    expect(gateway).toContain('fromProviders:')
+    expect(gateway).toContain('- ollama')
+    expect(gateway).toContain('- TRANSPORT')
+    expect(gateway).not.toMatch(/(?:provider|fastModel|mainModel|expertModel|model):.*deepseek/iu)
+    expect(patch).toContain("- id: ui-voice\n      name: '@deepseek-ai/dsh-client-ui-voice'")
+    expect(patch).toContain("- id: lsp\n      name: '@deepseek-ai/dsh-lsp'")
+    expect(patch).toContain("- id: lsp-stdio\n      name: '@deepseek-ai/dsh-lsp-stdio'")
+    expect(patch).toContain('typescript-language-server/lib/cli.mjs')
+    expect(patch).toContain('.tsx: typescriptreact')
+
+    const parsed = yaml.load(patch, { schema: entryListSchema })
+    const rows = (parsed as { insert?: { id?: string; config?: Record<string, unknown> }[] }[])
+      .flatMap(entry => entry.insert ?? [])
+    expect(rows.find(row => row.id === 'api-gateway')?.config).toMatchObject({
+      adaptiveRouting: {
+        goalRoundTiers: [{ fromRound: 1, provider: 'google', model: 'gemini-3.6-flash' }],
+        failover: {
+          fromProviders: ['ollama'],
+          provider: 'google',
+          model: 'gemini-3.6-flash',
+          failureCodes: ['TRANSPORT', 'TIMEOUT', 'SERVER'],
+        },
+      },
+    })
+    const prices = rows.find(row => row.id === 'session-stats')?.config?.prices as unknown[]
+    expect(prices).toContainEqual({
+      provider: 'ollama', model: 'qwen3.5:9b',
+      inputUsdPerMillion: 0, outputUsdPerMillion: 0,
+    })
+    expect(prices).toContainEqual({
+      provider: 'google', model: 'gemini-3.6-flash',
+      inputUsdPerMillion: 0.75, outputUsdPerMillion: 3.75,
+      cacheReadUsdPerMillion: 0.075,
+    })
+  })
+
   it('mounts dist serving, prompt section, bash variables, and publishes the URL with the LAN snapshot', async () => {
     stageDist()
     const ctx = new Context()
@@ -137,13 +192,23 @@ describe('web-app runtime glue', () => {
     ])
     const assembly = await ctx.systemPrompt.assemble()
     expect(assembly.sections.find(entry => entry.name === 'harness:source')?.text).toContain('DeepSeek Harness implementation checkout')
+    expect(assembly.sections.find(entry => entry.name === 'app:web-surface')?.text).toContain('Leon Web GUI')
     const section = assembly.sections.find(entry => entry.name === 'app:web-surface')
     expect(section?.text).toContain('http://127.0.0.1:4567')
     // The single update contract: the receiver is always on; no-refresh
     // reloads additionally need the rebuild watcher.
     expect(section?.text).toContain('pnpm run dev:web')
     const webRuntime = contributions.find(contribution => contribution.name === 'web-runtime')
-    expect(webRuntime?.resolve()).toEqual({ DSH_WEB_URL: 'http://127.0.0.1:4567' })
+    expect(webRuntime?.variables).toEqual(expect.objectContaining({
+      DSH_NODE: expect.any(Object),
+      DSH_PLAYWRIGHT_CLI: expect.any(Object),
+      DSH_WEB_URL: expect.any(Object),
+    }))
+    expect(webRuntime?.resolve()).toEqual({
+      DSH_NODE: process.execPath,
+      DSH_PLAYWRIGHT_CLI: expect.stringMatching(/[\\/]@playwright[\\/]cli[\\/]playwright-cli\.js$/u),
+      DSH_WEB_URL: 'http://127.0.0.1:4567',
+    })
     await ctx.fiber.dispose()
   })
 

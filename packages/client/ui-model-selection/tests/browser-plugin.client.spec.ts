@@ -62,10 +62,13 @@ async function bench() {
     models: () => {
       calls.models += 1
       return Promise.resolve({
-        result: { ok: true as const, value: { current, routable, groups: GROUPS, failures: [] } },
+        result: {
+          ok: true as const,
+          value: { current, routable, automatic: false, automaticAvailable: true, groups: GROUPS, failures: [] },
+        },
       })
     },
-    selectModel: (payload: { provider: string; model: string; reasoningEffort?: string }) => {
+    selectModel: (payload: { provider: string; model: string; reasoningEffort?: string; automatic?: boolean }) => {
       calls.select += 1
       current = {
         provider: payload.provider,
@@ -74,7 +77,9 @@ async function bench() {
           ? {}
           : { reasoningEffort: payload.reasoningEffort },
       }
-      return Promise.resolve({ result: { ok: true as const, value: { selected: current } } })
+      return Promise.resolve({
+        result: { ok: true as const, value: { selected: current, automatic: payload.automatic ?? false } },
+      })
     },
   } } })
   // Whether the Host reports an adapter for the current route; the composer

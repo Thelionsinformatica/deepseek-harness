@@ -23,6 +23,10 @@ export interface ModelDirectoryState {
    * from the groups yet perfectly usable.
    */
   routable: boolean | null
+  /** Whether Leon chooses the local tier for the next prompt. */
+  automatic: boolean
+  /** Whether this Host exposes automatic local routing. */
+  automaticAvailable: boolean
   /** Successfully loaded provider groups (last good load). */
   groups: readonly ModelProviderGroup[]
   /** Provider-local failures from the last load; usable groups stay usable. */
@@ -37,7 +41,14 @@ export interface ModelDirectoryState {
 export class ModelDirectory {
   /** The shared snapshot both entries render from (uSES-safe store). */
   readonly store: SnapshotStore<ModelDirectoryState> = createSnapshotStore<ModelDirectoryState>({
-    current: null, routable: null, groups: [], failures: [], status: 'idle', error: null,
+    current: null,
+    routable: null,
+    automatic: false,
+    automaticAvailable: false,
+    groups: [],
+    failures: [],
+    status: 'idle',
+    error: null,
   })
 
   /** Latest operation wins; an older response never overwrites a newer one. */
@@ -73,10 +84,12 @@ export class ModelDirectory {
       this.store.update((s) => { s.status = 'error'; s.error = `${result.error.code}: ${result.error.message}` })
       throw new Error(`session.models failed: ${result.error.code}: ${result.error.message}`)
     }
-    const { current, routable, groups, failures } = result.value
+    const { current, routable, automatic, automaticAvailable, groups, failures } = result.value
     this.store.update((s) => {
       s.current = current
       s.routable = routable
+      s.automatic = automatic
+      s.automaticAvailable = automaticAvailable
       s.groups = groups
       s.failures = failures
       s.status = 'ready'
@@ -90,8 +103,9 @@ export class ModelDirectory {
    * updates the shared current; failure surfaces on the store and throws so
    * each entry's own retry surface engages.
    * @param selection - provider, provider-owned model id, and optional adapter-owned effort.
+   * @param automatic - whether the Host should adapt future prompts between local tiers.
  */
-  async select(selection: ModelSelection): Promise<void> {
+  async select(selection: ModelSelection, automatic = false): Promise<void> {
     this.assertAvailable()
     const generation = ++this.generation
     this.store.update((s) => { s.status = 'selecting'; s.error = null })
@@ -102,6 +116,7 @@ export class ModelDirectory {
       ...selection.reasoningEffort === undefined
         ? {}
         : { reasoningEffort: selection.reasoningEffort },
+      ...automatic ? { automatic: true } : {},
     })
     if (this.disposed || generation !== this.generation) {
       if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
@@ -116,6 +131,7 @@ export class ModelDirectory {
     this.store.update((s) => {
       s.current = result.value.selected
       s.routable = true
+      s.automatic = result.value.automatic
       s.status = 'ready'
       s.error = null
     })
@@ -132,6 +148,8 @@ export class ModelDirectory {
     this.store.update((s) => {
       s.current = null
       s.routable = null
+      s.automatic = false
+      s.automaticAvailable = false
       s.groups = []
       s.failures = []
       s.status = 'idle'

@@ -64,6 +64,8 @@ export interface GoalConfig {
   domain?: GoalDomainConfig
   /** Model-facing goal-tool authority policy. */
   tool?: toolGoal.Config
+  /** Same-session continuation and optional automatic-admission policy. */
+  driver?: goalSession.Config
 }
 
 /**
@@ -154,6 +156,7 @@ export const ToolJobsConfigSchema: z<toolJobs.Config> = toolJobs.Config
 export const GoalConfigSchema: z<GoalConfig> = z.object({
   domain: GoalService.Config,
   tool: toolGoal.Config,
+  driver: goalSession.Config,
 })
 
 /** Intersect the owners' schemas so validation + defaulting stay identical. */
@@ -239,7 +242,7 @@ export function apply(ctx: Context, config: Config): void {
   if (config.goals !== undefined && config.goals !== false) {
     ctx.plugin(GoalService, config.goals.domain ?? {})
     ctx.plugin(toolGoal, config.goals.tool ?? {})
-    ctx.plugin(goalSession)
+    ctx.plugin(goalSession, config.goals.driver ?? {})
   }
   ctx.plugin(LocalJobRegistry, config.jobs ?? {})
   ctx.plugin(InvariantRegistry, config.invariants ?? {})

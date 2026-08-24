@@ -1,5 +1,5 @@
 /**
- * Shared filesystem path helpers for DeepSeek Harness user data.
+ * Shared filesystem path helpers for Harness user data and workspaces.
  *
  * @module @deepseek-ai/dsh-home-paths
  */
@@ -16,6 +16,18 @@ export const DEFAULT_DSH_HOME_DISPLAY = `~/${DSH_HOME_DIR_NAME}`
 
 /** Environment variable that overrides the default DeepSeek Harness home. */
 export const DSH_HOME_ENV = 'DSH_HOME'
+
+/** Environment variable that selects Leon's workspace for new sessions. */
+export const LEON_DEFAULT_WORKSPACE_ENV = 'LEON_DEFAULT_WORKSPACE'
+
+/** Compatibility environment variable for deployment-level workspace selection. */
+export const DSH_DEFAULT_WORKSPACE_ENV = 'DSH_DEFAULT_WORKSPACE'
+
+/** Compatibility environment variable used by existing DSH launch integrations. */
+export const DSH_CWD_ENV = 'DSH_CWD'
+
+/** Leon's Windows workspace when no configured path or environment override exists. */
+export const LEON_WINDOWS_DEFAULT_WORKSPACE = 'E:/computador'
 
 /**
  * Give a native filesystem watcher one canonical spelling of a path, even
@@ -88,6 +100,38 @@ export function resolveDshHome(configured?: string, env: Record<string, string |
   const fromEnv = env[DSH_HOME_ENV]
   const selected = configured ?? (fromEnv !== undefined && fromEnv.trim().length > 0 ? fromEnv : defaultDshHome())
   return resolve(expandHomePath(selected))
+}
+
+/** Return a trimmed non-empty path value, or `undefined` when it is absent. */
+function configuredPath(value: string | undefined): string | undefined {
+  const trimmed = value?.trim()
+  return trimmed === undefined || trimmed === '' ? undefined : trimmed
+}
+
+/**
+ * Resolve the workspace assigned to a new Leon session.
+ *
+ * Precedence, highest first: an explicit configured path,
+ * `$LEON_DEFAULT_WORKSPACE`, `$DSH_DEFAULT_WORKSPACE`, `$DSH_CWD`, then
+ * `E:/computador` on Windows or the invoking directory on other platforms.
+ * Blank values are ignored. The result is absolute and expands the supported
+ * tilde forms.
+ * @param configured - explicit workspace override, which has highest precedence.
+ * @param env - environment mapping used to read workspace overrides.
+ * @param cwd - invoking directory used by the non-Windows fallback and relative values.
+ * @returns the normalized absolute default workspace path.
+ */
+export function resolveDefaultWorkspace(
+  configured?: string,
+  env: Record<string, string | undefined> = process.env,
+  cwd: string = process.cwd(),
+): string {
+  const selected = configuredPath(configured)
+    ?? configuredPath(env[LEON_DEFAULT_WORKSPACE_ENV])
+    ?? configuredPath(env[DSH_DEFAULT_WORKSPACE_ENV])
+    ?? configuredPath(env[DSH_CWD_ENV])
+    ?? (process.platform === 'win32' ? LEON_WINDOWS_DEFAULT_WORKSPACE : cwd)
+  return resolve(cwd, expandHomePath(selected))
 }
 
 /**

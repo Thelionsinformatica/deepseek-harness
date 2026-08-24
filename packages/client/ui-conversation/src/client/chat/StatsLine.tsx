@@ -101,6 +101,21 @@ export function formatDuration(ms: number): string {
   return `${Math.floor(whole / 60)}m${whole % 60}s`
 }
 
+/**
+ * Compact a nanodollar estimate without rounding a real micro-charge to zero.
+ * The US$ prefix keeps the billing currency explicit in every locale.
+ * @param nanos - billionths of one US dollar.
+ * @returns compact US-dollar estimate.
+ */
+export function formatApiCostUsd(nanos: number): string {
+  if (nanos <= 0) return 'US$0.00'
+  const usd = nanos / 1_000_000_000
+  if (usd < 0.0001) return '<US$0.0001'
+  if (usd < 0.01) return `US$${usd.toFixed(4)}`
+  if (usd < 1) return `US$${usd.toFixed(3)}`
+  return `US$${usd.toFixed(2)}`
+}
+
 /** Round a cache-read ratio to an integer percentage, with positive ties rounded up. */
 function roundedIntegerPercent(cacheReadTokens: number, denominator: number): number {
   const denominatorQuotient = Math.floor(denominator / 200)
@@ -250,6 +265,13 @@ export const StatsLine = memo(function StatsLine({ useSession, useProjection, t 
       input: formatTokens(billedInputTokens(usage)),
       output: formatTokens(usage.outputTokens),
     }))
+  }
+  if (projected !== undefined
+    && (projected.pricedModelCalls > 0 || projected.unpricedModelCalls > 0)) {
+    const cost = t('stats.apiCost', { cost: formatApiCostUsd(projected.estimatedApiCostUsdNanos) })
+    groups.push(projected.unpricedModelCalls > 0
+      ? `${cost} · ${t('stats.apiCostUnpriced', { count: projected.unpricedModelCalls })}`
+      : cost)
   }
   const line = groups.join(' | ')
   // The row elides with ellipsis when overlong; a delayed hover tooltip carries

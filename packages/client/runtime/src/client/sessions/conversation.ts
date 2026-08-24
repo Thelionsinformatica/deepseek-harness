@@ -9,7 +9,7 @@ import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import type { LlmRetryEventData } from '@deepseek-ai/dsh-llm-retry/types'
+import type { LlmFailoverEventData, LlmRetryEventData } from '@deepseek-ai/dsh-llm-retry/types'
 import type { TodoItem } from '@deepseek-ai/dsh-session/types'
 import type {
   RpcError, SessionId, SubagentAddress, ToolCallView, ToolResultView,
@@ -157,6 +157,14 @@ export type ModelRetryNode = LlmRetryEventData & {
   retryState: 'scheduled' | 'started' | 'cancelled'
 }
 
+/** Durable notice that automatic routing replaced an unavailable provider. */
+export type ModelFailoverNode = LlmFailoverEventData & {
+  kind: 'model-failover'
+  seq: number
+  /** Unix epoch ms from the llm/failover session event. */
+  time: number
+}
+
 /**
  * Durable terminal failure for a turn that ended with an error reason; the
  * turn's settled retry chain renders separately and never replaces this node.
@@ -288,6 +296,7 @@ export type ConversationNode =
   | SteeringMessageNode
   | ContextMessageNode
   | ModelRetryNode
+  | ModelFailoverNode
   | TurnErrorNode
   | TurnMaxTokensNode
   | ToolResultNode

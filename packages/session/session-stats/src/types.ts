@@ -36,6 +36,34 @@ export interface SessionStatsProjection {
   decodeMs: number
   /** Summed provider output tokens over the same decode-timed steps. */
   decodeTokens: number
+  /** Estimated API cost in integer billionths of one US dollar. */
+  estimatedApiCostUsdNanos: number
+  /** Model calls whose exact provider/model pair has a configured price. */
+  pricedModelCalls: number
+  /** Model calls omitted from the estimate because their route has no configured price. */
+  unpricedModelCalls: number
+}
+
+/** One exact provider/model price used for durable cost estimation. */
+export interface ModelTokenPrice {
+  /** Registered provider route. */
+  provider: string
+  /** Provider-owned model id. */
+  model: string
+  /** Standard input price in USD per one million uncached tokens. */
+  inputUsdPerMillion: number
+  /** Standard output price in USD per one million tokens. */
+  outputUsdPerMillion: number
+  /** Cached-input price; omission uses the ordinary input price. */
+  cacheReadUsdPerMillion?: number
+  /** Cache-write price; omission uses the ordinary input price. */
+  cacheWriteUsdPerMillion?: number
+}
+
+/** Deployment-owned model pricing table. An absent table disables cost accounting. */
+export interface SessionStatsConfig {
+  /** Exact provider/model token prices used to estimate the API cost of durable usage events. */
+  prices?: ModelTokenPrice[]
 }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {

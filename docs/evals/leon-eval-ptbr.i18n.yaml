@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/evals/leon-eval-ptbr.md
+leon-eval-ptbr.md: 7cf0fc880601fb1c6ada18fb919b7025e1b50310
+leon-eval-ptbr.zh.md: 61c261b0b68678da0f0f51c0e0bf95fea992d8be

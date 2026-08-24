@@ -8,9 +8,11 @@ The patch gates both shell stacks by platform on its own rows: `bash-sandbox`/`t
 
 The row set and its rationale are documented inline in the patch file; the [generated composition graph](../../../apps/cli/composition.md) renders it.
 
+The base bundle resolves one deployment workspace for the fallback sandbox policy and sandboxed filesystem. On Windows the Leon default is `E:/computador`; [`resolveDefaultWorkspace()`](../../util/home-paths/README.md) owns environment overrides and the non-Windows fallback. Session-specific workspace roots continue to override this deployment fallback at request time.
+
 ## Model Experience
 
-Indirectly, through the inserted rows: this bundle selects the shipped persona-less prompt base, tool set, and DeepSeek adapter that mode bundles specialize, and contributes no model-visible text of its own.
+Indirectly, through the inserted rows: this bundle selects the shipped persona-less prompt base, tool set, and local Ollama route that mode bundles specialize, and contributes no model-visible text of its own. Leon uses `ollama/qwen3.5:9b` as its single shipped local model. Gemini and other remote routes remain explicit provider settings rather than Leon's identity. DeepSeek model and search adapters are installed only as manual compatibility options and are not mounted in the shipped catalog. Model-facing Web search and fetch are disabled in the base composition; deployments must deliberately mount a provider and the corresponding tool before local context may leave the machine for retrieval.
 
 #### KV Cache effect
 
@@ -19,4 +21,6 @@ None directly; each inserted row's package owns its effect.
 ## Known Limitations and Deferred Work
 
 - **A patch replaces whole row configs** — profile overrides must restate every field a row keeps; there is no deep-merge layer.
+- **The local default requires Ollama to be running** — the loopback endpoint is `http://127.0.0.1:11434/v1`, and the installer must ensure the service and selected model are available.
+- **Web retrieval requires an explicit profile override** — the base mounts the provider-neutral seam but enables neither a search provider nor a model-facing Web tool. Enabling a provider without enabling its tool, or the tool without a usable provider, is an incomplete deployment configuration.
 - **The Windows temp grant is a private per-session subdirectory** — `workspace-write` confines writes to the workspace plus the session's own temp subdirectory (`<temp>\dsh-<hash>`, TMP/TEMP rewritten for confined children); `read-only` grants nothing. See `@deepseek-ai/dsh-sandbox-windows-acl`.

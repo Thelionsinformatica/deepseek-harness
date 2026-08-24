@@ -15,8 +15,9 @@
 
 - id: system-prompt
   config:
+    includeHarnessIdentity: false
     persona: >-
-      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
+      Você é Leon, um assistente local independente de provedor, executado pelo modelo {{model}}. Seu diretório de trabalho é {{cwd}}.
 
 # TODO: Re-enable shared HMR for Web after its reload lifecycle is tested.
 - id: hmr
@@ -61,10 +62,33 @@
       config:
         backend: json
 
+    # Leon-owned long-term memory: the seam is provider-neutral while this
+    # deployment selects the local storage-domain provider explicitly.
+    - id: memory
+      name: '@deepseek-ai/dsh-memory'
+      config:
+        provider: local
+
+    - id: memory-local
+      name: '@deepseek-ai/dsh-memory-local'
+
     - id: message-feedback
       name: '@deepseek-ai/dsh-message-feedback'
       config:
         maxNoteBytes: 8192
+
+    # Leon's browser deployment reuses the Google credential already stored
+    # for Gemini. Search remains a model-selected tool call; the local fetch
+    # provider can retrieve only anonymous public HTTP(S) resources and applies
+    # its own SSRF, redirect, response-size, and timeout policy.
+    - id: web-search-google
+      name: '@deepseek-ai/dsh-web-search-google'
+      config:
+        apiKeyEnv: GOOGLE_API_KEY
+        model: gemini-3.6-flash
+
+    - id: web-fetch-http
+      name: '@deepseek-ai/dsh-web-fetch-http'
 
     # Browser Session export: `/export` command plus the shared download dialog.
     - id: session-log-download
@@ -85,10 +109,77 @@
     - id: file-reference-local
       name: '@deepseek-ai/dsh-file-reference-local'
 
-    # Whole-log turn/step counts for the chat stats strip (the sessionStats
-    # projection key); the projection registry itself is a base-layer row.
+    # Read-only semantic navigation for TypeScript and JavaScript projects.
+    # The language server is pinned as a Web bundle dependency and launched
+    # through Node directly, avoiding PATH, npx downloads, and shell wrappers.
+    - id: lsp
+      name: '@deepseek-ai/dsh-lsp'
+
+    - id: lsp-stdio
+      name: '@deepseek-ai/dsh-lsp-stdio'
+      config:
+        servers:
+          typescript:
+            command: !!js process.execPath
+            args:
+              - !!js "process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('typescript-language-server/lib/cli.mjs')"
+              - --stdio
+            extensionToLanguage:
+              .ts: typescript
+              .tsx: typescriptreact
+              .js: javascript
+              .jsx: javascriptreact
+              .mts: typescript
+              .cts: typescript
+              .mjs: javascript
+              .cjs: javascript
+
+    # Whole-log turn/step counts and configured paid-Standard API cost estimate
+    # for the chat stats strip and Work dashboard. Ollama is deliberately $0;
+    # Gemini prices are an editable deployment snapshot, effective through
+    # 2026-12-31. Search/Maps queries and cache storage are not token charges.
     - id: session-stats
       name: '@deepseek-ai/dsh-session-stats'
+      config:
+        prices:
+          - provider: ollama
+            model: qwen3.5:9b
+            inputUsdPerMillion: 0
+            outputUsdPerMillion: 0
+          - provider: google
+            model: gemini-3.7-flash
+            inputUsdPerMillion: 0.75
+            outputUsdPerMillion: 3.75
+            cacheReadUsdPerMillion: 0.075
+          - provider: google
+            model: gemini-3.6-flash
+            inputUsdPerMillion: 0.75
+            outputUsdPerMillion: 3.75
+            cacheReadUsdPerMillion: 0.075
+          - provider: google
+            model: gemini-3.5-flash
+            inputUsdPerMillion: 1.50
+            outputUsdPerMillion: 9.00
+            cacheReadUsdPerMillion: 0.15
+          - provider: google
+            model: gemini-3.5-flash-lite
+            inputUsdPerMillion: 0.30
+            outputUsdPerMillion: 2.50
+            cacheReadUsdPerMillion: 0.03
+          - provider: google
+            model: gemini-3.1-flash-lite
+            inputUsdPerMillion: 0.25
+            outputUsdPerMillion: 1.50
+            cacheReadUsdPerMillion: 0.025
+
+    # Browser-zone time context lets Leon interpret natural-language dates;
+    # Schedule adds durable one-shot and fixed-rate reminders to every future
+    # root session created by this Web deployment.
+    - id: time-context
+      name: '@deepseek-ai/dsh-time-context'
+
+    - id: schedule
+      name: '@deepseek-ai/dsh-schedule'
 
     # Resolve bind host, SSH launch, and display once at boot, then mount the
     # matching dual-face directory picker. Mount -native or -browse directly in
@@ -104,6 +195,36 @@
     # shares. The base layer's agent-default-model service owns the default model.
     - id: api-gateway
       name: '@deepseek-ai/dsh-host-apiproxy'
+      config:
+        # Leon Automatic starts with the local model at minimum effort, raises
+        # the same local model's reasoning for medium work, and reserves the
+        # user-configured Google Gemini route for complex work. Goal
+        # continuations stay on Gemini so a task does not step down midway.
+        adaptiveRouting:
+          provider: ollama
+          fastProvider: ollama
+          mainProvider: ollama
+          expertProvider: google
+          fastModel: qwen3.5:9b
+          mainModel: qwen3.5:9b
+          expertModel: gemini-3.6-flash
+          fastReasoningEffort: 'off'
+          mainReasoningEffort: medium
+          simpleMaxCharacters: 280
+          expertMinCharacters: 700
+          goalRoundTiers:
+            - fromRound: 1
+              provider: google
+              model: gemini-3.6-flash
+          failover:
+            fromProviders:
+              - ollama
+            provider: google
+            model: gemini-3.6-flash
+            failureCodes:
+              - TRANSPORT
+              - TIMEOUT
+              - SERVER
 
     - id: cordis-host-runner
       name: '@deepseek-ai/dsh-cordis-host-runner'
@@ -142,6 +263,12 @@
         printUrl: true
         surfaceContext: true
         trustedHosts: !!js ctx.webStartup.trustedHosts
+        voicePythonPath: !!js >-
+          process.env.LEON_VOICE_PYTHON ?? (process.platform === 'win32' ? 'E:\\Computador\\lab-envs\\Twsman1-JARVIS\\Scripts\\python.exe' : '')
+        voiceModelPath: !!js >-
+          process.env.LEON_VOICE_VOSK_MODEL ?? (process.platform === 'win32' ? 'E:\\Computador\\labs\\Twsman1-JARVIS\\models\\vosk-pt' : '')
+        voiceMaxBytes: 10485760
+        voiceTimeoutMs: 45000
 
     # The client-plugin reload chain, always mounted: it is idle until a
     # rebuild watcher (pnpm run dev:web) actually rewrites client bundles. It
@@ -208,6 +335,18 @@
 
     - id: ui-conversation
       name: '@deepseek-ai/dsh-client-ui-conversation'
+
+    # Leon Work overview for the blank-session Hero. Metrics come from the
+    # existing Session and Workspace projections; the chat remains the task
+    # execution surface after a user starts or opens work.
+    - id: ui-work-dashboard
+      name: '@deepseek-ai/dsh-client-ui-work-dashboard'
+
+    # Local-first browser microphone capture beside the composer send path.
+    # The web-runtime route transcribes each ephemeral clip through the local
+    # PT-BR Vosk worker before the ordinary chat input submits it.
+    - id: ui-voice
+      name: '@deepseek-ai/dsh-client-ui-voice'
 
     # Official occupants for the generic sidebar and conversation brand slots.
     - id: ui-brand-official

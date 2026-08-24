@@ -10,7 +10,10 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { ChangeEvent, KeyboardEvent, MouseEvent, ReactNode } from 'react'
 import clsx from 'clsx'
 import {
-  IconPlusOutline16, IconWarningOutline16, Toast, Tooltip,
+  IconApiOutline14, IconChevronLeftOutline14, IconChevronRightOutline14,
+  IconFolderOpenOutline16, IconGoalOutline16, IconListPenOutline16,
+  IconPaperclipOutline16, IconPlusOutline16, IconProjectAddOutline16, IconSkillOutline16,
+  IconWarningOutline16, Toast, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: the `plan` projection key merge (the TodoDock posture — the
 // composer reads a host-computed value; the domain owns the key).
@@ -78,16 +81,18 @@ export type InputBarProps = ComposerBarProps
 
 export function InputBar({
   useSession, useInput, inputActions, keyboard, addImages, removeImage, draftImages,
-  resolveSubmitMode, toggleCommandMenu, stop, command, t,
+  resolveSubmitMode, toggleCommandMenu, toggleReferenceMenu, toggleSkillMenu,
+  selectWorkspace, createWorkspace, stop, command, t,
   renderSlot, useNotices, useLexicon, useMenuLauncher,
-  useProjection, sessionId, variant, disabled: inert = false, blocked,
+  useProjection, useWorkspaces, sessionId, variant, disabled: inert = false, blocked,
   workspacePickerOpen = false, onRequestWorkspace,
   placeholder, accessory, overlay, leftItems, rightItems, footer,
 }: InputBarProps) {
   const input = useInput(s => s)
   const notice = useNotices(s => s)
   const lexicon = useLexicon(s => s)
-  const commandMenuOpen = useMenuLauncher(source => source === 'command')
+  const launchedMenu = useMenuLauncher(source => source)
+  const workspaces = useWorkspaces(state => state)
   const promptError = useSession(s => s.promptError) ?? null
   const running = useSession(s => s.running) ?? false
   const subagent = useSession(s => s.subagent) ?? null
@@ -110,6 +115,7 @@ export function InputBar({
   // prompt failures): the seq keys the Toast so an identical repeated message
   // restarts the hold-then-fade cycle instead of reusing the faded one.
   const [toast, setToast] = useState<{ seq: number; text: string } | null>(null)
+  const [addMenu, setAddMenu] = useState<'closed' | 'main' | 'projects'>('closed')
   const toastSeq = useRef(0)
   const showToast = useCallback((text: string) => {
     toastSeq.current += 1
@@ -136,7 +142,10 @@ export function InputBar({
     if (notice?.level === 'error') showToast(notice.text)
   }, [notice, showToast])
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
   const cardRef = useRef<HTMLDivElement | null>(null)
+  const addButtonRef = useRef<HTMLButtonElement | null>(null)
+  const addMenuRef = useRef<HTMLDivElement | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const mirrorRef = useRef<HTMLDivElement | null>(null)
   const safari = useMemo(() => isSafariBrowser(navigator), [])
@@ -179,8 +188,22 @@ export function InputBar({
   // and keyboard users can reach the recovery action.
   const workspaceTrigger = inert && !removed && onRequestWorkspace !== undefined
   const textareaDisabled = removed || (locked && !workspaceTrigger)
-  const canSteerQueue = !locked && !machineBusy && !commandMenuOpen && empty && running && subagent === null
+  const anyMenuOpen = addMenu !== 'closed' || launchedMenu !== null
+  const canSteerQueue = !locked && !machineBusy && !anyMenuOpen && empty && running && subagent === null
     && input.queue.some(row => row.placement === 'queued')
+
+  useEffect(() => {
+    if (addMenu === 'closed') return
+    const dismiss = (event: PointerEvent): void => {
+      if (!(event.target instanceof Node)) return
+      if (addMenuRef.current?.contains(event.target) || addButtonRef.current?.contains(event.target)) return
+      setAddMenu('closed')
+    }
+    document.addEventListener('pointerdown', dismiss, true)
+    return () => { document.removeEventListener('pointerdown', dismiss, true) }
+  }, [addMenu])
+
+  useEffect(() => { setAddMenu('closed') }, [sessionId])
 
   useEffect(() => {
     if (input === undefined || inputActions === undefined) return
@@ -385,6 +408,11 @@ export function InputBar({
       return
     }
     if (e.key === 'Escape') {
+      if (addMenu !== 'closed') {
+        setAddMenu('closed')
+        e.preventDefault()
+        return
+      }
       // Escape layering: an open overlay closes; claimed without an overlay
       // does NOT release (backspacing the token is the only exit gesture).
       keyboard.dismissPopup()
@@ -534,6 +562,20 @@ export function InputBar({
     if (rejected !== null) showToast(rejected)
   }, [addImages, attachments, imageLimits, showToast, t])
 
+  const openLocalFiles = (): void => {
+    setAddMenu('closed')
+    keyboard?.dismissPopup()
+    fileInputRef.current?.click()
+  }
+
+  const onLocalFilesSelected = (event: ChangeEvent<HTMLInputElement>): void => {
+    const files = event.currentTarget.files === null ? [] : Array.from(event.currentTarget.files)
+    // Let the same file be selected again after it has been removed from the
+    // rail; native file inputs otherwise suppress an identical change.
+    event.currentTarget.value = ''
+    intakeImages(files)
+  }
+
   const canAcceptDrop = !locked && !machineBusy && addImages !== undefined
 
   const onSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>): void => {
@@ -552,10 +594,192 @@ export function InputBar({
     inputRef.current?.focus({ preventScroll: true })
   }
 
-  const onToggleCommandMenu = (): void => {
+  const openSourceMenu = (toggle: ((selection: { start: number; end: number }) => void) | undefined): void => {
     const el = inputRef.current
-    if (el !== null) toggleCommandMenu?.(selectionOf(el))
+    if (el === null || toggle === undefined) return
+    setAddMenu('closed')
+    toggle(selectionOf(el))
   }
+
+  const onToggleAddMenu = (): void => {
+    keyboard?.dismissPopup()
+    setAddMenu(current => current === 'closed' ? 'main' : 'closed')
+  }
+
+  const startGoal = (): void => {
+    if (keyboard === undefined) return
+    const next = draft.trim() === ''
+      ? '/goal '
+      : draft.trimStart().startsWith('/goal') ? draft : `/goal ${draft}`
+    setAddMenu('closed')
+    keyboard.dismissPopup()
+    keyboard.setDraft(next)
+    keyboard.track(next, next.length)
+    setTimeout(() => {
+      const el = inputRef.current
+      if (el !== null) restoreCaret(el, next.length)
+    }, 0)
+  }
+
+  const togglePlan = (): void => {
+    setAddMenu('closed')
+    keyboard?.dismissPopup()
+    const line = planActive ? '/plan off' : '/plan'
+    void command?.(line).then((matched) => {
+      if (!matched) showToast(t('add.plan.failed'))
+    })
+  }
+
+  const openWorkspace = (workspaceId: (typeof workspaces.items)[number]['workspaceId']): void => {
+    setAddMenu('closed')
+    void selectWorkspace?.(workspaceId).catch(() => { showToast(t('add.projects.failed')) })
+  }
+
+  const addWorkspace = (): void => {
+    setAddMenu('closed')
+    void createWorkspace?.().catch(() => { showToast(t('add.projects.createFailed')) })
+  }
+
+  const addMenuContent = addMenu === 'closed'
+    ? null
+    : (
+      <div ref={addMenuRef} className={css.addMenu} role="menu" aria-label={t('add.menu.aria')}>
+        {addMenu === 'projects'
+          ? (
+            <>
+              <button type="button" className={css.addMenuHeader} onClick={() => { setAddMenu('main') }}>
+                <IconChevronLeftOutline14 />
+                <span>{t('add.projects.title')}</span>
+              </button>
+              <div className={css.addMenuDivider} />
+              <div className={css.addMenuViewport}>
+                {workspaces.state === 'loading' && <div className={css.addMenuStatus}>{t('add.projects.loading')}</div>}
+                {workspaces.state !== 'loading' && workspaces.items.length === 0 && (
+                  <div className={css.addMenuStatus}>{t('add.projects.empty')}</div>
+                )}
+                {workspaces.items.map(workspace => (
+                  <button
+                    key={workspace.workspaceId}
+                    type="button"
+                    role="menuitem"
+                    className={css.addMenuItem}
+                    onClick={() => { openWorkspace(workspace.workspaceId) }}
+                  >
+                    <IconFolderOpenOutline16 className={css.addMenuIcon} />
+                    <span className={css.addMenuText}>
+                      <span className={css.addMenuLabel}>{workspace.title}</span>
+                      <span className={css.addMenuDetail}>{workspace.path}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+              {createWorkspace !== undefined && (
+                <>
+                  <div className={css.addMenuDivider} />
+                  <button type="button" role="menuitem" className={css.addMenuItem} onClick={addWorkspace}>
+                    <IconProjectAddOutline16 className={css.addMenuIcon} />
+                    <span className={css.addMenuText}>
+                      <span className={css.addMenuLabel}>{t('add.projects.add')}</span>
+                      <span className={css.addMenuDetail}>{t('add.projects.addDetail')}</span>
+                    </span>
+                  </button>
+                </>
+              )}
+            </>
+          )
+          : (
+            <>
+              <div className={css.addMenuTitle}>{t('add.section.add')}</div>
+              {addImages !== undefined && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={css.addMenuItem}
+                  onClick={openLocalFiles}
+                >
+                  <IconPaperclipOutline16 className={css.addMenuIcon} />
+                  <span className={css.addMenuText}>
+                    <span className={css.addMenuLabel}>{t('add.files')}</span>
+                    <span className={css.addMenuDetail}>{t('add.files.detail')}</span>
+                  </span>
+                </button>
+              )}
+              {toggleReferenceMenu !== undefined && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={css.addMenuItem}
+                  onClick={() => { openSourceMenu(toggleReferenceMenu) }}
+                >
+                  <IconFolderOpenOutline16 className={css.addMenuIcon} />
+                  <span className={css.addMenuText}>
+                    <span className={css.addMenuLabel}>{t('add.references')}</span>
+                    <span className={css.addMenuDetail}>{t('add.references.detail')}</span>
+                  </span>
+                </button>
+              )}
+              {selectWorkspace !== undefined && (
+                <button type="button" role="menuitem" className={css.addMenuItem} onClick={() => { setAddMenu('projects') }}>
+                  <IconProjectAddOutline16 className={css.addMenuIcon} />
+                  <span className={css.addMenuText}>
+                    <span className={css.addMenuLabel}>{t('add.projects')}</span>
+                    <span className={css.addMenuDetail}>{t('add.projects.detail')}</span>
+                  </span>
+                  <IconChevronRightOutline14 className={css.addMenuChevron} />
+                </button>
+              )}
+              <button type="button" role="menuitem" className={css.addMenuItem} onClick={startGoal}>
+                <IconGoalOutline16 className={css.addMenuIcon} />
+                <span className={css.addMenuText}>
+                  <span className={css.addMenuLabel}>{t('add.goal')}</span>
+                  <span className={css.addMenuDetail}>{t('add.goal.detail')}</span>
+                </span>
+              </button>
+              <button type="button" role="menuitem" className={css.addMenuItem} onClick={togglePlan}>
+                <IconListPenOutline16 className={css.addMenuIcon} />
+                <span className={css.addMenuText}>
+                  <span className={css.addMenuLabel}>{t(planActive ? 'add.plan.leave' : 'add.plan')}</span>
+                  <span className={css.addMenuDetail}>{t('add.plan.detail')}</span>
+                </span>
+              </button>
+              {toggleSkillMenu !== undefined && (
+                <>
+                  <div className={css.addMenuTitle}>{t('add.section.plugins')}</div>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={css.addMenuItem}
+                    onClick={() => { openSourceMenu(toggleSkillMenu) }}
+                  >
+                    <IconSkillOutline16 className={css.addMenuIcon} />
+                    <span className={css.addMenuText}>
+                      <span className={css.addMenuLabel}>{t('add.plugins')}</span>
+                      <span className={css.addMenuDetail}>{t('add.plugins.detail')}</span>
+                    </span>
+                  </button>
+                </>
+              )}
+              {toggleCommandMenu !== undefined && (
+                <>
+                  <div className={css.addMenuTitle}>{t('add.section.advanced')}</div>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={css.addMenuItem}
+                    onClick={() => { openSourceMenu(toggleCommandMenu) }}
+                  >
+                    <IconApiOutline14 className={css.addMenuIcon} />
+                    <span className={css.addMenuText}>
+                      <span className={css.addMenuLabel}>{t('add.commands')}</span>
+                      <span className={css.addMenuDetail}>{t('add.commands.detail')}</span>
+                    </span>
+                  </button>
+                </>
+              )}
+            </>
+          )}
+      </div>
+    )
 
   // Ordinary sessions retain their primary Send/Stop toggle. A continuable
   // child keeps Send as the primary action and exposes Stop independently so
@@ -705,7 +929,22 @@ export function InputBar({
         onClick={workspaceTrigger ? onRequestWorkspace : undefined}
         onPointerDown={workspaceTrigger ? (e) => { e.stopPropagation() } : undefined}
       >
-        {overlay !== undefined && <div className={css.overlayAnchor}>{overlay}</div>}
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          className={css.fileInput}
+          aria-label={t('add.files.picker')}
+          disabled={locked || machineBusy || addImages === undefined}
+          onChange={onLocalFilesSelected}
+        />
+        {(overlay !== undefined || addMenuContent !== null) && (
+          <div className={css.overlayAnchor}>
+            {overlay}
+            {addMenuContent}
+          </div>
+        )}
         {accessory !== undefined && <div className={css.accessory}>{accessory}</div>}
         {renderSlot('conversation.input.attachments', {
           attachments,
@@ -769,16 +1008,17 @@ export function InputBar({
         </div>
         <div className={css.row}>
           <div className={css.tools}>
-            <Tooltip label={t('input.commands')} side="top" delayMs={500}>
+            <Tooltip label={t('input.add')} side="top" delayMs={500}>
               <button
+                ref={addButtonRef}
                 type="button"
                 className={css.add}
-                aria-label={t('input.commands')}
-                aria-haspopup="listbox"
-                aria-expanded={commandMenuOpen}
-                disabled={locked || toggleCommandMenu === undefined}
+                aria-label={t('input.add')}
+                aria-haspopup="menu"
+                aria-expanded={anyMenuOpen}
+                disabled={locked}
                 onMouseDown={keepFocus}
-                onClick={onToggleCommandMenu}
+                onClick={onToggleAddMenu}
               >
                 <IconPlusOutline16 size={14} />
               </button>

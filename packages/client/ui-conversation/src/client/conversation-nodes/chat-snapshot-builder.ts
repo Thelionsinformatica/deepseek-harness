@@ -258,6 +258,7 @@ function legacyContribution(raw: ChatConversationViewNode): LegacyContribution {
     case 'context':
     case 'command':
     case 'compaction':
+    case 'model-failover':
     case 'turn-error':
     case 'turn-max-tokens':
     case 'unknown':

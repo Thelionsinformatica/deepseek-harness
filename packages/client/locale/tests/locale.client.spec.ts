@@ -287,6 +287,19 @@ describe('LocaleRuntime', () => {
       details: 'Click a tool row in the message flow to view its details',
       provider: 'Edit {provider}',
       apiKey: 'API key configured',
+      apiCost: 'API est. {cost}',
+      unpricedCalls: '{count} unpriced call(s)',
+      automatic: 'Leon Automatic',
+      automaticRoute: 'Leon Automatic, currently using {model}',
+      automaticRouteEffort: 'Leon Automatic, currently using {model}, reasoning effort {effort}',
+      automaticDescription: 'Uses the local 9B model at minimum effort, raises its effort for medium work, and calls the configured cloud model for complex work',
+      working: 'Leon is working…',
+      retryingLocal: 'Retrying local model',
+      retryingCloud: 'Retrying model request',
+      retryDelay: 'Retry delay: ',
+      failureReason: 'Failure reason: ',
+      failoverTitle: 'Local model unavailable',
+      failoverDetail: 'Leon automatically switched to {model} through the configured API.',
     })
     const t = svc.bind('feature')
     expect(t('settings')).toBe('Configurações')
@@ -296,5 +309,20 @@ describe('LocaleRuntime', () => {
     expect(t('details')).toBe('Clique em uma ferramenta no fluxo de mensagens para ver os detalhes')
     expect(t('provider', { provider: 'Gemini Cloud - Leon' })).toBe('Editar Gemini Cloud - Leon')
     expect(t('apiKey')).toBe('Chave de API configurada')
+    expect(t('apiCost', { cost: 'US$0.0011' })).toBe('API est. US$0.0011')
+    expect(t('unpricedCalls', { count: 2 })).toBe('2 chamada(s) sem preço')
+    expect(t('automatic')).toBe('Leon Automático')
+    expect(t('automaticRoute', { model: 'Qwen 3.5 9B' })).toBe('Leon Automático, usando agora: Qwen 3.5 9B')
+    expect(t('automaticRouteEffort', { model: 'Qwen 3.5 9B', effort: 'Low' }))
+      .toBe('Leon Automático, usando agora: Qwen 3.5 9B, esforço de raciocínio: Low')
+    expect(t('automaticDescription')).toBe('Usa o modelo local 9B com esforço mínimo, aumenta o esforço em tarefas médias e chama o modelo em nuvem configurado nas tarefas complexas')
+    expect(t('working')).toBe('Leon está trabalhando…')
+    expect(t('retryingLocal')).toBe('Tentando novamente com o modelo local')
+    expect(t('retryingCloud')).toBe('Tentando novamente com o modelo')
+    expect(t('retryDelay')).toBe('Espera para nova tentativa: ')
+    expect(t('failureReason')).toBe('Motivo da falha: ')
+    expect(t('failoverTitle')).toBe('Modelo local indisponível')
+    expect(t('failoverDetail', { model: 'Gemini 3.6 Flash' }))
+      .toBe('Leon mudou automaticamente para Gemini 3.6 Flash pela API configurada.')
   })
 })

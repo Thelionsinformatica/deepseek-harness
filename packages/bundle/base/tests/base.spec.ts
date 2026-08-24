@@ -32,6 +32,34 @@ describe('dsh-base bundle', () => {
     )
     expect(rows.length).toBeGreaterThan(50)
     expect(rows.some(row => row.id === 'agent-loop')).toBe(true)
+    expect(rows.find(row => row.id === 'goal-round-driver')?.config).toMatchObject({
+      autoStartPresets: ['leon'],
+      autoStartMaxGoalRounds: 12,
+      maxStepsPerTurn: 12,
+    })
+    expect(rows.find(row => row.id === 'agent-default-model')?.config).toMatchObject({
+      provider: 'ollama',
+      model: 'qwen3.5:9b',
+    })
+    expect(rows.find(row => row.id === 'llm-pi-ai')?.config).toMatchObject({
+      providers: {
+        ollama: {
+          api: 'openai-completions',
+          baseURL: 'http://127.0.0.1:11434/v1',
+          headers: { Authorization: 'Bearer ollama-local' },
+          models: [
+            { id: 'qwen3.5:9b' },
+          ],
+        },
+      },
+    })
+    expect(rows.find(row => row.id === 'web')?.config).toBeUndefined()
+    expect(rows.find(row => row.id === 'llm-deepseek')).toBeUndefined()
+    expect(rows.find(row => row.id === 'web-search-deepseek')).toBeUndefined()
+    expect(rows.find(row => row.id === 'tool-web')?.config).toEqual({
+      search: false,
+      fetch: false,
+    })
     expect(rows.find(row => row.id === 'session-telemetry-otel')?.config?.['mode']).toEqual({
       __jsExpr: "process.env.DSH_TELEMETRY_MODE || 'DISABLED'",
     })
@@ -39,6 +67,10 @@ describe('dsh-base bundle', () => {
     expect(rows.filter(row => row.id === 'subagent-claude-code')).toHaveLength(0)
     expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-subagent-codex')
     expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-subagent-claude-code')
+    // Compatibility packages remain installable through an explicit profile;
+    // neither provider is mounted in Leon's shipped catalog above.
+    expect(manifest.dependencies).toHaveProperty('@deepseek-ai/dsh-llm-deepseek')
+    expect(manifest.dependencies).toHaveProperty('@deepseek-ai/dsh-web-search-deepseek')
   })
 
   it('gates each shell stack by platform with a symmetric disabled expression', () => {

@@ -26,6 +26,10 @@ The plugin also contributes the `tool:pwsh` prompt section (order 105): non-zero
 
 `command`, `workdir`, and `timeoutMs` are resolved against the executor's config defaults via `ctx.shell.resolve()` before execution. The workdir default is applied in the tool layer from the calling agent's `session.header.cwd` BEFORE `resolve()` — the per-session cwd must come from `exec.agent`, since N sessions share one executor; only when no session cwd is available does the executor fall back to its own config / `process.cwd()`.
 
+`allowHostProcessTermination: false` rejects common direct PowerShell process and service termination forms before `ctx.shell.resolve()` can spawn anything. The model-facing description directs callers to choose another occupied port or to start long-lived work with `run_in_background` and stop only its returned handle through `job_kill`. The default remains `true` for existing compositions; the Leon preset disables it.
+
+`enforceManagedServerValidation: true` rejects a recognized local server start unless the tool call uses `run_in_background`. It also rejects a server-start command that creates a nested PowerShell `Start-Job` or contains its own HTTP health check. The caller must start the server in one managed background call, run the HTTP check in a separate foreground call, and stop the returned handle with `job_kill`. The default is `false`; the Leon preset enables it.
+
 ### Managed shell environment
 
 Every foreground and background model pwsh call receives a freshly collected trusted `DSH_*` environment through the shared [`dsh-shell-env`](../shell-env/) registry: `DSH_HOME` (the absolute Harness home), `DSH_SHELL=1`, the agent's `DSH_SESSION_ID`, and `DSH_SESSION_JSONL` when the active persistence backend locates one. Plugins contributing `DSH_*` facts to `ctx.shellEnv` apply to pwsh calls exactly as they do to bash calls. The snapshot passes through the dedicated `ShellExecRequest.dshEnv` channel; `process.env` is never modified. The description teaches the generic `$env:DSH_*` convention rather than naming persistence-specific variables.
@@ -52,6 +56,14 @@ Every request in this plugin's registration scope contains the pwsh guidance bel
 
 ```markdown
 Non-zero exits are reported as `[exit code: N]` markers; investigate failures before moving on. On Windows a killed process settles as `[exit code: 1]` without a signal marker; treat a bare exit 1 after an interruption as a termination, not a command failure.
+
+For a local server, make one background call containing only the server start command. Run the HTTP health check in a separate foreground call, then stop the returned job with `job_kill`. Never place the health check after the server start in the same command. If the HTTP check fails or the connection is refused, read the returned server job with `job_output` before changing ports; its stderr is the primary runtime evidence.
+```
+
+##### Host-process guidance when disabled
+
+```markdown
+Direct host process and service termination commands are rejected. Never free a port by killing its owner; choose another port, or start the server with `run_in_background` and stop only its returned job with `job_kill`.
 ```
 
 #### Token effect
@@ -108,7 +120,7 @@ Append-only; newly visible content follows the reusable request prefix and does 
 
 #### What the model sees
 
-Validation and infrastructure failures are normalized as `Error: <message>`. This package's stable messages are `invalid command: expected a non-empty string`, `invalid description: expected a non-empty string`, `invalid timeoutMs: expected a positive number, got <value>`, `invalid escalation: sandbox_permissions requires a justification`, `invalid escalation: justification is only valid together with sandbox_permissions`, `invalid justification: expected a non-empty sentence`, `sandbox_permissions is not available in this composition (no sandboxing executor to escalate)`, the shared escalation failures (not strictly wider / no approval service / no agent to route / no approval channel / user rejected / was cancelled), `run_in_background is disabled for this deployment (enableRunInBackground: false)`, `background jobs unavailable: load @deepseek-ai/dsh-jobs and @deepseek-ai/dsh-tool-jobs`, and `tool call aborted`.
+Validation and infrastructure failures are normalized as `Error: <message>`. This package's stable messages are `invalid command: expected a non-empty string`, `invalid description: expected a non-empty string`, `invalid timeoutMs: expected a positive number, got <value>`, `host process termination is disabled for this agent; do not free a port by stopping its owner. Start long-running commands with run_in_background and stop the returned job with job_kill, or choose another port`, `local server starts must use run_in_background; make one background call containing only the server start command, run the HTTP health check in a separate foreground call, then stop the returned job with job_kill`, `local server start must not create a nested PowerShell job or include its HTTP health check; make one run_in_background call containing only the server start command, run the HTTP health check in a separate foreground call, then stop the returned job with job_kill`, `invalid escalation: sandbox_permissions requires a justification`, `invalid escalation: justification is only valid together with sandbox_permissions`, `invalid justification: expected a non-empty sentence`, `sandbox_permissions is not available in this composition (no sandboxing executor to escalate)`, the shared escalation failures (not strictly wider / no approval service / no agent to route / no approval channel / user rejected / was cancelled), `run_in_background is disabled for this deployment (enableRunInBackground: false)`, `background jobs unavailable: load @deepseek-ai/dsh-jobs and @deepseek-ai/dsh-tool-jobs`, and `tool call aborted`.
 
 #### Token effect
 
@@ -120,6 +132,8 @@ Append-only; newly visible content follows the reusable request prefix and does 
 
 ## Known Limitations and Deferred Work
 
+- **Command classification is defense in depth** — `allowHostProcessTermination: false` rejects common direct PowerShell termination cmdlets, aliases, executables, service controls, object methods, and WMI/CIM forms. It is not an operating-system confinement boundary and cannot classify arbitrary indirect execution through another interpreter; the Windows sandbox and user approval remain the authority for host access.
+- **Server-command classification is intentionally narrow** — `enforceManagedServerValidation: true` recognizes common Node package starts, direct Node `server`/`app`/`index` entrypoints, and Python's built-in HTTP server together with common PowerShell/curl health checks. Unusual server launchers still depend on the model-facing protocol and job ownership policy.
 - **Language mode and named-pipe capture under the Windows sandbox** — under the [Windows ACL sandbox](../../sandbox/sandbox-windows-acl/README.md), read-only pwsh starts in ConstrainedLanguage because its temp write denial makes PowerShell's AppLocker probe fail closed: `Add-Type`, non-core .NET statics (`[System.IO.*]::`, `[math]::`), COM objects, and reflection fail with "only core types" errors, and the mode cannot be lifted from inside. Workspace-write's private temp lets the probe complete, so it stays in FullLanguage unless host policy says otherwise. Both confined modes deny named-pipe opens, so a piped-stdio spawn inside a confined command fails with EPERM. The tool description teaches both contracts to the model; the backend README owns the full limitations.
 - **No persistent shell** — every call starts a fresh `pwsh -Command`; the persistent-shell counterpart is [`@deepseek-ai/dsh-tool-pwsh-persistent`](../tool-pwsh-persistent/README.md), which keeps one owner-scoped pwsh alive across calls on Windows (ConPTY) and POSIX hosts with pwsh.
 - **PowerShell-dialect contract** — the model must write PowerShell (native paths, `$env:` variables), not bash; there is no dialect translation.

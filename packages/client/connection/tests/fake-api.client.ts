@@ -59,12 +59,17 @@ export class FakeApiClient implements IApiClient {
   onModels: (payload: unknown) => Promise<RpcResponse<SessionModels>> = () => Promise.resolve(ok({
     current: { provider: 'deepseek-official', model: 'deepseek-chat' },
     routable: true,
+    automatic: false,
+    automaticAvailable: false,
     groups: [],
     failures: [],
   }))
-  onSelectModel: (payload: ModelSelection & { sessionId: SessionId })
-  => Promise<RpcResponse<{ selected: ModelSelection }>> =
-    payload => Promise.resolve(ok({ selected: { provider: payload.provider, model: payload.model } }))
+  onSelectModel: (payload: ModelSelection & { sessionId: SessionId; automatic?: boolean })
+  => Promise<RpcResponse<{ selected: ModelSelection; automatic: boolean }>> =
+    payload => Promise.resolve(ok({
+      selected: { provider: payload.provider, model: payload.model },
+      automatic: payload.automatic ?? false,
+    }))
   onPrompt: (payload: unknown) => Promise<RpcResponse<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
   onAttachment: (payload: unknown) => Promise<RpcResponse<{ attachment: { attachmentId: never; mediaType: 'image/png'; bytes: number; width: number; height: number }; data: string }>> =
     () => Promise.resolve(ok({ attachment: { attachmentId: 'a' as never, mediaType: 'image/png', bytes: 1, width: 1, height: 1 }, data: 'AA==' }))

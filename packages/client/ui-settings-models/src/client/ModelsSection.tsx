@@ -272,7 +272,21 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
   // One fact decides both first-run postures on this page and the onboarding
   // step: whether the user already has a provider to talk to.
   const anyUsable = state.rows.some(providerUsable)
-  const configured = state.rows.filter(row => row.configured)
+  // Local/native-auth routes need no key and form the primary path. Keep Host
+  // order inside each group while placing them before ready credential routes,
+  // and both before optional routes that still need setup.
+  const configured = state.rows
+    .map((row, index) => ({ row, index }))
+    .filter(({ row }) => row.configured)
+    .sort((left, right) => {
+      const rank = (row: ProviderRow): number => {
+        if (row.entry.active && row.apiKeyEnv === undefined) return 0
+        if (providerUsable(row)) return 1
+        return 2
+      }
+      return rank(left.row) - rank(right.row) || left.index - right.index
+    })
+    .map(({ row }) => row)
   const addable = state.rows.filter(row => !row.configured && row.entry.settingsNs !== '')
   const addTarget = adding ? editing : undefined
   const addNamespace = addTarget === undefined ? undefined : state.namespaces.get(addTarget.settingsNs)

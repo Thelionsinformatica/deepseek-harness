@@ -10,7 +10,7 @@ The Lions Informática 的 fork 需要一种区别于上游 DeepSeek 呈现的�
 
 ## Decision
 
-官方浏览器品牌插件使用原创狮子 SVG、The Lions Informática 字标以及突出显示的 Leon 产品名，占用现有的侧边栏与会话品牌 slot。组件使用共享 Web 主题 token，因此图标和字标在浅色、深色及系统主题下都保持清晰，无需第二套主题服务或全局样式表。
+只要产品组合挂载浏览器品牌插件，它就会使用原创狮子 SVG、The Lions Informática 字标以及突出显示的 Leon 产品名，占用现有的侧边栏与会话品牌 slot。构建 profile 不会禁用这些 occupant，因此普通本地构建与官方构建共享同一 Leon 标识。当构建没有提供 `DSH_CLIENT_TITLE` 时，renderer 还会使用 `Leon — The Lions Informática` 作为标题，防止浏览器标签页恢复为上游 fallback 品牌。组件使用共享 Web 主题 token，因此图标和字标在浅色、深色及系统主题下都保持清晰，无需第二套主题服务或全局样式表。
 
 locale 服务在 `zh` 和 `en` 旁提供 `pt`，在语言选择器中显示 `Português (Brasil)`，把 `pt-BR` 写入文档语言，并在既无持久化选择、浏览器也未请求受支持语言时使用巴西葡萄牙语。英文继续作为缺失字典的 fallback，使上游新加入的键仍可阅读。
 
@@ -26,8 +26,8 @@ locale 服务在 `zh` 和 `en` 旁提供 `pt`，在语言选择器中显示 `Por
 
 ## Testing
 
-locale 测试固定 `pt` 选择器条目、巴西葡萄牙语暂定默认值、`pt-BR` 文档语言、显式 Host 持久化、英文字典 fallback、集中翻译包和插值行为。品牌测试固定可访问的 Leon 标签、字标文本、请求的图标尺寸、构建 profile 条件、声明顺序、HMR 折叠和资源释放。
+locale 测试固定 `pt` 选择器条目、巴西葡萄牙语暂定默认值、`pt-BR` 文档语言、显式 Host 持久化、英文字典 fallback、集中翻译包和插值行为。品牌测试固定可访问的 Leon 标签、字标文本、请求的图标尺寸、普通本地构建激活、声明顺序、HMR 折叠和资源释放。renderer 测试固定没有构建期标题时使用 Leon 作为浏览器标题 fallback。
 
 ## Consequences
 
-Leon 以巴西葡萄牙语启动，并通过上游应用已经拥有的插件组合点承载 The Lions Informática 标识。同步上游时保留稳定的包地址和可读的英文安全路径。代价是需要维护尚未迁移到原生字典的功能文案集中葡萄牙语表；locale 服务之外的内联字符串仍是独立的迁移任务。
+Leon 以巴西葡萄牙语启动，并通过上游应用已经拥有的插件组合点承载 The Lions Informática 标识，普通本地构建也包括在内。同步上游时保留稳定的包地址和可读的英文安全路径。代价是需要维护尚未迁移到原生字典的功能文案集中葡萄牙语表；locale 服务之外的内联字符串仍是独立的迁移任务。

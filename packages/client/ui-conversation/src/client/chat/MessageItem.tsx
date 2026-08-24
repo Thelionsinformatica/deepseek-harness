@@ -6,7 +6,7 @@
 import { memo, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type {
-  ModelRetryNode, TurnErrorNode, UserMessageNode,
+  ModelFailoverNode, ModelRetryNode, TurnErrorNode, UserMessageNode,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import { JsonBlock, MessageText, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNodeOwnerProps, ChatNodeViewProps, ChatViewSlotProps } from '../contract/slots.ts'
@@ -82,20 +82,23 @@ function ModelRetryItem({ node, active, t }: {
     return () => { window.clearInterval(timer) }
   }, [active, deadline])
 
+  const localModel = node.provider === 'ollama'
   const label = active
-    ? t('message.retry.active')
+    ? t(localModel ? 'message.retry.active.local' : 'message.retry.active')
     : node.retryState === 'cancelled'
-      ? t('message.retry.cancelled')
+      ? t(localModel ? 'message.retry.cancelled.local' : 'message.retry.cancelled')
       : node.retryState === 'started'
-        ? t('message.retry.started')
-        : t('message.retry.scheduled')
+        ? t(localModel ? 'message.retry.started.local' : 'message.retry.started')
+        : t(localModel ? 'message.retry.scheduled.local' : 'message.retry.scheduled')
   const seconds = active ? remainingSeconds : scheduledSeconds
 
   return (
     <details className={css.retryRow} data-active={active || undefined}>
       <summary className={css.retrySummary}>
         <span className={css.retryText} role="status">
-          {t('message.retry.status', { label, retry: node.retry, maximum, seconds })}
+          {t(active ? 'message.retry.status.active' : 'message.retry.status', {
+            label, retry: node.retry, maximum, seconds,
+          })}
         </span>
       </summary>
       <div className={css.retryDetails}>
@@ -125,6 +128,22 @@ function TurnErrorItem({ node, t }: {
         <span className={css.turnErrorMessage}>{node.message}</span>
       </div>
       {node.code !== undefined && <code className={css.turnErrorCode}>{node.code}</code>}
+    </div>
+  )
+}
+
+/** Persistent notice that automatic routing continued through the configured API. */
+function ModelFailoverItem({ node, t }: {
+  node: ModelFailoverNode
+  t: ChatViewSlotProps['t']
+}) {
+  return (
+    <div className={css.turnErrorRow} role="status">
+      <StateDot state="warning" className={css.turnErrorDot} />
+      <div className={css.turnErrorCopy}>
+        <span className={css.failoverTitle}>{t('message.failover.title')}</span>
+        <span className={css.turnErrorMessage}>{t('message.failover.detail', { model: node.to.model })}</span>
+      </div>
     </div>
   )
 }
@@ -324,6 +343,11 @@ export const CompactionNodeView = memo(function CompactionNodeView({ node, t }: 
 export const RetryNodeView = memo(function RetryNodeView({ node, t }: ChatNodeViewProps<'model-retry'>) {
   const data = node.data
   return <ModelRetryItem node={data.current} active={data.current.retryState === 'scheduled'} t={t} />
+})
+
+/** Automatic provider-replacement keyed Chat renderer. */
+export const ModelFailoverNodeView = memo(function ModelFailoverNodeView({ node, t }: ChatNodeViewProps<'model-failover'>) {
+  return <ModelFailoverItem node={node.data} t={t} />
 })
 
 /** Terminal turn-error keyed Chat renderer. */

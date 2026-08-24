@@ -496,4 +496,75 @@ describe('Web session model selection', () => {
       .not.toContain('deleted-gateway/deleted-model')
     await ctx.fiber.dispose()
   })
+
+  it('adapts idle prompts, exposes the active route, and preserves explicit manual control', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    const followup = vi.fn()
+    Object.assign(agent, { status: 'idle', followup })
+    const choose = vi.fn(({ content }: { content: readonly { type: string; text?: string }[] }) => ({
+      provider: 'deepseek-official',
+      model: content.some(part => part.text?.includes('auditoria') === true)
+        ? 'deepseek-reasoner'
+        : 'deepseek-chat',
+    }))
+    const saveDefaultModelSelection = vi.fn(() => Promise.resolve())
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-reasoner' }),
+      saveDefaultModelSelection,
+      adaptiveModelSelection: choose,
+      cwd: '/tmp',
+    })
+
+    expect(expectValue(await api.sessions.models(request({ sessionId })))).toMatchObject({
+      automatic: true,
+      automaticAvailable: true,
+      current: { provider: 'deepseek-official', model: 'deepseek-chat' },
+    })
+    expect(choose).toHaveBeenLastCalledWith({ content: [], hasHistory: false })
+
+    expectValue(await api.sessions.prompt(request({
+      sessionId, mode: 'queue' as const, content: [{ type: 'text' as const, text: 'Olá, Leon' }],
+    })))
+    expect(choose).toHaveBeenLastCalledWith(expect.objectContaining({ hasHistory: false }))
+    expect(expectValue(await api.sessions.models(request({ sessionId })))).toMatchObject({
+      automatic: true,
+      current: { provider: 'deepseek-official', model: 'deepseek-chat' },
+    })
+
+    agent.session.append('turn/start', { turn: 1 })
+    expectValue(await api.sessions.prompt(request({
+      sessionId,
+      mode: 'queue' as const,
+      content: [{ type: 'text' as const, text: 'Faça uma auditoria completa.' }],
+    })))
+    expect(choose).toHaveBeenLastCalledWith(expect.objectContaining({ hasHistory: true }))
+    expect(expectValue(await api.sessions.models(request({ sessionId })))).toMatchObject({
+      current: { provider: 'deepseek-official', model: 'deepseek-reasoner' },
+    })
+
+    const manual = expectValue(await api.sessions.selectModel(request({
+      sessionId, provider: 'deepseek-official', model: 'deepseek-chat',
+    })))
+    expect(manual.automatic).toBe(false)
+    expect(saveDefaultModelSelection).toHaveBeenCalledOnce()
+    const decisionsBeforeManualPrompt = choose.mock.calls.length
+    expectValue(await api.sessions.prompt(request({
+      sessionId,
+      mode: 'queue' as const,
+      content: [{ type: 'text' as const, text: 'Faça outra auditoria completa.' }],
+    })))
+    expect(choose).toHaveBeenCalledTimes(decisionsBeforeManualPrompt)
+    expect(expectValue(await api.sessions.models(request({ sessionId })))).toMatchObject({
+      automatic: false,
+      current: { provider: 'deepseek-official', model: 'deepseek-chat' },
+    })
+
+    const enabled = expectValue(await api.sessions.selectModel(request({
+      sessionId, provider: 'deepseek-official', model: 'deepseek-chat', automatic: true,
+    })))
+    expect(enabled.automatic).toBe(true)
+    expect(saveDefaultModelSelection).toHaveBeenCalledOnce()
+    expect(followup).toHaveBeenCalledTimes(3)
+    await ctx.fiber.dispose()
+  })
 })

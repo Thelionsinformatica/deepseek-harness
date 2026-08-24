@@ -10,7 +10,7 @@ import z from '@deepseek-ai/schemastery'
 import { z as zod } from 'zod'
 import type { ZodType } from 'zod'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { TodoItem } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, TodoItem } from '@deepseek-ai/dsh-session'
 // Type-only: resolves ctx.sessionProjections for the optional unit child.
 import type {} from '@deepseek-ai/dsh-session-projection'
 // The `todos` projection-key declaration lives in src/types.ts (its one home);
@@ -35,11 +35,17 @@ export interface Config {
    * rejected.
    */
   allowParallelInProgress: boolean
+  /**
+   * Whether later writes in one direct-human task must retain every existing item in order and
+   * keep completed items completed. New discoveries may be inserted without replacing the plan.
+   */
+  preserveExistingItems: boolean
 }
 
 /** Schemastery configuration for the todo tool consumer. */
 export const Config: z<Config> = z.object({
   allowParallelInProgress: z.boolean().required(),
+  preserveExistingItems: z.boolean().required(),
 })
 
 const DESCRIPTION_HEAD =
@@ -65,16 +71,48 @@ const DESCRIPTION_TAIL =
   + 'single-step tasks. Statuses: `pending` (not started), `in_progress` (being '
   + 'worked on now), `completed` (finished).'
 
+const DESCRIPTION_PRESERVE =
+  'Retain every existing todo with the exact same content and relative order on later calls. '
+  + 'Only update statuses or insert newly discovered work, and never move a completed item backward. '
+
 /**
  * The model-facing description for one activation. The active-status clause is the only part that
  * varies, because it is the only instruction the parallel policy changes.
  * @param allowParallel - whether several todos may be `in_progress` at once.
  * @returns the composed tool description.
  */
-function describe(allowParallel: boolean): string {
+function describe(allowParallel: boolean, preserveExistingItems: boolean): string {
   return DESCRIPTION_HEAD
     + (allowParallel ? DESCRIPTION_PARALLEL : DESCRIPTION_SINGLE)
+    + (preserveExistingItems ? DESCRIPTION_PRESERVE : '')
     + DESCRIPTION_TAIL
+}
+
+/** Return the standing list after the latest direct-human task boundary. */
+function currentTodos(events: readonly SessionEvent[]): TodoItem[] | null {
+  for (let index = events.length - 1; index >= 0; index--) {
+    const event = events[index]
+    if (event?.type === 'todo/write') return event.data.todos
+    if (event?.type === 'user/message' && event.data.source.kind === 'user') return null
+  }
+  return null
+}
+
+/** Enforce additive plan evolution without blocking newly discovered work. */
+function preserveExistingTodos(previous: readonly TodoItem[], next: readonly TodoItem[]): void {
+  let cursor = 0
+  for (const existing of previous) {
+    const found = next.slice(cursor).findIndex(candidate => candidate.content === existing.content)
+    if (found < 0) {
+      throw new Error(`invalid todos: preserved plan must retain existing item ${JSON.stringify(existing.content)}`)
+    }
+    cursor += found
+    const candidate = next[cursor]
+    if (existing.status === 'completed' && candidate?.status !== 'completed') {
+      throw new Error(`invalid todos: completed item cannot move backward ${JSON.stringify(existing.content)}`)
+    }
+    cursor++
+  }
 }
 
 /**
@@ -127,11 +165,13 @@ const todosProjectionSchema: ZodType<TodoItem[] | null> = zod.union([
  */
 export function apply(ctx: Context, config: Config): void {
   const allowParallel = config.allowParallelInProgress
+  const preserveItems = config.preserveExistingItems
   // The unit child activates only when a projection registry is composed
   // (headless assemblies without the seam stay unaffected). Standing-plan fold:
-  // latest whole todo/write list, cleared by the next turn/start (turn/end keeps
-  // the finished checklist visible); null before the first write or after a
-  // later turn begins; every other event returns the same state reference.
+  // latest whole todo/write list, cleared by the next direct-human message.
+  // Automatic goal-round messages keep the list because they continue the same
+  // objective; turn/end also keeps the finished checklist visible. Every other
+  // event returns the same state reference.
   ctx.inject(['sessionProjections'], (projectionCtx) => {
     projectionCtx.sessionProjections.register<'todos', TodoItem[] | null>({
       key: 'todos',
@@ -139,16 +179,16 @@ export function apply(ctx: Context, config: Config): void {
       init: () => null,
       apply: (state, event) => {
         if (event.type === 'todo/write') return event.data.todos
-        if (event.type === 'turn/start') return null
+        if (event.type === 'user/message' && event.data.source.kind === 'user') return null
         return state
       },
       wire: { viewSchema: todosProjectionSchema, view: state => state },
-      stateVersion: 2,
+      stateVersion: 3,
     })
   })
   ctx.tools.register(defineTool({
     name: 'todo_write',
-    description: describe(allowParallel),
+    description: describe(allowParallel, preserveItems),
     parameters: {
       todos: {
         type: 'array',
@@ -209,6 +249,10 @@ export function apply(ctx: Context, config: Config): void {
         // The list is per-agent-session state; a non-agent caller (no owning
         // session) has nowhere to write it. Reject rather than silently no-op.
         throw new Error('todo_write requires an owning agent session')
+      }
+      if (preserveItems) {
+        const previous = currentTodos(exec.agent.session.events)
+        if (previous !== null) preserveExistingTodos(previous, todos)
       }
       exec.agent.session.append('todo/write', { todos })
       const count = (status: TodoItem['status']): number => todos.filter(t => t.status === status).length

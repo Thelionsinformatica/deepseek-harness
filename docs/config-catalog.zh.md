@@ -289,12 +289,14 @@ export interface GoalConfig {
   domain?: GoalDomainConfig
   /** Model-facing goal-tool authority policy. */
   tool?: toolGoal.Config
+  /** Same-session continuation and optional automatic-admission policy. */
+  driver?: goalSession.Config
 }
 ```
 
-依赖：[`AgentLoopConfig`](#deepseek-aidsh-agent-loop) · [`GoalDomainConfig`](#deepseek-aidsh-goal) · [`InvariantConfig`](#deepseek-aidsh-invariants) · [`JobsConfig`](#deepseek-aidsh-jobs-local) · [`SessionTitleConfig`](#deepseek-aidsh-session-title) · [`SkillFileSystem`](../packages/skill/skill-filesystem/src/index.ts) · [`SkillRegistryConfig`](#deepseek-aidsh-skill) · [`SystemPromptConfig`](#deepseek-aidsh-system-prompt) · [`toolBash`](../packages/shell/tool-bash/src/index.ts) · [`toolGoal`](../packages/goal/tool-goal/src/index.ts) · [`toolJobs`](../packages/jobs/tool-jobs/src/index.ts) · [`ToolsConfig`](#deepseek-aidsh-tools) · [`toolSkill`](../packages/skill/tool-skill/src/index.ts) · [`workspaceContext`](../packages/context/agent-instructions/src/index.ts)
+依赖：[`AgentLoopConfig`](#deepseek-aidsh-agent-loop) · [`GoalDomainConfig`](#deepseek-aidsh-goal) · [`goalSession`](../packages/goal/goal-round-driver/src/index.ts) · [`InvariantConfig`](#deepseek-aidsh-invariants) · [`JobsConfig`](#deepseek-aidsh-jobs-local) · [`SessionTitleConfig`](#deepseek-aidsh-session-title) · [`SkillFileSystem`](../packages/skill/skill-filesystem/src/index.ts) · [`SkillRegistryConfig`](#deepseek-aidsh-skill) · [`SystemPromptConfig`](#deepseek-aidsh-system-prompt) · [`toolBash`](../packages/shell/tool-bash/src/index.ts) · [`toolGoal`](../packages/goal/tool-goal/src/index.ts) · [`toolJobs`](../packages/jobs/tool-jobs/src/index.ts) · [`ToolsConfig`](#deepseek-aidsh-tools) · [`toolSkill`](../packages/skill/tool-skill/src/index.ts) · [`workspaceContext`](../packages/context/agent-instructions/src/index.ts)
 
-来源：[`packages/examples/agent-spine-demo/src/index.ts:92`](../packages/examples/agent-spine-demo/src/index.ts)
+来源：[`packages/examples/agent-spine-demo/src/index.ts:94`](../packages/examples/agent-spine-demo/src/index.ts)
 
 <a id="deepseek-aidsh-agent-tool-presentation"></a>
 
@@ -313,12 +315,17 @@ export interface Config {
    * composed for nothing.
    */
   mode: ToolPresentationMode
+  /**
+   * Optional character cap applied to normalized tool and parameter
+   * descriptions in the model-facing schema only; minimum 3.
+   */
+  descriptionMaxLength?: number
 }
 ```
 
 依赖：[`ToolPresentationMode`](subsystems/tools.zh.md)
 
-来源：[`packages/core/agent-tool-presentation/src/index.ts:38`](../packages/core/agent-tool-presentation/src/index.ts)
+来源：[`packages/core/agent-tool-presentation/src/index.ts:40`](../packages/core/agent-tool-presentation/src/index.ts)
 
 <a id="deepseek-aidsh-attachment-local"></a>
 
@@ -712,6 +719,26 @@ export interface Config {
 
 来源：[`packages/goal/goal/src/index.ts:116`](../packages/goal/goal/src/index.ts)
 
+<a id="deepseek-aidsh-goal-round-driver"></a>
+
+## `@deepseek-ai/dsh-goal-round-driver`
+
+需要：`agents` · `goals` · `sessions`
+
+```ts config-catalog
+/** Deployment policy for automatic goal admission. */
+export interface Config {
+  /** Agent preset ids whose complex direct-human tasks become goals; `*` matches every preset. */
+  autoStartPresets?: string[]
+  /** Round cap assigned to goals admitted by this driver. */
+  autoStartMaxGoalRounds?: number
+  /** Maximum model steps in one armed-goal turn; zero leaves turns unbounded. */
+  maxStepsPerTurn?: number
+}
+```
+
+来源：[`packages/goal/goal-round-driver/src/index.ts:23`](../packages/goal/goal-round-driver/src/index.ts)
+
 <a id="deepseek-aidsh-headless"></a>
 
 ## `@deepseek-ai/dsh-headless`
@@ -726,7 +753,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/bundle/headless/src/index.ts:31`](../packages/bundle/headless/src/index.ts)
+来源：[`packages/bundle/headless/src/index.ts:32`](../packages/bundle/headless/src/index.ts)
 
 <a id="deepseek-aidsh-hooks-claude-code"></a>
 
@@ -822,10 +849,70 @@ export interface Config {
    * @default 1024
    */
   coldBlankProbeMaxBytes?: number
+  /** Optional prompt tiers with explicit provider-neutral goal-round escalation. */
+  adaptiveRouting?: AdaptiveRoutingConfig
+}
+
+/** Prompt tiers plus optional provider-neutral goal-round escalation. */
+export interface AdaptiveRoutingConfig {
+  /** Provider route used when a tier does not name its own provider. */
+  provider: string
+  /** Registered provider route for short, self-contained requests. */
+  fastProvider?: string
+  /** Registered provider route for contextual or medium-complexity work. */
+  mainProvider?: string
+  /** Registered provider route for the most complex work. */
+  expertProvider?: string
+  /** Model used for short, self-contained requests. */
+  fastModel: string
+  /** Stronger local model used for contextual or medium-complexity work. */
+  mainModel: string
+  /** Optional cloud model reserved for the most complex work. */
+  expertModel?: string
+  /** Provider-owned reasoning effort used with the fast tier. */
+  fastReasoningEffort?: string
+  /** Provider-owned reasoning effort used with the main tier. */
+  mainReasoningEffort?: string
+  /** Stronger effort used for large, highly structured first requests. */
+  expertReasoningEffort?: string
+  /** Maximum normalized text length eligible for the fast tier. */
+  simpleMaxCharacters?: number
+  /** Minimum normalized text length promoted from main to expert effort. */
+  expertMinCharacters?: number
+  /** Ordered escalation policy; the highest eligible `fromRound` wins. */
+  goalRoundTiers?: AdaptiveGoalRoundTier[]
+  /** Optional immediate replacement for an unavailable automatic route. */
+  failover?: AdaptiveFailoverConfig
+}
+
+/** One explicitly configured route used from a numbered goal round onward. */
+export interface AdaptiveGoalRoundTier {
+  /** First automatic goal round that may use this route. */
+  fromRound: number
+  /** Registered provider route. */
+  provider: string
+  /** Provider-owned model id. */
+  model: string
+  /** Provider-owned reasoning effort. */
+  reasoningEffort?: string
+}
+
+/** Explicit provider replacement used when an automatic route is unavailable. */
+export interface AdaptiveFailoverConfig {
+  /** Failed providers eligible for replacement. */
+  fromProviders: string[]
+  /** Registered replacement provider route. */
+  provider: string
+  /** Provider-owned replacement model id. */
+  model: string
+  /** Provider-owned reasoning effort for the replacement request. */
+  reasoningEffort?: string
+  /** Provider-neutral failure codes that prove the active route is unavailable. */
+  failureCodes: string[]
 }
 ```
 
-来源：[`packages/host/apiproxy/src/index.ts:41`](../packages/host/apiproxy/src/index.ts)
+来源：[`packages/host/apiproxy/src/index.ts:43`](../packages/host/apiproxy/src/index.ts)
 
 <a id="deepseek-aidsh-host-directory-picker-browse"></a>
 
@@ -1445,6 +1532,22 @@ export interface ReconnectConfig {
 
 来源：[`packages/mcp/mcp-client/src/index.ts:102`](../packages/mcp/mcp-client/src/index.ts)
 
+<a id="deepseek-aidsh-memory"></a>
+
+## `@deepseek-ai/dsh-memory`
+
+```ts config-catalog
+/** Provider selection config for the memory capability. */
+export interface MemoryRuntimeConfig {
+  /** Explicit provider id. Omitted auto-selects when exactly one provider is usable. */
+  readonly provider?: string
+  /** Emit memory observability events and enable audit hooks. */
+  readonly telemetryEnabled?: boolean
+}
+```
+
+来源：[`packages/memory/memory/src/index.ts:85`](../packages/memory/memory/src/index.ts)
+
 <a id="deepseek-aidsh-message-feedback"></a>
 
 ## `@deepseek-ai/dsh-message-feedback`
@@ -1866,6 +1969,41 @@ export interface Config {
 ```
 
 来源：[`packages/context/session-reference/src/config.ts:11`](../packages/context/session-reference/src/config.ts)
+
+<a id="deepseek-aidsh-session-stats"></a>
+
+## `@deepseek-ai/dsh-session-stats`
+
+需要：`sessionProjections`
+
+```ts config-catalog
+/** Deployment-owned token prices; omission keeps cost estimation disabled. */
+export type Config = SessionStatsConfig
+
+/** Deployment-owned model pricing table. An absent table disables cost accounting. */
+export interface SessionStatsConfig {
+  /** Exact provider/model token prices used to estimate the API cost of durable usage events. */
+  prices?: ModelTokenPrice[]
+}
+
+/** One exact provider/model price used for durable cost estimation. */
+export interface ModelTokenPrice {
+  /** Registered provider route. */
+  provider: string
+  /** Provider-owned model id. */
+  model: string
+  /** Standard input price in USD per one million uncached tokens. */
+  inputUsdPerMillion: number
+  /** Standard output price in USD per one million tokens. */
+  outputUsdPerMillion: number
+  /** Cached-input price; omission uses the ordinary input price. */
+  cacheReadUsdPerMillion?: number
+  /** Cache-write price; omission uses the ordinary input price. */
+  cacheWriteUsdPerMillion?: number
+}
+```
+
+来源：[`packages/session/session-stats/src/index.ts:25`](../packages/session/session-stats/src/index.ts)
 
 <a id="deepseek-aidsh-session-telemetry-otel"></a>
 
@@ -2617,10 +2755,24 @@ export interface Config {
 export interface Config {
   /** Minimum admitted goal rounds before the model may self-report `blocked`. */
   blockedAfterConsecutiveRounds?: number
+  /** Refuse completion until this goal has a non-empty todo list whose items are all completed. */
+  completionRequiresCompletedTodos?: boolean
+  /** Named one-shot subagent provider for independent completion review; empty disables review. */
+  completionAuditorProvider?: string
+  /** LLM provider used only by the independent completion auditor. */
+  completionAuditorModelProvider?: string
+  /** Model used only by the independent completion auditor. */
+  completionAuditorModel?: string
+  /** Maximum output tokens for each auditor request. */
+  completionAuditorMaxTokens?: number
+  /** Maximum auditor starts accepted in one executor turn. */
+  completionAuditorMaxAttemptsPerTurn?: number
+  /** Maximum correction-report characters returned to the executor. */
+  completionAuditorReportMaxCharacters?: number
 }
 ```
 
-来源：[`packages/goal/tool-goal/src/index.ts:26`](../packages/goal/tool-goal/src/index.ts)
+来源：[`packages/goal/tool-goal/src/index.ts:33`](../packages/goal/tool-goal/src/index.ts)
 
 <a id="deepseek-aidsh-tool-jobs"></a>
 
@@ -2676,6 +2828,26 @@ export interface Config {
 
 来源：[`packages/lsp/tool-lsp/src/index.ts:58`](../packages/lsp/tool-lsp/src/index.ts)
 
+<a id="deepseek-aidsh-tool-memory"></a>
+
+## `@deepseek-ai/dsh-tool-memory`
+
+需要：`tools` · `systemPrompt`
+
+```ts config-catalog
+/** Optional, bounded automatic recall. Explicit memory tools remain available when disabled. */
+export interface Config {
+  /** Search the current workspace before the first model request of each turn. */
+  automaticRecall?: boolean
+  /** Maximum safe records included in one automatic recall snapshot. */
+  recallLimit?: number
+  /** Maximum characters in one automatic recall snapshot. Records are skipped, never truncated. */
+  recallMaxChars?: number
+}
+```
+
+来源：[`packages/memory/tool-memory/src/index.ts:50`](../packages/memory/tool-memory/src/index.ts)
+
 <a id="deepseek-aidsh-tool-pwsh"></a>
 
 ## `@deepseek-ai/dsh-tool-pwsh`
@@ -2687,6 +2859,10 @@ export interface Config {
 export interface Config {
   /** Expose `run_in_background` (default true); disabled calls are also rejected. */
   enableRunInBackground?: boolean
+  /** Permit direct host process/service termination syntax (default true). */
+  allowHostProcessTermination?: boolean
+  /** Require local servers and HTTP checks to use separate managed calls (default false). */
+  enforceManagedServerValidation?: boolean
 }
 ```
 
@@ -2910,6 +3086,11 @@ export interface Config {
    * rejected.
    */
   allowParallelInProgress: boolean
+  /**
+   * Whether later writes in one direct-human task must retain every existing item in order and
+   * keep completed items completed. New discoveries may be inserted without replacing the plan.
+   */
+  preserveExistingItems: boolean
 }
 ```
 
@@ -3087,10 +3268,18 @@ export interface Config {
   surfaceContext: boolean
   /** Explicit `--trusted-host` authorities from this invocation. */
   trustedHosts: string[]
+  /** Python runtime containing the local decoder and Vosk packages. */
+  voicePythonPath?: string
+  /** Offline Brazilian Portuguese Vosk model directory. */
+  voiceModelPath?: string
+  /** Maximum encoded microphone upload in bytes. */
+  voiceMaxBytes?: number
+  /** Maximum local transcription process lifetime in milliseconds. */
+  voiceTimeoutMs?: number
 }
 ```
 
-来源：[`packages/bundle/web-app/src/index.ts:42`](../packages/bundle/web-app/src/index.ts)
+来源：[`packages/bundle/web-app/src/index.ts:44`](../packages/bundle/web-app/src/index.ts)
 
 <a id="deepseek-aidsh-web-fetch-http"></a>
 
@@ -3169,6 +3358,28 @@ export interface Config {
 ```
 
 来源：[`packages/web/web-search-exa/src/index.ts:38`](../packages/web/web-search-exa/src/index.ts)
+
+<a id="deepseek-aidsh-web-search-google"></a>
+
+## `@deepseek-ai/dsh-web-search-google`
+
+需要：`web`
+
+```ts config-catalog
+/** Plugin configuration projected for each search operation. */
+export interface Config {
+  /** Literal Google API key; prefer {@link apiKeyEnv}. */
+  apiKey?: string
+  /** Credential reference resolved for each search. */
+  apiKeyEnv?: string
+  /** Gemini API base; `/interactions` is appended. */
+  baseURL?: string
+  /** Search-capable Gemini model id. */
+  model?: string
+}
+```
+
+来源：[`packages/web/web-search-google/src/index.ts:40`](../packages/web/web-search-google/src/index.ts)
 
 <a id="deepseek-aidsh-web-search-perplexity"></a>
 
@@ -3266,6 +3477,8 @@ export interface Config {
 - `@deepseek-ai/dsh-client-ui-tool`（[`packages/client/ui-tool/src/index.ts`](../packages/client/ui-tool/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-trajectory`（[`packages/client/ui-trajectory/src/index.ts`](../packages/client/ui-trajectory/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-user-questions`（[`packages/client/ui-user-questions/src/index.ts`](../packages/client/ui-user-questions/src/index.ts)）
+- `@deepseek-ai/dsh-client-ui-voice`（[`packages/client/ui-voice/src/index.ts`](../packages/client/ui-voice/src/index.ts)）
+- `@deepseek-ai/dsh-client-ui-work-dashboard`（[`packages/client/ui-work-dashboard/src/index.ts`](../packages/client/ui-work-dashboard/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-workflow-run`（[`packages/client/ui-workflow-run/src/index.ts`](../packages/client/ui-workflow-run/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-workspace`（[`packages/client/ui-workspace/src/index.ts`](../packages/client/ui-workspace/src/index.ts)）
 - `@deepseek-ai/dsh-command-compact` — 需要 `commands` · `compact`（[`packages/compaction/command-compact/src/index.ts`](../packages/compaction/command-compact/src/index.ts)）
@@ -3275,18 +3488,17 @@ export interface Config {
 - `@deepseek-ai/dsh-cordis-client-runner`（[`packages/extensions/cordis-client-runner/src/index.ts`](../packages/extensions/cordis-client-runner/src/index.ts)）
 - `@deepseek-ai/dsh-fs-e2b` — 需要 `e2b`（[`packages/e2b/fs-e2b/src/index.ts`](../packages/e2b/fs-e2b/src/index.ts)）
 - `@deepseek-ai/dsh-fs-observation-policy`（[`packages/fs/fs-observation-policy/src/index.ts`](../packages/fs/fs-observation-policy/src/index.ts)）
-- `@deepseek-ai/dsh-goal-round-driver` — 需要 `agents` · `goals` · `sessions`（[`packages/goal/goal-round-driver/src/index.ts`](../packages/goal/goal-round-driver/src/index.ts)）
 - `@deepseek-ai/dsh-host-directory-picker-auto` — 需要 `webServer` · `loader`（[`packages/host/directory-picker-auto/src/index.ts`](../packages/host/directory-picker-auto/src/index.ts)）
 - `@deepseek-ai/dsh-host-directory-picker-native`（[`packages/host/directory-picker-native/src/index.ts`](../packages/host/directory-picker-native/src/index.ts)）
 - `@deepseek-ai/dsh-host-plugin-inventory` — 需要 `loader`（[`packages/host/plugin-inventory/src/index.ts`](../packages/host/plugin-inventory/src/index.ts)）
 - `@deepseek-ai/dsh-llm`（[`packages/llm/llm/src/index.ts`](../packages/llm/llm/src/index.ts)）
 - `@deepseek-ai/dsh-lsp`（[`packages/lsp/lsp/src/index.ts`](../packages/lsp/lsp/src/index.ts)）
+- `@deepseek-ai/dsh-memory-local` — 需要 `memory` · `storageDomain`（[`packages/memory/memory-local/src/index.ts`](../packages/memory/memory-local/src/index.ts)）
 - `@deepseek-ai/dsh-schedule` — 需要 `agents` · `sessions` · `tools` · `sessionPersistence`（[`packages/schedule/schedule/src/index.ts`](../packages/schedule/schedule/src/index.ts)）
 - `@deepseek-ai/dsh-session`（[`packages/core/session/src/index.ts`](../packages/core/session/src/index.ts)）
 - `@deepseek-ai/dsh-session-checkpoint-policy` — 需要 `llm` · `sessionPersistence` · `sessions` · `tools`（[`packages/session/session-checkpoint-policy/src/index.ts`](../packages/session/session-checkpoint-policy/src/index.ts)）
 - `@deepseek-ai/dsh-session-log-export` — 需要 `commands`（[`packages/session-query/session-log-export/src/index.ts`](../packages/session-query/session-log-export/src/index.ts)）
 - `@deepseek-ai/dsh-session-projection`（[`packages/session/session-projection/src/index.ts`](../packages/session/session-projection/src/index.ts)）
-- `@deepseek-ai/dsh-session-stats` — 需要 `sessionProjections`（[`packages/session/session-stats/src/index.ts`](../packages/session/session-stats/src/index.ts)）
 - `@deepseek-ai/dsh-skill-badge` — 需要 `skills`（[`packages/skill/skill-badge/src/index.ts`](../packages/skill/skill-badge/src/index.ts)）
 - `@deepseek-ai/dsh-storage`（[`packages/storage/storage/src/index.ts`](../packages/storage/storage/src/index.ts)）
 - `@deepseek-ai/dsh-subagent`（[`packages/subagent/subagent/src/index.ts`](../packages/subagent/subagent/src/index.ts)）

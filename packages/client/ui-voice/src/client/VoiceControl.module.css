@@ -1,0 +1,107 @@
+.root {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 7px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease;
+}
+
+.button:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+.button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.root[data-status='listening'] .button {
+  color: #fff;
+  border-color: var(--dsw-alias-state-business-primary);
+  background:
+    linear-gradient(var(--dsw-alias-state-business-primary), var(--dsw-alias-state-business-primary)) padding-box,
+    conic-gradient(var(--dsw-alias-state-success-primary) var(--voice-level), transparent 0) border-box;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent);
+}
+
+.root[data-status='captured'] .button,
+.root[data-status='transcribed'] .button {
+  color: var(--dsw-alias-state-success-primary);
+  background: var(--dsw-alias-state-success-tertiary);
+}
+
+.root[data-status='error'] .button {
+  color: var(--dsw-alias-state-error-primary);
+  background: var(--dsw-alias-state-error-secondary);
+}
+
+.meter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  height: 16px;
+}
+
+.meter span {
+  display: block;
+  width: 2px;
+  max-height: 16px;
+  min-height: 3px;
+  border-radius: 999px;
+  background: currentColor;
+  transition: height 70ms linear;
+}
+
+.status {
+  overflow: hidden;
+  max-width: 150px;
+  color: var(--dsw-alias-label-caption);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.root[data-status='listening'] .status {
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.root[data-status='error'] .status {
+  color: var(--dsw-alias-label-error);
+}
+
+@container (max-width: 660px) {
+  .status {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button,
+  .meter span {
+    transition: none;
+  }
+}

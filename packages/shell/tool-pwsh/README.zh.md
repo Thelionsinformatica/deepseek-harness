@@ -26,6 +26,10 @@
 
 `command`、`workdir` 与 `timeoutMs` 在执行前经 `ctx.shell.resolve()` 按执行器配置默认值解析。workdir 默认值在工具层于 `resolve()` 之前从调用 agent 的 `session.header.cwd` 取得——每次会话的 cwd 必须来自 `exec.agent`，因为 N 个会话共享一个执行器；仅当没有会话 cwd 时执行器才回退到自己的配置 / `process.cwd()`。
 
+`allowHostProcessTermination: false` 会在 `ctx.shell.resolve()` 启动任何进程之前，拒绝常见的 PowerShell 直接终止进程与服务形式。面向模型的描述会要求调用方在端口被占用时改用其他端口，或通过 `run_in_background` 启动长时间任务，并只用 `job_kill` 停止该调用返回的句柄。现有组合的默认值仍为 `true`；Leon 预设会禁用它。
+
+`enforceManagedServerValidation: true` 会拒绝未使用 `run_in_background` 的已识别本地服务器启动。它还会拒绝创建嵌套 PowerShell `Start-Job` 或自身包含 HTTP 健康检查的服务器启动命令。调用方必须通过一个受管理后台调用启动服务器，在单独的前台调用中执行 HTTP 检查，再用 `job_kill` 停止返回的句柄。默认值为 `false`；Leon 预设会启用它。
+
 ### Managed shell environment
 
 每次前台与后台模型 pwsh 调用都会通过共享的 [`dsh-shell-env`](../shell-env/) 注册表收到一份新收集的受信任 `DSH_*` 环境：`DSH_HOME`（Harness 主目录绝对路径）、`DSH_SHELL=1`、agent 的 `DSH_SESSION_ID`，以及活跃持久化后端定位到 JSONL 时的 `DSH_SESSION_JSONL`。向 `ctx.shellEnv` 贡献 `DSH_*` 事实的插件对 pwsh 调用与 bash 调用一视同仁。快照通过专用的 `ShellExecRequest.dshEnv` 通道传递；`process.env` 永不被修改。描述只教授通用的 `$env:DSH_*` 约定，而不是点名持久化相关的变量。
@@ -52,6 +56,14 @@
 
 ```markdown
 Non-zero exits are reported as `[exit code: N]` markers; investigate failures before moving on. On Windows a killed process settles as `[exit code: 1]` without a signal marker; treat a bare exit 1 after an interruption as a termination, not a command failure.
+
+For a local server, make one background call containing only the server start command. Run the HTTP health check in a separate foreground call, then stop the returned job with `job_kill`. Never place the health check after the server start in the same command. If the HTTP check fails or the connection is refused, read the returned server job with `job_output` before changing ports; its stderr is the primary runtime evidence.
+```
+
+##### 禁用主机进程控制时的指引
+
+```markdown
+Direct host process and service termination commands are rejected. Never free a port by killing its owner; choose another port, or start the server with `run_in_background` and stop only its returned job with `job_kill`.
 ```
 
 #### Token 影响
@@ -108,7 +120,7 @@ ack 是固定短行；任务输出按读取有界。
 
 #### 模型看到的内容
 
-校验与基础设施失败规范化为 `Error: <message>`。本包的稳定消息包括 `invalid command: expected a non-empty string`、`invalid description: expected a non-empty string`、`invalid timeoutMs: expected a positive number, got <value>`、`invalid escalation: sandbox_permissions requires a justification`、`invalid escalation: justification is only valid together with sandbox_permissions`、`invalid justification: expected a non-empty sentence`、`sandbox_permissions is not available in this composition (no sandboxing executor to escalate)`、共享的升级失败（非严格更宽、无审批服务、无 agent 可路由、无审批通道、用户拒绝、已取消）、`run_in_background is disabled for this deployment (enableRunInBackground: false)`、`background jobs unavailable: load @deepseek-ai/dsh-jobs and @deepseek-ai/dsh-tool-jobs` 与 `tool call aborted`。
+校验与基础设施失败规范化为 `Error: <message>`。本包的稳定消息包括 `invalid command: expected a non-empty string`、`invalid description: expected a non-empty string`、`invalid timeoutMs: expected a positive number, got <value>`、`host process termination is disabled for this agent; do not free a port by stopping its owner. Start long-running commands with run_in_background and stop the returned job with job_kill, or choose another port`、`local server starts must use run_in_background; make one background call containing only the server start command, run the HTTP health check in a separate foreground call, then stop the returned job with job_kill`、`local server start must not create a nested PowerShell job or include its HTTP health check; make one run_in_background call containing only the server start command, run the HTTP health check in a separate foreground call, then stop the returned job with job_kill`、`invalid escalation: sandbox_permissions requires a justification`、`invalid escalation: justification is only valid together with sandbox_permissions`、`invalid justification: expected a non-empty sentence`、`sandbox_permissions is not available in this composition (no sandboxing executor to escalate)`、共享的升级失败（非严格更宽、无审批服务、无 agent 可路由、无审批通道、用户拒绝、已取消）、`run_in_background is disabled for this deployment (enableRunInBackground: false)`、`background jobs unavailable: load @deepseek-ai/dsh-jobs and @deepseek-ai/dsh-tool-jobs` 与 `tool call aborted`。
 
 #### Token 影响
 
@@ -120,6 +132,8 @@ ack 是固定短行；任务输出按读取有界。
 
 ## 已知限制与暂缓事项
 
+- **命令分类只提供纵深防御** — `allowHostProcessTermination: false` 会拒绝常见的 PowerShell 直接终止 cmdlet、别名、可执行文件、服务控制、对象方法以及 WMI/CIM 形式。它不是操作系统隔离边界，也无法分类借助另一解释器进行的任意间接执行；Windows sandbox 与用户审批仍是主机访问的权威机制。
+- **服务器命令分类有意保持窄范围** — `enforceManagedServerValidation: true` 会识别常见 Node 包启动命令、直接 Node `server`/`app`/`index` 入口、Python 内置 HTTP 服务器，以及常见 PowerShell/curl 健康检查。非常规服务器启动器仍依赖面向模型的协议与任务所有权策略。
 - **Windows 沙箱下的语言模式与 named-pipe 捕获** — 在 [Windows ACL 沙箱](../../sandbox/sandbox-windows-acl/README.zh.md) 下，read-only pwsh 会以 ConstrainedLanguage 启动，因为临时目录写入被拒绝，导致 PowerShell 的 AppLocker 探针失败并按 fail-closed 处理：`Add-Type`、非核心 .NET 静态调用（`[System.IO.*]::`、`[math]::`）、COM 对象与反射都会以“only core types”错误失败，且该模式无法从内部解除。workspace-write 的私有临时目录使探针得以完成，因此除非主机策略另有规定，否则它保持 FullLanguage。两种受限模式都拒绝 named-pipe 打开，因此受限命令内的管道 stdio spawn 以 EPERM 失败。工具描述把这两个约定教给模型；后端 README 负责完整的限制说明。
 - **无持久 shell** — 每次调用都启动全新的 `pwsh -Command`；持久 shell 对应物是 [`@deepseek-ai/dsh-tool-pwsh-persistent`](../tool-pwsh-persistent/README.zh.md)，它在 Windows（ConPTY）以及装有 pwsh 的 POSIX 主机上跨调用保持一个 owner 作用域的 pwsh 存活。
 - **PowerShell 方言约定** — 模型必须写 PowerShell（原生路径、`$env:` 变量），而不是 bash；没有方言翻译。

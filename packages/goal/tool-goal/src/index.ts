@@ -9,6 +9,7 @@ import z from '@deepseek-ai/schemastery'
 import { GoalId } from '@deepseek-ai/dsh-goal'
 import type { GoalRef, GoalView } from '@deepseek-ai/dsh-goal'
 import { boundContextSummary, createUserMessage, HarnessError } from '@deepseek-ai/dsh-llm'
+import type { TodoItem } from '@deepseek-ai/dsh-session'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { GenericCallView } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-system-prompt'
@@ -16,7 +17,13 @@ import {
   completionAuthority,
   goalToolExecution,
   requireDirectHuman,
+  type GoalToolExecution,
 } from './authority.ts'
+import {
+  CompletionAuditAttempts,
+  requireCompletionAudit,
+  type CompletionAuditorConfig,
+} from './quality-audit.ts'
 import { renderWrapupContext } from './wrapup.ts'
 
 export const name = 'tool-goal'
@@ -26,16 +33,39 @@ export const inject = ['agents', 'goals', 'tools', 'systemPrompt']
 export interface Config {
   /** Minimum admitted goal rounds before the model may self-report `blocked`. */
   blockedAfterConsecutiveRounds?: number
+  /** Refuse completion until this goal has a non-empty todo list whose items are all completed. */
+  completionRequiresCompletedTodos?: boolean
+  /** Named one-shot subagent provider for independent completion review; empty disables review. */
+  completionAuditorProvider?: string
+  /** LLM provider used only by the independent completion auditor. */
+  completionAuditorModelProvider?: string
+  /** Model used only by the independent completion auditor. */
+  completionAuditorModel?: string
+  /** Maximum output tokens for each auditor request. */
+  completionAuditorMaxTokens?: number
+  /** Maximum auditor starts accepted in one executor turn. */
+  completionAuditorMaxAttemptsPerTurn?: number
+  /** Maximum correction-report characters returned to the executor. */
+  completionAuditorReportMaxCharacters?: number
 }
 
 /** Schemastery config for the goal-tool policy. */
 export const Config: z<Config> = z.object({
   blockedAfterConsecutiveRounds: z.number().step(1).min(1).default(3),
+  completionRequiresCompletedTodos: z.boolean().default(false),
+  completionAuditorProvider: z.string().default(''),
+  completionAuditorModelProvider: z.string().default(''),
+  completionAuditorModel: z.string().default(''),
+  completionAuditorMaxTokens: z.number().step(1).min(1).default(4096),
+  completionAuditorMaxAttemptsPerTurn: z.number().step(1).min(1).default(2),
+  completionAuditorReportMaxCharacters: z.number().step(1).min(1).default(6000),
 })
 
 /** Fully materialized tool policy. */
 interface ResolvedConfig {
   readonly blockedAfterConsecutiveRounds: number
+  readonly completionRequiresCompletedTodos: boolean
+  readonly completionAuditor?: CompletionAuditorConfig
 }
 
 type UpdateAction = 'edit' | 'pause' | 'resume' | 'complete' | 'blocked'
@@ -110,25 +140,110 @@ const GOAL_VALUE_SCHEMA = {
 } as const
 
 /** Render policy guidance with its deployment-selected blocked threshold. */
-function guidance(blockedAfter: number): string {
+function guidance(
+  blockedAfter: number,
+  completionRequiresCompletedTodos: boolean,
+  completionAuditorEnabled: boolean,
+): string {
   return 'Use goal tools for one long-running completion objective in the current session. '
     + 'create_goal may infer goal intent from a direct human request in any language; do not '
-    + 'create a goal for routine single-turn work. Call get_goal before update_goal and copy its '
+    + 'create a goal for routine single-turn work. A deployment may create the goal automatically '
+    + 'for an accepted implementation task, so call get_goal before create_goal or update_goal and copy its '
     + 'exact goal_id and revision. After session resume or fork, an active goal is disarmed: when '
     + 'a human asks to continue or resume in any wording or language, use update_goal action '
     + 'resume to rearm it. Mark complete only when the objective is actually achieved. Mark '
     + `blocked only after the same blocking condition persists for at least ${blockedAfter} `
     + 'consecutive goal rounds, and report that concrete condition in blocked_reason; difficulty, uncertainty, '
     + 'or useful remaining work is not blocked.'
+    + (completionRequiresCompletedTodos
+      ? ' Completion is rejected until this goal has a non-empty todo_write list and every item is completed.'
+      : '')
+    + (completionAuditorEnabled
+      ? ' A complete request starts an independent workspace audit. Rejection keeps the goal active and returns '
+        + 'actionable findings; correct them and revalidate before requesting completion again.'
+      : '')
+}
+
+/** Resolve one optional normalized string from Loader or direct apply input. */
+function optionalConfigString(name: string, value: string | undefined): string | undefined {
+  if (value === undefined || value === '') return undefined
+  if (value !== value.trim()) throw new TypeError(`${name} must not have leading or trailing whitespace`)
+  return value
+}
+
+/** Require one configured positive safe integer. */
+function positiveSafeInteger(name: string, value: number): number {
+  if (!Number.isSafeInteger(value) || value < 1) throw new TypeError(`${name} must be a positive safe integer`)
+  return value
 }
 
 /** Validate config even when apply is called directly outside Loader normalization. */
 function resolveConfig(config: Config): ResolvedConfig {
   const blockedAfter = config.blockedAfterConsecutiveRounds ?? 3
-  if (!Number.isSafeInteger(blockedAfter) || blockedAfter < 1) {
-    throw new TypeError('blockedAfterConsecutiveRounds must be a positive safe integer')
+  positiveSafeInteger('blockedAfterConsecutiveRounds', blockedAfter)
+  const provider = optionalConfigString('completionAuditorProvider', config.completionAuditorProvider)
+  const modelProvider = optionalConfigString(
+    'completionAuditorModelProvider',
+    config.completionAuditorModelProvider,
+  )
+  const model = optionalConfigString('completionAuditorModel', config.completionAuditorModel)
+  if (provider === undefined && (modelProvider !== undefined || model !== undefined)) {
+    throw new TypeError('completionAuditorProvider is required when an auditor model route is configured')
   }
-  return { blockedAfterConsecutiveRounds: blockedAfter }
+  if ((modelProvider === undefined) !== (model === undefined)) {
+    throw new TypeError('completionAuditorModelProvider and completionAuditorModel must be configured together')
+  }
+  return {
+    blockedAfterConsecutiveRounds: blockedAfter,
+    completionRequiresCompletedTodos: config.completionRequiresCompletedTodos ?? false,
+    ...provider === undefined ? {} : {
+      completionAuditor: {
+        provider,
+        ...modelProvider === undefined ? {} : { modelProvider },
+        ...model === undefined ? {} : { model },
+        maxTokens: positiveSafeInteger(
+          'completionAuditorMaxTokens',
+          config.completionAuditorMaxTokens ?? 4096,
+        ),
+        maxAttemptsPerTurn: positiveSafeInteger(
+          'completionAuditorMaxAttemptsPerTurn',
+          config.completionAuditorMaxAttemptsPerTurn ?? 2,
+        ),
+        reportMaxCharacters: positiveSafeInteger(
+          'completionAuditorReportMaxCharacters',
+          config.completionAuditorReportMaxCharacters ?? 6000,
+        ),
+      },
+    },
+  }
+}
+
+/** Latest whole task list written after this goal's create mutation. */
+function currentGoalTodos(agent: GoalToolExecution['agent'], goal: GoalView): readonly TodoItem[] | undefined {
+  const events = agent.session.events
+  const createdAt = events.findLastIndex(event => event.type === 'goal/change'
+    && event.data.operation === 'create' && event.data.goal.id === goal.id)
+  if (createdAt < 0) return undefined
+  const write = events.slice(createdAt + 1).findLast(event => event.type === 'todo/write')
+  return write?.type === 'todo/write' ? write.data.todos : undefined
+}
+
+/** Enforce the deployment's durable task-state prerequisite before a goal can become complete. */
+function requireCompletedTodos(execution: GoalToolExecution, goal: GoalView): void {
+  const todos = currentGoalTodos(execution.agent, goal)
+  if (todos === undefined || todos.length === 0) {
+    throw new HarnessError(
+      'complete requires a non-empty todo_write list for the current goal',
+      'GOAL_TOOL_TODOS_REQUIRED',
+    )
+  }
+  const remaining = todos.filter(todo => todo.status !== 'completed')
+  if (remaining.length === 0) return
+  const summary = remaining.slice(0, 3).map(todo => todo.content).join('; ')
+  throw new HarnessError(
+    `complete rejected: ${remaining.length} todo item(s) remain incomplete${summary === '' ? '' : `: ${summary}`}`,
+    'GOAL_TOOL_TODOS_INCOMPLETE',
+  )
 }
 
 /** Whether optional text is meaningful rather than a strict-schema empty filler. */
@@ -186,10 +301,15 @@ function present(title: string, kind: 'read' | 'other', rawInput?: unknown): Gen
 /** Register the three Codex-shaped goal tools and their shared policy section. */
 export function apply(ctx: Context, config: Config): void {
   const resolved = resolveConfig(config)
+  const auditAttempts = new CompletionAuditAttempts()
   ctx.systemPrompt.section({
     name: 'tool:goal',
     order: 114,
-    text: guidance(resolved.blockedAfterConsecutiveRounds),
+    text: guidance(
+      resolved.blockedAfterConsecutiveRounds,
+      resolved.completionRequiresCompletedTodos,
+      resolved.completionAuditor !== undefined,
+    ),
   })
 
   ctx.tools.register(defineTool({
@@ -254,7 +374,7 @@ export function apply(ctx: Context, config: Config): void {
       },
     },
     output: GOAL_OUTPUT,
-    execute(args, exec) {
+    async execute(args, exec) {
       const execution = goalToolExecution(ctx, exec)
       const ref = goalRef(args.goal_id, args.revision)
       const replacements = {
@@ -304,6 +424,31 @@ export function apply(ctx: Context, config: Config): void {
           'GOAL_TOOL_BLOCK_THRESHOLD',
         )
       }
+      if (args.action === 'complete' && resolved.completionRequiresCompletedTodos) {
+        const current = authority.kind === 'goal-round' ? authority.goal : ctx.goals.get(execution.agent)
+        if (current === undefined) throw new HarnessError('no current goal exists', 'GOAL_NOT_FOUND')
+        requireCompletedTodos(execution, current)
+      }
+      if (args.action === 'complete' && resolved.completionAuditor !== undefined) {
+        const current = authority.kind === 'goal-round' ? authority.goal : ctx.goals.get(execution.agent)
+        if (current === undefined) throw new HarnessError('no current goal exists', 'GOAL_NOT_FOUND')
+        if (current.id !== ref.id || current.revision !== ref.revision) {
+          throw new HarnessError('goal revision is stale; call get_goal and retry', 'GOAL_STALE_REVISION')
+        }
+        auditAttempts.reserve(
+          execution.agent,
+          execution.start.data.turn,
+          resolved.completionAuditor.maxAttemptsPerTurn,
+        )
+        await requireCompletionAudit(
+          ctx,
+          execution.agent,
+          current,
+          currentGoalTodos(execution.agent, current),
+          resolved.completionAuditor,
+          exec.signal,
+        )
+      }
       const goal = args.action === 'complete'
         ? ctx.goals.complete(execution.agent, ref)
         : ctx.goals.block(execution.agent, ref, {
@@ -326,7 +471,9 @@ export function apply(ctx: Context, config: Config): void {
       return Promise.resolve(goalValue(goal))
     },
     presentCall: args => present(
-      `${args.action === 'blocked' ? 'Mark' : args.action.charAt(0).toUpperCase() + args.action.slice(1)} goal`,
+      args.action === 'complete' && resolved.completionAuditor !== undefined
+        ? 'Verify delivery'
+        : `${args.action === 'blocked' ? 'Mark' : args.action.charAt(0).toUpperCase() + args.action.slice(1)} goal`,
       'other',
       hasText(args.blocked_reason)
         ? args.blocked_reason

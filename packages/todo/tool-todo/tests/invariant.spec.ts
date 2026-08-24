@@ -29,7 +29,7 @@ describe('todo snapshot invariants', () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
     await ctx.plugin(ToolRuntime)
-    await ctx.plugin(ToolTodo, { allowParallelInProgress: false })
+    await ctx.plugin(ToolTodo, { allowParallelInProgress: false, preserveExistingItems: false })
     ctx.sessions.create().append('todo/write', { todos: [...todos] })
     await ctx.plugin(InvariantRegistry, { enabled: true })
 

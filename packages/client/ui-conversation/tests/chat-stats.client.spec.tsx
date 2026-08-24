@@ -12,7 +12,10 @@ import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
-import { StatsLine, contextOccupancy, deriveStats, formatDuration, formatTokens, type StatsLineProps } from '../src/client/chat/StatsLine.tsx'
+import {
+  StatsLine, contextOccupancy, deriveStats, formatApiCostUsd, formatDuration, formatTokens,
+  type StatsLineProps,
+} from '../src/client/chat/StatsLine.tsx'
 import { en, zh } from '../src/client/locales.ts'
 import { chatSnapshotFixture } from './chat-snapshot-fixture.client.ts'
 
@@ -166,6 +169,14 @@ describe('formatters', () => {
     expect(formatDuration(45_230)).toBe('45.2s')
     expect(formatDuration(162_000)).toBe('2m42s')
   })
+
+  it('formats API estimates without hiding a real micro-charge', () => {
+    expect(formatApiCostUsd(0)).toBe('US$0.00')
+    expect(formatApiCostUsd(9_000)).toBe('<US$0.0001')
+    expect(formatApiCostUsd(1_140_000)).toBe('US$0.0011')
+    expect(formatApiCostUsd(120_000_000)).toBe('US$0.120')
+    expect(formatApiCostUsd(2_340_000_000)).toBe('US$2.34')
+  })
 })
 
 describe('StatsLine', () => {
@@ -175,6 +186,7 @@ describe('StatsLine', () => {
   function sessionStats(overrides: Record<string, number>): Record<string, number> {
     return {
       turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0,
+      estimatedApiCostUsdNanos: 0, pricedModelCalls: 0, unpricedModelCalls: 0,
       ...overrides,
     }
   }
@@ -329,6 +341,27 @@ describe('StatsLine', () => {
     })} />)
     expect(view.container.textContent)
       .toBe('10 turns · 89 steps| Cache hit 90%| Input 100 tok · Output 5 tok')
+  })
+
+  it('shows the configured API estimate and warns when part of the usage has no price', () => {
+    const { source } = makeSource({ nodes: [assistant(1, 1)] })
+    const view = render(<StatsLine {...props(source, {
+      tokenUsage: USAGE,
+      sessionStats: sessionStats({
+        turns: 1, steps: 1, estimatedApiCostUsdNanos: 1_140_000,
+        pricedModelCalls: 1, unpricedModelCalls: 2,
+      }),
+    })} />)
+    expect(view.container.textContent).toContain('API est. US$0.0011 · 2 unpriced call(s)')
+  })
+
+  it('shows zero API cost for a priced local-only call', () => {
+    const { source } = makeSource({ nodes: [assistant(1, 1)] })
+    const view = render(<StatsLine {...props(source, {
+      tokenUsage: USAGE,
+      sessionStats: sessionStats({ turns: 1, steps: 1, pricedModelCalls: 1 }),
+    })} />)
+    expect(view.container.textContent).toContain('API est. US$0.00')
   })
 
   it('treats a defined zero-count projection as empty, not as fallback', () => {

@@ -170,6 +170,10 @@ async function scopedBench(register?: (inputTriggers: InputTriggerService) => vo
         span: { ...selection, draftRev: snapshot.draftRev },
       })
     },
+    toggleReferenceMenu: undefined,
+    toggleSkillMenu: undefined,
+    selectWorkspace: undefined,
+    createWorkspace: undefined,
     useNotices: bindSnapshotSelector(shell.notices),
     useLexicon: bindSnapshotSelector(shell.lexicon),
     useMenuLauncher: bindSnapshotSelector(controller.launcher),

@@ -476,6 +476,17 @@ Source: [`packages/hooks/hook-protocol/src/types.ts:31`](../packages/hooks/hook-
 
 ### `llm/*`
 
+<a id="llmfailover--log-only"></a>
+
+#### `llm/failover` — log-only
+
+```ts persistence-catalog
+/** Durable notice that automatic routing replaced an unavailable provider before retrying the request. */
+'llm/failover': LlmFailoverEventData
+```
+
+Source: [`packages/llm/llm-retry/src/types.ts:13`](../packages/llm/llm-retry/src/types.ts)
+
 <a id="llmretry--log-only"></a>
 
 #### `llm/retry` — log-only
@@ -1005,3 +1016,14 @@ Source: [`packages/core/session/src/types.ts:264`](../packages/core/session/src/
 ```
 
 Source: [`packages/web/web-search-deepseek/src/provider.ts:83`](../packages/web/web-search-deepseek/src/provider.ts)
+
+<a id="webgoogle-search-llm-request--log-only"></a>
+
+#### `web/google-search-llm-request` — log-only
+
+```ts persistence-catalog
+/** Secret-free auxiliary Gemini Google Search request recorded before dispatch. */
+'web/google-search-llm-request': GoogleSearchLlmRequest
+```
+
+Source: [`packages/web/web-search-google/src/provider.ts:52`](../packages/web/web-search-google/src/provider.ts)

@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore, type ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ComponentProps } from 'react'
 import type { ModelDirectoryState } from '../src/client/directory.ts'
 import { ModelSelect } from '../src/client/ModelSelect.tsx'
@@ -23,16 +24,24 @@ const t: ComponentProps<typeof ModelSelect>['t'] = (key, params) => {
 const reasoning = {
   efforts: [
     { id: 'off', name: 'Off' },
+    { id: 'low', name: 'Low' },
     { id: 'high', name: 'High' },
     { id: 'max', name: 'Max', description: 'Largest budget' },
   ],
   defaultEffort: 'high',
 }
 
+const useSession: ComponentProps<typeof ModelSelect>['useSession'] = selector => selector({
+  running: false,
+  nodes: [],
+} as unknown as ConversationSnapshot)
+
 function state(overrides: Partial<ModelDirectoryState> = {}): ModelDirectoryState {
   return {
     current: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
     routable: true,
+    automatic: false,
+    automaticAvailable: false,
     groups: [{
       id: 'deepseek-official',
       name: 'DeepSeek',
@@ -48,6 +57,75 @@ function state(overrides: Partial<ModelDirectoryState> = {}): ModelDirectoryStat
 afterEach(cleanup)
 
 describe('ModelSelect reasoning effort', () => {
+  it('refreshes the corner model indicator when automatic failover lands', async () => {
+    const directory = createSnapshotStore<ModelDirectoryState>(state({
+      automatic: true,
+      automaticAvailable: true,
+    }))
+    const session = createSnapshotStore<ConversationSnapshot>({
+      running: true,
+      nodes: [],
+    } as unknown as ConversationSnapshot)
+    const load = vi.fn()
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={directory}
+      load={load}
+      select={vi.fn().mockResolvedValue(true)}
+      selectAutomatic={vi.fn().mockResolvedValue(true)}
+      useSession={bindSnapshotSelector(session)}
+      t={t}
+    />)
+    await waitFor(() => { expect(load).toHaveBeenCalledTimes(2) })
+
+    act(() => {
+      session.set({
+        ...session.getSnapshot(),
+        nodes: [{
+          kind: 'model-failover', seq: 7, time: 7_000, turn: 1, step: 0,
+          from: { provider: 'ollama', model: 'qwen3.5:9b' },
+          to: { provider: 'google', model: 'gemini-3.6-flash' },
+          failure: { code: 'TRANSPORT', message: 'connection refused' },
+          reason: 'provider-unavailable',
+        }],
+      })
+    })
+    await waitFor(() => { expect(load).toHaveBeenCalledTimes(3) })
+  })
+
+  it('offers Leon Automatic and shows the local route currently in use', async () => {
+    const directory = createSnapshotStore<ModelDirectoryState>(state({ automaticAvailable: true }))
+    const selectAutomatic = vi.fn(async () => {
+      directory.set(state({
+        automatic: true,
+        automaticAvailable: true,
+        current: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'low' },
+      }))
+      return true
+    })
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={directory}
+      load={vi.fn()}
+      select={vi.fn().mockResolvedValue(true)}
+      selectAutomatic={selectAutomatic}
+      useSession={useSession}
+      t={t}
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: /选择模型，当前/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /Leon 自动/ }))
+    await waitFor(() => {
+      expect(selectAutomatic).toHaveBeenCalledOnce()
+      expect(screen.getByRole('button', {
+        name: 'Leon 自动模式，当前使用 DeepSeek-V4-Flash，推理等级 Low',
+      }).textContent).toContain('DeepSeek-V4-Flash · Low')
+    })
+  })
+
   it('renders adapter metadata and submits the effort as part of the session selection', async () => {
     const directory = createSnapshotStore<ModelDirectoryState>(state())
     const select = vi.fn(async (selection: ModelSelection) => {
@@ -60,6 +138,8 @@ describe('ModelSelect reasoning effort', () => {
       directory={directory}
       load={vi.fn()}
       select={select}
+      selectAutomatic={vi.fn().mockResolvedValue(true)}
+      useSession={useSession}
       t={t}
     />)
 
@@ -69,7 +149,7 @@ describe('ModelSelect reasoning effort', () => {
     fireEvent.click(trigger)
     fireEvent.click(screen.getByRole('menuitem', { name: /推理等级/ }))
     expect(screen.getAllByRole('menuitemradio').map(item => item.textContent))
-      .toEqual(['Off', 'High', 'MaxLargest budget'])
+      .toEqual(['Off', 'Low', 'High', 'MaxLargest budget'])
 
     fireEvent.click(screen.getByRole('menuitemradio', { name: /Max/ }))
     await waitFor(() => {
@@ -101,6 +181,8 @@ describe('ModelSelect reasoning effort', () => {
       directory={directory}
       load={vi.fn()}
       select={vi.fn().mockResolvedValue(true)}
+      selectAutomatic={vi.fn().mockResolvedValue(true)}
+      useSession={useSession}
       t={t}
     />)
 
@@ -123,6 +205,8 @@ describe('ModelSelect reasoning effort', () => {
       directory={directory}
       load={vi.fn()}
       select={select}
+      selectAutomatic={vi.fn().mockResolvedValue(true)}
+      useSession={useSession}
       t={t}
     />)
 
@@ -155,6 +239,8 @@ describe('ModelSelect reasoning effort', () => {
       directory={directory}
       load={vi.fn()}
       select={select}
+      selectAutomatic={vi.fn().mockResolvedValue(true)}
+      useSession={useSession}
       t={t}
     />)
 
@@ -175,6 +261,8 @@ describe('ModelSelect reasoning effort', () => {
       directory={createSnapshotStore(state())}
       load={load}
       select={vi.fn().mockResolvedValue(false)}
+      selectAutomatic={vi.fn().mockResolvedValue(false)}
+      useSession={useSession}
       t={t}
     />)
 

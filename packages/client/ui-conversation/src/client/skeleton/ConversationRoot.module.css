@@ -363,6 +363,18 @@
   overflow-y: auto;
 }
 
+/* A product dashboard turns the Hero into a compact work overview. Start at
+   the top on shorter viewports so every card remains reachable through the
+   existing scrollport; the classic dashboard-free Hero stays centered. */
+.root[data-phase='hero'] .scrollBody:has([data-leon-work-dashboard]) {
+  justify-content: flex-start;
+  padding: clamp(28px, 5vh, 52px) 0 36px;
+}
+
+.root[data-phase='hero'] .composerHero:has([data-leon-work-dashboard]) {
+  padding-bottom: 0;
+}
+
 /* Settling (session replaying, hero/docked unknown): keep the composer seat
    mounted but invisible so no wrong layout flashes before the phase lands. */
 .root[data-phase='settling'] .composerSeat {

@@ -8,9 +8,11 @@ patch 在自身上按平台门控两个 shell 栈：`bash-sandbox`/`tool-bash` �
 
 行集合及其设计依据以行内注释写在 patch 文件里；[生成的组合图](../../../apps/cli/composition.md)负责渲染它。
 
+base 组合包为后备沙箱策略与沙箱文件系统解析同一个部署 workspace。Leon 在 Windows 上的默认值是 `E:/computador`；环境覆盖值与非 Windows 后备值由 [`resolveDefaultWorkspace()`](../../util/home-paths/README.zh.md)负责。每个会话自身的 workspace 根目录在请求时仍会覆盖这个部署后备值。
+
 ## 模型体验
 
-通过插入的行间接产生影响：该组合包选定了随发行版交付的无 persona 提示词基座、工具集合与 DeepSeek 适配器，供各模式组合包进一步特化；它自身不贡献任何模型可见文本。
+通过插入的行间接产生影响：该组合包选定了随发行版交付的无 persona 提示词基座、工具集合与本地 Ollama 路由，供各模式组合包进一步特化；它自身不贡献任何模型可见文本。Leon 只随附 `ollama/qwen3.5:9b` 这一种本地模型。Gemini 与其他远程路由仍是显式提供方设置，而不是 Leon 的身份。DeepSeek 模型与搜索适配器只作为手动兼容选项安装，不会挂载到随附目录。基础组合禁用面向模型的 Web 搜索与抓取；部署必须有意挂载提供方和相应工具，本地上下文才可能因检索而离开本机。
 
 #### KV Cache 影响
 
@@ -19,4 +21,6 @@ patch 在自身上按平台门控两个 shell 栈：`bash-sandbox`/`tool-bash` �
 ## 已知限制与暂缓事项
 
 - **patch 会替换整行 `config`**：profile 覆盖必须重述该行需要保留的每个字段；不存在深度合并层。
+- **本地默认值要求 Ollama 正在运行**：回环端点为 `http://127.0.0.1:11434/v1`，安装程序必须确保服务与所选模型可用。
+- **Web 检索需要显式 profile 覆盖**：基础组合挂载提供方中立的 seam，但既不启用搜索提供方，也不启用面向模型的 Web 工具。只启用提供方而不启用工具，或只启用工具而没有可用提供方，都属于不完整的部署配置。
 - **Windows 的临时目录授权是按会话的私有子目录**——`workspace-write` 把写入限制在工作区与会话自己的 temp 子目录（`<temp>\dsh-<hash>`，受限子进程的 TMP/TEMP 被改写）；`read-only` 不授予任何临时目录写入权限。见 `@deepseek-ai/dsh-sandbox-windows-acl`。

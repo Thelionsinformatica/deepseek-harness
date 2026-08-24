@@ -17,7 +17,10 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import * as SessionStatsPlugin from '@deepseek-ai/dsh-session-stats'
-import { sessionStatsProjectionDefinition } from '@deepseek-ai/dsh-session-stats/src/projection.ts'
+import {
+  createSessionStatsProjectionDefinition,
+  sessionStatsProjectionDefinition,
+} from '@deepseek-ai/dsh-session-stats/src/projection.ts'
 import type { SessionStatsProjection } from '@deepseek-ai/dsh-session-stats/types'
 
 async function harness(withStatsPlugin: boolean): Promise<{ ctx: Context; session: Session }> {
@@ -51,6 +54,7 @@ function appendEmptyAssistantMessage(session: Session, turn: number, step: numbe
 function totals(overrides: Partial<SessionStatsProjection> = {}): SessionStatsProjection {
   return {
     turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0,
+    estimatedApiCostUsdNanos: 0, pricedModelCalls: 0, unpricedModelCalls: 0,
     ...overrides,
   }
 }
@@ -144,6 +148,82 @@ describe('sessionStats projection unit (registry drive)', () => {
       .toMatchObject({ turns: 1, steps: 1 })
     await fiber.dispose()
     expect('sessionStats' in ctx.sessionProjections.snapshot(session).values).toBe(false)
+  })
+})
+
+describe('sessionStats configured API cost estimate', () => {
+  const prices = [
+    {
+      provider: 'google', model: 'gemini-3.6-flash',
+      inputUsdPerMillion: 0.75, outputUsdPerMillion: 3.75, cacheReadUsdPerMillion: 0.075,
+    },
+    {
+      provider: 'ollama', model: 'qwen3.5:9b',
+      inputUsdPerMillion: 0, outputUsdPerMillion: 0,
+    },
+  ] as const
+
+  /** Fold events through one explicitly priced projection definition. */
+  function foldPriced(events: readonly SessionEvent[]): SessionStatsProjection {
+    const definition = createSessionStatsProjectionDefinition(prices)
+    const state = events.reduce<Parameters<typeof definition.apply>[0]>(
+      (folded, event) => definition.apply(folded, event),
+      definition.init(),
+    )
+    return definition.wire.view(state)
+  }
+
+  it('prices exact routes, counts local zero-cost calls, and replaces a stream sample with final usage', () => {
+    const cloud = createMessage({
+      role: 'assistant', content: [{ type: 'text', text: 'cloud' }],
+      source: { kind: 'model', provider: 'google', model: 'gemini-3.6-flash' },
+    })
+    const local = createMessage({
+      role: 'assistant', content: [{ type: 'text', text: 'local' }],
+      source: { kind: 'model', provider: 'ollama', model: 'qwen3.5:9b' },
+    })
+    const usage = { inputTokens: 1_000, outputTokens: 100, cacheReadTokens: 200 }
+    expect(foldPriced([
+      at(100, 'request/header', { header: { config: { provider: 'google', model: 'gemini-3.6-flash' } } }),
+      at(110, 'step/start', { turn: 1, step: 1 }),
+      at(120, 'assistant/chunk', { turn: 1, step: 1, chunk: { type: 'usage', usage } }),
+      at(130, 'assistant/message', { turn: 1, step: 1, message: cloud, usage }),
+      at(140, 'step/end', { turn: 1, step: 1 }),
+      at(200, 'request/header', { header: { config: { provider: 'ollama', model: 'qwen3.5:9b' } } }),
+      at(210, 'step/start', { turn: 2, step: 1 }),
+      at(220, 'assistant/message', {
+        turn: 2, step: 1, message: local, usage: { inputTokens: 50, outputTokens: 10 },
+      }),
+      at(230, 'step/end', { turn: 2, step: 1 }),
+    ])).toMatchObject({
+      estimatedApiCostUsdNanos: 1_140_000,
+      pricedModelCalls: 2,
+      unpricedModelCalls: 0,
+    })
+  })
+
+  it('marks a usage-bearing route absent from the table instead of hiding it inside a false total', () => {
+    const unknown = createMessage({
+      role: 'assistant', content: [{ type: 'text', text: 'unknown' }],
+      source: { kind: 'model', provider: 'google', model: 'future-model' },
+    })
+    expect(foldPriced([
+      at(100, 'request/header', { header: { config: { provider: 'google', model: 'future-model' } } }),
+      at(110, 'step/start', { turn: 1, step: 1 }),
+      at(120, 'assistant/message', {
+        turn: 1, step: 1, message: unknown, usage: { inputTokens: 1, outputTokens: 1 },
+      }),
+      at(130, 'step/end', { turn: 1, step: 1 }),
+    ])).toMatchObject({
+      estimatedApiCostUsdNanos: 0,
+      pricedModelCalls: 0,
+      unpricedModelCalls: 1,
+    })
+  })
+
+  it('rejects duplicate provider/model prices at the deployment boundary', () => {
+    expect(() => createSessionStatsProjectionDefinition([...prices, prices[0]]))
+      .toThrow('duplicate model price for google/gemini-3.6-flash')
   })
 })
 

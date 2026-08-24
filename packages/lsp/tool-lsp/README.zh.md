@@ -4,7 +4,7 @@
 
 面向模型的 **`lsp` 工具**，基于 `ctx.lsp`：一个只读工具，通过四种操作执行精确代码导航。它拥有模型 schema、提示词指引、坐标转换、结果限制与格式化，以及 UI 呈现；不导入任何提供方。
 
-Namespace 插件（`name`／`inject`／`Config`／`apply`，无默认导出）。注入 `tools`、`lsp` 和 `systemPrompt`。
+Namespace 插件（`name`／`inject`／`Config`／`apply`，无默认导出）。注入 `tools` 和 `systemPrompt`；仅在 `lsp` 服务可用时启用工具和提示指南。
 
 ## 工具
 

@@ -1053,6 +1053,43 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'memory',
+    summary: 'Durable memory service and registration-order-independent provider selector.',
+    description: 'Durable memory service and registration-order-independent provider selector.',
+    methods: [
+      {
+        signature: 'registerProvider(provider: MemoryProvider): () => void',
+        description: 'Register one provider for the lifetime chosen by the caller.',
+        parameters: [{ name: 'provider', description: 'Provider implementation keyed by its stable id.' }],
+        returns: 'disposer that removes this exact registration.',
+      },
+      {
+        signature: 'async create(request: MemoryCreateRequest, signal?: AbortSignal): Promise<MemoryRecord>',
+        description: 'Create one normalized durable memory through the selected provider.',
+        parameters: [{ name: 'request', description: 'Workspace scope, durable content, and session provenance.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'the created normalized record after durability.',
+      },
+      {
+        signature: 'async search(request: MemorySearchRequest, signal?: AbortSignal): Promise<readonly MemorySearchHit[]>',
+        description: 'Search only inside the request\'s workspace scope.',
+        parameters: [{ name: 'request', description: 'Workspace scope, query, and bounded result limit.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'ranked hits capped to the requested limit.',
+      },
+      {
+        signature: 'async update(request: MemoryUpdateRequest, signal?: AbortSignal): Promise<MemoryRecord>',
+        description: 'Correct one exact memory revision through the selected provider.',
+        parameters: [{ name: 'request', description: 'Workspace scope, compare-and-set reference, and replacement content.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'the corrected record with its incremented revision.',
+      },
+      {
+        signature: 'async forget(request: MemoryForgetRequest, signal?: AbortSignal): Promise<void>',
+        description: 'Forget one exact memory revision through the selected provider.',
+        parameters: [{ name: 'request', description: 'Workspace scope and compare-and-set reference to delete.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'resolution after durable deletion.',
+      },
+    ],
+  },
+  {
     key: 'messageFeedback',
     summary: 'Storage-domain sidecar service.',
     description: 'Storage-domain sidecar service. It inspects persisted Session history and never creates or resumes an Agent or Session.',
@@ -2092,6 +2129,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the exact disposer that restores the deployment default.',
       },
       {
+        signature: 'compactDescriptions(maxLength: number): () => void',
+        description: 'Cap normalized tool and parameter descriptions in this scope\'s model-facing schemas. The registry and executable definitions retain their complete descriptions. Nearest scope wins, and disposal restores an inherited declaration.',
+        parameters: [{ name: 'maxLength', description: 'integer character limit, including the ellipsis; minimum 3.' }],
+        returns: 'the exact disposer that removes this scope\'s declaration.',
+      },
+      {
         signature: 'register(definition: ToolDefinition): () => void',
         description: 'Register globally or in the calling agent scope. Scoped tools shadow globals; duplicates within one layer and the reserved `run_code` name fail.',
         parameters: [{ name: 'definition', description: 'tool schema, execution, and optional finalization/presentation callbacks.' }],
@@ -2620,6 +2663,30 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'Waterfall around every streaming model call (retry, replay, routing).',
     description: 'Waterfall around every streaming model call (retry, replay, routing). Bound to the LlmRuntime; call `next()` to reach the resolved adapter\'s stream, or yield your own chunks to short-circuit.',
     parameters: [{ name: 'options', description: 'the full request. A LOOP-built request carries the process-local {@link markAgentLoopRequest} identity and arrives deep-frozen (mutation throws): its content is a pure function of the session log (the reconstructability Agent Note), so listeners read it, never rewrite it. Hand-built calls do not carry that marker; their messages already obey the immutable creation contract.' }],
+  },
+  {
+    name: 'memory/blocked',
+    mode: 'emit',
+    signature: '\'memory/blocked\'(event: MemoryBlockedEvent): void',
+    summary: 'A memory action was rejected before durable state could be mutated.',
+    description: 'A memory action was rejected before durable state could be mutated. Observers may surface the sanitized reason in security and integrity dashboards.',
+    parameters: [{ name: 'event', description: 'Block reason, source, workspace boundary, and optional safe detail.' }],
+  },
+  {
+    name: 'memory/candidate',
+    mode: 'emit',
+    signature: '\'memory/candidate\'(event: MemoryCandidateEvent): void',
+    summary: 'Candidate retrieval was screened and assigned a deterministic policy outcome.',
+    description: 'Candidate retrieval was screened and assigned a deterministic policy outcome. Observers may persist or aggregate this non-model-facing audit telemetry.',
+    parameters: [{ name: 'event', description: 'Candidate counts, operation source, and policy decision metadata.' }],
+  },
+  {
+    name: 'memory/operation',
+    mode: 'emit',
+    signature: '\'memory/operation\'(event: MemoryOperationEvent): void',
+    summary: 'A durable memory operation completed or failed after provider selection.',
+    description: 'A durable memory operation completed or failed after provider selection. Observers may record operational health without changing the operation result.',
+    parameters: [{ name: 'event', description: 'Operation outcome, workspace boundary, provider, and optional result metadata.' }],
   },
   {
     name: 'session-telemetry/record',
@@ -3692,6 +3759,82 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ManualCompactAgentContext',
     declaration: 'export interface ManualCompactAgentContext extends CompactionAgentContext {\n    runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>;\n}',
+  },
+  {
+    name: 'MemoryBlockedEvent',
+    declaration: 'export interface MemoryBlockedEvent {\n    readonly schemaVersion: MemoryEventSchemaVersion;\n    readonly reason: \'cross-scope-write\' | \'sensitive-content\' | \'provider-invalid\' | \'provider-unavailable\' | \'provider-missing\' | \'validation\';\n    readonly workspaceId: WorkspaceId;\n    readonly source: \'memory-tool\' | \'memory-runtime\' | \'memory-local\';\n    readonly memoryId?: MemoryId;\n    readonly detail?: string;\n}',
+  },
+  {
+    name: 'MemoryCandidateEvent',
+    declaration: 'export interface MemoryCandidateEvent {\n    readonly schemaVersion: MemoryEventSchemaVersion;\n    readonly source: \'tool-memory\';\n    readonly queryLength: number;\n    readonly total: number;\n    readonly omittedSensitive: number;\n    readonly inserted: number;\n    readonly operation: \'memory_recall\' | \'tool_call_memory_search\';\n    readonly policyDecision?: MemoryPolicyDecision;\n    readonly policyReason?: MemoryPolicyReason;\n    readonly policyVersion?: MemoryPolicyVersion;\n}',
+  },
+  {
+    name: 'MemoryCreateRequest',
+    declaration: 'export interface MemoryCreateRequest {\n    readonly scope: MemoryScope;\n    readonly content: string;\n    readonly source: MemorySource;\n}',
+  },
+  {
+    name: 'MemoryEventSchemaVersion',
+    declaration: 'export type MemoryEventSchemaVersion = typeof MEMORY_EVENT_SCHEMA_VERSION;',
+  },
+  {
+    name: 'MemoryForgetRequest',
+    declaration: 'export interface MemoryForgetRequest {\n    readonly scope: MemoryScope;\n    readonly ref: MemoryRef;\n}',
+  },
+  {
+    name: 'MemoryId',
+    declaration: 'export type MemoryId = Branded<\'MemoryId\'>;',
+  },
+  {
+    name: 'MemoryOperationEvent',
+    declaration: 'export interface MemoryOperationEvent {\n    readonly schemaVersion: MemoryEventSchemaVersion;\n    readonly operation: \'create\' | \'search\' | \'update\' | \'forget\';\n    readonly provider: string;\n    readonly success: boolean;\n    readonly workspaceId: WorkspaceId;\n    readonly resultCount?: number;\n    readonly memoryId?: MemoryId;\n    readonly revision?: number;\n    readonly errorCode?: string;\n    readonly durationMs?: number;\n}',
+  },
+  {
+    name: 'MemoryPolicyDecision',
+    declaration: 'export type MemoryPolicyDecision = \'block\' | \'reject\' | \'shadow\' | \'confirm\' | \'store\';',
+  },
+  {
+    name: 'MemoryPolicyReason',
+    declaration: 'export type MemoryPolicyReason = \'no-candidates\' | \'all-candidates-sensitive\' | \'low-confidence\' | \'credential-signal\' | \'sensitivity-review-required\' | \'high-confidence\' | \'moderate-confidence\';',
+  },
+  {
+    name: 'MemoryPolicyVersion',
+    declaration: 'export type MemoryPolicyVersion = typeof MEMORY_POLICY_VERSION;',
+  },
+  {
+    name: 'MemoryProvider',
+    declaration: 'export interface MemoryProvider {\n    readonly id: string;\n    available(): boolean;\n    create(request: MemoryCreateRequest, signal?: AbortSignal): Promise<MemoryRecord>;\n    search(request: MemorySearchRequest, signal?: AbortSignal): Promise<readonly MemorySearchHit[]>;\n    update(request: MemoryUpdateRequest, signal?: AbortSignal): Promise<MemoryRecord>;\n    forget(request: MemoryForgetRequest, signal?: AbortSignal): Promise<void>;\n}',
+  },
+  {
+    name: 'MemoryRecord',
+    declaration: 'export interface MemoryRecord {\n    readonly id: MemoryId;\n    readonly scope: MemoryScope;\n    readonly content: string;\n    readonly revision: number;\n    readonly source: MemorySource;\n    readonly schemaVersion?: MemoryRecordSchemaVersion;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'MemoryRecordSchemaVersion',
+    declaration: 'export type MemoryRecordSchemaVersion = typeof MEMORY_RECORD_SCHEMA_VERSION;',
+  },
+  {
+    name: 'MemoryRef',
+    declaration: 'export interface MemoryRef {\n    readonly id: MemoryId;\n    readonly revision: number;\n}',
+  },
+  {
+    name: 'MemoryScope',
+    declaration: 'export interface MemoryScope {\n    readonly workspaceId: WorkspaceId;\n}',
+  },
+  {
+    name: 'MemorySearchHit',
+    declaration: 'export interface MemorySearchHit {\n    readonly record: MemoryRecord;\n    readonly score: number;\n}',
+  },
+  {
+    name: 'MemorySearchRequest',
+    declaration: 'export interface MemorySearchRequest {\n    readonly scope: MemoryScope;\n    readonly query: string;\n    readonly limit: number;\n}',
+  },
+  {
+    name: 'MemorySource',
+    declaration: 'export interface MemorySource {\n    readonly kind: \'session\';\n    readonly sessionId: SessionId;\n}',
+  },
+  {
+    name: 'MemoryUpdateRequest',
+    declaration: 'export interface MemoryUpdateRequest {\n    readonly scope: MemoryScope;\n    readonly ref: MemoryRef;\n    readonly content: string;\n}',
   },
   {
     name: 'Message',
@@ -4843,7 +4986,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ToolRuntime',
-    declaration: 'export class ToolRuntime extends Service {\n    static inject;\n    static Config: z<Config>;\n    readonly [TOOL_RUNTIME_SCHEDULER]: ToolRuntimeScheduler;\n    constructor(ctx: Context, config: Config = {});\n    presentAs(mode: ToolPresentationMode): () => void;\n    register(definition: ToolDefinition): () => void;\n    restrict(filter: ToolRestriction): () => void;\n    guard(guard: ToolGuard): () => void;\n    get(name: string, scope?: ScopeKey): ToolDefinition | undefined;\n    schemas(scope?: ScopeKey): ToolSchema[];\n    executionMode(exec: ToolExecutionInput): ToolExecutionMode;\n    async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>;\n}',
+    declaration: 'export class ToolRuntime extends Service {\n    static inject;\n    static Config: z<Config>;\n    readonly [TOOL_RUNTIME_SCHEDULER]: ToolRuntimeScheduler;\n    constructor(ctx: Context, config: Config = {});\n    presentAs(mode: ToolPresentationMode): () => void;\n    compactDescriptions(maxLength: number): () => void;\n    register(definition: ToolDefinition): () => void;\n    restrict(filter: ToolRestriction): () => void;\n    guard(guard: ToolGuard): () => void;\n    get(name: string, scope?: ScopeKey): ToolDefinition | undefined;\n    schemas(scope?: ScopeKey): ToolSchema[];\n    executionMode(exec: ToolExecutionInput): ToolExecutionMode;\n    async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>;\n}',
   },
   {
     name: 'ToolRuntimeScheduler',

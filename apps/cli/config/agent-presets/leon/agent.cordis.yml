@@ -42,10 +42,21 @@
       Preserve a privacidade: dados e arquivos locais não devem sair do computador sem
       autorização do usuário.
 
+      Use web_search antes de responder quando o usuário pedir pesquisa, verificação,
+      informação atual ou recente, ou quando o fato puder ter mudado, como preços,
+      notícias, leis, agenda, versões de software, disponibilidade e recomendações.
+      Use web_fetch quando precisar confirmar o conteúdo de uma fonte específica.
+      Para raciocínio, escrita e fatos estáveis, responda diretamente. Nunca coloque
+      conteúdo privado de arquivos locais em uma pesquisa sem autorização do usuário.
+      Quando o usuário pedir um lembrete ou uma tarefa futura, use as ferramentas
+      schedule_*; não prometa lembrar sem registrar e confirmar o agendamento.
+
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
   config:
-    maxBytes: 65536
+    # Keep the first request responsive on local models. Nested instructions
+    # are still reconciled after relevant file operations.
+    maxBytes: 8192
 
 # ── shell ───────────────────────────────────────────────────────────────────
 
@@ -63,6 +74,9 @@
 - id: tool-pwsh
   name: '@deepseek-ai/dsh-tool-pwsh'
   disabled: !!js process.platform !== 'win32'
+  config:
+    allowHostProcessTermination: false
+    enforceManagedServerValidation: true
 
 # ── filesystem ──────────────────────────────────────────────────────────────
 
@@ -75,6 +89,35 @@
   name: '@deepseek-ai/dsh-tool-fs-search'
   config:
     sampleOverCapGlobResults: false
+
+# The host owns the language-server process and provider registry. Leon gets
+# only the read-only semantic navigation surface in its scoped tool catalog.
+- id: tool-lsp
+  name: '@deepseek-ai/dsh-tool-lsp'
+
+# First controlled MCP connection. The server process can see only this Leon
+# source tree, while the exact allowlist keeps every mutation tool out of the
+# model catalog even though the upstream filesystem server implements them.
+- id: mcp-leon-files-readonly
+  name: '@deepseek-ai/dsh-mcp-client'
+  config:
+    serverName: leon_files
+    transport: stdio
+    command: !!js process.execPath
+    args:
+      - !!js "process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@modelcontextprotocol/server-filesystem/dist/index.js')"
+      - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('../../../../../', baseUrl))"
+    allowedTools:
+      - list_allowed_directories
+      - list_directory
+      - search_files
+      - read_text_file
+    failOnStartupError: true
+    reconnect:
+      enabled: true
+      initialDelayMs: 500
+      maxDelayMs: 10000
+      maxAttempts: 5
 
 # ── background jobs ────────────────────────────────────────────────────────
 
@@ -103,6 +146,8 @@
 
 - id: tool-skill
   name: '@deepseek-ai/dsh-tool-skill'
+  config:
+    catalogDescriptionMaxLength: 120
 
 # ── goals ───────────────────────────────────────────────────────────────────
 
@@ -114,6 +159,30 @@
 # session. What a preset chooses is whether its agent can call the goal tool.
 - id: tool-goal
   name: '@deepseek-ai/dsh-tool-goal'
+  config:
+    # A terminal claim must agree with the durable task panel for this goal.
+    completionRequiresCompletedTodos: true
+    # Completion is committed only after a fresh independent auditor checks the
+    # workspace. Rejections return actionable findings to the active goal.
+    completionAuditorProvider: spawn
+    completionAuditorModelProvider: google
+    completionAuditorModel: gemini-3.6-flash
+    completionAuditorMaxTokens: 4096
+    completionAuditorMaxAttemptsPerTurn: 2
+    completionAuditorReportMaxCharacters: 6000
+
+# ── long-term memory ───────────────────────────────────────────────────────
+
+# The provider-neutral memory service and its durable local provider stay on
+# the Web HOST plane. This optional consumer activates only when that host
+# composition also publishes the workspace registry; other profiles can still
+# mount the Leon preset without exposing a non-functional tool.
+- id: tool-memory
+  name: '@deepseek-ai/dsh-tool-memory'
+  config:
+    automaticRecall: true
+    recallLimit: 4
+    recallMaxChars: 4000
 
 # ── plan mode ───────────────────────────────────────────────────────────────
 
@@ -260,11 +329,20 @@
   name: '@deepseek-ai/dsh-tool-todo'
   config:
     allowParallelInProgress: true
+    preserveExistingItems: true
 
 # The `web` service and its search provider stay in the host composition; only
 # the model-facing tool is per-session.
 - id: tool-web
   name: '@deepseek-ai/dsh-tool-web'
   config:
-    fetch: false
+    fetch: true
     searchTimeoutMs: 60000
+
+# Preserve native tool calling while bounding verbose schema descriptions for
+# faster prompt ingestion on local models. Execution keeps the full definitions.
+- id: tool-presentation
+  name: '@deepseek-ai/dsh-agent-tool-presentation'
+  config:
+    mode: native
+    descriptionMaxLength: 120

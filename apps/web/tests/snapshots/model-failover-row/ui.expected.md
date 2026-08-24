@@ -1,0 +1,33 @@
+- banner:
+  - navigation "Session hierarchy":
+    - button "Automatic model failover" [disabled]
+  - button "Session log":
+    - text: Session log
+    - img
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+- text: Continue even if the local model is unavailable. {{clock}}
+- button "Copy":
+  - img
+- status: Local model unavailableLeon automatically switched to gemini-3.6-flash through the configured API.
+- paragraph: Automatic failover completed.
+- button "Copy":
+  - img
+- button "Good response":
+  - img
+- button "Bad response":
+  - img
+- button "Branch into a new conversation":
+  - img
+- text: {{clock}} Ran for {{duration}}
+- textbox "Message the agent"
+- button "Add":
+  - img
+- 'button "Access mode, current: Workspace Write"': Workspace Write
+- button "Start voice"
+- button "Leon Automatic, currently using Qwen 3.5 9B (Local), reasoning effort Off":
+  - text: Leon Automatic Qwen 3.5 9B (Local) · Off
+  - img
+- button "Send message" [disabled]
+- text: 1 turns · 1 steps LLM {{duration}}

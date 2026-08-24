@@ -132,7 +132,7 @@ function TurnErrorItem({ node, t }: {
   )
 }
 
-/** Persistent notice that automatic routing continued through the configured API. */
+/** Persistent notice that automatic routing continued through a configured fallback. */
 function ModelFailoverItem({ node, t }: {
   node: ModelFailoverNode
   t: ChatViewSlotProps['t']
@@ -141,8 +141,11 @@ function ModelFailoverItem({ node, t }: {
     <div className={css.turnErrorRow} role="status">
       <StateDot state="warning" className={css.turnErrorDot} />
       <div className={css.turnErrorCopy}>
-        <span className={css.failoverTitle}>{t('message.failover.title')}</span>
-        <span className={css.turnErrorMessage}>{t('message.failover.detail', { model: node.to.model })}</span>
+        <span className={css.failoverTitle}>{t('message.failover.title', { provider: node.from.provider })}</span>
+        <span className={css.turnErrorMessage}>{t('message.failover.detail', {
+          fromModel: node.from.model,
+          model: node.to.model,
+        })}</span>
       </div>
     </div>
   )

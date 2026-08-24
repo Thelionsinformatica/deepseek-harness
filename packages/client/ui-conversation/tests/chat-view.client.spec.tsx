@@ -593,9 +593,9 @@ describe('ChatView', () => {
     const h = makeHarness({ nodes: [user(1, 'continue'), failover(2)], running: true })
     render(<h.ChatView {...h.props} />)
 
-    const status = screen.getByText('本地模型不可用').closest('[role="status"]')
-    expect(status?.textContent).toContain('本地模型不可用')
-    expect(status?.textContent).toContain('Leon 已自动通过配置的 API 切换到 gemini-3.6-flash。')
+    const status = screen.getByText('ollama 不可用').closest('[role="status"]')
+    expect(status?.textContent).toContain('ollama 不可用')
+    expect(status?.textContent).toContain('Leon 已通过配置的故障转移自动从 qwen3.5:9b 切换到 gemini-3.6-flash。')
   })
 
   it('renders terminal turn failures inline with their durable message and optional code', () => {

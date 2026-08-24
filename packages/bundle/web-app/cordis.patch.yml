@@ -134,16 +134,21 @@
               .mjs: javascript
               .cjs: javascript
 
-    # Whole-log turn/step counts and configured paid-Standard API cost estimate
-    # for the chat stats strip and Work dashboard. Ollama is deliberately $0;
-    # Gemini prices are an editable deployment snapshot, effective through
-    # 2026-12-31. Search/Maps queries and cache storage are not token charges.
+    # Whole-log turn/step counts and configured API cost estimate for the chat
+    # stats strip and Work dashboard. Both Ollama models are deliberately $0.
+    # Gemini prices are an editable deployment snapshot through 2026-12-31;
+    # OpenAI is the 2026-08-24 public snapshot. OmniRoute owns the actual price
+    # of its chosen upstream and exposes that separately in its usage ledger.
     - id: session-stats
       name: '@deepseek-ai/dsh-session-stats'
       config:
         prices:
           - provider: ollama
             model: qwen3.5:9b
+            inputUsdPerMillion: 0
+            outputUsdPerMillion: 0
+          - provider: ollama
+            model: ornith-1.5:9b
             inputUsdPerMillion: 0
             outputUsdPerMillion: 0
           - provider: google
@@ -171,6 +176,11 @@
             inputUsdPerMillion: 0.25
             outputUsdPerMillion: 1.50
             cacheReadUsdPerMillion: 0.025
+          - provider: openai
+            model: gpt-5.6-terra
+            inputUsdPerMillion: 2.00
+            outputUsdPerMillion: 12.00
+            cacheReadUsdPerMillion: 0.20
 
     # Browser-zone time context lets Leon interpret natural-language dates;
     # Schedule adds durable one-shot and fixed-rate reminders to every future
@@ -196,35 +206,70 @@
     - id: api-gateway
       name: '@deepseek-ai/dsh-host-apiproxy'
       config:
-        # Leon Automatic starts with the local model at minimum effort, raises
-        # the same local model's reasoning for medium work, and reserves the
-        # user-configured Google Gemini route for complex work. Goal
-        # continuations stay on Gemini so a task does not step down midway.
+        # Leon Automatic keeps ordinary work on Qwen, promotes complex work and
+        # autonomous goal rounds to the local Ornith specialist, then escalates
+        # only on provider failure: OmniRoute -> direct Gemini -> direct OpenAI.
+        # Each transition is persisted as llm/failover and shown in the chat.
         adaptiveRouting:
           provider: ollama
           fastProvider: ollama
           mainProvider: ollama
-          expertProvider: google
+          expertProvider: ollama
           fastModel: qwen3.5:9b
           mainModel: qwen3.5:9b
-          expertModel: gemini-3.6-flash
+          expertModel: ornith-1.5:9b
           fastReasoningEffort: 'off'
           mainReasoningEffort: medium
+          expertReasoningEffort: high
           simpleMaxCharacters: 280
           expertMinCharacters: 700
           goalRoundTiers:
             - fromRound: 1
+              provider: ollama
+              model: ornith-1.5:9b
+              reasoningEffort: high
+          failovers:
+            - fromProviders:
+                - ollama
+              provider: omniroute
+              model: auto
+              failureCodes:
+                - TRANSPORT
+                - TIMEOUT
+                - SERVER
+                - UNKNOWN_MODEL
+                - NO_ADAPTER
+            - fromProviders:
+                - omniroute
               provider: google
               model: gemini-3.6-flash
-          failover:
-            fromProviders:
-              - ollama
-            provider: google
-            model: gemini-3.6-flash
-            failureCodes:
-              - TRANSPORT
-              - TIMEOUT
-              - SERVER
+              failureCodes:
+                - TRANSPORT
+                - TIMEOUT
+                - SERVER
+                - RATE_LIMIT
+                - QUOTA
+                - EMPTY_RESPONSE
+                - AUTH
+                - INVALID_CREDENTIAL
+                - MISSING_CREDENTIAL
+                - UNKNOWN_MODEL
+            - fromProviders:
+                - google
+              provider: openai
+              model: gpt-5.6-terra
+              reasoningEffort: high
+              failureCodes:
+                - TRANSPORT
+                - TIMEOUT
+                - SERVER
+                - RATE_LIMIT
+                - QUOTA
+                - EMPTY_RESPONSE
+                - AUTH
+                - INVALID_CREDENTIAL
+                - MISSING_CREDENTIAL
+                - UNKNOWN_MODEL
 
     - id: cordis-host-runner
       name: '@deepseek-ai/dsh-cordis-host-runner'

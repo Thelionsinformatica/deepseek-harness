@@ -10,7 +10,7 @@
 - text: Continue even if the local model is unavailable. {{clock}}
 - button "Copy":
   - img
-- status: Local model unavailableLeon automatically switched to gemini-3.6-flash through the configured API.
+- status: ollama unavailableLeon automatically switched from qwen3.5:9b to gemini-3.6-flash through the configured fallback.
 - paragraph: Automatic failover completed.
 - button "Copy":
   - img

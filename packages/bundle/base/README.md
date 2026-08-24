@@ -12,7 +12,9 @@ The base bundle resolves one deployment workspace for the fallback sandbox polic
 
 ## Model Experience
 
-Indirectly, through the inserted rows: this bundle selects the shipped persona-less prompt base, tool set, and local Ollama route that mode bundles specialize, and contributes no model-visible text of its own. Leon uses `ollama/qwen3.5:9b` as its single shipped local model. Gemini and other remote routes remain explicit provider settings rather than Leon's identity. DeepSeek model and search adapters are installed only as manual compatibility options and are not mounted in the shipped catalog. Model-facing Web search and fetch are disabled in the base composition; deployments must deliberately mount a provider and the corresponding tool before local context may leave the machine for retrieval.
+Indirectly, through the inserted rows: this bundle selects the shipped persona-less prompt base, tool set, and provider routes that mode bundles specialize, and contributes no model-visible text of its own. Leon ships two local Ollama roles: `ollama/qwen3.5:9b` for ordinary work and `ollama/ornith-1.5:9b` as the coding and agent specialist. The loopback `omniroute/auto` gateway and credential-referenced `openai/gpt-5.6-terra` route are available to an explicit deployment fallback policy; neither changes Leon's identity. Gemini remains a separately configured route. DeepSeek model and search adapters are installed only as manual compatibility options and are not mounted in the shipped catalog. Model-facing Web search and fetch are disabled in the base composition; deployments must deliberately mount a provider and the corresponding tool before local context may leave the machine for retrieval.
+
+On Windows the bundle also exposes a project-scoped `opencode` delegation tool through the generic ACP subagent provider. The child uses its isolated OpenCode configuration below `E:/computador/.leon`, runs Ornith as its main coding model and Qwen as its small model, inherits only the selected workspace path, and returns only its final text to Leon. Its configuration confines file operations to that workspace and denies commit, push, hard-reset, recursive deletion, external-directory access, and nested agents.
 
 #### KV Cache effect
 
@@ -21,6 +23,8 @@ None directly; each inserted row's package owns its effect.
 ## Known Limitations and Deferred Work
 
 - **A patch replaces whole row configs** — profile overrides must restate every field a row keeps; there is no deep-merge layer.
-- **The local default requires Ollama to be running** — the loopback endpoint is `http://127.0.0.1:11434/v1`, and the installer must ensure the service and selected model are available.
+- **The local routes require Ollama to be running** — the loopback endpoint is `http://127.0.0.1:11434/v1`, and the installer must ensure both Qwen and Ornith are available.
+- **OmniRoute is a separate loopback service** — its configured endpoint is `http://127.0.0.1:20128/v1`; production startup must keep it bound to `127.0.0.1` and make its upstream credentials and budget policy explicit.
+- **OpenCode is an installer-owned Windows runtime** — the default command and configuration live below `E:/computador/.leon`; deployment environment variables can override those paths, while non-Windows base compositions leave this provider disabled.
 - **Web retrieval requires an explicit profile override** — the base mounts the provider-neutral seam but enables neither a search provider nor a model-facing Web tool. Enabling a provider without enabling its tool, or the tool without a usable provider, is an incomplete deployment configuration.
 - **The Windows temp grant is a private per-session subdirectory** — `workspace-write` confines writes to the workspace plus the session's own temp subdirectory (`<temp>\dsh-<hash>`, TMP/TEMP rewritten for confined children); `read-only` grants nothing. See `@deepseek-ai/dsh-sandbox-windows-acl`.

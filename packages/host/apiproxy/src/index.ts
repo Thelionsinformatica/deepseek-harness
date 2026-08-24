@@ -104,13 +104,13 @@ export class ApiProxyService extends Service implements ApiProxy {
         model: z.string().required(),
         reasoningEffort: z.string(),
       })).default([]),
-      failover: z.union([z.object({
+      failovers: z.array(z.object({
         fromProviders: z.array(z.string().min(1)).min(1),
         provider: z.string().min(1).required(),
         model: z.string().min(1).required(),
         reasoningEffort: z.string(),
         failureCodes: z.array(z.string().min(1)).min(1),
-      })]),
+      })).default([]),
     })]),
   })
 

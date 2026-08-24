@@ -298,8 +298,8 @@ describe('LocaleRuntime', () => {
       retryingCloud: 'Retrying model request',
       retryDelay: 'Retry delay: ',
       failureReason: 'Failure reason: ',
-      failoverTitle: 'Local model unavailable',
-      failoverDetail: 'Leon automatically switched to {model} through the configured API.',
+      failoverTitle: '{provider} unavailable',
+      failoverDetail: 'Leon automatically switched from {fromModel} to {model} through the configured fallback.',
     })
     const t = svc.bind('feature')
     expect(t('settings')).toBe('Configurações')
@@ -321,8 +321,8 @@ describe('LocaleRuntime', () => {
     expect(t('retryingCloud')).toBe('Tentando novamente com o modelo')
     expect(t('retryDelay')).toBe('Espera para nova tentativa: ')
     expect(t('failureReason')).toBe('Motivo da falha: ')
-    expect(t('failoverTitle')).toBe('Modelo local indisponível')
-    expect(t('failoverDetail', { model: 'Gemini 3.6 Flash' }))
-      .toBe('Leon mudou automaticamente para Gemini 3.6 Flash pela API configurada.')
+    expect(t('failoverTitle', { provider: 'OmniRoute' })).toBe('OmniRoute indisponível')
+    expect(t('failoverDetail', { fromModel: 'auto', model: 'Gemini 3.6 Flash' }))
+      .toBe('Leon mudou automaticamente de auto para Gemini 3.6 Flash pelo fallback configurado.')
   })
 })

@@ -98,7 +98,7 @@ interface BashContribution {
 }
 
 describe('web-app runtime glue', () => {
-  it('pins Leon Automatic to local fast/main tiers and a Gemini expert tier', () => {
+  it('pins Leon Automatic to Qwen/Ornith locally with OmniRoute, Gemini, and OpenAI fallbacks', () => {
     const patch = readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
     const start = patch.indexOf('    - id: api-gateway')
     const end = patch.indexOf('\n    - id:', start + 1)
@@ -106,16 +106,19 @@ describe('web-app runtime glue', () => {
     expect(gateway).toContain('provider: ollama')
     expect(gateway).toContain('fastProvider: ollama')
     expect(gateway).toContain('mainProvider: ollama')
-    expect(gateway).toContain('expertProvider: google')
+    expect(gateway).toContain('expertProvider: ollama')
     expect(gateway).toContain('fastModel: qwen3.5:9b')
     expect(gateway).toContain('mainModel: qwen3.5:9b')
     expect(patch).not.toContain('qwen3.5:4b')
-    expect(gateway).toContain('expertModel: gemini-3.6-flash')
+    expect(gateway).toContain('expertModel: ornith-1.5:9b')
     expect(gateway).toContain('mainReasoningEffort: medium')
     expect(gateway).toContain('fromRound: 1')
-    expect(gateway).toContain('model: gemini-3.6-flash')
+    expect(gateway).toContain('model: ornith-1.5:9b')
     expect(gateway).toContain('fromProviders:')
     expect(gateway).toContain('- ollama')
+    expect(gateway).toContain('provider: omniroute')
+    expect(gateway).toContain('provider: google')
+    expect(gateway).toContain('provider: openai')
     expect(gateway).toContain('- TRANSPORT')
     expect(gateway).not.toMatch(/(?:provider|fastModel|mainModel|expertModel|model):.*deepseek/iu)
     expect(patch).toContain("- id: ui-voice\n      name: '@deepseek-ai/dsh-client-ui-voice'")
@@ -129,13 +132,30 @@ describe('web-app runtime glue', () => {
       .flatMap(entry => entry.insert ?? [])
     expect(rows.find(row => row.id === 'api-gateway')?.config).toMatchObject({
       adaptiveRouting: {
-        goalRoundTiers: [{ fromRound: 1, provider: 'google', model: 'gemini-3.6-flash' }],
-        failover: {
-          fromProviders: ['ollama'],
-          provider: 'google',
-          model: 'gemini-3.6-flash',
-          failureCodes: ['TRANSPORT', 'TIMEOUT', 'SERVER'],
-        },
+        expertProvider: 'ollama',
+        expertModel: 'ornith-1.5:9b',
+        goalRoundTiers: [{
+          fromRound: 1, provider: 'ollama', model: 'ornith-1.5:9b', reasoningEffort: 'high',
+        }],
+        failovers: [
+          {
+            fromProviders: ['ollama'],
+            provider: 'omniroute',
+            model: 'auto',
+            failureCodes: ['TRANSPORT', 'TIMEOUT', 'SERVER', 'UNKNOWN_MODEL', 'NO_ADAPTER'],
+          },
+          {
+            fromProviders: ['omniroute'],
+            provider: 'google',
+            model: 'gemini-3.6-flash',
+          },
+          {
+            fromProviders: ['google'],
+            provider: 'openai',
+            model: 'gpt-5.6-terra',
+            reasoningEffort: 'high',
+          },
+        ],
       },
     })
     const prices = rows.find(row => row.id === 'session-stats')?.config?.prices as unknown[]
@@ -144,9 +164,18 @@ describe('web-app runtime glue', () => {
       inputUsdPerMillion: 0, outputUsdPerMillion: 0,
     })
     expect(prices).toContainEqual({
+      provider: 'ollama', model: 'ornith-1.5:9b',
+      inputUsdPerMillion: 0, outputUsdPerMillion: 0,
+    })
+    expect(prices).toContainEqual({
       provider: 'google', model: 'gemini-3.6-flash',
       inputUsdPerMillion: 0.75, outputUsdPerMillion: 3.75,
       cacheReadUsdPerMillion: 0.075,
+    })
+    expect(prices).toContainEqual({
+      provider: 'openai', model: 'gpt-5.6-terra',
+      inputUsdPerMillion: 2, outputUsdPerMillion: 12,
+      cacheReadUsdPerMillion: 0.2,
     })
   })
 

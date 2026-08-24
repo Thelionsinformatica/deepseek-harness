@@ -41,6 +41,17 @@ describe('dsh-base bundle', () => {
       provider: 'ollama',
       model: 'qwen3.5:9b',
     })
+    expect(rows.find(row => row.id === 'subagent-opencode')?.config).toMatchObject({
+      providerName: 'opencode',
+      args: ['acp'],
+      permission: 'reject',
+    })
+    expect(rows.find(row => row.id === 'tool-subagent-opencode')?.config).toMatchObject({
+      provider: 'opencode',
+      toolName: 'opencode',
+      backgroundMode: 'one-shot',
+      maxDepth: 'provider-managed',
+    })
     expect(rows.find(row => row.id === 'llm-pi-ai')?.config).toMatchObject({
       providers: {
         ollama: {
@@ -49,7 +60,17 @@ describe('dsh-base bundle', () => {
           headers: { Authorization: 'Bearer ollama-local' },
           models: [
             { id: 'qwen3.5:9b' },
+            { id: 'ornith-1.5:9b' },
           ],
+        },
+        omniroute: {
+          api: 'openai-completions',
+          baseURL: 'http://127.0.0.1:20128/v1',
+          models: [{ id: 'auto' }],
+        },
+        openai: {
+          apiKeyEnv: 'OPENAI_API_KEY',
+          models: [{ id: 'gpt-5.6-terra' }],
         },
       },
     })
@@ -67,6 +88,7 @@ describe('dsh-base bundle', () => {
     expect(rows.filter(row => row.id === 'subagent-claude-code')).toHaveLength(0)
     expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-subagent-codex')
     expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-subagent-claude-code')
+    expect(manifest.dependencies).toHaveProperty('@deepseek-ai/dsh-subagent-acp')
     // Compatibility packages remain installable through an explicit profile;
     // neither provider is mounted in Leon's shipped catalog above.
     expect(manifest.dependencies).toHaveProperty('@deepseek-ai/dsh-llm-deepseek')

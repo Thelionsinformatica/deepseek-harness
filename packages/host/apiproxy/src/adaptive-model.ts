@@ -48,7 +48,7 @@ export interface AdaptiveRoutingConfig {
   fastModel: string
   /** Stronger local model used for contextual or medium-complexity work. */
   mainModel: string
-  /** Optional cloud model reserved for the most complex work. */
+  /** Optional specialist model reserved for the most complex work. */
   expertModel?: string
   /** Provider-owned reasoning effort used with the fast tier. */
   fastReasoningEffort?: string
@@ -62,8 +62,8 @@ export interface AdaptiveRoutingConfig {
   expertMinCharacters?: number
   /** Ordered escalation policy; the highest eligible `fromRound` wins. */
   goalRoundTiers?: AdaptiveGoalRoundTier[]
-  /** Optional immediate replacement for an unavailable automatic route. */
-  failover?: AdaptiveFailoverConfig
+  /** Ordered replacements for unavailable automatic routes. First eligible route wins. */
+  failovers?: AdaptiveFailoverConfig[]
 }
 
 /** Prompt facts available before the durable user message is admitted. */
@@ -181,7 +181,7 @@ export function chooseAdaptiveModel(
 
 /**
  * Choose an explicitly configured replacement for an unavailable automatic route.
- * @param config - Automatic routing configuration with an optional replacement route.
+ * @param config - Automatic routing configuration with ordered replacement routes.
  * @param input - Failed provider and normalized provider-neutral failure code.
  * @returns the replacement route, or `undefined` when failover is not configured or eligible.
  */
@@ -189,11 +189,12 @@ export function chooseAdaptiveFailover(
   config: AdaptiveRoutingConfig,
   input: AdaptiveFailoverInput,
 ): AdaptiveRoutingDecision | undefined {
-  const failover = config.failover
-  if (failover === undefined
-    || !failover.fromProviders.includes(input.provider)
-    || !failover.failureCodes.includes(input.failureCode)
-    || failover.provider === input.provider) return undefined
+  const failover = config.failovers?.find(candidate =>
+    candidate.fromProviders.includes(input.provider)
+    && candidate.failureCodes.includes(input.failureCode)
+    && candidate.provider !== input.provider,
+  )
+  if (failover === undefined) return undefined
   return {
     provider: failover.provider,
     model: failover.model,

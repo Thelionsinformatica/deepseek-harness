@@ -6,24 +6,45 @@ const config: AdaptiveRoutingConfig = {
   provider: 'ollama',
   fastProvider: 'ollama',
   mainProvider: 'ollama',
-  expertProvider: 'google',
+  expertProvider: 'ollama',
   fastModel: 'qwen3.5:9b',
   mainModel: 'qwen3.5:9b',
-  expertModel: 'gemini-3.6-flash',
+  expertModel: 'ornith-1.5:9b',
   fastReasoningEffort: 'off',
   mainReasoningEffort: 'medium',
+  expertReasoningEffort: 'high',
   simpleMaxCharacters: 120,
   expertMinCharacters: 500,
   goalRoundTiers: [
-    { fromRound: 1, provider: 'google', model: 'gemini-3.6-flash' },
-    { fromRound: 3, provider: 'google', model: 'gemini-3.1-pro-preview', reasoningEffort: 'high' },
+    { fromRound: 1, provider: 'ollama', model: 'ornith-1.5:9b', reasoningEffort: 'high' },
   ],
-  failover: {
-    fromProviders: ['ollama'],
-    provider: 'google',
-    model: 'gemini-3.6-flash',
-    failureCodes: ['TRANSPORT', 'TIMEOUT', 'SERVER'],
-  },
+  failovers: [
+    {
+      fromProviders: ['ollama'],
+      provider: 'omniroute',
+      model: 'auto',
+      failureCodes: ['TRANSPORT', 'TIMEOUT', 'SERVER', 'UNKNOWN_MODEL', 'NO_ADAPTER'],
+    },
+    {
+      fromProviders: ['omniroute'],
+      provider: 'google',
+      model: 'gemini-3.6-flash',
+      failureCodes: [
+        'TRANSPORT', 'TIMEOUT', 'SERVER', 'RATE_LIMIT', 'QUOTA', 'EMPTY_RESPONSE',
+        'AUTH', 'INVALID_CREDENTIAL', 'MISSING_CREDENTIAL', 'UNKNOWN_MODEL',
+      ],
+    },
+    {
+      fromProviders: ['google'],
+      provider: 'openai',
+      model: 'gpt-5.6-terra',
+      reasoningEffort: 'high',
+      failureCodes: [
+        'TRANSPORT', 'TIMEOUT', 'SERVER', 'RATE_LIMIT', 'QUOTA', 'EMPTY_RESPONSE',
+        'AUTH', 'INVALID_CREDENTIAL', 'MISSING_CREDENTIAL', 'UNKNOWN_MODEL',
+      ],
+    },
+  ],
 }
 
 describe('chooseAdaptiveModel()', () => {
@@ -50,9 +71,9 @@ describe('chooseAdaptiveModel()', () => {
   it.each([
     { content: [{ type: 'text' as const, text: 'Faça uma auditoria completa deste projeto.' }] },
     { content: [{ type: 'image' as const, mediaType: 'image/png' as const, data: 'AQ==' }] },
-  ])('uses the remote expert tier for complex or multimodal work', ({ content }) => {
+  ])('uses the local specialist tier for complex or multimodal work', ({ content }) => {
     expect(chooseAdaptiveModel(config, { content, hasHistory: false }))
-      .toEqual({ provider: 'google', model: 'gemini-3.6-flash', tier: 'expert' })
+      .toEqual({ provider: 'ollama', model: 'ornith-1.5:9b', reasoningEffort: 'high', tier: 'expert' })
   })
 
   it('treats a terse continuation as contextual only when history exists', () => {
@@ -65,21 +86,21 @@ describe('chooseAdaptiveModel()', () => {
     expect(chooseAdaptiveModel(config, {
       content: [{ type: 'text', text: `Implemente este projeto completo.\n${'requisito\n'.repeat(20)}` }],
       hasHistory: false,
-    })).toEqual({ provider: 'google', model: 'gemini-3.6-flash', tier: 'expert' })
+    })).toEqual({ provider: 'ollama', model: 'ornith-1.5:9b', reasoningEffort: 'high', tier: 'expert' })
   })
 
   it('uses the highest eligible explicit goal-round tier', () => {
     expect(chooseAdaptiveModel(config, { content: [], hasHistory: true, goalRound: 1 }))
-      .toEqual({ provider: 'google', model: 'gemini-3.6-flash', tier: 'goal-round' })
+      .toEqual({ provider: 'ollama', model: 'ornith-1.5:9b', reasoningEffort: 'high', tier: 'goal-round' })
     expect(chooseAdaptiveModel(config, { content: [], hasHistory: true, goalRound: 4 }))
-      .toEqual({ provider: 'google', model: 'gemini-3.1-pro-preview', reasoningEffort: 'high', tier: 'goal-round' })
+      .toEqual({ provider: 'ollama', model: 'ornith-1.5:9b', reasoningEffort: 'high', tier: 'goal-round' })
   })
 
   it('selects only the explicitly configured expert provider for complex wording', () => {
     expect(chooseAdaptiveModel(config, {
       content: [{ type: 'text', text: 'Analise toda a arquitetura e resolva os problemas.' }],
       hasHistory: true,
-    })).toEqual({ provider: 'google', model: 'gemini-3.6-flash', tier: 'expert' })
+    })).toEqual({ provider: 'ollama', model: 'ornith-1.5:9b', reasoningEffort: 'high', tier: 'expert' })
   })
 
   it('preserves provider defaults when tier efforts are not configured', () => {
@@ -95,18 +116,27 @@ describe('chooseAdaptiveModel()', () => {
 })
 
 describe('chooseAdaptiveFailover()', () => {
-  it.each(['TRANSPORT', 'TIMEOUT', 'SERVER'])('replaces an unavailable local route for %s', (failureCode) => {
+  it.each(['TRANSPORT', 'TIMEOUT', 'SERVER'])('sends an unavailable local route through OmniRoute for %s', (failureCode) => {
     expect(chooseAdaptiveFailover(config, { provider: 'ollama', failureCode })).toEqual({
-      provider: 'google',
-      model: 'gemini-3.6-flash',
+      provider: 'omniroute',
+      model: 'auto',
       tier: 'failover',
     })
   })
 
-  it('does not replace manual configuration failures or the replacement provider itself', () => {
+  it('bypasses a failed OmniRoute through Gemini, then a failed Gemini through OpenAI', () => {
+    expect(chooseAdaptiveFailover(config, { provider: 'omniroute', failureCode: 'RATE_LIMIT' })).toEqual({
+      provider: 'google', model: 'gemini-3.6-flash', tier: 'failover',
+    })
+    expect(chooseAdaptiveFailover(config, { provider: 'google', failureCode: 'SERVER' })).toEqual({
+      provider: 'openai', model: 'gpt-5.6-terra', reasoningEffort: 'high', tier: 'failover',
+    })
+  })
+
+  it('does not replace an ineligible failure or the final provider', () => {
     expect(chooseAdaptiveFailover(config, { provider: 'ollama', failureCode: 'AUTH' })).toBeUndefined()
-    expect(chooseAdaptiveFailover(config, { provider: 'google', failureCode: 'TRANSPORT' })).toBeUndefined()
-    const { failover: _failover, ...configWithoutFailover } = config
+    expect(chooseAdaptiveFailover(config, { provider: 'openai', failureCode: 'TRANSPORT' })).toBeUndefined()
+    const { failovers: _failovers, ...configWithoutFailover } = config
     expect(chooseAdaptiveFailover(configWithoutFailover, {
       provider: 'ollama', failureCode: 'TRANSPORT',
     })).toBeUndefined()
@@ -115,40 +145,40 @@ describe('chooseAdaptiveFailover()', () => {
   it('preserves the configured replacement effort and rejects a same-provider loop', () => {
     expect(chooseAdaptiveFailover({
       ...config,
-      failover: {
+      failovers: [{
         fromProviders: ['ollama'],
         provider: 'google',
         model: 'gemini-pro',
         reasoningEffort: 'high',
         failureCodes: ['TRANSPORT'],
-      },
+      }],
     }, { provider: 'ollama', failureCode: 'TRANSPORT' })).toEqual({
       provider: 'google', model: 'gemini-pro', reasoningEffort: 'high', tier: 'failover',
     })
     expect(chooseAdaptiveFailover({
       ...config,
-      failover: {
+      failovers: [{
         fromProviders: ['ollama'], provider: 'ollama', model: 'other', failureCodes: ['TRANSPORT'],
-      },
+      }],
     }, { provider: 'ollama', failureCode: 'TRANSPORT' })).toBeUndefined()
   })
 })
 
 describe('adaptive routing configuration', () => {
-  it('accepts an explicit failover route and rejects empty eligibility lists', () => {
-    const failover = config.failover
-    if (failover === undefined) throw new Error('test configuration requires failover')
-    expect(ApiProxyService.Config({ adaptiveRouting: config }).adaptiveRouting?.failover).toEqual(config.failover)
+  it('accepts an ordered failover chain and rejects empty eligibility lists', () => {
+    const [failover] = config.failovers ?? []
+    if (failover === undefined) throw new Error('test configuration requires failovers')
+    expect(ApiProxyService.Config({ adaptiveRouting: config }).adaptiveRouting?.failovers).toEqual(config.failovers)
     expect(() => ApiProxyService.Config({
       adaptiveRouting: {
         ...config,
-        failover: { ...failover, fromProviders: [] },
+        failovers: [{ ...failover, fromProviders: [] }],
       },
     })).toThrow()
     expect(() => ApiProxyService.Config({
       adaptiveRouting: {
         ...config,
-        failover: { ...failover, failureCodes: [] },
+        failovers: [{ ...failover, failureCodes: [] }],
       },
     })).toThrow()
   })

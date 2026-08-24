@@ -26,7 +26,7 @@ Think 行默认保持折叠，并在不展开思维链的情况下暴露实时�
 
 实时轮次标签经本地化显示为 `Leon 正在工作…`。Ollama 的计划重试使用本地模型文案，同时保留尝试次数与变化中的倒计时；其他提供方的重试继续使用不指名提供方的文案，因此活动提示不会让人误以为 DeepSeek 正在运行。
 
-`llm/failover` 事件会在其请求位置渲染成持久警告，说明本地模型不可用，并指出通过已配置 API 接替的模型。替代请求成功后该通知仍保持可见，且不会暴露提供方失败详情或凭据。
+`llm/failover` 事件会在其请求位置渲染成持久警告，点名不可用的提供方、被离开的模型以及已配置故障转移所选择的替代模型。替代请求成功后每一次跳转仍保持可见，包括 OmniRoute 到 Gemini 及 Gemini 到 OpenAI 的切换，同时不会暴露提供方失败详情或凭据。
 
 审批通过本包声明的链条接管编辑器：`ApprovalPanel` 注册为按选择器路由的 `'conversation.composer'` 配置项（ui-user-questions 模式），在审批等待未决期间取代 InputBar 占据编辑器（琥珀色条、理由标题、来自运行中调用参数的配对命令行、一次性的拒绝／允许）。`contract/slots.ts` 中的 `PendingApproval` 领域面在运行时 `PendingWait` 载体之上拥有 wire 编码——带审计关联的 `ApprovalResponsePayload` 值；广播的 `approval/resolved` 帧使等待落定并恢复编辑器。运行时 manager 会将所有审批或问题等待通过 `SessionSummary.pendingInteraction` 投影出来，未实例化的会话也不例外；`ui-workspace` 负责其侧边栏呈现。未决等待完全离开消息流：问题（ui-user-questions）与审批（ApprovalPanel）都经编辑器接管作答，不再保留只读占位卡。编辑器底行的 Access 席位挂载 `PermissionSelect`，由 host 计算的 `permissions` 投影经标准工具包 `useProjection` 供数（key 缺席即隐藏 chip）；chip 打开 Menu 原语下拉，其中 kebab-case 预设名渲染为 Title Case 标签；普通安全预设会立即经输入栏注入的 `command` 回调提交 `/permission <preset>`，而 `danger-full-access` 在界面中显示为 `Full access`，选择后先打开页面内的 Modal 风险确认。用户勾选确认项前启用按钮始终不可用；取消、Escape、关闭按钮与点击遮罩都不会提交命令。
 

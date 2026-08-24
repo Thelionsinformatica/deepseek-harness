@@ -113,9 +113,10 @@ describe('web e2e: automatic model failover notice', () => {
     await sessionRow.click()
 
     await page.getByText(DONE, { exact: true }).waitFor({ timeout: 15_000 })
-    const notice = page.getByRole('status').filter({ hasText: 'Local model unavailable' })
+    const notice = page.getByRole('status').filter({ hasText: 'ollama unavailable' })
     await notice.waitFor({ timeout: 10_000 })
     expect(await notice.textContent()).toContain('gemini-3.6-flash')
+    expect(await notice.textContent()).toContain('qwen3.5:9b')
     expect(await page.locator('body').textContent()).not.toContain('connection refused')
 
     const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))

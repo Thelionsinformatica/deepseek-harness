@@ -85,9 +85,10 @@
     - id: credentials
       name: '@deepseek-ai/dsh-credentials-local'
 
-    # Leon is local-first. The built-in Ollama route needs no credential and
-    # talks only to the loopback OpenAI-compatible endpoint. User settings may
-    # add Gemini or other remote routes without changing this local default.
+    # Leon is local-first. Qwen handles everyday prompts and Ornith is the
+    # local coding/agent specialist. OmniRoute is a loopback-only external
+    # gateway; direct OpenAI remains the final optional fallback. Secrets stay
+    # in the credential service and are never embedded in this composition.
     - id: llm-pi-ai
       name: '@deepseek-ai/dsh-llm-pi-ai'
       config:
@@ -115,6 +116,44 @@
                   high: high
                 compat:
                   supportsReasoningEffort: true
+              - id: ornith-1.5:9b
+                name: Ornith 1.5 9B (Local Specialist)
+                contextWindow: 32768
+                maxTokens: 8192
+                reasoningEfforts:
+                  off: none
+                  low: low
+                  medium: medium
+                  high: high
+                compat:
+                  supportsReasoningEffort: true
+          omniroute:
+            displayName: OmniRoute Local Gateway
+            api: openai-completions
+            baseURL: http://127.0.0.1:20128/v1
+            defaultContextWindow: 262144
+            defaultMaxTokens: 32768
+            defaultInput: [text, image]
+            models:
+              - id: auto
+                name: OmniRoute Automatic
+                contextWindow: 262144
+                maxTokens: 32768
+          openai:
+            displayName: OpenAI Direct Fallback
+            apiKeyEnv: OPENAI_API_KEY
+            models:
+              - id: gpt-5.6-terra
+                name: GPT-5.6 Terra
+                contextWindow: 1050000
+                maxTokens: 128000
+                reasoningEfforts:
+                  off: none
+                  low: low
+                  medium: medium
+                  high: high
+                  xhigh: xhigh
+                  max: max
     - id: session-persistence-jsonl
       name: '@deepseek-ai/dsh-session-persistence-jsonl'
       config:
@@ -330,6 +369,24 @@
       config:
         providerName: fork
 
+    # Project-scoped OpenCode executor. OpenCode owns its local Ornith/Qwen
+    # child context, LSP, snapshots, and tools; ACP returns only the final text
+    # to Leon. The installer owns the binary/config under E:\computador\.leon.
+    - id: subagent-opencode
+      name: '@deepseek-ai/dsh-subagent-acp'
+      disabled: !!js process.platform !== 'win32'
+      config:
+        providerName: opencode
+        command: !!js process.env.LEON_OPENCODE_COMMAND ?? 'E:\\computador\\.leon\\tools\\node_modules\\opencode-ai\\bin\\opencode.exe'
+        args: [acp]
+        permission: reject
+        env:
+          OPENCODE_CONFIG: !!js process.env.LEON_OPENCODE_CONFIG ?? 'E:\\computador\\.leon\\opencode\\opencode.json'
+          XDG_DATA_HOME: !!js process.env.LEON_OPENCODE_DATA ?? 'E:\\computador\\.leon\\opencode\\data'
+          XDG_CACHE_HOME: !!js process.env.LEON_OPENCODE_CACHE ?? 'E:\\computador\\.leon\\opencode\\cache'
+          XDG_CONFIG_HOME: !!js process.env.LEON_OPENCODE_CONFIG_HOME ?? 'E:\\computador\\.leon\\opencode\\config'
+          XDG_STATE_HOME: !!js process.env.LEON_OPENCODE_STATE ?? 'E:\\computador\\.leon\\opencode\\state'
+
     # Continuable background children are selected per delegation tool. The
     # separately loaded follow-up tool registers the one global `send_message`.
     - id: tool-subagent-control
@@ -355,6 +412,18 @@
         provider: fork
         toolName: subagent_fork
         backgroundMode: one-shot
+
+    # Explicit specialist delegation: Leon remains the parent orchestrator and
+    # chooses this project-scoped executor only when independent coding work is
+    # useful. The OpenCode runtime manages its own recursion budget.
+    - id: tool-subagent-opencode
+      name: '@deepseek-ai/dsh-tool-subagent'
+      disabled: !!js process.platform !== 'win32'
+      config:
+        provider: opencode
+        toolName: opencode
+        backgroundMode: one-shot
+        maxDepth: provider-managed
 
     # Optional direct-child return channel; absent from roots and one-shot agents.
     - id: tool-subagent-report

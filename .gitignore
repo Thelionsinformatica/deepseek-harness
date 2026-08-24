@@ -34,6 +34,8 @@ apps/web/dist/
 .artifacts/
 .dsh-build/
 .playwright-mcp/
+apps/cli/.playwright-cli/
+.leon-runtime/**/*.log
 .orig
 .worktrees/
 worktrees/

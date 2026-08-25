@@ -16,6 +16,8 @@ import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import WorkspaceRegistry from '@deepseek-ai/dsh-workspace'
 import MemoryRuntime from '@deepseek-ai/dsh-memory'
 import * as MemoryLocal from '@deepseek-ai/dsh-memory-local'
+import PersonalMemoryRuntime, { PersonalMemoryOwnerId } from '@deepseek-ai/dsh-personal-memory'
+import * as PersonalMemoryLocal from '@deepseek-ai/dsh-personal-memory-local'
 import * as ToolMemory from '@deepseek-ai/dsh-tool-memory'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { memoryCandidateDomainSpec, type MemoryCandidateRecord } from '../src/spec.ts'
@@ -77,6 +79,9 @@ async function bootMemoryLoader(extraRows: string[]): Promise<string> {
     '  config: { provider: local }',
     "- name: '@deepseek-ai/dsh-memory-local'",
     ...extraRows,
+    "- name: '@deepseek-ai/dsh-personal-memory'",
+    '  config: { provider: local }',
+    "- name: '@deepseek-ai/dsh-personal-memory-local'",
     '',
   ].join('\n'))
 
@@ -100,6 +105,8 @@ async function bootMemoryLoader(extraRows: string[]): Promise<string> {
     ['@deepseek-ai/dsh-workspace', WorkspaceRegistry],
     ['@deepseek-ai/dsh-memory', MemoryRuntime],
     ['@deepseek-ai/dsh-memory-local', MemoryLocal],
+    ['@deepseek-ai/dsh-personal-memory', PersonalMemoryRuntime],
+    ['@deepseek-ai/dsh-personal-memory-local', PersonalMemoryLocal],
     ['@deepseek-ai/dsh-tool-memory', ToolMemory],
   ])
   context.loader.internal = {
@@ -115,6 +122,24 @@ async function bootMemoryLoader(extraRows: string[]): Promise<string> {
 }
 
 describe('memory shadow extraction through a real Loader composition', () => {
+  it('boots the isolated personal-memory service and local provider', async () => {
+    await bootMemoryLoader([
+      "- name: '@deepseek-ai/dsh-tool-memory'",
+      '  config: { personalOwnerId: loader-owner, personalAutomaticRecall: true }',
+    ])
+    if (context === undefined) throw new Error('loader context was not initialized')
+    const scope = { ownerId: PersonalMemoryOwnerId('loader-owner') }
+    const created = await context.personalMemory.create({
+      scope,
+      content: 'O usuário prefere respostas diretas em português.',
+      source: { kind: 'session', sessionId: SessionId('personal-loader-source') },
+    })
+    await expect(context.personalMemory.search({ scope, query: 'respostas portugues', limit: 4 }))
+      .resolves.toMatchObject([{ record: { id: created.id } }])
+    expect(context.storageDomain.get('personal_memory_local')).toBeDefined()
+    expect(context.storageDomain.get('memory_local')).toBeDefined()
+  })
+
   it('boots cordis.yml and persists only a review candidate', async () => {
     const workspacePath = await bootMemoryLoader([
       "- name: '@deepseek-ai/dsh-tool-memory'",

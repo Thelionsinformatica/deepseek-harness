@@ -28,7 +28,7 @@ No direct invalidation. A Consumer owns any model-visible schema or prompt chang
 
 ## Known Limitations and Deferred Work
 
-- The first contract supports workspace scope only; user-global and organization scopes are deferred until their authority rules are explicit.
+- This contract remains workspace-only. Cross-workspace personal facts use the separate [`ctx.personalMemory`](../personal-memory/) service; organization scope remains deferred until its authority rules are explicit.
 - Imported-provider provenance and embeddings are deferred. The normalized API can add them without changing memory ownership.
 - Historical search is an explicit audit operation. Automatic recall remains active-only and workspace-scoped.
 - The service does not decide what deserves retention. That policy belongs to the Consumer.

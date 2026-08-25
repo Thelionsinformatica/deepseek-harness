@@ -249,6 +249,15 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Provider-neutral create, search, correct, and forget operations stay scoped by WorkspaceId; the local backend persists through storage-domain while tool-memory owns the model policy.',
   },
   {
+    key: 'personalMemory',
+    pkg: 'personal-memory',
+    title: 'Durable personal memory seam',
+    mode: 'seam',
+    implementations: ['personal-memory-local'],
+    consumers: ['tool-memory'],
+    note: 'A separate owner-scoped provider registry and storage domain retain explicit non-sensitive personal facts across workspaces without using telemetry identity.',
+  },
+  {
     key: 'memoryCandidateReview',
     pkg: 'tool-memory',
     title: 'Workspace-isolated memory candidate review',

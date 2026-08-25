@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-本 Consumer 通过 `ctx.memory` 为 agent（智能体）提供显式长期记忆控制，并让每次调用都通过当前会话已注册的 workspace 解析。
+本 Consumer 为 agent 提供针对 workspace 作用域 `ctx.memory` 的显式长期记忆控制，以及可选的跨 workspace `ctx.personalMemory` 控制。
 
 | 工具 | 用途 |
 |---|---|
@@ -10,12 +10,20 @@
 | `memory_search` | 仅从当前 workspace 检索活动的排序记忆，或明确请求审计历史 |
 | `memory_update` | 纠正搜索返回的精确 id 和 revision |
 | `memory_forget` | 删除搜索返回的精确 id 和 revision |
+| `personal_memory_remember` | 跨 workspace 保留一条明确且非敏感的个人事实 |
+| `personal_memory_search` | 搜索已配置本地所有者的个人事实 |
+| `personal_memory_update` | 纠正一个精确的个人记忆 revision |
+| `personal_memory_forget` | 删除一个精确的个人记忆 revision |
 
 ## 激活和策略
 
-插件始终需要 `tools` 和 `systemPrompt`，然后只在 `memory` 与 `workspaceRegistry` 同时可用时激活其提示词段落和 4 个工具。因此，没有组合记忆能力的 headless profile 不会获得损坏的工具。`automaticRecall` 为选择加入，并且只在 agent registry 也存在时激活；`recallLimit` 默认为 4，`recallMaxChars` 默认为 4,000。`ranking` 默认执行确定性的最终重排序，也可关闭以保留提供方分数顺序。`shadowExtraction` 是独立的选择加入功能，并要求稳定的 `shadowOwnerId`；它绝不会启用持久记忆写入。
+插件始终需要 `tools` 和 `systemPrompt`，然后只在 `memory` 与 `workspaceRegistry` 同时可用时激活 workspace 提示词段落和 4 个 workspace 工具。有效的 `personalOwnerId` 只在 `personalMemory` 也可用时激活另外 4 个工具；省略该 id 即为回滚开关。`automaticRecall` 控制 workspace 回忆，`personalAutomaticRecall` 控制独立的个人快照。两者都使用默认值为 4 的 `recallLimit` 和默认值为 4,000 的 `recallMaxChars`。`ranking` 只应用于 workspace 记录。`shadowExtraction` 是独立的选择加入功能，绝不会启用持久写入。
 
 模型指引只允许在用户明确要求记住或清楚确认一项持久事实时写入。它禁止存储密码、API key、access token、private key 和其他身份验证 secret。面向模型的边界还会拒绝类似凭据的写入，并从显式与自动回忆中省略类似凭据的记录。该检测器是纵深防御，并非通用数据防泄漏系统。
+
+## 个人记忆
+
+个人工具绝不接受模型提供的所有者 id。它们使用部署配置的分区，要求拥有 agent Session 以记录来源，并保留与 workspace 记忆相同的精确 revision 纠正和遗忘行为。首步个人回忆只从人类编写的文本派生查询，跳过类似凭据的值，始终留在已配置所有者分区，并把有界 `personal-memory:recall` 快照标记为没有指令权限的不可信数据。它不会自动创建持久记忆。
 
 ## 最终排序
 

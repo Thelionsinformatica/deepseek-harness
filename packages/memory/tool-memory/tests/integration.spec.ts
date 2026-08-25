@@ -8,6 +8,8 @@ import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import MemoryRuntime from '@deepseek-ai/dsh-memory'
 import type { MemoryCandidateEvent, MemoryRecord } from '@deepseek-ai/dsh-memory'
 import * as MemoryLocal from '@deepseek-ai/dsh-memory-local'
+import PersonalMemoryRuntime from '@deepseek-ai/dsh-personal-memory'
+import * as PersonalMemoryLocal from '@deepseek-ai/dsh-personal-memory-local'
 import WorkspaceRegistry from '@deepseek-ai/dsh-workspace'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { agentEvents } from '@deepseek-ai/dsh-agent'
@@ -54,6 +56,8 @@ async function harness(
   const workspace = await ctx.workspaceRegistry.create(cwd)
   await ctx.plugin(MemoryRuntime, { provider: 'local' })
   await ctx.plugin(MemoryLocal)
+  await ctx.plugin(PersonalMemoryRuntime, { provider: 'local' })
+  await ctx.plugin(PersonalMemoryLocal)
   await ctx.plugin(ToolMemory, config)
   await ctx.plugin(
     MemoryCandidateReview,
@@ -1077,6 +1081,56 @@ describe('memory tools through the real agent loop', () => {
         ]
       `)
     expect(adapter.requests[0]?.system).toContain('Never store passwords, API keys')
+    await ctx.fiber.dispose()
+  })
+
+  it('retains personal preferences across workspaces and recalls them automatically', async () => {
+    const adapter = new MockAdapter([
+      toolCallResponse('personal-remember', 'personal_memory_remember', {
+        content: 'O usuário prefere respostas diretas em português brasileiro.',
+      }),
+      textResponse('Preferência pessoal registrada.'),
+      textResponse('Vou manter a resposta direta.'),
+    ])
+    const { ctx, cwd } = await harness(adapter, {
+      personalOwnerId: 'test-local-owner',
+      personalAutomaticRecall: true,
+    })
+    const first = ctx.agentLoop.create(
+      SessionId('leon-personal-memory-source'),
+      { provider: 'mock', model: 'mock' },
+      { cwd },
+    )
+    first.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Lembre minha preferência de comunicação.' }],
+      source: { kind: 'user' },
+    }))
+    await first.whenIdle()
+
+    const secondCwd = await realpath(await mkdtemp(join(tmpdir(), 'dsh-personal-memory-other-workspace-')))
+    tempDirs.push(secondCwd)
+    await ctx.workspaceRegistry.create(secondCwd)
+    const second = ctx.agentLoop.create(
+      SessionId('leon-personal-memory-target'),
+      { provider: 'mock', model: 'mock' },
+      { cwd: secondCwd },
+    )
+    second.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Qual é minha preferência de respostas em português?' }],
+      source: { kind: 'user' },
+    }))
+    await second.whenIdle()
+
+    expect(adapter.requests[0]?.tools?.map(tool => tool.name).filter(name => name.startsWith('personal_memory_')))
+      .toEqual([
+        'personal_memory_forget',
+        'personal_memory_remember',
+        'personal_memory_search',
+        'personal_memory_update',
+      ])
+    expect(JSON.stringify(adapter.requests[2]?.messages)).toContain('personal-memory-context')
+    expect(JSON.stringify(adapter.requests[2]?.messages)).toContain('respostas diretas em português brasileiro')
+    expect(adapter.requests[2]?.system).toContain('Personal memory is local and separate')
     await ctx.fiber.dispose()
   })
 

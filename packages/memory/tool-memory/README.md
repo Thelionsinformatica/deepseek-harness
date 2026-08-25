@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-This Consumer gives an agent explicit long-term memory controls over `ctx.memory` and resolves every call through the current session's registered workspace.
+This Consumer gives an agent explicit long-term memory controls over workspace-scoped `ctx.memory` and optional cross-workspace `ctx.personalMemory`.
 
 | Tool | Purpose |
 |---|---|
@@ -10,12 +10,20 @@ This Consumer gives an agent explicit long-term memory controls over `ctx.memory
 | `memory_search` | Retrieve active ranked memories, or explicitly request audit history, from the current workspace only |
 | `memory_update` | Correct the exact id and revision returned by search |
 | `memory_forget` | Delete the exact id and revision returned by search |
+| `personal_memory_remember` | Retain one explicit non-sensitive personal fact across workspaces |
+| `personal_memory_search` | Search the configured local owner's personal facts |
+| `personal_memory_update` | Correct one exact personal-memory revision |
+| `personal_memory_forget` | Delete one exact personal-memory revision |
 
 ## Activation and policy
 
-The plugin always requires `tools` and `systemPrompt`, then activates its prompt section and four tools only when both `memory` and `workspaceRegistry` are available. A headless profile that does not compose memory therefore receives no broken tool. `automaticRecall` is opt-in and additionally activates only when the agent registry exists; `recallLimit` defaults to 4 and `recallMaxChars` to 4,000. `ranking` defaults to deterministic final reranking and can be disabled to preserve provider-score order. `shadowExtraction` is a separate opt-in and requires a stable `shadowOwnerId`; it never enables durable memory writes.
+The plugin always requires `tools` and `systemPrompt`, then activates its workspace prompt section and four workspace tools only when both `memory` and `workspaceRegistry` are available. A valid `personalOwnerId` activates four additional tools only when `personalMemory` is also available; omitting the id is the rollback switch. `automaticRecall` controls workspace recall, while `personalAutomaticRecall` controls the separate personal snapshot. Both use `recallLimit` (default 4) and `recallMaxChars` (default 4,000). `ranking` applies only to workspace records. `shadowExtraction` is a separate opt-in and never enables durable writes.
 
 The model guidance permits writes only for explicit remember intent or a clearly confirmed durable fact. It forbids storing passwords, API keys, access tokens, private keys, and other authentication secrets. The model-facing boundary also rejects credential-like writes and omits credential-like records from explicit and automatic recall. This detector is defense in depth, not a general data-loss-prevention system.
+
+## Personal memory
+
+Personal tools never accept an owner id from the model. They use the deployment-configured partition, require an owning agent Session for provenance, and preserve the same exact-revision correction and forgetting behavior as workspace memory. First-step personal recall derives its query only from human-authored text, skips credential-like values, stays inside the configured owner partition, and labels the bounded `personal-memory:recall` snapshot as untrusted data with no instruction authority. It does not create durable memory automatically.
 
 ## Final ranking
 

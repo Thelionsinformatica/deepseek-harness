@@ -170,6 +170,8 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/web/web-search-exa': { kind: 'indirect', reason: 'The provider backend delegates model rendering to dsh-tool-web.' },
   'packages/memory/memory': { kind: 'indirect', reason: 'The provider registry delegates model rendering to dsh-tool-memory.' },
   'packages/memory/memory-local': { kind: 'indirect', reason: 'The local provider delegates model rendering to dsh-tool-memory.' },
+  'packages/memory/personal-memory': { kind: 'indirect', reason: 'The provider registry delegates model rendering to dsh-tool-memory.' },
+  'packages/memory/personal-memory-local': { kind: 'indirect', reason: 'The local provider delegates model rendering to dsh-tool-memory.' },
   'packages/workflow/workflow': { kind: 'indirect', reason: 'The service delegates parent and child model rendering to its consumer and engine.' },
 }
 

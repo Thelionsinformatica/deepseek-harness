@@ -53,6 +53,7 @@
     "@deepseek-ai/dsh-lsp": "workspace:^",
     "@deepseek-ai/dsh-mcp-client": "workspace:^",
     "@deepseek-ai/dsh-memory": "workspace:^",
+    "@deepseek-ai/dsh-personal-memory": "workspace:^",
     "@deepseek-ai/dsh-home-paths": "workspace:^",
     "@deepseek-ai/dsh-permission-presets": "workspace:^",
     "@deepseek-ai/dsh-plan-mode": "workspace:^",

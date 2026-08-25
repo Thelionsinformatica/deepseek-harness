@@ -167,6 +167,8 @@
     { "path": "./packages/workspace/workspace" },
     { "path": "./packages/memory/memory" },
     { "path": "./packages/memory/memory-local" },
+    { "path": "./packages/memory/personal-memory" },
+    { "path": "./packages/memory/personal-memory-local" },
     { "path": "./packages/memory/tool-memory" },
     { "path": "./packages/session/session-title" },
     { "path": "./packages/session/session-title-llm" },

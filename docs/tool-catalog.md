@@ -30,7 +30,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-goal` | `create_goal`, `get_goal`, `update_goal` | `ctx.tools`, `ctx.agents`, `ctx.goals`, `ctx.systemPrompt`, `a calling Agent in an authorized open turn` | `tool/call`, `goal/change for mutations`, `tool/result` | - | create, edit, pause, and resume require direct-human root authority; complete and blocked also accept the exact current goal round. The default blocked lower bound is three admitted rounds. |
 | `@deepseek-ai/dsh-schedule` | `schedule_create`, `schedule_delete`, `schedule_list` | `ctx.tools`, `ctx.sessions`, `Session persistence`, `a future live root Agent` | `tool/call`, `schedule/change create or delete`, `tool/result` | - | Registered only inside live root Agent scopes created after the opt-in Schedule plugin loads. Version 1 accepts after_seconds, explicit absolute at, and bounded fixed-rate every_seconds, and discloses session-local delivery; management reads and mutations require the shared Session persistence barrier. |
 | `@deepseek-ai/dsh-tool-lsp` | `lsp` | `ctx.tools`, `ctx.lsp`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | The lsp tool keeps provider selection and language-server subprocesses behind ctx.lsp, so its model-visible schema stays stable across providers. Requires a registered provider (e.g. `@deepseek-ai/dsh-lsp-stdio`) at runtime; without one, a query returns the structured `LSP_UNAVAILABLE` error rather than changing the schema. |
-| `@deepseek-ai/dsh-tool-memory` | `memory_forget`, `memory_remember`, `memory_search`, `memory_update` | `ctx.tools`, `ctx.systemPrompt`, `ctx.memory`, `ctx.workspaceRegistry`, `a calling Agent with a registered workspace` | `tool/call`, `provider-owned durable memory for mutations`, `tool/result` | - | All operations resolve the calling session cwd to a stable workspace id. Writes require explicit retention policy guidance; corrections and deletion require the exact id and revision returned by search. |
+| `@deepseek-ai/dsh-tool-memory` | `memory_forget`, `memory_remember`, `memory_search`, `memory_update`, `personal_memory_forget`, `personal_memory_remember`, `personal_memory_search`, `personal_memory_update` | `ctx.tools`, `ctx.systemPrompt`, `ctx.memory`, `ctx.personalMemory`, `ctx.workspaceRegistry`, `a calling Agent with a registered workspace` | `tool/call`, `provider-owned durable workspace or personal memory for mutations`, `tool/result` | - | Workspace operations resolve the calling session cwd to a stable workspace id. Personal operations use an explicit owner partition independent from workspace identity. Writes require explicit retention policy guidance; corrections and deletion require the exact id and revision returned by search. |
 | `@deepseek-ai/dsh-tool-ralph` | `ralph` | `ctx.tools`, `ctx.workflowEngine`, `ctx.subagents`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents every fresh round)` | `tool/call`, `tool/result`, `workflow and child session events during execution` | - | A fixed foreground workflow starts one fresh structured child per round; the model selects only the immutable objective and an optional round cap. |
 | `@deepseek-ai/dsh-tool-skill` | `skill` | `ctx.tools`, `ctx.agents`, `ctx.skills` | `tool/call`, `tool/result`, `user/message replacement catalogs via agent.inject()` | - | - |
 | `@deepseek-ai/dsh-tool-session-query` | `session_event_read`, `session_event_search`, `session_event_trace`, `session_search`, `session_trace` | `ctx.tools`, `ctx.systemPrompt`, `ctx.sessionQuery`, `a calling Agent for workspace authority` | `tool/call`, `tool/result` | - | The five read-only tools hide provider cursors and authorize every result from the immutable calling agent session. The package is opt-in; compositions that need enforced deadlines or bounded inline output also mount the generic timeout or spill policies. |
@@ -1326,7 +1326,114 @@ Correct one memory in the current workspace using the exact id and revision retu
 
 Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
 
-All operations resolve the calling session cwd to a stable workspace id. Writes require explicit retention policy guidance; corrections and deletion require the exact id and revision returned by search.
+### `personal_memory_forget`
+
+Permanently forget one personal memory after the user requests or confirms deletion.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "memory_id": {
+      "type": "string",
+      "description": "Exact memory id returned by search."
+    },
+    "revision": {
+      "type": "number",
+      "description": "Exact positive revision returned by search."
+    }
+  },
+  "required": [
+    "memory_id",
+    "revision"
+  ]
+}
+```
+
+Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `personal_memory_remember`
+
+Remember one stable, non-sensitive personal fact across project workspaces. Use only after explicit remember intent or clear user confirmation. Never store credentials.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "content": {
+      "type": "string",
+      "description": "Self-contained personal fact to remember."
+    }
+  },
+  "required": [
+    "content"
+  ]
+}
+```
+
+Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `personal_memory_search`
+
+Search the user-controlled personal memory shared across project workspaces.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "Personal preference or fact to recall."
+    },
+    "limit": {
+      "type": "number",
+      "description": "Maximum results; defaults to 8."
+    },
+    "include_history": {
+      "type": "boolean",
+      "description": "Include superseded, scheduled, and expired revisions."
+    }
+  },
+  "required": [
+    "query"
+  ]
+}
+```
+
+Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `personal_memory_update`
+
+Correct one personal memory using the exact id and revision returned by search.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "memory_id": {
+      "type": "string",
+      "description": "Exact memory id returned by search."
+    },
+    "revision": {
+      "type": "number",
+      "description": "Exact positive revision returned by search."
+    },
+    "content": {
+      "type": "string",
+      "description": "Complete corrected personal fact."
+    }
+  },
+  "required": [
+    "memory_id",
+    "revision",
+    "content"
+  ]
+}
+```
+
+Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+Workspace operations resolve the calling session cwd to a stable workspace id. Personal operations use an explicit owner partition independent from workspace identity. Writes require explicit retention policy guidance; corrections and deletion require the exact id and revision returned by search.
 
 <a id="deepseek-aidsh-tool-ralph"></a>
 

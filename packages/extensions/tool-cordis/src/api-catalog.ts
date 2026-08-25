@@ -1201,6 +1201,49 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'personalMemory',
+    summary: 'Personal-memory service with an independent provider registry and lifecycle.',
+    description: 'Personal-memory service with an independent provider registry and lifecycle.',
+    methods: [
+      {
+        signature: 'registerProvider(provider: PersonalMemoryProvider): () => void',
+        description: 'Register one personal-memory provider for the caller-controlled fiber lifetime.',
+        parameters: [{ name: 'provider', description: 'Provider implementation keyed by its stable id.' }],
+        returns: 'disposer that removes this exact registration.',
+      },
+      {
+        signature: 'async create( request: PersonalMemoryCreateRequest, signal?: AbortSignal, ): Promise<PersonalMemoryRecord>',
+        description: 'Create one normalized personal fact in an explicit local-owner partition.',
+        parameters: [{ name: 'request', description: 'Owner scope, durable content, and session provenance.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'the durable normalized record.',
+      },
+      {
+        signature: 'async search( request: PersonalMemorySearchRequest, signal?: AbortSignal, ): Promise<readonly PersonalMemorySearchHit[]>',
+        description: 'Search one local-owner partition for relevant personal facts.',
+        parameters: [{ name: 'request', description: 'Owner scope, bounded query, and result limit.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'provider-ranked hits capped to the requested limit.',
+      },
+      {
+        signature: 'async list( request: PersonalMemoryListRequest, signal?: AbortSignal, ): Promise<PersonalMemoryListPage>',
+        description: 'Enumerate one bounded personal-memory partition for administration.',
+        parameters: [{ name: 'request', description: 'Owner scope, optional filters, and page coordinates.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'a stable page of personal-memory revisions.',
+      },
+      {
+        signature: 'async update( request: PersonalMemoryUpdateRequest, signal?: AbortSignal, ): Promise<PersonalMemoryRecord>',
+        description: 'Correct one exact personal-memory revision.',
+        parameters: [{ name: 'request', description: 'Owner scope, compare-and-set reference, and replacement content.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'the corrected record with an incremented revision.',
+      },
+      {
+        signature: 'async forget(request: PersonalMemoryForgetRequest, signal?: AbortSignal): Promise<void>',
+        description: 'Forget one exact personal-memory revision.',
+        parameters: [{ name: 'request', description: 'Owner scope and compare-and-set reference to delete.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'resolution after durable deletion.',
+      },
+    ],
+  },
+  {
     key: 'planMode',
     summary: '`ctx.planMode`: owns logged plan state, applies and narrates selected state at step start, the `plan:policy` section, the `/plan` command, and the stable exit tool.',
     description: '`ctx.planMode`: owns logged plan state, applies and narrates selected state at step start, the `plan:policy` section, the `/plan` command, and the stable exit tool. UIs observe committed flips through `session/event`; there is no live mirror.',
@@ -2745,6 +2788,22 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'event', description: 'Retrieval mode, bounded cost counters, and sanitized failure class.' }],
   },
   {
+    name: 'personal-memory/blocked',
+    mode: 'emit',
+    signature: '\'personal-memory/blocked\'(event: PersonalMemoryBlockedEvent): void',
+    summary: 'A personal-memory operation was rejected before durable mutation.',
+    description: 'A personal-memory operation was rejected before durable mutation.',
+    parameters: [{ name: 'event', description: 'Sanitized operation, owner, reason, and error code.' }],
+  },
+  {
+    name: 'personal-memory/operation',
+    mode: 'emit',
+    signature: '\'personal-memory/operation\'(event: PersonalMemoryOperationEvent): void',
+    summary: 'A personal-memory operation completed or failed without exposing its content.',
+    description: 'A personal-memory operation completed or failed without exposing its content.',
+    parameters: [{ name: 'event', description: 'Content-free operation, provider, owner, and result metadata.' }],
+  },
+  {
     name: 'session-telemetry/record',
     mode: 'waterfall',
     signature: '\'session-telemetry/record\'(record: SessionTelemetryRecord, next: () => SessionTelemetryRecord): SessionTelemetryRecord',
@@ -4199,6 +4258,62 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PermissionSelect',
     declaration: 'export interface PermissionSelect {\n    options: PresetOption[];\n    currentValue: string;\n}',
+  },
+  {
+    name: 'PersonalMemoryBlockedEvent',
+    declaration: 'export interface PersonalMemoryBlockedEvent {\n    readonly schemaVersion: 1;\n    readonly operation: PersonalMemoryOperationEvent[\'operation\'];\n    readonly ownerId: PersonalMemoryOwnerId;\n    readonly reason: \'credential-like\' | \'validation\' | \'provider\';\n    readonly errorCode: string;\n}',
+  },
+  {
+    name: 'PersonalMemoryCreateRequest',
+    declaration: 'export type PersonalMemoryCreateRequest = Omit<MemoryCreateRequest, \'scope\'> & {\n    readonly scope: PersonalMemoryScope;\n};',
+  },
+  {
+    name: 'PersonalMemoryForgetRequest',
+    declaration: 'export type PersonalMemoryForgetRequest = Omit<MemoryForgetRequest, \'scope\'> & {\n    readonly scope: PersonalMemoryScope;\n};',
+  },
+  {
+    name: 'PersonalMemoryListItem',
+    declaration: 'export interface PersonalMemoryListItem extends Omit<MemoryListItem, \'record\'> {\n    readonly record: PersonalMemoryRecord;\n}',
+  },
+  {
+    name: 'PersonalMemoryListPage',
+    declaration: 'export interface PersonalMemoryListPage extends Omit<MemoryListPage, \'items\'> {\n    readonly items: readonly PersonalMemoryListItem[];\n}',
+  },
+  {
+    name: 'PersonalMemoryListRequest',
+    declaration: 'export type PersonalMemoryListRequest = Omit<MemoryListRequest, \'scope\'> & {\n    readonly scope: PersonalMemoryScope;\n};',
+  },
+  {
+    name: 'PersonalMemoryOperationEvent',
+    declaration: 'export interface PersonalMemoryOperationEvent {\n    readonly schemaVersion: 1;\n    readonly operation: \'create\' | \'search\' | \'list\' | \'update\' | \'forget\';\n    readonly provider: string;\n    readonly success: boolean;\n    readonly ownerId: PersonalMemoryOwnerId;\n    readonly resultCount?: number;\n    readonly memoryId?: MemoryRecord[\'id\'];\n    readonly revision?: number;\n    readonly errorCode?: string;\n    readonly durationMs?: number;\n}',
+  },
+  {
+    name: 'PersonalMemoryOwnerId',
+    declaration: 'export type PersonalMemoryOwnerId = Branded<\'PersonalMemoryOwnerId\'>;',
+  },
+  {
+    name: 'PersonalMemoryProvider',
+    declaration: 'export interface PersonalMemoryProvider {\n    readonly id: string;\n    available(): boolean;\n    create(request: PersonalMemoryCreateRequest, signal?: AbortSignal): Promise<PersonalMemoryRecord>;\n    search(request: PersonalMemorySearchRequest, signal?: AbortSignal): Promise<readonly PersonalMemorySearchHit[]>;\n    list(request: PersonalMemoryListRequest, signal?: AbortSignal): Promise<PersonalMemoryListPage>;\n    update(request: PersonalMemoryUpdateRequest, signal?: AbortSignal): Promise<PersonalMemoryRecord>;\n    forget(request: PersonalMemoryForgetRequest, signal?: AbortSignal): Promise<void>;\n}',
+  },
+  {
+    name: 'PersonalMemoryRecord',
+    declaration: 'export type PersonalMemoryRecord = Omit<MemoryRecord, \'scope\'> & {\n    readonly scope: PersonalMemoryScope;\n};',
+  },
+  {
+    name: 'PersonalMemoryScope',
+    declaration: 'export interface PersonalMemoryScope {\n    readonly ownerId: PersonalMemoryOwnerId;\n}',
+  },
+  {
+    name: 'PersonalMemorySearchHit',
+    declaration: 'export interface PersonalMemorySearchHit extends Omit<MemorySearchHit, \'record\'> {\n    readonly record: PersonalMemoryRecord;\n}',
+  },
+  {
+    name: 'PersonalMemorySearchRequest',
+    declaration: 'export type PersonalMemorySearchRequest = Omit<MemorySearchRequest, \'scope\'> & {\n    readonly scope: PersonalMemoryScope;\n};',
+  },
+  {
+    name: 'PersonalMemoryUpdateRequest',
+    declaration: 'export type PersonalMemoryUpdateRequest = Omit<MemoryUpdateRequest, \'scope\'> & {\n    readonly scope: PersonalMemoryScope;\n};',
   },
   {
     name: 'PostToolDecision',

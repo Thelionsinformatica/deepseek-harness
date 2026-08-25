@@ -1,0 +1,16 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": { "rootDir": "src", "outDir": "lib/types" },
+  "include": ["src"],
+  "references": [
+    { "path": "../../../vendor/cordis" },
+    { "path": "../../../vendor/schemastery" },
+    { "path": "../../storage/storage" },
+    { "path": "../../storage/storage-domain" },
+    { "path": "../../workspace/workspace" },
+    { "path": "../memory" },
+    { "path": "../memory-local" },
+    { "path": "../personal-memory" },
+    { "path": "../../runtime-diagnostics/invariants" }
+  ]
+}

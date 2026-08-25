@@ -1,16 +1,6 @@
 /** Conservative credential and sensitive-topic checks for model-facing memory boundaries. */
 
-const CREDENTIAL_PATTERNS = [
-  /-----BEGIN [A-Z ]*PRIVATE KEY-----/i,
-  /\bAIza[\w-]{20,}\b/,
-  /\bAQ\.[\w-]{20,}\b/,
-  /\bsk-(?:proj-)?[\w-]{16,}\b/i,
-  /\bgh[pousr]_[\dA-Z]{20,}\b/i,
-  /\bAKIA[0-9A-Z]{16}\b/,
-  /\beyJ[\w-]{10,}\.[\w-]{10,}\.[\w-]{10,}\b/,
-  /\b(?:api[ _-]?key|access[ _-]?token|secret|password)\b\s*(?:[:=]|\bis\b|\bé\b)\s*["']?[\w.~+\/-]{12,}/i,
-  /\b(?:senha|chave de api|credencial)\b\s*(?:[:=]|\bé\b)\s*["']?[\w.~+\/-]{12,}/i,
-]
+import { isCredentialLikeMemoryContent } from '@deepseek-ai/dsh-memory'
 
 const REVIEW_PATTERNS = [
   /\b(?:cpf|cnpj|rg|cart[aã]o|banco|financeir|pix|fatura|sal[aá]rio)\b/i,
@@ -23,7 +13,7 @@ const REVIEW_PATTERNS = [
  * @returns whether a conservative credential signature matched.
  */
 export function looksSensitive(content: string): boolean {
-  return CREDENTIAL_PATTERNS.some(pattern => pattern.test(content))
+  return isCredentialLikeMemoryContent(content)
 }
 
 /**

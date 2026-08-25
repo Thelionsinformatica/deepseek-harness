@@ -196,6 +196,10 @@
     # Multi-user hosts must override this label or leave shadow extraction off.
     shadowExtraction: true
     shadowOwnerId: leon-local-owner
+    # Personal memory is a separate local partition that follows the user
+    # across workspaces. Removing this id disables its tools and recall.
+    personalOwnerId: leon-local-owner
+    personalAutomaticRecall: true
 
 # ── plan mode ───────────────────────────────────────────────────────────────
 

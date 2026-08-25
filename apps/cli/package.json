@@ -69,6 +69,7 @@
     "@deepseek-ai/dsh-tool-jobs": "workspace:^",
     "@deepseek-ai/dsh-tool-lsp": "workspace:^",
     "@deepseek-ai/dsh-tool-memory": "workspace:^",
+    "@deepseek-ai/dsh-personal-memory": "workspace:^",
     "@deepseek-ai/dsh-tool-pwsh": "workspace:^",
     "@deepseek-ai/dsh-tool-pwsh-persistent": "workspace:^",
     "@deepseek-ai/dsh-tool-ralph": "workspace:^",

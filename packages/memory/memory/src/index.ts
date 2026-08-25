@@ -25,6 +25,8 @@ import type {
 } from './types.ts'
 import { MEMORY_EVENT_SCHEMA_VERSION } from './types.ts'
 
+export { isCredentialLikeMemoryContent } from './sensitivity.ts'
+
 export {
   MemoryError,
   MemoryId,

@@ -1620,7 +1620,7 @@ export interface MemoryRuntimeConfig {
 }
 ```
 
-来源：[`packages/memory/memory/src/index.ts:94`](../packages/memory/memory/src/index.ts)
+来源：[`packages/memory/memory/src/index.ts:96`](../packages/memory/memory/src/index.ts)
 
 <a id="deepseek-aidsh-memory-local"></a>
 
@@ -1744,6 +1744,38 @@ export interface Config {
 ```
 
 来源：[`packages/preset/persona/src/index.ts:34`](../packages/preset/persona/src/index.ts)
+
+<a id="deepseek-aidsh-personal-memory"></a>
+
+## `@deepseek-ai/dsh-personal-memory`
+
+```ts config-catalog
+/** Provider selection and audit configuration. */
+export interface Config {
+  /** Explicit provider id; omitted auto-selects exactly one usable provider. */
+  readonly provider?: string
+  /** Emit content-free operation and blocked events. */
+  readonly telemetryEnabled?: boolean
+}
+```
+
+来源：[`packages/memory/personal-memory/src/index.ts:66`](../packages/memory/personal-memory/src/index.ts)
+
+<a id="deepseek-aidsh-personal-memory-local"></a>
+
+## `@deepseek-ai/dsh-personal-memory-local`
+
+需要：`personalMemory` · `storageDomain`
+
+```ts config-catalog
+/** Local history policy. Personal and workspace domains remain independent. */
+export interface Config {
+  /** Revision policy; `v1` is the emergency in-place overwrite rollback. */
+  readonly historyMode?: 'v1' | 'temporal-v2'
+}
+```
+
+来源：[`packages/memory/personal-memory-local/src/index.ts:36`](../packages/memory/personal-memory-local/src/index.ts)
 
 <a id="deepseek-aidsh-plan-mode"></a>
 
@@ -2965,6 +2997,10 @@ export interface Config {
   shadowExtraction?: boolean
   /** Stable local owner label for extracted candidates; required when shadow extraction is enabled. */
   shadowOwnerId?: string
+  /** Stable local owner partition that enables cross-workspace personal-memory tools. */
+  personalOwnerId?: string
+  /** Recall safe personal memories automatically on the first step of each turn. */
+  personalAutomaticRecall?: boolean
   /** Deterministic final ranking shared by explicit search and automatic recall. */
   ranking?: MemoryRankingConfig
 }
@@ -2986,7 +3022,7 @@ export interface MemoryRankingConfig {
 }
 ```
 
-来源：[`packages/memory/tool-memory/src/index.ts:61`](../packages/memory/tool-memory/src/index.ts)
+来源：[`packages/memory/tool-memory/src/index.ts:67`](../packages/memory/tool-memory/src/index.ts)
 
 <a id="deepseek-aidsh-tool-pwsh"></a>
 

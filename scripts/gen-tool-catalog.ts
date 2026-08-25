@@ -56,6 +56,7 @@ import * as ToolSchedule from '@deepseek-ai/dsh-schedule'
 import Lsp from '@deepseek-ai/dsh-lsp'
 import * as ToolLsp from '@deepseek-ai/dsh-tool-lsp'
 import MemoryRuntime from '@deepseek-ai/dsh-memory'
+import PersonalMemoryRuntime from '@deepseek-ai/dsh-personal-memory'
 import * as ToolMemory from '@deepseek-ai/dsh-tool-memory'
 import * as ToolSkill from '@deepseek-ai/dsh-tool-skill'
 import * as ToolSessionQuery from '@deepseek-ai/dsh-tool-session-query'
@@ -413,15 +414,16 @@ const TOOL_PACKAGES: ToolPackage[] = [
     pkg: '@deepseek-ai/dsh-tool-memory',
     dir: 'tool-memory',
     source: 'packages/memory/tool-memory/src/index.ts',
-    requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.memory', 'ctx.workspaceRegistry', 'a calling Agent with a registered workspace'],
-    writes: ['tool/call', 'provider-owned durable memory for mutations', 'tool/result'],
+    requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.memory', 'ctx.personalMemory', 'ctx.workspaceRegistry', 'a calling Agent with a registered workspace'],
+    writes: ['tool/call', 'provider-owned durable workspace or personal memory for mutations', 'tool/result'],
     async mount(ctx) {
       await ctx.plugin(MemoryRuntime)
+      await ctx.plugin(PersonalMemoryRuntime, { provider: 'catalog' })
       ctx.provide('workspaceRegistry', {} as never)
-      await ctx.plugin(ToolMemory)
+      await ctx.plugin(ToolMemory, { personalOwnerId: 'tool-catalog-owner' })
     },
     note:
-      'All operations resolve the calling session cwd to a stable workspace id. Writes require explicit retention policy guidance; corrections and deletion require the exact id and revision returned by search.',
+      'Workspace operations resolve the calling session cwd to a stable workspace id. Personal operations use an explicit owner partition independent from workspace identity. Writes require explicit retention policy guidance; corrections and deletion require the exact id and revision returned by search.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-ralph',

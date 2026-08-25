@@ -2,15 +2,15 @@
 
 English | [中文](memory.zh.md)
 
-The memory subsystem gives Leon durable, workspace-scoped facts without coupling the product to one memory engine. It is split into a Service Definition ([dsh-memory](../../packages/memory/memory), `ctx.memory`), a first local Service Provider ([dsh-memory-local](../../packages/memory/memory-local), provider id `local`), and a model-facing Consumer ([dsh-tool-memory](../../packages/memory/tool-memory)). Another backend can implement the same provider contract without changing tool names, workspace ownership, or the records the rest of Leon receives. A [direct Letta provider was evaluated and not adopted](../evals/letta-memory-provider-experiment.md); a future candidate must pass the recorded safety, recall, latency, and cost thresholds.
+The memory subsystem gives Leon durable project facts and separately scoped personal facts without coupling the product to one memory engine. Workspace memory is split into a Service Definition ([dsh-memory](../../packages/memory/memory), `ctx.memory`) and a local Service Provider ([dsh-memory-local](../../packages/memory/memory-local), provider id `local`). Personal memory uses an independent Service Definition ([dsh-personal-memory](../../packages/memory/personal-memory), `ctx.personalMemory`) and isolated local provider ([dsh-personal-memory-local](../../packages/memory/personal-memory-local)). [dsh-tool-memory](../../packages/memory/tool-memory) is the model-facing Consumer for both. A [direct Letta provider was evaluated and not adopted](../evals/letta-memory-provider-experiment.md); a future candidate must pass the recorded safety, recall, latency, and cost thresholds.
 
-Design records: [provider-neutral workspace memory](../../.agents/notes/implemented/architecture/2026-08-22-provider-neutral-workspace-memory.md) and [controlled automatic recall](../../.agents/notes/implemented/architecture/2026-08-22-controlled-automatic-memory-recall.md).
+Design records: [provider-neutral workspace memory](../../.agents/notes/implemented/architecture/2026-08-22-provider-neutral-workspace-memory.md), [controlled automatic recall](../../.agents/notes/implemented/architecture/2026-08-22-controlled-automatic-memory-recall.md), and [personal memory across workspaces](../../.agents/notes/implemented/feature/2026-08-25-leon-personal-memory.md).
 
 ## Ownership and isolation
 
 Every operation carries a `MemoryScope` containing a stable `WorkspaceId`. Raw directory paths are never ownership keys. The local provider includes that scope in every lookup and deliberately returns `MEMORY_NOT_FOUND` for a record owned by another workspace, so neither search results nor error details reveal cross-workspace data.
 
-`MemorySource` records the session that explicitly created a fact. This is provenance, not ownership: the workspace remains the sole isolation boundary in the first contract.
+`MemorySource` records the session that explicitly created a fact. This is provenance, not ownership: the workspace remains the isolation boundary for `ctx.memory`.
 
 ## Record and operation vocabulary
 
@@ -34,13 +34,19 @@ Corrections and deletion require the current revision. A successful correction i
 
 Selection happens at execution time and never depends on plugin registration order. An explicitly configured provider must be registered and locally available. Without an explicit id, exactly one usable provider is required; zero or multiple candidates produce structured `MemoryError` codes.
 
-The `local` provider stores records through the versioned `memory_local` storage domain. It serializes mutations, preserves committed state when a write fails, performs deterministic case- and accent-insensitive lexical search, and survives process restart. It does not provide semantic embeddings; a later vector or Letta provider can add richer retrieval behind the same service contract.
+The workspace `local` provider stores records through the versioned `memory_local` storage domain. It serializes mutations, preserves committed state when a write fails, performs deterministic case- and accent-insensitive lexical search, and survives process restart. It does not provide semantic embeddings; a later vector provider can add richer retrieval behind the same service contract.
+
+## Personal memory
+
+`ctx.personalMemory` uses `PersonalMemoryOwnerId` rather than a workspace or raw path. Its provider registry, events, and `personal_memory_local` storage domain are separate from workspace memory. The local provider reuses the same serialized temporal revision engine behind an adapter, but public records expose only `PersonalMemoryScope`; cross-owner access returns `PERSONAL_MEMORY_NOT_FOUND`.
+
+The provider-neutral boundary rejects credential-like content before any provider write. The Leon deployment configures one explicit local owner label; it does not reuse the anonymous telemetry id and does not claim authenticated multi-user ownership. Local files are not encrypted by this subsystem and inherit the configured storage backend and operating-system protection.
 
 ## Model policy
 
-`dsh-tool-memory` contributes four tools: `memory_remember`, `memory_search`, `memory_update`, and `memory_forget`. It resolves the active session directory through `ctx.workspaceRegistry`, so the model never supplies a workspace id or raw path. Its prompt policy tells Leon to search before claiming that durable context is unknown, retain only explicit stable facts, and never store passwords, API keys, tokens, private keys, or other secrets. Conversation text is not captured automatically.
+`dsh-tool-memory` always contributes the four workspace tools `memory_remember`, `memory_search`, `memory_update`, and `memory_forget` when workspace services are present. A configured personal owner and `ctx.personalMemory` add `personal_memory_remember`, `personal_memory_search`, `personal_memory_update`, and `personal_memory_forget`. The model supplies neither workspace nor owner ids. Prompt policy permits writes only for explicit remember intent or clearly confirmed stable facts and forbids passwords, API keys, tokens, private keys, document bodies, and other secrets.
 
-The Leon preset enables bounded automatic recall on the first model request of each turn. The query comes only from human-authored text, retrieval remains inside the current workspace, and at most four safe hits in a 4,000-character snapshot are prepended as untrusted data. The model-facing boundary rejects credential-like writes and filters credential-like search hits. Provider failures fail open for recall—the turn continues without the optional snapshot—while explicit mutation failures remain visible tool errors. No path performs an automatic memory write.
+The Leon preset enables bounded automatic recall on the first model request of each turn for both scopes. The query comes only from human-authored text. Workspace retrieval remains in the current project, while personal retrieval remains in the configured owner partition; each snapshot is capped to four safe hits and 4,000 characters and is prepended as untrusted data. Provider failures fail open for recall, while explicit mutation failures remain visible tool errors. No path performs an automatic durable write.
 
 `tool-memory` emits deterministic policy metadata for each `memory/candidate` event and each persisted shadow candidate row: `policyVersion`, `policyDecision`, and `policyReason`. Candidate telemetry carries only the transient query length, never its text, including when policy blocks the query or requires confirmation. This supports replay and review workflows without changing recall content behavior yet.
 
@@ -163,6 +169,63 @@ async recordCandidate(record: MemoryCandidateRecord): Promise<void>
 
 Source: [`packages/memory/tool-memory/src/review.ts`](../../packages/memory/tool-memory/src/review.ts)
 
+<a id="ctxpersonalmemory--personalmemoryruntime"></a>
+
+### `ctx.personalMemory` — `PersonalMemoryRuntime`
+
+Personal-memory service with an independent provider registry and lifecycle.
+
+```ts cordis-catalog
+/**
+ * Register one personal-memory provider for the caller-controlled fiber lifetime.
+ * @param provider - Provider implementation keyed by its stable id.
+ * @returns disposer that removes this exact registration.
+ */
+registerProvider(provider: PersonalMemoryProvider): () => void
+
+/**
+ * Create one normalized personal fact in an explicit local-owner partition.
+ * @param request - Owner scope, durable content, and session provenance.
+ * @param signal - Optional cancellation forwarded to the selected provider.
+ * @returns the durable normalized record.
+ */
+async create( request: PersonalMemoryCreateRequest, signal?: AbortSignal, ): Promise<PersonalMemoryRecord>
+
+/**
+ * Search one local-owner partition for relevant personal facts.
+ * @param request - Owner scope, bounded query, and result limit.
+ * @param signal - Optional cancellation forwarded to the selected provider.
+ * @returns provider-ranked hits capped to the requested limit.
+ */
+async search( request: PersonalMemorySearchRequest, signal?: AbortSignal, ): Promise<readonly PersonalMemorySearchHit[]>
+
+/**
+ * Enumerate one bounded personal-memory partition for administration.
+ * @param request - Owner scope, optional filters, and page coordinates.
+ * @param signal - Optional cancellation forwarded to the selected provider.
+ * @returns a stable page of personal-memory revisions.
+ */
+async list( request: PersonalMemoryListRequest, signal?: AbortSignal, ): Promise<PersonalMemoryListPage>
+
+/**
+ * Correct one exact personal-memory revision.
+ * @param request - Owner scope, compare-and-set reference, and replacement content.
+ * @param signal - Optional cancellation forwarded to the selected provider.
+ * @returns the corrected record with an incremented revision.
+ */
+async update( request: PersonalMemoryUpdateRequest, signal?: AbortSignal, ): Promise<PersonalMemoryRecord>
+
+/**
+ * Forget one exact personal-memory revision.
+ * @param request - Owner scope and compare-and-set reference to delete.
+ * @param signal - Optional cancellation forwarded to the selected provider.
+ * @returns resolution after durable deletion.
+ */
+async forget(request: PersonalMemoryForgetRequest, signal?: AbortSignal): Promise<void>
+```
+
+Source: [`packages/memory/personal-memory/src/index.ts`](../../packages/memory/personal-memory/src/index.ts)
+
 <a id="memory-events"></a>
 
 ### `memory/*` events
@@ -239,4 +302,42 @@ Optional semantic retrieval completed or fell back without exposing query or mem
 Types: [LocalSemanticSearchEvent](memory-v2-retrieval.md)
 
 Source: [`packages/memory/memory-local/src/index.ts`](../../packages/memory/memory-local/src/index.ts)
+
+<a id="personal-memory-events"></a>
+
+### `personal-memory/*` events
+
+<a id="personal-memoryblocked--emit"></a>
+
+#### `personal-memory/blocked` — emit
+
+A personal-memory operation was rejected before durable mutation.
+
+```ts cordis-catalog
+/**
+ * A personal-memory operation was rejected before durable mutation.
+ * @param event - Sanitized operation, owner, reason, and error code.
+ * @mode emit
+ */
+'personal-memory/blocked'(event: PersonalMemoryBlockedEvent): void
+```
+
+Source: [`packages/memory/personal-memory/src/index.ts`](../../packages/memory/personal-memory/src/index.ts)
+
+<a id="personal-memoryoperation--emit"></a>
+
+#### `personal-memory/operation` — emit
+
+A personal-memory operation completed or failed without exposing its content.
+
+```ts cordis-catalog
+/**
+ * A personal-memory operation completed or failed without exposing its content.
+ * @param event - Content-free operation, provider, owner, and result metadata.
+ * @mode emit
+ */
+'personal-memory/operation'(event: PersonalMemoryOperationEvent): void
+```
+
+Source: [`packages/memory/personal-memory/src/index.ts`](../../packages/memory/personal-memory/src/index.ts)
 <!-- END GENERATED cordis-surface -->

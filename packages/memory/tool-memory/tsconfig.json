@@ -16,6 +16,7 @@
     { "path": "../../workspace/workspace" },
     { "path": "../../typert/protocol" },
     { "path": "../memory" },
+    { "path": "../personal-memory" },
     { "path": "../../runtime-diagnostics/invariants" }
   ]
 }

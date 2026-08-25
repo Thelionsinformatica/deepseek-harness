@@ -67,6 +67,19 @@
         semanticSearch:
           enabled: false
 
+    # Personal memory has its own service, provider registry, and physical
+    # storage domain. It can cross project boundaries only inside the explicit
+    # local-owner partition configured by Leon's preset.
+    - id: personal-memory
+      name: '@deepseek-ai/dsh-personal-memory'
+      config:
+        provider: local
+
+    - id: personal-memory-local
+      name: '@deepseek-ai/dsh-personal-memory-local'
+      config:
+        historyMode: temporal-v2
+
     # One Host-owned source of truth for the shadow queue and its human review
     # trail. The browser addresses a Session; this service resolves and guards
     # the internal workspace partition before returning projected candidates.

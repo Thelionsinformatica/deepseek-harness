@@ -5,8 +5,7 @@ import {
   MEMORY_POLICY_VERSION,
 } from '@deepseek-ai/dsh-memory'
 
-import type { MemoryCandidateOperation } from './spec.ts'
-import type { MemoryCandidateCategory, MemoryCandidateSensitivity } from './spec.ts'
+import type { MemoryCandidateCategory, MemoryCandidateOperation, MemoryCandidateSensitivity } from './types.ts'
 
 /** Inputs for deterministic candidate policy evaluation. */
 export interface CandidatePolicyContext {

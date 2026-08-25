@@ -20,10 +20,10 @@
   - `packages/memory/memory/tests/memory.spec.ts`（7 个用例）
   - `packages/memory/memory-local/tests/memory-local.spec.ts`（7 个用例）
   - `packages/memory/tool-memory/tests/extractor.spec.ts`（4 个用例）
-  - `packages/memory/tool-memory/tests/integration.spec.ts`（8 个用例）
+  - `packages/memory/tool-memory/tests/integration.spec.ts`（10 个用例）
   - `packages/memory/tool-memory/tests/loader-composition.spec.ts`（1 个用例）
   - `packages/memory/tool-memory/tests/policy.spec.ts`（10 个用例）
-- 当前计数：记忆范围内有 **6 个 `.spec.ts` 文件**和 **37 个运行时用例**。
+- 当前计数：记忆范围内有 **6 个 `.spec.ts` 文件**和 **39 个运行时用例**，另有 3 个审查面板浏览器组件用例。
 - 已覆盖范围：
   - `memory.spec.ts` 中的提供方选择、内容规范化、遥测与核心验证。
   - `memory-local.spec.ts` 中的本地隔离、持久性、修订处理与阻止事件遥测。
@@ -43,9 +43,10 @@
   - 在 `memory_candidate.candidates` 中持久化影子候选项，包含置信度、分数、插入与敏感信息省略元数据。
   - 确定性的提取候选策略，覆盖 `block`、`reject`、`shadow`、`confirm` 以及仅供审查的 `store`，并具有 `policyVersion`、`policyDecision` 与 `policyReason` 可追踪性。
   - 审查词汇与持久审查字段，包括 `reviewed`、`reviewDecision`、`reviewedAt` 与 `reviewedBy`。
+  - 会话头部审查面板只列出当前 workspace 分区，并记录不可变的批准或拒绝决定，不写入最终记忆。
+  - 面向浏览器的安全 Remote 投影会省略内部 workspace 与所有者标识符。
   - 工作区隔离，以及纠正与遗忘时的修订检查。
 - V2 尚未实现：
-  - 面向操作员的候选项人工审查与决策面板或流程。
   - 最终验证后，由 `store` 或 `confirm` 决策触发的自动写入。
   - 具有有效性与跨时间元数据控制的本地语义检索。
   - 具有去重与每会话 token 计费能力的安全上下文组合器。
@@ -67,7 +68,7 @@
 
 1. 整合后的目标架构文档：已完成。
 2. 事件层与确定性决策策略：初始实现已完成。
-3. 影子模式与人工批准：本地提取、遥测和审查字段已存在；操作员 UI 仍待完成。
+3. 影子模式与人工批准：本地提取、遥测、审查字段和操作员决策 UI 已完成；最终记忆写入仍有意保持禁用。
 4. 混合检索与安全上下文组合：待完成。
 5. 具有客观标准的 LEON-EVAL-PTBR：规范已存在；可执行套件仍待完成。
 6. 可逆迁移与回滚计划：已记录。

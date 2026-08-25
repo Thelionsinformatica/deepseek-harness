@@ -2924,7 +2924,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/memory/tool-memory/src/index.ts:53`](../packages/memory/tool-memory/src/index.ts)
+来源：[`packages/memory/tool-memory/src/index.ts:54`](../packages/memory/tool-memory/src/index.ts)
 
 <a id="deepseek-aidsh-tool-pwsh"></a>
 

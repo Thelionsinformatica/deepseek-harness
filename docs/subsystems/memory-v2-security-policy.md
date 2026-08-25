@@ -99,4 +99,5 @@ The extracted-candidate evaluator receives metadata only, not the candidate text
 ## Current status
 
 - Deterministic trace and extracted-candidate policy without automatic write effects: implemented.
-- Recommended next stage in M2-007: expose `confirm` and `store` recommendations in operator review controls, and persist only after approval and final validation.
+- M2-007 operator review is implemented: the browser lists only the workspace authorized by the addressed Session, receives no internal `workspaceId` or `userId`, and records immutable accept or reject decisions with date and deployment-owned reviewer identity.
+- An accepted decision still does not call `ctx.memory.create()`. Final persistence remains a separate future stage requiring another validation gate.

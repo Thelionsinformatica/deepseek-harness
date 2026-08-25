@@ -14,6 +14,7 @@ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-test
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import * as ToolMemory from '@deepseek-ai/dsh-tool-memory'
+import MemoryCandidateReview from '../src/review.ts'
 import type { MemoryCandidateRecord } from '../src/spec.ts'
 import { memoryCandidateDomainSpec } from '../src/spec.ts'
 import { MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
@@ -46,6 +47,7 @@ async function harness(adapter: MockAdapter, config: ToolMemory.Config = {}) {
   await ctx.plugin(MemoryRuntime, { provider: 'local' })
   await ctx.plugin(MemoryLocal)
   await ctx.plugin(ToolMemory, config)
+  await ctx.plugin(MemoryCandidateReview, { reviewedBy: 'test-local-reviewer' })
   await ctx.plugin(AgentLoop, { agents: [] })
   ctx.llm.registerAdapter(['mock'], adapter)
   return { ctx, cwd, workspace }
@@ -141,6 +143,112 @@ describe('memory tools through the real agent loop', () => {
       query: 'respostas diretas português brasileiro',
       limit: 8,
     })).resolves.toEqual([])
+    await ctx.fiber.dispose()
+  })
+
+  it('records accept and reject reviews with an auditable author and timestamp', async () => {
+    const adapter = new MockAdapter([textResponse('Preferência observada.'), textResponse('Decisão observada.')])
+    const { ctx, cwd, workspace } = await harness(adapter, {
+      shadowExtraction: true,
+      shadowOwnerId: 'test-local-owner',
+    })
+    const agent = ctx.agentLoop.create(SessionId('leon-memory-human-review'), { provider: 'mock', model: 'mock' }, { cwd })
+
+    agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Leon, lembre que eu prefiro respostas diretas.' }],
+      source: { kind: 'user' },
+    }))
+    await agent.whenIdle()
+    agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'A decisão do projeto é manter os dados localmente.' }],
+      source: { kind: 'user' },
+    }))
+    await agent.whenIdle()
+
+    const pending = await ctx.memoryCandidateReview.list({ sessionId: agent.session.header.id, reviewed: false })
+    expect(pending.ok).toBe(true)
+    if (!pending.ok) throw new Error('expected pending review candidates')
+    expect(pending.value.items).toHaveLength(2)
+    expect(JSON.stringify(pending.value.items)).not.toContain(String(workspace.id))
+    expect(JSON.stringify(pending.value.items)).not.toContain('test-local-owner')
+    const preference = pending.value.items.find(item => item.category === 'preference')
+    const decision = pending.value.items.find(item => item.category === 'decision')
+    if (preference === undefined || decision === undefined) throw new Error('expected preference and decision candidates')
+
+    const accepted = await ctx.memoryCandidateReview.markReviewed({
+      sessionId: agent.session.header.id,
+      id: preference.id,
+      decision: 'accept',
+    })
+    const rejected = await ctx.memoryCandidateReview.markReviewed({
+      sessionId: agent.session.header.id,
+      id: decision.id,
+      decision: 'reject',
+    })
+    expect(accepted).toMatchObject({ ok: true, value: { item: {
+      reviewed: true,
+      reviewDecision: 'accept',
+      reviewedBy: 'test-local-reviewer',
+    } } })
+    expect(rejected).toMatchObject({ ok: true, value: { item: {
+      reviewed: true,
+      reviewDecision: 'reject',
+      reviewedBy: 'test-local-reviewer',
+    } } })
+    if (!accepted.ok || !rejected.ok) throw new Error('expected review decisions to be persisted')
+    expect(Date.parse(accepted.value.item.reviewedAt ?? '')).not.toBeNaN()
+    expect(Date.parse(rejected.value.item.reviewedAt ?? '')).not.toBeNaN()
+    await expect(ctx.memory.search({
+      scope: { workspaceId: workspace.id },
+      query: 'respostas diretas dados localmente',
+      limit: 8,
+    })).resolves.toEqual([])
+
+    const conflicting = await ctx.memoryCandidateReview.markReviewed({
+      sessionId: agent.session.header.id,
+      id: preference.id,
+      decision: 'reject',
+    })
+    expect(conflicting).toMatchObject({ ok: false, error: { code: 'memory-candidate-already-reviewed' } })
+    await ctx.fiber.dispose()
+  })
+
+  it('refuses candidate review across workspace boundaries', async () => {
+    const adapter = new MockAdapter([textResponse('Preferência observada.'), textResponse('Outro workspace pronto.')])
+    const { ctx, cwd } = await harness(adapter, {
+      shadowExtraction: true,
+      shadowOwnerId: 'test-local-owner',
+    })
+    const first = ctx.agentLoop.create(SessionId('leon-memory-review-workspace-a'), { provider: 'mock', model: 'mock' }, { cwd })
+    first.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Leon, lembre que eu prefiro respostas curtas.' }],
+      source: { kind: 'user' },
+    }))
+    await first.whenIdle()
+    const [candidate] = readCandidateRows(ctx)
+    if (candidate === undefined) throw new Error('expected one candidate')
+
+    const otherCwd = await realpath(await mkdtemp(join(tmpdir(), 'dsh-tool-memory-review-other-')))
+    tempDirs.push(otherCwd)
+    await ctx.workspaceRegistry.create(otherCwd)
+    const other = ctx.agentLoop.create(
+      SessionId('leon-memory-review-workspace-b'),
+      { provider: 'mock', model: 'mock' },
+      { cwd: otherCwd },
+    )
+    other.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Olá.' }],
+      source: { kind: 'user' },
+    }))
+    await other.whenIdle()
+
+    await expect(ctx.memoryCandidateReview.list({ sessionId: other.session.header.id, reviewed: false }))
+      .resolves.toMatchObject({ ok: true, value: { items: [] } })
+    await expect(ctx.memoryCandidateReview.markReviewed({
+      sessionId: other.session.header.id,
+      id: candidate.id,
+      decision: 'accept',
+    })).resolves.toMatchObject({ ok: false, error: { code: 'memory-candidate-workspace-mismatch' } })
     await ctx.fiber.dispose()
   })
 

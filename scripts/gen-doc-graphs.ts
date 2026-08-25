@@ -249,6 +249,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Provider-neutral create, search, correct, and forget operations stay scoped by WorkspaceId; the local backend persists through storage-domain while tool-memory owns the model policy.',
   },
   {
+    key: 'memoryCandidateReview',
+    pkg: 'tool-memory',
+    title: 'Workspace-isolated memory candidate review',
+    mode: 'core',
+    note: 'Owns the local shadow queue, derives workspace authority from a live or persisted Session, and records immutable human decisions through a projected Remote without writing final memory.',
+  },
+  {
     key: 'sessionQuery',
     pkg: 'session-query',
     title: 'Session reads, traces, filters, and search',

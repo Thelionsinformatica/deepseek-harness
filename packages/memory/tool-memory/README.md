@@ -30,6 +30,12 @@ The durable telemetry write is best-effort, never blocks tool execution, and doe
 
 When `shadowExtraction` is enabled, the first step of a turn also inspects only the latest human-authored message. Conservative explicit-memory and stable-statement patterns create a local `message_candidate` row with category, confidence, importance, workspace, session, and configured owner metadata. A deterministic metadata-only policy records `block`, `reject`, `shadow`, `confirm`, or `store` as a review recommendation. Safe candidate text stays only in that local review row; credential-like text is omitted before persistence. An ordinary question creates no row. Even `store` does not call `ctx.memory.create()`; operator approval is still required.
 
+## Local candidate review
+
+The optional Host service exported at `@deepseek-ai/dsh-tool-memory/review` owns the canonical candidate queue and exposes a generated `memoryCandidateReview` Remote. Every browser request uses a Session id as an authorization anchor, resolves that Session to its registered workspace, and lists or mutates only the matching partition. The browser-safe row omits internal `workspaceId` and `userId` fields.
+
+The review operation records an immutable accept or reject decision with timestamp and deployment-owned reviewer identity. Repeating the same decision is idempotent; replacing it with a conflicting decision fails. Blocked, policy-rejected, or content-free rows cannot be accepted. Neither listing nor approval enters model context, and approval deliberately does not call `ctx.memory.create()`.
+
 ## Model Experience
 
 ### Static memory policy
@@ -87,6 +93,20 @@ Zero.
 
 No cache entries change.
 
+### Optional human review Remote
+
+#### What the model sees
+
+Nothing. Candidate listing and review are browser-to-Host operations outside the agent tool registry. The projected rows and human decisions are never injected into a model request by this feature.
+
+#### Token effect
+
+Zero.
+
+#### KV Cache effect
+
+No cache entries change.
+
 ### Tool schemas
 
 #### What the model sees
@@ -117,7 +137,7 @@ Append-only; individual calls and results follow the reusable request prefix and
 
 ## Known Limitations and Deferred Work
 
-- Conversation candidates never write durable memory automatically; the opt-in extractor creates local review rows only.
+- Reviewed conversation candidates still do not write durable memory automatically; the panel records the human decision only.
 - Global memories and cross-workspace search are intentionally unavailable.
 - Automatic recall is lexical with the local provider; semantic retrieval remains provider work.
 - Credential detection is conservative defense in depth and cannot recognize every possible secret format.

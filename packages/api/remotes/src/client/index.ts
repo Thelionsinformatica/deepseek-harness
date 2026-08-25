@@ -7,6 +7,7 @@ import dynamicRemote from '@deepseek-ai/dsh-cordis-host-runner/remote'
 import fileReferencesRemote from '@deepseek-ai/dsh-file-reference/remote'
 import pluginInventoryRemote from '@deepseek-ai/dsh-host-plugin-inventory/remote'
 import messageFeedbackRemote from '@deepseek-ai/dsh-message-feedback/remote'
+import memoryCandidateReviewRemote from '@deepseek-ai/dsh-tool-memory/remote'
 import sessionReferencesRemote from '@deepseek-ai/dsh-session-reference/remote'
 import type { TypertClientRemote } from '@deepseek-ai/dsh-typert-protocol'
 
@@ -17,6 +18,7 @@ export type {} from '@deepseek-ai/dsh-file-reference/remote'
 export type {} from '@deepseek-ai/dsh-goal/remote'
 export type {} from '@deepseek-ai/dsh-host-plugin-inventory/remote'
 export type {} from '@deepseek-ai/dsh-message-feedback/remote'
+export type {} from '@deepseek-ai/dsh-tool-memory/remote'
 export type {} from '@deepseek-ai/dsh-session-reference/remote'
 // The forwarded-event allowlist's selection seat: without it in the consumer's
 // compilation face `TypertRemoteEvent` is `never` and every `$on` call fails.
@@ -115,7 +117,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   try {
     for (const contribution of [
       commandsRemote, goalsRemote, dynamicRemote, fileReferencesRemote,
-      pluginInventoryRemote, messageFeedbackRemote, sessionReferencesRemote,
+      pluginInventoryRemote, messageFeedbackRemote, memoryCandidateReviewRemote, sessionReferencesRemote,
     ]) {
       disposers.push(await ctx.remote.$mount(contribution))
     }

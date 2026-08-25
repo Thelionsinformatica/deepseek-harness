@@ -100,6 +100,37 @@ async forget(request: MemoryForgetRequest, signal?: AbortSignal): Promise<void>
 
 Source: [`packages/memory/memory/src/index.ts`](../../packages/memory/memory/src/index.ts)
 
+<a id="ctxmemorycandidatereview--memorycandidatereviewservice"></a>
+
+### `ctx.memoryCandidateReview` — `MemoryCandidateReviewService`
+
+Host service exposing only projected candidate rows through the generated Remote.
+
+```ts cordis-catalog
+/**
+ * Append one producer-owned candidate into the canonical queue.
+ * This host-only method is intentionally not exposed as a browser Remote.
+ * @param record - complete validated candidate row with a unique id.
+ */
+async recordCandidate(record: MemoryCandidateRecord): Promise<void>
+
+/**
+ * List one workspace partition, using the addressed Session as authorization anchor.
+ * @param request - session anchor, filters, and bounded page coordinates.
+ * @returns projected rows or an explicit ownership failure.
+ */
+@Remote('list') async list(request: MemoryCandidateReviewListRequest): Promise<MemoryCandidateReviewListResult>
+
+/**
+ * Record one immutable human decision without writing to `ctx.memory`.
+ * @param request - session authorization anchor, candidate id, and decision.
+ * @returns the reviewed projection or an explicit business failure.
+ */
+@Remote('markReviewed') markReviewed(request: MemoryCandidateReviewMarkRequest): Promise<MemoryCandidateReviewMarkResult>
+```
+
+Source: [`packages/memory/tool-memory/src/review.ts`](../../packages/memory/tool-memory/src/review.ts)
+
 <a id="memory-events"></a>
 
 ### `memory/*` events

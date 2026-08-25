@@ -20,10 +20,10 @@ English | [中文](memory-v2-current-state.zh.md)
   - `packages/memory/memory/tests/memory.spec.ts` (7 cases)
   - `packages/memory/memory-local/tests/memory-local.spec.ts` (7 cases)
   - `packages/memory/tool-memory/tests/extractor.spec.ts` (4 cases)
-  - `packages/memory/tool-memory/tests/integration.spec.ts` (8 cases)
+  - `packages/memory/tool-memory/tests/integration.spec.ts` (10 cases)
   - `packages/memory/tool-memory/tests/loader-composition.spec.ts` (1 case)
   - `packages/memory/tool-memory/tests/policy.spec.ts` (10 cases)
-- Current count: **6 `.spec.ts` files** and **37 runtime cases** in memory scope.
+- Current count: **6 `.spec.ts` files** and **39 runtime cases** in memory scope, plus 3 browser-component cases for the review panel.
 - Covered ranges:
   - Provider selection, content normalization, telemetry, and central validation in `memory.spec.ts`.
   - Local isolation, durability, revision handling, and blocked-event telemetry in `memory-local.spec.ts`.
@@ -43,9 +43,10 @@ English | [中文](memory-v2-current-state.zh.md)
   - Shadow candidate persistence in `memory_candidate.candidates` with confidence, score, insertion, and sensitive-omission metadata.
   - Deterministic extracted-candidate policy covering `block`, `reject`, `shadow`, `confirm`, and review-only `store`, with `policyVersion`, `policyDecision`, and `policyReason` traceability.
   - Review vocabulary and durable review fields, including `reviewed`, `reviewDecision`, `reviewedAt`, and `reviewedBy`.
+  - A session-header review panel that lists only the current workspace partition and records immutable accept or reject decisions without writing final memory.
+  - A browser-safe Remote projection that omits internal workspace and owner identifiers.
   - Workspace isolation and revision checks for correction and forgetting.
 - Not yet implemented for V2:
-  - An operator-facing panel or flow for human candidate review and decisions.
   - Automatic writes triggered by `store` or `confirm` decisions after final validation.
   - Local semantic retrieval with validity and cross-temporal metadata controls.
   - A safe context composer with deduplication and per-session token accounting.
@@ -67,7 +68,7 @@ English | [中文](memory-v2-current-state.zh.md)
 
 1. Consolidated target architecture document: complete.
 2. Event layer and deterministic decision policy: initial implementation complete.
-3. Shadow mode and human approval: local extraction, telemetry, and review fields exist; operator UI remains pending.
+3. Shadow mode and human approval: local extraction, telemetry, review fields, and the operator decision UI are complete; final-memory writes remain intentionally disabled.
 4. Hybrid retrieval and safe context composition: pending.
 5. LEON-EVAL-PTBR with objective criteria: specification exists; executable suite remains pending.
 6. Reversible migration and rollback plans: documented.

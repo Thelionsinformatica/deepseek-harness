@@ -162,6 +162,10 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-sandbox-windows-acl': ['lib/runner.js', 'lib/types-*.js'],
   // SQLite loads every statement from immutable package resources at runtime.
   '@deepseek-ai/dsh-session-persistence-sqlite': ['resources/sql/**/*.sql'],
+  // Candidate review is a Loader-addressable Host entry. tsdown shares the
+  // durable domain schema between it and the ordinary tool entry through one
+  // hashed chunk, so both runtime artifacts must ship together.
+  '@deepseek-ai/dsh-tool-memory': ['lib/review.js', 'lib/spec-*.js'],
   '@deepseek-ai/dsh-skill-badge': ['assets'],
   '@deepseek-ai/dsh-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
   '@deepseek-ai/dsh-web-app': ['runtime/transcribe-local.py'],

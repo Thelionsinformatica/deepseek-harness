@@ -9,10 +9,12 @@
     { "path": "../../core/agent" },
     { "path": "../../llm/llm" },
     { "path": "../../core/session" },
+    { "path": "../../session/session-persistence" },
     { "path": "../../core/system-prompt" },
     { "path": "../../core/tools" },
     { "path": "../../storage/storage-domain" },
     { "path": "../../workspace/workspace" },
+    { "path": "../../typert/protocol" },
     { "path": "../memory" },
     { "path": "../../runtime-diagnostics/invariants" }
   ]

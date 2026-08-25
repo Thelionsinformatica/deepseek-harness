@@ -2,7 +2,7 @@
 
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import { looksSensitive, requiresSensitiveReview } from './sensitivity.ts'
-import type { MemoryCandidateCategory, MemoryCandidateSensitivity } from './spec.ts'
+import type { MemoryCandidateCategory, MemoryCandidateSensitivity } from './types.ts'
 
 /** One bounded candidate proposed for local review without changing durable memory. */
 export interface ExtractedMemoryCandidate {

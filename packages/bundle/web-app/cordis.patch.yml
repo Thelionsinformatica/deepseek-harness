@@ -59,6 +59,14 @@
     - id: memory-local
       name: '@deepseek-ai/dsh-memory-local'
 
+    # One Host-owned source of truth for the shadow queue and its human review
+    # trail. The browser addresses a Session; this service resolves and guards
+    # the internal workspace partition before returning projected candidates.
+    - id: memory-candidate-review
+      name: '@deepseek-ai/dsh-tool-memory/review'
+      config:
+        reviewedBy: leon-local-operator
+
     - id: message-feedback
       name: '@deepseek-ai/dsh-message-feedback'
       config:

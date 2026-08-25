@@ -9,6 +9,9 @@
   ],
   "references": [
     {
+      "path": "../../api/remotes/tsconfig.client.json"
+    },
+    {
       "path": "../locale"
     },
     {
@@ -28,6 +31,9 @@
     },
     {
       "path": "../../session/session-stats"
+    },
+    {
+      "path": "../../memory/tool-memory"
     },
     {
       "path": "../../runtime-diagnostics/invariants"

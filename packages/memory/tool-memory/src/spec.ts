@@ -1,7 +1,6 @@
 /** Shadow durable schema for extracted memory candidates. @module @deepseek-ai/dsh-tool-memory/spec */
 
 import { z } from 'zod'
-import type { Branded } from '@deepseek-ai/dsh-brand'
 import { SessionId, type SessionId as SessionIdentity } from '@deepseek-ai/dsh-session'
 import { WorkspaceId, type WorkspaceId as WorkspaceIdentity } from '@deepseek-ai/dsh-workspace'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
@@ -11,30 +10,21 @@ import {
   type MemoryPolicyReason,
   type MemoryPolicyVersion,
 } from '@deepseek-ai/dsh-memory'
+import {
+  MemoryCandidateId,
+  type MemoryCandidateCategory,
+  type MemoryCandidateOperation,
+  type MemoryCandidateReviewDecision,
+  type MemoryCandidateSensitivity,
+} from './types.ts'
 
-/** Unique identity for one persisted candidate snapshot. */
-export type MemoryCandidateId = Branded<'MemoryCandidateId'>
-
-/**
- * Brand one durable candidate snapshot identifier.
- * @param id - raw stable candidate identifier.
- * @returns the same string with the candidate-id brand.
- */
-export function MemoryCandidateId(id: string): MemoryCandidateId {
-  return id as MemoryCandidateId
-}
-
-/** Candidate events used by memory extraction telemetry and shadow persistence. */
-export type MemoryCandidateOperation = 'message_candidate' | 'memory_recall' | 'tool_call_memory_search'
-
-/** Stable classification of a reviewable memory candidate. */
-export type MemoryCandidateCategory = 'preference' | 'decision' | 'configuration' | 'procedure' | 'fact'
-
-/** Local shadow sensitivity outcome; blocked candidates never retain content. */
-export type MemoryCandidateSensitivity = 'none' | 'review' | 'blocked'
-
-/** Human review decision captured on a candidate row from operator flow. */
-export type MemoryCandidateReviewDecision = 'accept' | 'ignore' | 'reject'
+export type {
+  MemoryCandidateCategory,
+  MemoryCandidateOperation,
+  MemoryCandidateReviewDecision,
+  MemoryCandidateSensitivity,
+} from './types.ts'
+export { MemoryCandidateId } from './types.ts'
 
 /** Schema version for the durable shadow candidate domain. */
 export const MEMORY_CANDIDATE_SCHEMA_VERSION = 3 as const

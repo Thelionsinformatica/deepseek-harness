@@ -69,6 +69,7 @@ flowchart LR
   svc_memory["ctx.memory<br/>Durable workspace memory seam"]
   pkg_memory_local["memory-local"]
   pkg_tool_memory["tool-memory"]
+  svc_memoryCandidateReview["ctx.memoryCandidateReview<br/>Workspace-isolated memory candidate review"]
   svc_sessionQuery["ctx.sessionQuery<br/>Session reads, traces, filters, and search"]
   pkg_session_reference["session-reference"]
   pkg_tool_session_query["tool-session-query"]
@@ -301,6 +302,7 @@ flowchart LR
   pkg_terminal --> svc_terminals
   pkg_terminal_bash --> svc_terminals
   pkg_token_meter --> svc_tokenMeter
+  pkg_tool_memory --> svc_memoryCandidateReview
   pkg_tools --> svc_tools
   pkg_typert_registry --> svc_typert
   pkg_user_questions --> svc_userQuestions
@@ -452,6 +454,7 @@ flowchart LR
 | `ctx.messageFeedback` | `core` | [`message-feedback`](../packages/feedback/message-feedback) | - | - | - | Owns local per-assistant-message feedback, lifecycle and target validation, per-item compare-and-set, and the Host unary Remote contract without entering Session history or telemetry. |
 | `ctx.workspaceRegistry` | `core` | [`workspace`](../packages/workspace/workspace) | - | `apiproxy` | - | Owns WorkspaceId-branded records over the domain facility; stable sessionIds accounts drive Host RPC and GUI projections. |
 | `ctx.memory` | `seam` | [`memory`](../packages/memory/memory) | [`memory-local`](../packages/memory/memory-local) | [`tool-memory`](../packages/memory/tool-memory) | - | Provider-neutral create, search, correct, and forget operations stay scoped by WorkspaceId; the local backend persists through storage-domain while tool-memory owns the model policy. |
+| `ctx.memoryCandidateReview` | `core` | [`tool-memory`](../packages/memory/tool-memory) | - | - | - | Owns the local shadow queue, derives workspace authority from a live or persisted Session, and records immutable human decisions through a projected Remote without writing final memory. |
 | `ctx.sessionQuery` | `seam` | [`session-query`](../packages/session-query/session-query) | [`session-query-sqlite`](../packages/session-query/session-query-sqlite) | [`session-reference`](../packages/context/session-reference), [`tool-session-query`](../packages/session-query/tool-session-query) | - | The interface supplies exact reads, filters, and traces; its concrete backend adds full-text reconciliation, ranking, snippets, and cursor generations, while the model consumer owns workspace authority and cursor-free rendering. |
 | `ctx.fileReferences` | `seam` | [`file-reference`](../packages/context/file-reference) | [`file-reference-local`](../packages/context/file-reference-local) | - | - | The interface returns path-only completion candidates within the addressed Agent cwd through its unary Remote contract; providers own namespace access and ranking without reading file contents. |
 | `ctx.sessionReferenceResolver` | `core` | [`session-reference`](../packages/context/session-reference) | - | - | - | Projects bounded current-surface conversation snapshots into durable untrusted message context; host adapters own mention syntax. |

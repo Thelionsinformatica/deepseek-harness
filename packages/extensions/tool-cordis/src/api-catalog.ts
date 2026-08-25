@@ -1090,6 +1090,30 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'memoryCandidateReview',
+    summary: 'Host service exposing only projected candidate rows through the generated Remote.',
+    description: 'Host service exposing only projected candidate rows through the generated Remote.',
+    methods: [
+      {
+        signature: 'async recordCandidate(record: MemoryCandidateRecord): Promise<void>',
+        description: 'Append one producer-owned candidate into the canonical queue. This host-only method is intentionally not exposed as a browser Remote.',
+        parameters: [{ name: 'record', description: 'complete validated candidate row with a unique id.' }],
+      },
+      {
+        signature: '@Remote(\'list\') async list(request: MemoryCandidateReviewListRequest): Promise<MemoryCandidateReviewListResult>',
+        description: 'List one workspace partition, using the addressed Session as authorization anchor.',
+        parameters: [{ name: 'request', description: 'session anchor, filters, and bounded page coordinates.' }],
+        returns: 'projected rows or an explicit ownership failure.',
+      },
+      {
+        signature: '@Remote(\'markReviewed\') markReviewed(request: MemoryCandidateReviewMarkRequest): Promise<MemoryCandidateReviewMarkResult>',
+        description: 'Record one immutable human decision without writing to `ctx.memory`.',
+        parameters: [{ name: 'request', description: 'session authorization anchor, candidate id, and decision.' }],
+        returns: 'the reviewed projection or an explicit business failure.',
+      },
+    ],
+  },
+  {
     key: 'messageFeedback',
     summary: 'Storage-domain sidecar service.',
     description: 'Storage-domain sidecar service. It inspects persisted Session history and never creates or resumes an Agent or Session.',
@@ -3769,8 +3793,92 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface MemoryBlockedEvent {\n    readonly schemaVersion: MemoryEventSchemaVersion;\n    readonly reason: \'cross-scope-write\' | \'sensitive-content\' | \'provider-invalid\' | \'provider-unavailable\' | \'provider-missing\' | \'validation\';\n    readonly workspaceId: WorkspaceId;\n    readonly source: \'memory-tool\' | \'memory-runtime\' | \'memory-local\';\n    readonly memoryId?: MemoryId;\n    readonly detail?: string;\n}',
   },
   {
+    name: 'MemoryCandidateCategory',
+    declaration: 'export type MemoryCandidateCategory = \'preference\' | \'decision\' | \'configuration\' | \'procedure\' | \'fact\';',
+  },
+  {
     name: 'MemoryCandidateEvent',
     declaration: 'export interface MemoryCandidateEvent {\n    readonly schemaVersion: MemoryEventSchemaVersion;\n    readonly source: \'tool-memory\';\n    readonly queryLength: number;\n    readonly total: number;\n    readonly omittedSensitive: number;\n    readonly inserted: number;\n    readonly operation: \'message_candidate\' | \'memory_recall\' | \'tool_call_memory_search\';\n    readonly category?: \'preference\' | \'decision\' | \'configuration\' | \'procedure\' | \'fact\';\n    readonly confidence?: number;\n    readonly importance?: number;\n    readonly sensitivity?: \'none\' | \'review\' | \'blocked\';\n    readonly policyDecision?: MemoryPolicyDecision;\n    readonly policyReason?: MemoryPolicyReason;\n    readonly policyVersion?: MemoryPolicyVersion;\n}',
+  },
+  {
+    name: 'MemoryCandidateId',
+    declaration: 'export type MemoryCandidateId = Branded<\'MemoryCandidateId\'>;',
+  },
+  {
+    name: 'MemoryCandidateOperation',
+    declaration: 'export type MemoryCandidateOperation = \'message_candidate\' | \'memory_recall\' | \'tool_call_memory_search\';',
+  },
+  {
+    name: 'MemoryCandidateRecord',
+    declaration: 'export interface MemoryCandidateRecord {\n    readonly id: MemoryCandidateId;\n    readonly workspaceId: WorkspaceIdentity;\n    readonly sessionId: SessionIdentity;\n    readonly userId?: string;\n    readonly source: \'tool-memory\';\n    readonly operation: MemoryCandidateOperation;\n    readonly queryLength: number;\n    readonly confidence: number;\n    readonly total: number;\n    readonly omittedSensitive: number;\n    readonly inserted: number;\n    readonly topScore: number;\n    readonly candidateContent?: string;\n    readonly category?: MemoryCandidateCategory;\n    readonly importance?: number;\n    readonly scopeCandidate?: \'workspace\';\n    readonly sensitivity?: MemoryCandidateSensitivity;\n    readonly policyVersion: MemoryPolicyVersion;\n    readonly policyDecision: MemoryPolicyDecision;\n    readonly policyReason: MemoryPolicyReason;\n    readonly reviewed: boolean;\n    readonly reviewDecision?: MemoryCandidateReviewDecision;\n    readonly reviewedAt?: string;\n    readonly reviewedBy?: string;\n    readonly createdAt: string;\n    readonly schemaVersion: MemoryCandidateSchemaVersion;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewAlreadyReviewed',
+    declaration: 'export interface MemoryCandidateReviewAlreadyReviewed {\n    readonly code: \'memory-candidate-already-reviewed\';\n    readonly current: MemoryCandidateReviewItem;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewDecision',
+    declaration: 'export type MemoryCandidateReviewDecision = \'accept\' | \'ignore\' | \'reject\';',
+  },
+  {
+    name: 'MemoryCandidateReviewFailure',
+    declaration: 'export type MemoryCandidateReviewFailure = MemoryCandidateReviewSessionNotFound | MemoryCandidateReviewWorkspaceUnavailable | MemoryCandidateReviewNotFound | MemoryCandidateReviewWorkspaceMismatch | MemoryCandidateReviewAlreadyReviewed | MemoryCandidateReviewNotAcceptable;',
+  },
+  {
+    name: 'MemoryCandidateReviewItem',
+    declaration: 'export interface MemoryCandidateReviewItem {\n    readonly id: MemoryCandidateId;\n    readonly sessionId: SessionId;\n    readonly operation: MemoryCandidateOperation;\n    readonly candidateContent?: string;\n    readonly category?: MemoryCandidateCategory;\n    readonly confidence: number;\n    readonly importance?: number;\n    readonly sensitivity?: MemoryCandidateSensitivity;\n    readonly policyVersion: MemoryPolicyVersion;\n    readonly policyDecision: MemoryPolicyDecision;\n    readonly policyReason: MemoryPolicyReason;\n    readonly reviewed: boolean;\n    readonly reviewDecision?: MemoryCandidateReviewDecision;\n    readonly reviewedAt?: string;\n    readonly reviewedBy?: string;\n    readonly createdAt: string;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewListRequest',
+    declaration: 'export interface MemoryCandidateReviewListRequest {\n    readonly sessionId: SessionId;\n    readonly reviewed?: boolean;\n    readonly reviewDecision?: MemoryCandidateReviewDecision;\n    readonly offset?: number;\n    readonly limit?: number;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewListResult',
+    declaration: 'export type MemoryCandidateReviewListResult = {\n    readonly ok: true;\n    readonly value: MemoryCandidateReviewListValue;\n} | {\n    readonly ok: false;\n    readonly error: MemoryCandidateReviewFailure;\n};',
+  },
+  {
+    name: 'MemoryCandidateReviewListValue',
+    declaration: 'export interface MemoryCandidateReviewListValue {\n    readonly items: readonly MemoryCandidateReviewItem[];\n    readonly hasMore: boolean;\n    readonly nextOffset: number;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewMarkRequest',
+    declaration: 'export interface MemoryCandidateReviewMarkRequest {\n    readonly sessionId: SessionId;\n    readonly id: MemoryCandidateId;\n    readonly decision: MemoryCandidateReviewDecision;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewMarkResult',
+    declaration: 'export type MemoryCandidateReviewMarkResult = {\n    readonly ok: true;\n    readonly value: MemoryCandidateReviewMarkValue;\n} | {\n    readonly ok: false;\n    readonly error: MemoryCandidateReviewFailure;\n};',
+  },
+  {
+    name: 'MemoryCandidateReviewMarkValue',
+    declaration: 'export interface MemoryCandidateReviewMarkValue {\n    readonly item: MemoryCandidateReviewItem;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewNotAcceptable',
+    declaration: 'export interface MemoryCandidateReviewNotAcceptable {\n    readonly code: \'memory-candidate-not-acceptable\';\n    readonly id: MemoryCandidateId;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewNotFound',
+    declaration: 'export interface MemoryCandidateReviewNotFound {\n    readonly code: \'memory-candidate-not-found\';\n    readonly id: MemoryCandidateId;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewSessionNotFound',
+    declaration: 'export interface MemoryCandidateReviewSessionNotFound {\n    readonly code: \'memory-review-session-not-found\';\n    readonly sessionId: SessionId;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewWorkspaceMismatch',
+    declaration: 'export interface MemoryCandidateReviewWorkspaceMismatch {\n    readonly code: \'memory-candidate-workspace-mismatch\';\n    readonly id: MemoryCandidateId;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewWorkspaceUnavailable',
+    declaration: 'export interface MemoryCandidateReviewWorkspaceUnavailable {\n    readonly code: \'memory-review-workspace-unavailable\';\n    readonly sessionId: SessionId;\n}',
+  },
+  {
+    name: 'MemoryCandidateSchemaVersion',
+    declaration: 'export type MemoryCandidateSchemaVersion = 2 | typeof MEMORY_CANDIDATE_SCHEMA_VERSION;',
+  },
+  {
+    name: 'MemoryCandidateSensitivity',
+    declaration: 'export type MemoryCandidateSensitivity = \'none\' | \'review\' | \'blocked\';',
   },
   {
     name: 'MemoryCreateRequest',
@@ -3791,18 +3899,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'MemoryOperationEvent',
     declaration: 'export interface MemoryOperationEvent {\n    readonly schemaVersion: MemoryEventSchemaVersion;\n    readonly operation: \'create\' | \'search\' | \'update\' | \'forget\';\n    readonly provider: string;\n    readonly success: boolean;\n    readonly workspaceId: WorkspaceId;\n    readonly resultCount?: number;\n    readonly memoryId?: MemoryId;\n    readonly revision?: number;\n    readonly errorCode?: string;\n    readonly durationMs?: number;\n}',
-  },
-  {
-    name: 'MemoryPolicyDecision',
-    declaration: 'export type MemoryPolicyDecision = \'block\' | \'reject\' | \'shadow\' | \'confirm\' | \'store\';',
-  },
-  {
-    name: 'MemoryPolicyReason',
-    declaration: 'export type MemoryPolicyReason = \'candidate-extracted\' | \'no-candidates\' | \'all-candidates-sensitive\' | \'low-confidence\' | \'credential-signal\' | \'sensitivity-review-required\' | \'high-confidence\' | \'moderate-confidence\';',
-  },
-  {
-    name: 'MemoryPolicyVersion',
-    declaration: 'export type MemoryPolicyVersion = typeof MEMORY_POLICY_VERSION;',
   },
   {
     name: 'MemoryProvider',

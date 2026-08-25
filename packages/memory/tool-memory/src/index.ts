@@ -28,6 +28,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-system-prompt'
+import type {} from './review.ts'
 import { evaluateCandidatePolicy, evaluateExtractedCandidatePolicy } from './policy.ts'
 import { extractMemoryCandidate } from './extractor.ts'
 import { looksSensitive } from './sensitivity.ts'
@@ -473,9 +474,14 @@ class MemoryCandidateShadowStore {
   }
 
   async recordCandidate(record: MemoryCandidateRecord): Promise<void> {
-    const table = await this.requireTable()
-    if (table === undefined || this.closed) return
     try {
+      const reviewService = this.ctx.get('memoryCandidateReview')
+      if (reviewService !== undefined) {
+        await reviewService.recordCandidate(record)
+        return
+      }
+      const table = await this.requireTable()
+      if (table === undefined || this.closed) return
       await table.put(record.id, record)
     } catch (error: unknown) {
       this.ctx.logger.warn(

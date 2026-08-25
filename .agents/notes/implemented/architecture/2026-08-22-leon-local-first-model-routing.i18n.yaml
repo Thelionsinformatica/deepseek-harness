@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-22-leon-local-first-model-routing.md
-2026-08-22-leon-local-first-model-routing.md: 3bd2014d2fb44ee692a2905cf431460bacc8f87f
-2026-08-22-leon-local-first-model-routing.zh.md: 7d588f110e5d4a8554ea13e16d5466595e2032e4
+2026-08-22-leon-local-first-model-routing.md: 59e1a4f45b1bda917b03b2444f7ec9c459b13ac5
+2026-08-22-leon-local-first-model-routing.zh.md: 61c91fbbd88b76e9d34e3c8155524842022ea66c

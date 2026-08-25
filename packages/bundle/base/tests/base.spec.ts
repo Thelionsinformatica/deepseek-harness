@@ -27,7 +27,13 @@ describe('dsh-base bundle', () => {
     )
     expect(Array.isArray(parsed)).toBe(true)
     // The base layer is one insert list over the empty profile root.
-    const rows = (parsed as { insert?: { id?: string; config?: Record<string, unknown> }[] }[]).flatMap(
+    const rows = (parsed as {
+      insert?: {
+        id?: string
+        disabled?: unknown
+        config?: Record<string, unknown>
+      }[]
+    }[]).flatMap(
       patch => patch.insert ?? [],
     )
     expect(rows.length).toBeGreaterThan(50)
@@ -53,11 +59,17 @@ describe('dsh-base bundle', () => {
       args: ['acp'],
       permission: 'reject',
     })
+    expect(rows.find(row => row.id === 'subagent-opencode')?.disabled).toEqual({
+      __jsExpr: "process.platform !== 'win32' || process.env.LEON_OPENCODE_ENABLED !== '1'",
+    })
     expect(rows.find(row => row.id === 'tool-subagent-opencode')?.config).toMatchObject({
       provider: 'opencode',
       toolName: 'opencode',
       backgroundMode: 'one-shot',
       maxDepth: 'provider-managed',
+    })
+    expect(rows.find(row => row.id === 'tool-subagent-opencode')?.disabled).toEqual({
+      __jsExpr: "process.platform !== 'win32' || process.env.LEON_OPENCODE_ENABLED !== '1'",
     })
     expect(rows.find(row => row.id === 'llm-pi-ai')?.config).toMatchObject({
       providers: {

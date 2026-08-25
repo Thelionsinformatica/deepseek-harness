@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  checkAllGates,
   defaultConcurrency,
   formatGateResultReason,
   gatesForMode,
@@ -126,6 +127,17 @@ describe('gate graph validation', () => {
       expect(ids).toContain('dsh-package-licenses')
     },
   )
+
+  it('isolates the native Windows unit inventory without hiding later diagnostics', () => {
+    const windows = withPnpmEntrypoint(() => checkAllGates('win32'))
+    const linux = withPnpmEntrypoint(() => checkAllGates('linux'))
+
+    expect(windows[0]?.id).toBe('test')
+    expect(windows.slice(1)).not.toHaveLength(0)
+    for (const gate of windows.slice(1)) expect(gate.after).toContain('test')
+    for (const gate of linux.slice(1)) expect(gate.after ?? []).not.toContain('test')
+    expect(windows.find(gate => gate.id === 'snapshot')?.needs).toEqual(['build'])
+  })
 
   it.each(['ci-primary', 'ci-static', 'check-all'] as const)(
     'keeps the client dependency policy in %s',

@@ -193,10 +193,11 @@
     - id: api-gateway
       name: '@deepseek-ai/dsh-host-apiproxy'
       config:
-        # Leon Automatic keeps ordinary work on Qwen, promotes complex work and
-        # autonomous goal rounds to the local Ornith specialist, then escalates
-        # only on provider failure: OmniRoute -> direct Gemini -> direct OpenAI.
-        # Each transition is persisted as llm/failover and shown in the chat.
+        # Leon Automatic keeps ordinary work on Qwen and promotes complex work
+        # and autonomous goal rounds to the local Ornith specialist. It never
+        # fails over automatically to an external API: an image or other private
+        # input must not leave this machine merely because a local route failed.
+        # External model use remains an explicit, separately approved choice.
         adaptiveRouting:
           provider: ollama
           fastProvider: ollama
@@ -215,48 +216,6 @@
               provider: ollama
               model: ornith-1.5:9b
               reasoningEffort: high
-          failovers:
-            - fromProviders:
-                - ollama
-              provider: omniroute
-              model: auto
-              failureCodes:
-                - TRANSPORT
-                - TIMEOUT
-                - SERVER
-                - UNKNOWN_MODEL
-                - NO_ADAPTER
-            - fromProviders:
-                - omniroute
-              provider: google
-              model: gemini-3.6-flash
-              failureCodes:
-                - TRANSPORT
-                - TIMEOUT
-                - SERVER
-                - RATE_LIMIT
-                - QUOTA
-                - EMPTY_RESPONSE
-                - AUTH
-                - INVALID_CREDENTIAL
-                - MISSING_CREDENTIAL
-                - UNKNOWN_MODEL
-            - fromProviders:
-                - google
-              provider: openai
-              model: gpt-5.6-terra
-              reasoningEffort: high
-              failureCodes:
-                - TRANSPORT
-                - TIMEOUT
-                - SERVER
-                - RATE_LIMIT
-                - QUOTA
-                - EMPTY_RESPONSE
-                - AUTH
-                - INVALID_CREDENTIAL
-                - MISSING_CREDENTIAL
-                - UNKNOWN_MODEL
           # The next-generation preflight is deliberately passive. It reads
           # exact assembled-request pressure and registered route capabilities,
           # persists a content-free recommendation, and never replaces the

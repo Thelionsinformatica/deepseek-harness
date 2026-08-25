@@ -11,6 +11,7 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { agentEvents, type AgentFactory } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import { createUserMessage, markAgentLoopRequest, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId, type Session } from '@deepseek-ai/dsh-session'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
@@ -417,13 +418,20 @@ describe('automatic model failover', () => {
   })
 
   it('continues the same request through the configured replacement before provider retries', async () => {
+    let observedHasImage: boolean | undefined
     const { api, ctx } = await harness(undefined, undefined, {
       defaults: {
         adaptiveModelSelection: () => ({ provider: 'test', model: 'local-model' }),
-        adaptiveModelFailover: ({ provider, failure }: { provider: string; failure: { code: string } }) =>
-          provider === 'test' && failure.code === 'TRANSPORT'
+        adaptiveModelFailover: ({ provider, failure, hasImage }: {
+          provider: string
+          failure: { code: string }
+          hasImage?: boolean
+        }) => {
+          observedHasImage = hasImage
+          return provider === 'test' && failure.code === 'TRANSPORT'
             ? { provider: 'cloud', model: 'api-model' }
-            : undefined,
+            : undefined
+        },
       },
     })
     ctx.provide('llm', {
@@ -434,6 +442,19 @@ describe('automatic model failover', () => {
     await api.sessions.create(request({ sessionId }))
     const agent = ctx.agents.get(sessionId)
     if (agent === undefined) throw new Error('unreachable')
+    agent.session.append('user/message', createUserMessage({
+      content: [{
+        type: 'image',
+        attachment: {
+          attachmentId: AttachmentId('sha256:private-image'),
+          mediaType: 'image/png',
+          bytes: 1,
+          width: 1,
+          height: 1,
+        },
+      }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
     let downstreamCalls = 0
     const signal = new AbortController().signal
 
@@ -450,6 +471,7 @@ describe('automatic model failover', () => {
     })
 
     expect(decision).toEqual({ kind: 'retry' })
+    expect(observedHasImage).toBe(true)
     expect(downstreamCalls).toBe(0)
     expect(agent.session.events.at(-1)).toMatchObject({
       type: 'llm/failover',

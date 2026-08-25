@@ -98,7 +98,7 @@ interface BashContribution {
 }
 
 describe('web-app runtime glue', () => {
-  it('pins Leon Automatic to Qwen/Ornith locally with OmniRoute, Gemini, and OpenAI fallbacks', () => {
+  it('pins Leon Automatic to Qwen/Ornith locally without automatic external failover', () => {
     const patch = readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
     const start = patch.indexOf('    - id: api-gateway')
     const end = patch.indexOf('\n    - id:', start + 1)
@@ -114,12 +114,8 @@ describe('web-app runtime glue', () => {
     expect(gateway).toContain('mainReasoningEffort: medium')
     expect(gateway).toContain('fromRound: 1')
     expect(gateway).toContain('model: ornith-1.5:9b')
-    expect(gateway).toContain('fromProviders:')
-    expect(gateway).toContain('- ollama')
-    expect(gateway).toContain('provider: omniroute')
-    expect(gateway).toContain('provider: google')
-    expect(gateway).toContain('provider: openai')
-    expect(gateway).toContain('- TRANSPORT')
+    expect(gateway).not.toContain('failovers:')
+    expect(gateway).toContain('never\n        # fails over automatically to an external API')
     expect(gateway).toContain('policyVersion: leon-shadow-v1')
     expect(gateway).toContain('externalPolicy: fallback-only')
     expect(gateway).toContain('residency: local')
@@ -141,27 +137,11 @@ describe('web-app runtime glue', () => {
         goalRoundTiers: [{
           fromRound: 1, provider: 'ollama', model: 'ornith-1.5:9b', reasoningEffort: 'high',
         }],
-        failovers: [
-          {
-            fromProviders: ['ollama'],
-            provider: 'omniroute',
-            model: 'auto',
-            failureCodes: ['TRANSPORT', 'TIMEOUT', 'SERVER', 'UNKNOWN_MODEL', 'NO_ADAPTER'],
-          },
-          {
-            fromProviders: ['omniroute'],
-            provider: 'google',
-            model: 'gemini-3.6-flash',
-          },
-          {
-            fromProviders: ['google'],
-            provider: 'openai',
-            model: 'gpt-5.6-terra',
-            reasoningEffort: 'high',
-          },
-        ],
       },
     })
+    expect((rows.find(row => row.id === 'api-gateway')?.config as {
+      adaptiveRouting?: { failovers?: unknown }
+    } | undefined)?.adaptiveRouting?.failovers).toBeUndefined()
     const shadow = (rows.find(row => row.id === 'api-gateway')?.config as {
       adaptiveRouting?: {
         shadow?: {

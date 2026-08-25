@@ -12,7 +12,7 @@ base 组合包为后备沙箱策略与沙箱文件系统解析同一个部署 wo
 
 Leon 随附两个本地 Ollama 角色：`ollama/qwen3.5:9b` 处理日常工作，`ollama/ornith-1.5:9b` 担任编程与 Agent 专家。仅回环地址可用的 `omniroute/auto` 网关与通过凭据引用的 `openai/gpt-5.6-terra` 路由可供显式部署故障转移策略使用；两者都不会改变 Leon 的身份。Gemini 仍是单独配置的路由。DeepSeek 模型与搜索适配器只作为手动兼容选项安装，不会挂载到随附目录。基础组合禁用面向模型的 Web 搜索与抓取；部署必须有意挂载提供方和相应工具，本地上下文才可能因检索而离开本机。
 
-在 Windows 上，该组合包还通过通用 ACP subagent provider 公开一个项目范围的 `opencode` 委派工具。子进程使用 `E:/computador/.leon` 下的隔离 OpenCode 配置，以 Ornith 作为主要编程模型、Qwen 作为小模型，只继承所选 workspace 路径，并仅把最终文本返回给 Leon。其配置把文件操作限制在该 workspace 内，并拒绝 commit、push、hard reset、递归删除、外部目录访问及嵌套 Agent。
+在 Windows 上，启动器设置 `LEON_OPENCODE_ENABLED=1` 后，该组合包可以通过通用 ACP subagent provider 公开一个项目范围的 `opencode` 委派工具。启动器只能在验证 `E:/computador/.leon` 下的可执行文件与隔离配置后设置该开关，因此缺失的可选运行时不会阻止 Leon 启动。子进程以 Ornith 作为主要编程模型、Qwen 作为小模型，只继承所选 workspace 路径，并仅把最终文本返回给 Leon。其配置把文件操作限制在该 workspace 内，并拒绝 commit、push、hard reset、递归删除、外部目录访问及嵌套 Agent。
 
 ## 模型体验
 
@@ -27,6 +27,6 @@ Leon 随附两个本地 Ollama 角色：`ollama/qwen3.5:9b` 处理日常工作�
 - **patch 会替换整行 `config`**：profile 覆盖必须重述该行需要保留的每个字段；不存在深度合并层。
 - **本地路由要求 Ollama 正在运行**：回环端点为 `http://127.0.0.1:11434/v1`，安装程序必须确保 Qwen 与 Ornith 均可用。
 - **OmniRoute 是独立的回环服务**：其配置端点为 `http://127.0.0.1:20128/v1`；该路由会发送 OpenAI 兼容适配器所要求的非机密兼容 bearer header。生产启动必须把服务绑定到 `127.0.0.1`，并明确配置上游凭据与预算策略。
-- **OpenCode 是由安装程序持有的 Windows 运行时**：默认命令与配置位于 `E:/computador/.leon` 下；部署环境变量可以覆盖这些路径，非 Windows 的基础组合会禁用该提供方。
+- **OpenCode 是由安装程序持有、显式启用的 Windows 运行时**：默认命令与配置位于 `E:/computador/.leon` 下；部署环境变量可以覆盖这些路径，且只有启动器验证完成后设置 `LEON_OPENCODE_ENABLED=1` 才会启用该提供方。运行时缺失、无效或宿主不是 Windows 时，提供方保持禁用且不会阻塞 Leon 启动。
 - **Web 检索需要显式 profile 覆盖**：基础组合挂载提供方中立的 seam，但既不启用搜索提供方，也不启用面向模型的 Web 工具。只启用提供方而不启用工具，或只启用工具而没有可用提供方，都属于不完整的部署配置。
 - **Windows 的临时目录授权是按会话的私有子目录**——`workspace-write` 把写入限制在工作区与会话自己的 temp 子目录（`<temp>\dsh-<hash>`，受限子进程的 TMP/TEMP 被改写）；`read-only` 不授予任何临时目录写入权限。见 `@deepseek-ai/dsh-sandbox-windows-acl`。

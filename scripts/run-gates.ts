@@ -233,24 +233,7 @@ export function gatesForMode(selected: Mode): Gate[] {
     case 'node-compat':
       return nodeCompatGates()
     case 'check-all':
-      return [
-        pnpmScript('runtime-closure', 'verify-runtime-closure', { label: 'runtime closure' }),
-        pnpmScript('cordis-config', 'verify-cordis-config', { label: 'Cordis config' }),
-        pnpmScript('client-domain-graph', 'verify-client-domain-graph', { label: 'client domain graph' }),
-        pnpmScript('test', 'test'),
-        pnpmScript('issue-management', 'test:issue-management', { label: 'Issue management policy' }),
-        pnpmScript('duplication', 'duplication'),
-        snapshotGate(),
-        pnpmScript('build', 'build'),
-        pnpmScript('build:web', 'build:web'),
-        ...hygieneLeafGates({ artifactNeeds: ['build'] }),
-        ...docSyncLeafGates({
-          docTypecheckNeeds: ['build'],
-          docTypecheckEnv: { DSH_DOC_TYPECHECK_USE_BUILD_OUTPUT: '1' },
-          docTypecheckScript: 'doc-typecheck:contracts-ready',
-        }),
-        pnpmScript('module-graph', 'verify-module-graph', { label: 'module graph' }),
-      ]
+      return checkAllGates()
     case 'hygiene':
       return [
         ...hygieneLeafGates(),
@@ -261,6 +244,41 @@ export function gatesForMode(selected: Mode): Gate[] {
     case 'doc-sync':
       return docSyncLeafGates()
   }
+}
+
+/**
+ * Build the comprehensive local graph with a stable native-Windows process budget.
+ * @param platform - host platform; injectable so scheduler tests cover both branches.
+ * @returns the complete check-all gate inventory.
+ */
+export function checkAllGates(platform: NodeJS.Platform = process.platform): Gate[] {
+  const unit = pnpmScript('test', 'test')
+  const siblings = [
+    pnpmScript('runtime-closure', 'verify-runtime-closure', { label: 'runtime closure' }),
+    pnpmScript('cordis-config', 'verify-cordis-config', { label: 'Cordis config' }),
+    pnpmScript('client-domain-graph', 'verify-client-domain-graph', { label: 'client domain graph' }),
+    pnpmScript('issue-management', 'test:issue-management', { label: 'Issue management policy' }),
+    pnpmScript('duplication', 'duplication'),
+    snapshotGate(),
+    pnpmScript('build', 'build'),
+    pnpmScript('build:web', 'build:web'),
+    ...hygieneLeafGates({ artifactNeeds: ['build'] }),
+    ...docSyncLeafGates({
+      docTypecheckNeeds: ['build'],
+      docTypecheckEnv: { DSH_DOC_TYPECHECK_USE_BUILD_OUTPUT: '1' },
+      docTypecheckScript: 'doc-typecheck:contracts-ready',
+    }),
+    pnpmScript('module-graph', 'verify-module-graph', { label: 'module graph' }),
+  ]
+  if (platform !== 'win32') return [unit, ...siblings]
+  // The unit inventory already owns bounded internal parallelism and launches
+  // real Git, Node, PowerShell, and Codex processes. Let it settle before the
+  // aggregate starts sibling processes; `after` preserves diagnostics even if
+  // the unit gate fails, unlike a hard `needs` dependency.
+  return [unit, ...siblings.map(gate => ({
+    ...gate,
+    after: [...new Set(['test', ...(gate.after ?? [])])],
+  }))]
 }
 
 function ciSharedStaticGates(): Gate[] {

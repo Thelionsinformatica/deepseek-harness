@@ -31,6 +31,8 @@ export interface AdaptiveFailoverConfig {
   model: string
   /** Provider-owned reasoning effort for the replacement request. */
   reasoningEffort?: string
+  /** Local execution or a route that may transmit request content externally. */
+  residency?: 'local' | 'external'
   /** Provider-neutral failure codes that prove the active route is unavailable. */
   failureCodes: string[]
 }
@@ -90,6 +92,7 @@ export interface AdaptiveRoutingDecision {
 export interface AdaptiveFailoverInput {
   provider: string
   failureCode: string
+  hasImage?: boolean | undefined
 }
 
 const MAIN_MARKERS = [
@@ -195,7 +198,8 @@ export function chooseAdaptiveFailover(
   const failover = config.failovers?.find(candidate =>
     candidate.fromProviders.includes(input.provider)
     && candidate.failureCodes.includes(input.failureCode)
-    && candidate.provider !== input.provider,
+    && candidate.provider !== input.provider
+    && !(input.hasImage === true && candidate.residency === 'external'),
   )
   if (failover === undefined) return undefined
   return {

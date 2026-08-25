@@ -194,6 +194,29 @@ describe('chooseAdaptiveFailover()', () => {
     })
   })
 
+  it('rejects an external residency failover when the request has an image', () => {
+    const withResidency = {
+      ...config,
+      failovers: [
+        {
+          fromProviders: ['ollama'],
+          provider: 'omniroute',
+          model: 'auto',
+          residency: 'external' as const,
+          failureCodes: ['TRANSPORT'],
+        },
+      ],
+    }
+    expect(chooseAdaptiveFailover(withResidency, {
+      provider: 'ollama', failureCode: 'TRANSPORT', hasImage: true,
+    })).toBeUndefined()
+    expect(chooseAdaptiveFailover(withResidency, {
+      provider: 'ollama', failureCode: 'TRANSPORT', hasImage: false,
+    })).toEqual({
+      provider: 'omniroute', model: 'auto', tier: 'failover',
+    })
+  })
+
   it('does not replace an ineligible failure or the final provider', () => {
     expect(chooseAdaptiveFailover(config, { provider: 'ollama', failureCode: 'AUTH' })).toBeUndefined()
     expect(chooseAdaptiveFailover(config, { provider: 'openai', failureCode: 'TRANSPORT' })).toBeUndefined()

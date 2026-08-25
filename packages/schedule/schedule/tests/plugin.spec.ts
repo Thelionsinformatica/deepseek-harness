@@ -43,6 +43,15 @@ describe('Schedule plugin composition', () => {
     expect(ctx.tools.get('schedule_create', existing.agent)).toBeUndefined()
     expect(ctx.tools.get('schedule_create')).toBeUndefined()
 
+    const minimal = await ctx.agents.create({
+      sessionId: SessionId('schedule-minimal'),
+      meta: { agentPreset: 'minimal' },
+    })
+    expect(ctx.tools.get('schedule_create', minimal.agent)).toBeUndefined()
+    expect(ctx.tools.get('schedule_list', minimal.agent)).toBeUndefined()
+    expect(ctx.tools.get('schedule_delete', minimal.agent)).toBeUndefined()
+    await minimal.dispose()
+
     const root = await ctx.agents.create({ sessionId: SessionId('schedule-root') })
     expect(ctx.tools.get('schedule_create', root.agent)?.name).toBe('schedule_create')
     expect(ctx.tools.get('schedule_list', root.agent)?.name).toBe('schedule_list')

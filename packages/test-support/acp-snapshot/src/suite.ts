@@ -185,6 +185,8 @@ export interface Scenario {
    * on every platform.
    */
   pwshOnly?: boolean
+  /** Whether the scenario needs a usable `bash` executable on the host. */
+  bashOnly?: boolean
 }
 
 /**
@@ -196,8 +198,8 @@ export interface Scenario {
  * @param scenario The scenario whose run test is being registered.
  * @param recording Whether the suite runs in record mode.
  * @param platform The running Node platform, injectable for unit coverage.
- * @param hasPwsh The caller's pwsh-availability probe; `pwshOnly` scenarios
- *   skip unless it is true.
+ * @param hasPwsh The caller's pwsh-availability probe; `pwshOnly` scenarios skip unless it is true.
+ * @param hasBash The caller's bash-availability probe; `bashOnly` scenarios skip unless it is true.
  * @returns True when the scenario's run test must not execute.
  */
 export function scenarioSkipped(
@@ -205,10 +207,12 @@ export function scenarioSkipped(
   recording: boolean,
   platform: NodeJS.Platform = process.platform,
   hasPwsh?: boolean,
+  hasBash?: boolean,
 ): boolean {
   if (recording && !scenario.recorded) return true
   if (scenario.posixOnly === true && platform === 'win32') return true
-  return scenario.pwshOnly === true && hasPwsh !== true
+  if (scenario.pwshOnly === true && hasPwsh !== true) return true
+  return scenario.bashOnly === true && hasBash !== true
 }
 
 /** One stdout expected output selected for a platform run. */
@@ -254,6 +258,8 @@ export interface SnapshotSuiteOptions {
    * caller owns; `pwshOnly` scenarios skip when this is not true).
    */
   hasPwsh?: boolean
+  /** Whether a real `bash` executable is available on this host. */
+  hasBash?: boolean
 }
 
 /** One scenario's generated claim on a shared snapshot file. */
@@ -1172,7 +1178,7 @@ export function defineAcpSnapshotSuite(options: SnapshotSuiteOptions): void {
       // `pwshOnly` scenarios skip when the caller's `hasPwsh` probe is false. Real PowerShell
       // scenarios stay sequential inside the concurrent replay suite because they share host
       // terminal resources and overlapping PTYs corrupt each other's retained scrollback.
-      it.skipIf(scenarioSkipped(scenario, RECORDING, process.platform, options.hasPwsh))(
+      it.skipIf(scenarioSkipped(scenario, RECORDING, process.platform, options.hasPwsh, options.hasBash))(
         `snapshot: ${scenario.name} matches the expected outputs`,
         { concurrent: mode === 'replay' && scenario.pwshOnly !== true },
         async ({ expect }) => {

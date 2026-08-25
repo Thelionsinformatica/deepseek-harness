@@ -5,7 +5,9 @@
  * loading, Loader guards, snapshot config selection, and settled-tree boot live
  * in dsh-app-boot. Replay skips `.env` and selects sibling
  * `cordis.snapshot.yml` so a stray key cannot trigger a model call. EOF disposes
- * and flushes snapshot runs; the calling automation owns process lifetime. Stdout is
+ * and flushes snapshot runs; the calling automation owns process lifetime. A
+ * completed disposal leaves Node to drain native handles instead of forcing an
+ * immediate exit while Windows async handles may still be closing. Stdout is
  * reserved for JSON-RPC, so diagnostics go only to stderr.
  * @module @deepseek-ai/dsh-acp-demo/bin
  */
@@ -29,7 +31,7 @@ const { values } = parseArgs({
 const ctx = await boot(NAME, resolveConfigPath(values.config ?? './cordis.yml', snapshotMode))
 if (snapshotMode !== undefined) {
   process.stdin.on('end', () => {
-    void ctx.fiber.dispose().then(() => { process.exit(0) })
+    void ctx.fiber.dispose().then(() => { process.exitCode = 0 })
   })
 }
 /* v8 ignore stop */

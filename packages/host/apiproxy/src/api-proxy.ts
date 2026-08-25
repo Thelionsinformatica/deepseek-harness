@@ -16,7 +16,7 @@ import type {
 import type {} from '@deepseek-ai/dsh-agent-presets/types'
 import { AttachmentError, admitEncodedImages } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import { createUserMessage, freezeMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { contentHasImage, createUserMessage, freezeMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { errorChain } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, LlmFailure, MessageSource } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-llm-retry/types'
@@ -603,7 +603,7 @@ export interface ApiProxyDefaults {
   ) => ModelSelection | undefined | Promise<ModelSelection | undefined>
   /** Optional replacement policy consulted before ordinary retries in automatic mode. */
   adaptiveModelFailover?: (
-    input: { provider: string; failure: LlmFailure },
+    input: { provider: string; failure: LlmFailure; hasImage?: boolean },
   ) => ModelSelection | undefined | Promise<ModelSelection | undefined>
   /** Passive provider-neutral preflight; records recommendations but never replaces the selected route. */
   adaptiveRoutingShadow?: AdaptiveRoutingShadowConfig
@@ -1210,8 +1210,19 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       if (select === undefined || !automaticFor(agent)) return await next()
       const from = selection.assembled ?? selection.current
       if (from.provider !== provider) return await next()
+
+      let hasImage = false
+      for (const e of agent.session.events) {
+        if (e.type === 'user/message') {
+          hasImage = contentHasImage(e.data.content)
+        } else if (e.type === 'tool/result' && e.data.turn === turn) {
+          hasImage = contentHasImage(e.data.message.content)
+        }
+        if (hasImage) break
+      }
+
       try {
-        const proposed = await select({ provider, failure })
+        const proposed = await select({ provider, failure, hasImage })
         if (proposed === undefined) return await next()
         const resolvedCall = await ctx.llm.resolveCallConfig(proposed)
         if (signal.aborted) return

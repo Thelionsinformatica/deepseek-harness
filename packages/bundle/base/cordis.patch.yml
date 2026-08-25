@@ -391,7 +391,7 @@
     # to Leon. The installer owns the binary/config under E:\computador\.leon.
     - id: subagent-opencode
       name: '@deepseek-ai/dsh-subagent-acp'
-      disabled: !!js process.platform !== 'win32'
+      disabled: !!js process.platform !== 'win32' || process.env.LEON_OPENCODE_ENABLED !== '1'
       config:
         providerName: opencode
         command: !!js process.env.LEON_OPENCODE_COMMAND ?? 'E:\\computador\\.leon\\tools\\node_modules\\opencode-ai\\bin\\opencode.exe'
@@ -435,7 +435,7 @@
     # useful. The OpenCode runtime manages its own recursion budget.
     - id: tool-subagent-opencode
       name: '@deepseek-ai/dsh-tool-subagent'
-      disabled: !!js process.platform !== 'win32'
+      disabled: !!js process.platform !== 'win32' || process.env.LEON_OPENCODE_ENABLED !== '1'
       config:
         provider: opencode
         toolName: opencode

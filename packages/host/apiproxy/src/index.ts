@@ -110,6 +110,7 @@ export class ApiProxyService extends Service implements ApiProxy {
         provider: z.string().min(1).required(),
         model: z.string().min(1).required(),
         reasoningEffort: z.string(),
+        residency: z.union(['local', 'external'] as const),
         failureCodes: z.array(z.string().min(1)).min(1),
       })).default([]),
       shadow: z.union([z.object({
@@ -168,6 +169,7 @@ export class ApiProxyService extends Service implements ApiProxy {
           adaptiveModelFailover: input => chooseAdaptiveFailover(config.adaptiveRouting as AdaptiveRoutingConfig, {
             provider: input.provider,
             failureCode: input.failure.code,
+            hasImage: input.hasImage,
           }),
           ...config.adaptiveRouting.shadow === undefined
             ? {}

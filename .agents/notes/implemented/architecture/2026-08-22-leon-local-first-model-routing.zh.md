@@ -24,7 +24,7 @@ Web 网关会在两个本地角色之间进行确定性的会话级自适应路�
 
 外部升级由失败触发并按顺序进行。第一个不可用的 Ollama 请求切换到回环 `omniroute/auto`；若 OmniRoute 或它选择的上游不可用，Leon 会绕过网关，直接切换到 `google/gemini-3.6-flash`，再切换到 `openai/gpt-5.6-terra`。每次合格切换都会追加 `llm/failover`，成为同一请求的活动路由，并持续显示在聊天中。OmniRoute 负责提供方健康、上游选择、配额及自身用量账本，但不持有 Leon 的 persona 或本地任务分类。直接路由仍通过凭据引用配置，没有用户提供的密钥就不会生效。Web 成本投影把两个本地模型定价为零，并记录当前 Gemini／OpenAI 直接调用的 token 价格快照；OmniRoute 的可变路由成本保留在它自己的权威账本中，而不是被猜成固定模型价格。
 
-OpenCode 是下属执行器，而不是另一个 Leon persona。在 Windows 上，基础组合通过 `dsh-subagent-acp` 挂载 OpenCode 的官方 ACP 服务器，并将其公开为显式的 `opencode` 单次委派工具。子进程只接收独立任务与所选 workspace 路径，以 Ornith 作为主模型、Qwen 作为小模型，并只返回最终文本。其位于 `E:\computador\.leon` 下、由安装程序持有的配置启用项目内编辑、shell、LSP、快照与压缩，同时拒绝外部目录访问、嵌套 Agent、commit、push、hard reset 与递归删除。Leon 仍负责判断何时适合委派，并验证返回的工作。
+OpenCode 是下属执行器，而不是另一个 Leon persona。在 Windows 上，基础组合可以通过 `dsh-subagent-acp` 挂载 OpenCode 的官方 ACP 服务器，并将其公开为显式的 `opencode` 单次委派工具。两个提供方行会保持禁用，直到启动器验证 `E:\computador\.leon` 下由安装程序持有的可执行文件与配置并设置 `LEON_OPENCODE_ENABLED=1`；因此缺失的可选运行时不会阻塞基础组合。子进程只接收独立任务与所选 workspace 路径，以 Ornith 作为主模型、Qwen 作为小模型，并只返回最终文本。其配置启用项目内编辑、shell、LSP、快照与压缩，同时拒绝外部目录访问、嵌套 Agent、commit、push、hard reset 与递归删除。Leon 仍负责判断何时适合委派，并验证返回的工作。
 
 ## 验证
 

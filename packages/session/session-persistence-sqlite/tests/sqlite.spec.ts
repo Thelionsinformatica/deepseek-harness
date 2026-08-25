@@ -783,7 +783,7 @@ describe('SessionPersistenceSqlite edge behavior', () => {
     await ctx.fiber.dispose()
   })
 
-  it('rejects non-files and symbolic links', async () => {
+  it.skipIf(process.platform === 'win32')('rejects non-files and symbolic links', async () => {
     const directoryPath = await freshDbPath('dsh-sqlite-directory-')
     await mkdir(directoryPath)
     expect(errorMessage(await backendFailure(directoryPath)))

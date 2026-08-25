@@ -927,6 +927,8 @@ export interface AdaptiveFailoverConfig {
   model: string
   /** Provider-owned reasoning effort for the replacement request. */
   reasoningEffort?: string
+  /** Local execution or a route that may transmit request content externally. */
+  residency?: 'local' | 'external'
   /** Provider-neutral failure codes that prove the active route is unavailable. */
   failureCodes: string[]
 }
@@ -2958,7 +2960,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/shell/tool-pwsh-persistent/src/index.ts:475`](../packages/shell/tool-pwsh-persistent/src/index.ts)
+Source: [`packages/shell/tool-pwsh-persistent/src/index.ts:480`](../packages/shell/tool-pwsh-persistent/src/index.ts)
 
 <a id="deepseek-aidsh-tool-ralph"></a>
 

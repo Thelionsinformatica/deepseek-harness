@@ -1,6 +1,9 @@
 - banner:
   - navigation "Session hierarchy":
     - button "Automatic model failover" [disabled]
+  - button "Review memory":
+    - img
+    - text: Review memory
   - button "Session log":
     - text: Session log
     - img

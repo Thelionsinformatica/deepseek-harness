@@ -10,7 +10,7 @@ patch 在自身上按平台门控两个 shell 栈：`bash-sandbox`/`tool-bash` �
 
 base 组合包为后备沙箱策略与沙箱文件系统解析同一个部署 workspace。Leon 在 Windows 上的默认值是 `E:/computador`；环境覆盖值与非 Windows 后备值由 [`resolveDefaultWorkspace()`](../../util/home-paths/README.zh.md)负责。每个会话自身的 workspace 根目录在请求时仍会覆盖这个部署后备值。
 
-Leon 随附两个本地 Ollama 角色：`ollama/qwen3.5:9b` 处理日常工作，`ollama/ornith-1.5:9b` 担任编程与 Agent 专家。仅回环地址可用的 `omniroute/auto` 网关与通过凭据引用的 `openai/gpt-5.6-terra` 路由可供显式部署故障转移策略使用；两者都不会改变 Leon 的身份。Gemini 仍是单独配置的路由。DeepSeek 模型与搜索适配器只作为手动兼容选项安装，不会挂载到随附目录。基础组合禁用面向模型的 Web 搜索与抓取；部署必须有意挂载提供方和相应工具，本地上下文才可能因检索而离开本机。
+Leon 随附两个本地 Ollama 角色：`ollama/qwen3.5:9b` 处理日常工作，`ollama/ornith-1.5:9b` 担任编程与 Agent 专家。仅回环地址可用的 `omniroute/auto` 网关与通过凭据引用的 `openai/gpt-5.6-terra` 路由可供显式部署故障转移策略使用；两者都不会改变 Leon 的身份。当自动替换无法继续时，Ollama 与 OmniRoute 各保留一次有界瞬态重试。Gemini 仍是单独配置的路由。DeepSeek 模型与搜索适配器只作为手动兼容选项安装，不会挂载到随附目录。基础组合禁用面向模型的 Web 搜索与抓取；部署必须有意挂载提供方和相应工具，本地上下文才可能因检索而离开本机。
 
 在 Windows 上，启动器设置 `LEON_OPENCODE_ENABLED=1` 后，该组合包可以通过通用 ACP subagent provider 公开一个项目范围的 `opencode` 委派工具。启动器只能在验证 `E:/computador/.leon` 下的可执行文件与隔离配置后设置该开关，因此缺失的可选运行时不会阻止 Leon 启动。子进程以 Ornith 作为主要编程模型、Qwen 作为小模型，只继承所选 workspace 路径，并仅把最终文本返回给 Leon。其配置把文件操作限制在该 workspace 内，并拒绝 commit、push、hard reset、递归删除、外部目录访问及嵌套 Agent。
 

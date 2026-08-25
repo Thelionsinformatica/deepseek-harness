@@ -1221,34 +1221,57 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         if (hasImage) break
       }
 
-      try {
-        const proposed = await select({ provider, failure, hasImage })
-        if (proposed === undefined) return await next()
-        const resolvedCall = await ctx.llm.resolveCallConfig(proposed)
-        if (signal.aborted) return
-        const resolved: ModelSelection = {
-          provider: resolvedCall.provider,
-          model: resolvedCall.model,
-          ...resolvedCall.reasoningEffort === undefined ? {} : { reasoningEffort: resolvedCall.reasoningEffort },
+      const visitedProviders = new Set([provider])
+      let failedProvider = provider
+      for (let hop = 0; hop < 16; hop += 1) {
+        let proposed: ModelSelection | undefined
+        try {
+          proposed = await select({ provider: failedProvider, failure, hasImage })
+        } catch (error: unknown) {
+          ctx.logger.warn(
+            `api-proxy: automatic model failover selection failed; delegating to provider retry policy: ${String(error)}`,
+          )
+          return await next()
         }
-        if (resolved.provider === from.provider && resolved.model === from.model) return await next()
-        agent.session.append('llm/failover', {
-          turn,
-          step,
-          from: { provider: from.provider, model: from.model },
-          to: { provider: resolved.provider, model: resolved.model },
-          failure,
-          reason: 'provider-unavailable',
-        })
-        selection.current = resolved
-        selection.assembled = resolved
-        return { kind: 'retry' }
-      } catch (error: unknown) {
-        ctx.logger.warn(
-          `api-proxy: automatic model failover failed; delegating to provider retry policy: ${String(error)}`,
-        )
-        return await next()
+        if (proposed === undefined) return await next()
+        if (visitedProviders.has(proposed.provider)) {
+          ctx.logger.warn(
+            `api-proxy: automatic model failover rejected provider cycle at ${proposed.provider}; delegating to provider retry policy`,
+          )
+          return await next()
+        }
+        visitedProviders.add(proposed.provider)
+
+        try {
+          const resolvedCall = await ctx.llm.resolveCallConfig(proposed)
+          if (signal.aborted) return
+          const resolved: ModelSelection = {
+            provider: resolvedCall.provider,
+            model: resolvedCall.model,
+            ...resolvedCall.reasoningEffort === undefined ? {} : { reasoningEffort: resolvedCall.reasoningEffort },
+          }
+          if (resolved.provider === from.provider && resolved.model === from.model) return await next()
+          agent.session.append('llm/failover', {
+            turn,
+            step,
+            from: { provider: from.provider, model: from.model },
+            to: { provider: resolved.provider, model: resolved.model },
+            failure,
+            reason: 'provider-unavailable',
+          })
+          selection.current = resolved
+          selection.assembled = resolved
+          return { kind: 'retry' }
+        } catch (error: unknown) {
+          if (signal.aborted) return
+          ctx.logger.warn(
+            `api-proxy: automatic model failover candidate ${proposed.provider}/${proposed.model} is unavailable; trying the next configured route: ${String(error)}`,
+          )
+          failedProvider = proposed.provider
+        }
       }
+      ctx.logger.warn('api-proxy: automatic model failover exceeded 16 hops; delegating to provider retry policy')
+      return await next()
     }, { prepend: true })
     agentCtx.on('agent/request', async ({ turn }, next) => {
       const goalRound = goalRoundInTurn(agent, turn)

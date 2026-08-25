@@ -82,6 +82,14 @@ it('assembles the shipped Web catalog without DeepSeek, plus its retry, guidance
   const ctx = scaffold.ctx
   expect(ctx.llm.listProviders().map(provider => provider.id)).toContain('ollama')
   expect(ctx.llm.listProviders().map(provider => provider.id)).not.toContain('deepseek-official')
+  expect(ctx.llm.providerRetryPolicy('ollama')).toMatchObject({
+    mode: 'normal',
+    maxRetries: 1,
+  })
+  expect(ctx.llm.providerRetryPolicy('omniroute')).toMatchObject({
+    mode: 'normal',
+    maxRetries: 1,
+  })
   await ctx.settings.update(settingsNamespace('llm-pi-ai'), {
     providers: {
       openai: {},

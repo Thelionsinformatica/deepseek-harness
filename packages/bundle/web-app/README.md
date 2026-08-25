@@ -6,7 +6,7 @@ The dsh browser-surface bundle. [`cordis.patch.yml`](cordis.patch.yml) rides ove
 
 ## Model retry defaults
 
-Web uses the shared bounded normal default of five eligible retries after the initial request. The local `ollama` route, settings-added pi-ai routes, and a manually mounted compatibility route use that default when they omit `retryPolicy`; explicit provider policies still win. Web adds no retry-specific composition override, so the same omission behavior applies to non-Web profiles.
+The shipped local `ollama` route and loopback `omniroute` gateway each allow one eligible retry after the initial request. Leon Automatic normally replaces an unavailable route before that backoff; the bounded retry remains for manual selection or when every configured replacement is unavailable. Settings-added pi-ai routes and manually mounted compatibility routes still use the shared bounded default of five retries when they omit `retryPolicy`; explicit provider policies always win.
 
 ## Leon capability composition
 

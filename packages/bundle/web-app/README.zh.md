@@ -6,7 +6,7 @@ dsh 浏览器表层组合包。[`cordis.patch.yml`](cordis.patch.yml) 叠加在 
 
 ## 模型重试默认值
 
-Web 使用共享的有界 normal 默认值，在首次请求后最多再重试五次符合条件的失败。本地 `ollama` 路由、由 settings 新增的 pi-ai 路由与手动挂载的兼容路由在省略 `retryPolicy` 时使用该默认值；显式提供方策略仍然优先。Web 不再增加重试专用的组合覆盖，因此非 Web profile 的省略行为与之相同。
+随附的本地 `ollama` 路由与回环 `omniroute` 网关在首次请求后各最多进行一次符合条件的重试。Leon Automatic 通常会在进入该退避前替换不可用路由；这个有界重试保留给手动选择或所有已配置替代路由都不可用的情况。由 settings 新增的 pi-ai 路由与手动挂载的兼容路由在省略 `retryPolicy` 时仍使用共享的五次有界默认值；显式提供方策略始终优先。
 
 ## Leon 能力组合
 

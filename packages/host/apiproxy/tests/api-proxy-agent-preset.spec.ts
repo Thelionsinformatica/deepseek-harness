@@ -493,6 +493,138 @@ describe('automatic model failover', () => {
     await ctx.fiber.dispose()
   })
 
+  it('skips an unavailable intermediate adapter and continues through the next configured fallback', async () => {
+    const attemptedProviders: string[] = []
+    const { api, ctx } = await harness(undefined, undefined, {
+      defaults: {
+        adaptiveModelSelection: () => ({ provider: 'test', model: 'local-model' }),
+        adaptiveModelFailover: ({ provider }: { provider: string }) => {
+          attemptedProviders.push(provider)
+          if (provider === 'test') return { provider: 'missing', model: 'missing-model' }
+          if (provider === 'missing') return { provider: 'cloud', model: 'api-model' }
+          return undefined
+        },
+      },
+    })
+    ctx.provide('llm', {
+      resolveCallConfig: (selection: { provider: string; model: string }) => {
+        if (selection.provider === 'missing') throw new Error('no adapter registered')
+        return Promise.resolve(selection)
+      },
+    } as never)
+    const sessionId = SessionId('automatic-skip-unavailable-fallback')
+    await api.sessions.create(request({ sessionId }))
+    const agent = ctx.agents.get(sessionId)
+    if (agent === undefined) throw new Error('unreachable')
+    let downstreamCalls = 0
+
+    const decision = await agentEvents(ctx, agent).waterfall('agent/request-error', {
+      turn: 1,
+      step: 0,
+      provider: 'test',
+      failure: { code: 'TRANSPORT', message: 'local connection refused' },
+      retryPolicy: undefined,
+      signal: new AbortController().signal,
+    }, () => {
+      downstreamCalls += 1
+      return Promise.resolve(undefined)
+    })
+
+    expect(decision).toEqual({ kind: 'retry' })
+    expect(attemptedProviders).toEqual(['test', 'missing'])
+    expect(downstreamCalls).toBe(0)
+    expect(agent.session.events.at(-1)).toMatchObject({
+      type: 'llm/failover',
+      data: {
+        from: { provider: 'test', model: 'test-model' },
+        to: { provider: 'cloud', model: 'api-model' },
+      },
+    })
+    await ctx.fiber.dispose()
+  })
+
+  it('rejects a configured provider cycle and delegates once to ordinary recovery', async () => {
+    const { api, ctx } = await harness(undefined, undefined, {
+      defaults: {
+        adaptiveModelSelection: () => ({ provider: 'test', model: 'local-model' }),
+        adaptiveModelFailover: ({ provider }: { provider: string }) =>
+          provider === 'test'
+            ? { provider: 'cloud', model: 'api-model' }
+            : { provider: 'test', model: 'local-model' },
+      },
+    })
+    ctx.provide('llm', {
+      resolveCallConfig: () => {
+        throw new Error('candidate unavailable')
+      },
+    } as never)
+    const sessionId = SessionId('automatic-provider-cycle')
+    await api.sessions.create(request({ sessionId }))
+    const agent = ctx.agents.get(sessionId)
+    if (agent === undefined) throw new Error('unreachable')
+    let downstreamCalls = 0
+
+    const decision = await agentEvents(ctx, agent).waterfall('agent/request-error', {
+      turn: 1,
+      step: 0,
+      provider: 'test',
+      failure: { code: 'TRANSPORT', message: 'local connection refused' },
+      retryPolicy: undefined,
+      signal: new AbortController().signal,
+    }, () => {
+      downstreamCalls += 1
+      return Promise.resolve(undefined)
+    })
+
+    expect(decision).toBeUndefined()
+    expect(downstreamCalls).toBe(1)
+    expect(agent.session.events.some(event => event.type === 'llm/failover')).toBe(false)
+    await ctx.fiber.dispose()
+  })
+
+  it('stops the cascade when cancellation lands during candidate resolution', async () => {
+    const attemptedProviders: string[] = []
+    const controller = new AbortController()
+    const { api, ctx } = await harness(undefined, undefined, {
+      defaults: {
+        adaptiveModelSelection: () => ({ provider: 'test', model: 'local-model' }),
+        adaptiveModelFailover: ({ provider }: { provider: string }) => {
+          attemptedProviders.push(provider)
+          return { provider: 'cloud', model: 'api-model' }
+        },
+      },
+    })
+    ctx.provide('llm', {
+      resolveCallConfig: () => {
+        controller.abort()
+        throw new Error('resolution cancelled')
+      },
+    } as never)
+    const sessionId = SessionId('automatic-cancel-cascade')
+    await api.sessions.create(request({ sessionId }))
+    const agent = ctx.agents.get(sessionId)
+    if (agent === undefined) throw new Error('unreachable')
+    let downstreamCalls = 0
+
+    const decision = await agentEvents(ctx, agent).waterfall('agent/request-error', {
+      turn: 1,
+      step: 0,
+      provider: 'test',
+      failure: { code: 'TRANSPORT', message: 'local connection refused' },
+      retryPolicy: undefined,
+      signal: controller.signal,
+    }, () => {
+      downstreamCalls += 1
+      return Promise.resolve(undefined)
+    })
+
+    expect(decision).toBeUndefined()
+    expect(attemptedProviders).toEqual(['test'])
+    expect(downstreamCalls).toBe(0)
+    expect(agent.session.events.some(event => event.type === 'llm/failover')).toBe(false)
+    await ctx.fiber.dispose()
+  })
+
   it('preserves manual selection and delegates its failure to ordinary recovery', async () => {
     const { api, ctx } = await harness(undefined, undefined, {
       defaults: {

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-25-leon-resolvable-failover-cascade.md
+2026-08-25-leon-resolvable-failover-cascade.md: d2c40d47d22e4772a2a9051ecb02d9aac5830013
+2026-08-25-leon-resolvable-failover-cascade.zh.md: c9717501ff82fbdeaa028be50c65b4b96da7f764

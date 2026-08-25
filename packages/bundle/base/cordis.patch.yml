@@ -97,6 +97,11 @@
             displayName: Ollama Local
             api: openai-completions
             baseURL: http://127.0.0.1:11434/v1
+            # Automatic routing owns immediate cross-provider recovery. One
+            # bounded retry remains when every replacement is unavailable.
+            retryPolicy:
+              mode: normal
+              maxRetries: 1
             headers:
               Authorization: Bearer ollama-local
             defaultContextWindow: 32768
@@ -131,6 +136,9 @@
             displayName: OmniRoute Local Gateway
             api: openai-completions
             baseURL: http://127.0.0.1:20128/v1
+            retryPolicy:
+              mode: normal
+              maxRetries: 1
             headers:
               Authorization: Bearer omniroute-local
             defaultContextWindow: 262144

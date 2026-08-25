@@ -76,6 +76,7 @@ describe('dsh-base bundle', () => {
         ollama: {
           api: 'openai-completions',
           baseURL: 'http://127.0.0.1:11434/v1',
+          retryPolicy: { mode: 'normal', maxRetries: 1 },
           headers: { Authorization: 'Bearer ollama-local' },
           models: [
             { id: 'qwen3.5:9b' },
@@ -85,6 +86,7 @@ describe('dsh-base bundle', () => {
         omniroute: {
           api: 'openai-completions',
           baseURL: 'http://127.0.0.1:20128/v1',
+          retryPolicy: { mode: 'normal', maxRetries: 1 },
           headers: { Authorization: 'Bearer omniroute-local' },
           models: [{ id: 'auto' }],
         },

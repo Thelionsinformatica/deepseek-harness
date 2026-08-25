@@ -26,6 +26,7 @@ Deliver Memory V2 in phases: observability and shadow mode first, deterministic 
 - Retrieval can improve continuity without granting stored content system authority.
 - A durable decision trail makes review and rollback operational.
 - Letta adoption remains a later experimental step.
+- The first [direct-provider experiment](../../rejected/architecture/2026-08-25-direct-letta-memory-provider.md) did not meet the compatibility gate; reconsideration now has explicit safety, recall, latency, and cost thresholds.
 
 ## Alternatives considered
 

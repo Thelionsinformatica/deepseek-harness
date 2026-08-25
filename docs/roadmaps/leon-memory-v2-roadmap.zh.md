@@ -53,6 +53,8 @@
 
 - 比较 `LocalMemoryProvider` 与 `LettaMemoryProvider`。
 - 仅在取得客观改善后迁移。
+- 当前结论：不采用。维护中的 Letta Agent SDK 暴露的是另一个有状态 agent harness，而不是 Leon 所需的精确带修订 provider 约定；现有 MCP 示例则面向已退役的 V1 服务器。
+- 只有当当前本地适配器通过全部关键 LEON-EVAL 场景、将改写查询 recall 至少提高 10 个百分点、p95 延迟低于 2,000 ms，并且不产生未经批准的云端或模型费用时，才重新评估。
 
 ## 阶段推进规则
 

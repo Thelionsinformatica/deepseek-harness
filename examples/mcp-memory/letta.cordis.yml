@@ -1,5 +1,6 @@
-# Opt-in reference for letta-mcp-server 3.0.3. Install the pinned bridge and
-# run a Letta API server first; only the consolidated memory tool is exposed.
+# Legacy opt-in reference for letta-mcp-server 3.0.3 and the retired Letta V1
+# 0.16.x API. It is not compatible with the current Letta Agent App Server.
+# Only the consolidated memory tool is exposed.
 - insert:
     - id: memory-letta
       name: '@deepseek-ai/dsh-mcp-client'

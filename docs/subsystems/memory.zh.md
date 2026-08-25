@@ -2,7 +2,7 @@
 
 [English](memory.md) | 中文
 
-记忆子系统为 Leon 提供持久、限定于工作区的事实，同时避免产品与某一种记忆引擎耦合。它拆分为服务定义（[dsh-memory](../../packages/memory/memory)，`ctx.memory`）、首个本地服务提供方（[dsh-memory-local](../../packages/memory/memory-local)，提供方 id 为 `local`）以及面向模型的消费方（[dsh-tool-memory](../../packages/memory/tool-memory)）。未来的 Letta 适配器可以实现同一提供方约定，而无须更改工具名称、工作区所有权或 Leon 其他部分接收的记录。
+记忆子系统为 Leon 提供持久、限定于工作区的事实，同时避免产品与某一种记忆引擎耦合。它拆分为服务定义（[dsh-memory](../../packages/memory/memory)，`ctx.memory`）、首个本地服务提供方（[dsh-memory-local](../../packages/memory/memory-local)，提供方 id 为 `local`）以及面向模型的消费方（[dsh-tool-memory](../../packages/memory/tool-memory)）。其他后端可以实现同一提供方约定，而无须更改工具名称、工作区所有权或 Leon 其他部分接收的记录。[直接 Letta provider 已经过评估但未采用](../evals/letta-memory-provider-experiment.zh.md)；未来候选必须通过已记录的安全、recall、延迟和成本门槛。
 
 设计记录：[提供方中立的工作区记忆](../../.agents/notes/implemented/architecture/2026-08-22-provider-neutral-workspace-memory.zh.md)与[受控自动回忆](../../.agents/notes/implemented/architecture/2026-08-22-controlled-automatic-memory-recall.zh.md)。
 

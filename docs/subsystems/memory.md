@@ -2,7 +2,7 @@
 
 English | [中文](memory.zh.md)
 
-The memory subsystem gives Leon durable, workspace-scoped facts without coupling the product to one memory engine. It is split into a Service Definition ([dsh-memory](../../packages/memory/memory), `ctx.memory`), a first local Service Provider ([dsh-memory-local](../../packages/memory/memory-local), provider id `local`), and a model-facing Consumer ([dsh-tool-memory](../../packages/memory/tool-memory)). A future Letta adapter can implement the same provider contract without changing tool names, workspace ownership, or the records the rest of Leon receives.
+The memory subsystem gives Leon durable, workspace-scoped facts without coupling the product to one memory engine. It is split into a Service Definition ([dsh-memory](../../packages/memory/memory), `ctx.memory`), a first local Service Provider ([dsh-memory-local](../../packages/memory/memory-local), provider id `local`), and a model-facing Consumer ([dsh-tool-memory](../../packages/memory/tool-memory)). Another backend can implement the same provider contract without changing tool names, workspace ownership, or the records the rest of Leon receives. A [direct Letta provider was evaluated and not adopted](../evals/letta-memory-provider-experiment.md); a future candidate must pass the recorded safety, recall, latency, and cost thresholds.
 
 Design records: [provider-neutral workspace memory](../../.agents/notes/implemented/architecture/2026-08-22-provider-neutral-workspace-memory.md) and [controlled automatic recall](../../.agents/notes/implemented/architecture/2026-08-22-controlled-automatic-memory-recall.md).
 

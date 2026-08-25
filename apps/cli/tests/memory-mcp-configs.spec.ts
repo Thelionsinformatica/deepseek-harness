@@ -104,6 +104,7 @@ describe('third-party memory MCP example overlays', () => {
     expect(source).not.toMatch(/\bsk-[A-Za-z0-9_-]{8,}\b/)
     expect(source).not.toContain('DEEPSEEK_API_KEY')
     if (contract.file === 'letta.cordis.yml') {
+      expect(source.split('\n', 1)[0]).toContain('Legacy')
       expect(Object.keys(row.config?.env as Record<string, unknown>).sort()).toEqual([
         'LETTA_BASE_URL',
         'LETTA_PASSWORD',

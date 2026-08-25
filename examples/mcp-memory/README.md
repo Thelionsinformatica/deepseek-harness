@@ -19,7 +19,7 @@ The stdio bridge deliberately removes ambient variables whose names usually iden
 | [Memorix](https://github.com/AVIDS2/memorix) | `memorix@1.3.0` (`500792cad3144142293bfbb20acb4841c9f7fcfa`) | stdio | Node 22.18+ and `npm install --global memorix@1.3.0` |
 | [MCP Reference Memory](https://github.com/modelcontextprotocol/servers/tree/main/src/memory) | `@modelcontextprotocol/server-memory@2026.7.4` (`6dd0a683e198783e30feabf7abaf42f925bd18b1`) | stdio | `npm install --global @modelcontextprotocol/server-memory@2026.7.4` |
 | [Engram](https://github.com/Gentleman-Programming/engram) | `v1.20.0` (`ba9e46ced152c37a7cb9e576153c41995873e2fc`) | stdio | Go 1.25.10+ and `go install github.com/Gentleman-Programming/engram/cmd/engram@v1.20.0`, or the matching release binary |
-| [Letta](https://github.com/letta-ai/letta) through [Letta MCP Server](https://github.com/oculairmedia/Letta-MCP-server) | `letta-mcp-server@3.0.3` (`ea8b0b19fa689bb303207e027d3fbd06b8b377e2`) | stdio | A reachable Letta API server and `npm install --global letta-mcp-server@3.0.3` |
+| Legacy Letta V1 through [Letta MCP Server](https://github.com/oculairmedia/Letta-MCP-server) | `letta-mcp-server@3.0.3` (`ea8b0b19fa689bb303207e027d3fbd06b8b377e2`) | stdio | A compatible Letta V1 0.16.x API server and `npm install --global letta-mcp-server@3.0.3` |
 
 ## Enable one
 
@@ -66,7 +66,15 @@ Engram owns storage and project selection: it uses `~/.engram` by default, detec
 
 ### Letta
 
-Run a self-hosted Letta API server or choose a Letta endpoint whose data policy you accept, then install the pinned community MCP bridge:
+This example is retained only for an existing Letta V1 0.16.x deployment. The
+[current Letta project](https://github.com/letta-ai/letta) retired that server
+and moved active development to Letta Agent and its App Server. The pinned
+community bridge still targets the old REST API on port 8283, so do not point
+it at a current Letta Agent App Server. Leon does not ship or automatically
+install either generation.
+
+For a compatible legacy deployment whose data policy you accept, install the
+pinned community MCP bridge:
 
 ```sh
 npm install --global letta-mcp-server@3.0.3

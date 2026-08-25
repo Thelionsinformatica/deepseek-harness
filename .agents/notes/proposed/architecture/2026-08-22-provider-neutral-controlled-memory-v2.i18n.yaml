@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/architecture/2026-08-22-provider-neutral-controlled-memory-v2.md
-2026-08-22-provider-neutral-controlled-memory-v2.md: 1008208d18306aede6c3f4da8966500eac1a99fc
-2026-08-22-provider-neutral-controlled-memory-v2.zh.md: f330a51fc6b4f6f860b1d682ad0e5469861943aa
+2026-08-22-provider-neutral-controlled-memory-v2.md: bf71a664ad942c0dd206571023d818cc5865769b
+2026-08-22-provider-neutral-controlled-memory-v2.zh.md: 487f48349da0109b94862ee94ec214595e3a8d7b

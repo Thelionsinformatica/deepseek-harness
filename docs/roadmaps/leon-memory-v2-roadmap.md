@@ -53,6 +53,8 @@ English | [中文](leon-memory-v2-roadmap.zh.md)
 
 - Compare `LocalMemoryProvider` and `LettaMemoryProvider`.
 - Migrate only after objective improvement.
+- Current verdict: do not adopt. The maintained Letta Agent SDK exposes another stateful agent harness rather than the exact revisioned provider contract Leon requires, while the existing MCP example targets the retired V1 server.
+- Reopen only when a current local adapter passes every critical LEON-EVAL case, improves paraphrase recall by at least 10 percentage points, stays below the 2,000 ms p95 latency bound, and adds no unapproved cloud or model cost.
 
 ## Phase advancement rule
 

@@ -19,7 +19,7 @@ stdio 桥接器在启动子进程前会主动移除环境中名称通常表示�
 | [Memorix](https://github.com/AVIDS2/memorix) | `memorix@1.3.0`（`500792cad3144142293bfbb20acb4841c9f7fcfa`） | stdio | Node 22.18+，并执行 `npm install --global memorix@1.3.0` |
 | [MCP Reference Memory](https://github.com/modelcontextprotocol/servers/tree/main/src/memory) | `@modelcontextprotocol/server-memory@2026.7.4`（`6dd0a683e198783e30feabf7abaf42f925bd18b1`） | stdio | `npm install --global @modelcontextprotocol/server-memory@2026.7.4` |
 | [Engram](https://github.com/Gentleman-Programming/engram) | `v1.20.0`（`ba9e46ced152c37a7cb9e576153c41995873e2fc`） | stdio | Go 1.25.10+，并执行 `go install github.com/Gentleman-Programming/engram/cmd/engram@v1.20.0`，或安装匹配的发布版二进制文件 |
-| [Letta](https://github.com/letta-ai/letta)，通过 [Letta MCP Server](https://github.com/oculairmedia/Letta-MCP-server) 连接 | `letta-mcp-server@3.0.3`（`ea8b0b19fa689bb303207e027d3fbd06b8b377e2`） | stdio | 可访问的 Letta API 服务器，并执行 `npm install --global letta-mcp-server@3.0.3` |
+| 通过 [Letta MCP Server](https://github.com/oculairmedia/Letta-MCP-server) 连接旧版 Letta V1 | `letta-mcp-server@3.0.3`（`ea8b0b19fa689bb303207e027d3fbd06b8b377e2`） | stdio | 兼容 Letta V1 0.16.x 的 API 服务器，并执行 `npm install --global letta-mcp-server@3.0.3` |
 
 ## 启用一个
 
@@ -66,7 +66,13 @@ Engram 负责存储和项目选择：它默认使用 `~/.engram`，从 DSH 工�
 
 ### Letta
 
-运行自托管 Letta API 服务器，或选择一项你接受其数据政策的 Letta 端点，然后安装固定版本的社区 MCP 桥接器：
+此示例仅为现有 Letta V1 0.16.x 部署保留。[当前 Letta
+项目](https://github.com/letta-ai/letta)已停止维护该服务器，并将活跃开发迁移到
+Letta Agent 及其 App Server。固定版本的社区桥接器仍以 8283 端口上的旧 REST
+API 为目标，因此不要将其指向当前 Letta Agent App Server。Leon 不会交付或自动
+安装任何一代 Letta。
+
+对于数据策略符合你要求的兼容旧版部署，请安装固定版本的社区 MCP 桥接器：
 
 ```sh
 npm install --global letta-mcp-server@3.0.3

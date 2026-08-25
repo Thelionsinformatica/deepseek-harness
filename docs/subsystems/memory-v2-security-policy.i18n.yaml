@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/memory-v2-security-policy.md
-memory-v2-security-policy.md: 3f367f34334a68c938a167d434d55bc84bf51212
-memory-v2-security-policy.zh.md: 3d716685733549f0c0b77985dd351807ecdf9795
+memory-v2-security-policy.md: 443ad08095c0f372cae2027d54bcc120e26c98f1
+memory-v2-security-policy.zh.md: 2a193175f2b157923623a3c1723715c5e32dbfee

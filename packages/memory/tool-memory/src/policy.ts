@@ -6,6 +6,7 @@ import {
 } from '@deepseek-ai/dsh-memory'
 
 import type { MemoryCandidateOperation } from './spec.ts'
+import type { MemoryCandidateCategory, MemoryCandidateSensitivity } from './spec.ts'
 
 /** Inputs for deterministic candidate policy evaluation. */
 export interface CandidatePolicyContext {
@@ -23,6 +24,14 @@ export interface CandidatePolicyDecision {
   readonly policyVersion: MemoryPolicyVersion
   readonly decision: MemoryPolicyDecision
   readonly reason: MemoryPolicyReason
+}
+
+/** Content-free inputs used to classify a newly extracted shadow candidate. */
+export interface ExtractedCandidatePolicyContext {
+  readonly category: MemoryCandidateCategory
+  readonly confidence: number
+  readonly importance: number
+  readonly sensitivity: MemoryCandidateSensitivity
 }
 
 const ABSOLUTE_CREDENTIAL_PATTERNS = [
@@ -116,6 +125,53 @@ export function evaluateCandidatePolicy(context: CandidatePolicyContext): Candid
     policyVersion: MEMORY_POLICY_VERSION,
     decision: 'shadow',
     reason: 'moderate-confidence',
+  }
+}
+
+/**
+ * Select the deterministic review recommendation for an extracted candidate.
+ * @param context - bounded classifier metadata; candidate text is intentionally absent.
+ * @returns the versioned block, reject, shadow, confirm, or store recommendation.
+ */
+export function evaluateExtractedCandidatePolicy(
+  context: ExtractedCandidatePolicyContext,
+): CandidatePolicyDecision {
+  if (context.sensitivity === 'blocked') {
+    return {
+      policyVersion: MEMORY_POLICY_VERSION,
+      decision: 'block',
+      reason: 'credential-signal',
+    }
+  }
+  if (context.sensitivity === 'review') {
+    return {
+      policyVersion: MEMORY_POLICY_VERSION,
+      decision: 'confirm',
+      reason: 'sensitivity-review-required',
+    }
+  }
+  if (context.confidence < 0.65 || context.importance < 0.5) {
+    return {
+      policyVersion: MEMORY_POLICY_VERSION,
+      decision: 'reject',
+      reason: 'low-confidence',
+    }
+  }
+  if (
+    context.confidence >= 0.9
+    && context.importance >= 0.7
+    && context.category !== 'fact'
+  ) {
+    return {
+      policyVersion: MEMORY_POLICY_VERSION,
+      decision: 'store',
+      reason: 'high-confidence',
+    }
+  }
+  return {
+    policyVersion: MEMORY_POLICY_VERSION,
+    decision: 'shadow',
+    reason: 'candidate-extracted',
   }
 }
 

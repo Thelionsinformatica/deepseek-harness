@@ -17,7 +17,9 @@ English | [中文](memory-v2-security-policy.zh.md)
 - Never persist them through `memory_remember` or `memory_update`.
 - Run `looksSensitive` or the redactor before writes and during recall.
 
-## Deterministic decision matrix (implemented for shadow traces)
+## Deterministic decision matrices
+
+### Recall telemetry
 
 | Input | Rule | Decision |
 |---|---|---|
@@ -28,6 +30,18 @@ English | [中文](memory-v2-security-policy.zh.md)
 | Text contains a sensitive term, such as password, key, token, financial, or personal data | Human review required | `confirm` |
 | High confidence and score with controlled volume | Stable enough for future automatic storage | `store` |
 | Other ambiguous cases | No automatic decision | `shadow` |
+
+### Locally extracted message candidates
+
+| Input | Rule | Decision |
+|---|---|---|
+| `sensitivity === blocked` | Credential signal; candidate text is omitted | `block` |
+| `sensitivity === review` | Human review is mandatory | `confirm` |
+| `confidence < 0.65` or `importance < 0.50` | Evidence is too weak | `reject` |
+| `confidence >= 0.90`, `importance >= 0.70`, and category is not `fact` | Recommend storage after operator approval | `store` |
+| Other safe candidates | Retain for comparison and review | `shadow` |
+
+The extracted-candidate evaluator receives metadata only, not the candidate text. A `store` result is a recommendation recorded in the local queue; it is not authorization to call `ctx.memory.create()`.
 
 ## Traces recorded in the project
 
@@ -47,9 +61,9 @@ English | [中文](memory-v2-security-policy.zh.md)
 - Sensitive personal, financial, and medical data; interpersonal relationships; permanent instructions; and scope migrations.
 - Requires explicit user confirmation in the interface or workflow.
 
-### Permitted automatic storage
+### Eligible reviewed storage
 
-- Only after a positive policy decision with high confidence and a stable category.
+- Only after a positive policy recommendation, high confidence, a stable category, and explicit operator approval.
 - Examples include a confirmed technical decision, non-sensitive configuration, or repeatable work procedure.
 
 ### Decision record
@@ -84,5 +98,5 @@ English | [中文](memory-v2-security-policy.zh.md)
 
 ## Current status
 
-- Deterministic trace policy without automatic write effects: implemented.
-- Recommended next stage in M2-006/07: connect `confirm` and `store` to a review queue, and persist only after validation.
+- Deterministic trace and extracted-candidate policy without automatic write effects: implemented.
+- Recommended next stage in M2-007: expose `confirm` and `store` recommendations in operator review controls, and persist only after approval and final validation.

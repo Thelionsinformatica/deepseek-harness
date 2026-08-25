@@ -28,7 +28,7 @@ This telemetry row stores a content-free summary (`total`, `omittedSensitive`, `
 
 The durable telemetry write is best-effort, never blocks tool execution, and does not enter the model context or affect its KV cache.
 
-When `shadowExtraction` is enabled, the first step of a turn also inspects only the latest human-authored message. Conservative explicit-memory and stable-statement patterns create a local `message_candidate` row with category, confidence, importance, workspace, session, and configured owner metadata. Safe candidate text stays only in that local review row; credential-like text is omitted before persistence. An ordinary question creates no row. Neither path calls `ctx.memory.create()`.
+When `shadowExtraction` is enabled, the first step of a turn also inspects only the latest human-authored message. Conservative explicit-memory and stable-statement patterns create a local `message_candidate` row with category, confidence, importance, workspace, session, and configured owner metadata. A deterministic metadata-only policy records `block`, `reject`, `shadow`, `confirm`, or `store` as a review recommendation. Safe candidate text stays only in that local review row; credential-like text is omitted before persistence. An ordinary question creates no row. Even `store` does not call `ctx.memory.create()`; operator approval is still required.
 
 ## Model Experience
 

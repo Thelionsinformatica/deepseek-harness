@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   evaluateCandidatePolicy,
+  evaluateExtractedCandidatePolicy,
   type CandidatePolicyContext,
+  type ExtractedCandidatePolicyContext,
 } from '../src/policy.ts'
 
 describe('candidate memory policy', () => {
@@ -87,5 +89,21 @@ describe('candidate memory policy', () => {
 
     expect(store.decision).toBe('store')
     expect(store.reason).toBe('high-confidence')
+  })
+
+  it.each([
+    [{ category: 'decision', confidence: 0.95, importance: 0.8, sensitivity: 'blocked' }, 'block', 'credential-signal'],
+    [{ category: 'decision', confidence: 0.95, importance: 0.8, sensitivity: 'review' }, 'confirm', 'sensitivity-review-required'],
+    [{ category: 'fact', confidence: 0.4, importance: 0.4, sensitivity: 'none' }, 'reject', 'low-confidence'],
+    [{ category: 'preference', confidence: 0.95, importance: 0.7, sensitivity: 'none' }, 'store', 'high-confidence'],
+    [{ category: 'decision', confidence: 0.82, importance: 0.8, sensitivity: 'none' }, 'shadow', 'candidate-extracted'],
+  ] as const)('classifies extracted candidates deterministically', (input, decision, reason) => {
+    const context: ExtractedCandidatePolicyContext = input
+    expect(evaluateExtractedCandidatePolicy(context)).toEqual({
+      policyVersion: 1,
+      decision,
+      reason,
+    })
+    expect(evaluateExtractedCandidatePolicy(context)).toEqual(evaluateExtractedCandidatePolicy(context))
   })
 })

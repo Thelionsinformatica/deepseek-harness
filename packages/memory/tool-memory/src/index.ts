@@ -28,7 +28,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-system-prompt'
-import { evaluateCandidatePolicy } from './policy.ts'
+import { evaluateCandidatePolicy, evaluateExtractedCandidatePolicy } from './policy.ts'
 import { extractMemoryCandidate } from './extractor.ts'
 import { looksSensitive } from './sensitivity.ts'
 import {
@@ -287,12 +287,7 @@ function registerShadowExtraction(
       if (scope === undefined || isAborted(signal)) return decision
       const candidate = extractMemoryCandidate(decision.messages)
       if (candidate === undefined) return decision
-      const policyDecision = candidate.sensitivity === 'blocked'
-        ? 'block'
-        : candidate.sensitivity === 'review' ? 'confirm' : 'shadow'
-      const policyReason = candidate.sensitivity === 'blocked'
-        ? 'credential-signal'
-        : candidate.sensitivity === 'review' ? 'sensitivity-review-required' : 'candidate-extracted'
+      const policy = evaluateExtractedCandidatePolicy(candidate)
       await candidateShadow.recordCandidate({
         id: MemoryCandidateId(randomUUID()),
         workspaceId: scope.workspaceId,
@@ -312,8 +307,8 @@ function registerShadowExtraction(
         scopeCandidate: candidate.scopeCandidate,
         sensitivity: candidate.sensitivity,
         policyVersion: MEMORY_POLICY_VERSION,
-        policyDecision,
-        policyReason,
+        policyDecision: policy.decision,
+        policyReason: policy.reason,
         reviewed: false,
         createdAt: new Date().toISOString(),
         schemaVersion: MEMORY_CANDIDATE_SCHEMA_VERSION,
@@ -329,8 +324,8 @@ function registerShadowExtraction(
         confidence: candidate.confidence,
         importance: candidate.importance,
         sensitivity: candidate.sensitivity,
-        policyDecision,
-        policyReason,
+        policyDecision: policy.decision,
+        policyReason: policy.reason,
         policyVersion: MEMORY_POLICY_VERSION,
       })
       if (candidate.sensitivity === 'blocked') {

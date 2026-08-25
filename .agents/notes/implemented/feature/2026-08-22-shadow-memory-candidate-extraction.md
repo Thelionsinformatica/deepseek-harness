@@ -14,11 +14,13 @@ Explicit memory tools preserve user control but provide no evidence about which 
 - Only the latest human-authored message on the first accepted step is inspected. Conservative deterministic patterns recognize explicit remember requests and stable preference, decision, and configuration statements. Ordinary questions and later tool-loop steps create no candidate.
 - Each safe candidate is stored only in the local `memory_candidate.candidates` review queue with workspace, session, owner, category, confidence, importance, and sensitivity metadata. The runtime `memory/candidate` event contains only metadata, never candidate text.
 - Credential-like candidates are marked blocked and their text is omitted before persistence. Other sensitive topics are marked for confirmation.
+- A metadata-only deterministic policy assigns one versioned recommendation: blocked credentials become `block`, review-sensitive content becomes `confirm`, weak candidates become `reject`, explicit high-confidence non-facts become `store`, and other safe candidates remain `shadow`. The same decision and reason are written to the row and event.
+- `store` means eligible for operator approval, not automatic persistence. Even a high-confidence preference remains only in the review queue.
 - Shadow extraction never calls `ctx.memory.create()`, injects no model context, and exposes no tool result. Durable memory changes remain explicit through `memory_remember` until a later reviewed policy authorizes another path.
 
 ## Verification
 
-Unit coverage pins PT-BR explicit extraction, stable-decision extraction, ordinary-question rejection, categorization, and credential omission. A real agent-loop integration proves that safe text lands only in the local shadow queue, owner and workspace metadata are present, runtime events contain no text, credential text is absent from storage, and `ctx.memory` remains unchanged. A real Loader composition boots the same Cordis config path and pins the durable candidate without a memory write.
+Unit coverage pins PT-BR explicit extraction, stable-decision extraction, ordinary-question rejection, categorization, credential omission, and all five deterministic policy outcomes. A real agent-loop integration proves that safe text lands only in the local shadow queue, owner and workspace metadata are present, runtime events contain no text, credential text is absent from storage, and `ctx.memory` remains unchanged. It also proves that an explicit high-confidence preference receives the `store` recommendation while durable memory stays empty. A real Loader composition boots the same Cordis config path and pins the durable candidate without a memory write.
 
 ## Alternatives considered
 

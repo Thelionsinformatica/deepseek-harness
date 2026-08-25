@@ -20,10 +20,10 @@
   - `packages/memory/memory/tests/memory.spec.ts`（7 个用例）
   - `packages/memory/memory-local/tests/memory-local.spec.ts`（7 个用例）
   - `packages/memory/tool-memory/tests/extractor.spec.ts`（4 个用例）
-  - `packages/memory/tool-memory/tests/integration.spec.ts`（7 个用例）
+  - `packages/memory/tool-memory/tests/integration.spec.ts`（8 个用例）
   - `packages/memory/tool-memory/tests/loader-composition.spec.ts`（1 个用例）
-  - `packages/memory/tool-memory/tests/policy.spec.ts`（5 个用例）
-- 当前计数：记忆范围内有 **6 个 `.spec.ts` 文件**和 **31 个 `it`/`test` 用例**。
+  - `packages/memory/tool-memory/tests/policy.spec.ts`（10 个用例）
+- 当前计数：记忆范围内有 **6 个 `.spec.ts` 文件**和 **37 个运行时用例**。
 - 已覆盖范围：
   - `memory.spec.ts` 中的提供方选择、内容规范化、遥测与核心验证。
   - `memory-local.spec.ts` 中的本地隔离、持久性、修订处理与阻止事件遥测。
@@ -41,7 +41,7 @@
   - 通过 `agent/pre-step` 执行只读自动快照检索。
   - 对显式或稳定的人类陈述执行选择加入的本地影子提取，不写入持久记忆。
   - 在 `memory_candidate.candidates` 中持久化影子候选项，包含置信度、分数、插入与敏感信息省略元数据。
-  - 初始确定性影子策略，具有 `policyVersion`、`policyDecision` 与 `policyReason` 可追踪性。
+  - 确定性的提取候选策略，覆盖 `block`、`reject`、`shadow`、`confirm` 以及仅供审查的 `store`，并具有 `policyVersion`、`policyDecision` 与 `policyReason` 可追踪性。
   - 审查词汇与持久审查字段，包括 `reviewed`、`reviewDecision`、`reviewedAt` 与 `reviewedBy`。
   - 工作区隔离，以及纠正与遗忘时的修订检查。
 - V2 尚未实现：

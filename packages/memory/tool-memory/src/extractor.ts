@@ -2,11 +2,7 @@
 
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import { looksSensitive, requiresSensitiveReview } from './sensitivity.ts'
-
-/** Stable semantic category assigned by the conservative local extractor. */
-export type MemoryCandidateCategory = 'preference' | 'decision' | 'configuration' | 'procedure' | 'fact'
-/** Whether a candidate is safe for review, requires confirmation, or must omit its content. */
-export type MemoryCandidateSensitivity = 'none' | 'review' | 'blocked'
+import type { MemoryCandidateCategory, MemoryCandidateSensitivity } from './spec.ts'
 
 /** One bounded candidate proposed for local review without changing durable memory. */
 export interface ExtractedMemoryCandidate {

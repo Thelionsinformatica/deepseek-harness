@@ -102,6 +102,48 @@ describe('memory tools through the real agent loop', () => {
     await ctx.fiber.dispose()
   })
 
+  it('recommends an explicit preference for storage without writing durable memory', async () => {
+    const adapter = new MockAdapter([textResponse('Preferência registrada para sua revisão.')])
+    const candidates: MemoryCandidateEvent[] = []
+    const { ctx, cwd, workspace } = await harness(adapter, {
+      shadowExtraction: true,
+      shadowOwnerId: 'test-local-owner',
+    })
+    ctx.on('memory/candidate', event => candidates.push(event))
+    const agent = ctx.agentLoop.create(
+      SessionId('leon-memory-store-recommendation'),
+      { provider: 'mock', model: 'mock' },
+      { cwd },
+    )
+
+    agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Leon, lembre que eu prefiro respostas diretas em português brasileiro.' }],
+      source: { kind: 'user' },
+    }))
+    await agent.whenIdle()
+
+    const persisted = readCandidateRows(ctx)
+    expect(persisted).toHaveLength(1)
+    expect(persisted[0]).toMatchObject({
+      operation: 'message_candidate',
+      category: 'preference',
+      policyDecision: 'store',
+      policyReason: 'high-confidence',
+      reviewed: false,
+    })
+    expect(candidates).toContainEqual(expect.objectContaining({
+      operation: 'message_candidate',
+      policyDecision: 'store',
+      policyReason: 'high-confidence',
+    }))
+    await expect(ctx.memory.search({
+      scope: { workspaceId: workspace.id },
+      query: 'respostas diretas português brasileiro',
+      limit: 8,
+    })).resolves.toEqual([])
+    await ctx.fiber.dispose()
+  })
+
   it('records a credential candidate without persisting its content', async () => {
     const secret = 'sk-proj-1234567890abcdefghijklmnop'
     const adapter = new MockAdapter([textResponse('Não vou guardar a credencial.')])

@@ -67,9 +67,18 @@ describe('local durable memory operations', () => {
       scope: alpha,
       content: '  A preferência de implantação é usar Ollama local.  ',
       source,
+      importance: 0.7,
+      confidence: 1,
+      validation: 'explicit',
     })
 
-    expect(created).toMatchObject({ content: 'A preferência de implantação é usar Ollama local.', revision: 1 })
+    expect(created).toMatchObject({
+      content: 'A preferência de implantação é usar Ollama local.',
+      revision: 1,
+      importance: 0.7,
+      confidence: 1,
+      validation: 'explicit',
+    })
     const hits = await ctx.memory.search({ scope: alpha, query: 'preferencia ollama', limit: 8 })
     expect(hits).toMatchObject([{ record: { id: created.id, revision: 1 } }])
     expect(typeof hits[0]?.score).toBe('number')
@@ -79,7 +88,13 @@ describe('local durable memory operations', () => {
       ref: { id: created.id, revision: 1 },
       content: 'A preferência de implantação é usar Ollama local com fallback remoto.',
     })
-    expect(corrected).toMatchObject({ id: created.id, revision: 2 })
+    expect(corrected).toMatchObject({
+      id: created.id,
+      revision: 2,
+      importance: 0.7,
+      confidence: 1,
+      validation: 'explicit',
+    })
     await expect(ctx.memory.update({
       scope: alpha,
       ref: { id: created.id, revision: 1 },

@@ -13,9 +13,15 @@
 
 ## 激活和策略
 
-插件始终需要 `tools` 和 `systemPrompt`，然后只在 `memory` 与 `workspaceRegistry` 同时可用时激活其提示词段落和 4 个工具。因此，没有组合记忆能力的 headless profile 不会获得损坏的工具。`automaticRecall` 为选择加入，并且只在 agent registry 也存在时激活；`recallLimit` 默认为 4，`recallMaxChars` 默认为 4,000。`shadowExtraction` 是独立的选择加入功能，并要求稳定的 `shadowOwnerId`；它绝不会启用持久记忆写入。
+插件始终需要 `tools` 和 `systemPrompt`，然后只在 `memory` 与 `workspaceRegistry` 同时可用时激活其提示词段落和 4 个工具。因此，没有组合记忆能力的 headless profile 不会获得损坏的工具。`automaticRecall` 为选择加入，并且只在 agent registry 也存在时激活；`recallLimit` 默认为 4，`recallMaxChars` 默认为 4,000。`ranking` 默认执行确定性的最终重排序，也可关闭以保留提供方分数顺序。`shadowExtraction` 是独立的选择加入功能，并要求稳定的 `shadowOwnerId`；它绝不会启用持久记忆写入。
 
 模型指引只允许在用户明确要求记住或清楚确认一项持久事实时写入。它禁止存储密码、API key、access token、private key 和其他身份验证 secret。面向模型的边界还会拒绝类似凭据的写入，并从显式与自动回忆中省略类似凭据的记录。该检测器是纵深防御，并非通用数据防泄漏系统。
+
+## 最终排序
+
+显式搜索与自动回忆最多获取请求结果数的三倍候选，并把提供方命中上限设为 50；随后验证精确 workspace 所有权、时间戳、revision、可选元数据和内容，再按记忆 id 去重。最终分数中，规范化提供方相关性占 55%，以 30 天为半衰期的指数新近程度占 20%，importance 占 15%，确认类别与 confidence 占 10%。旧记录使用中性的 importance 与确认值。相同分数依次按分数、更新时间和 id 决胜，因此相同输入会产生相同顺序。
+
+权重与半衰期属于部署配置。无效值会在插件激活时失败。`ranking.enabled: false` 是回滚开关：验证、workspace 过滤、去重、敏感信息过滤、结果限制和上下文限制继续生效，保留的命中则按提供方分数排序。
 
 ## 影子候选遥测
 
@@ -64,7 +70,7 @@ Long-term memory is scoped to the current workspace. Search it before claiming t
 
 #### 模型看到的内容
 
-启用后，每轮第一个被接受的步骤会从人类编写的文本派生有界查询，只搜索已注册的当前 workspace，移除类似凭据的记录，并在前面加入最多 `recallLimit` 个精简结果。会导致超过 `recallMaxChars` 的记录将被跳过而不是截断。其来源是名为 `memory:recall` 的持久插件 `snapshot`。其中不含 workspace id 或原始路径。服务缺失、workspace 未注册、没有相关安全记录、取消或提供方失败都不会产生快照；提供方失败会被记录，轮次继续执行。
+启用后，每轮第一个被接受的步骤会从人类编写的文本派生有界查询，只搜索已注册的当前 workspace，应用共享最终排序，移除类似凭据的记录，并在前面加入最多 `recallLimit` 个精简结果。会导致超过 `recallMaxChars` 的记录将被跳过而不是截断。其来源是名为 `memory:recall` 的持久插件 `snapshot`。其中不含 workspace id 或原始路径。服务缺失、workspace 未注册、没有相关安全记录、取消或提供方失败都不会产生快照；提供方失败会被记录，轮次继续执行。
 
 ##### 快照示例
 
@@ -141,5 +147,5 @@ schema 定义和可见性不变时，前缀保持稳定。激活、dispose 或 s
 
 - 受控写入需要明确批准和精确的 Host 配置；当前 UI 尚不能编辑按用户或 workspace 的允许列表。
 - 全局记忆和跨 workspace 搜索有意保持不可用。
-- 使用本地提供方时，自动回忆采用词法搜索；语义检索仍属于提供方工作。
+- 语义候选检索属于可选提供方工作；随 Leon 交付的组合继续将其关闭，直到 LEON-EVAL-PTBR 验收其延迟与召回权衡。最终排序同时支持词法与混合提供方分数。
 - 凭据检测是保守的纵深防御，无法识别所有可能的 secret 格式。

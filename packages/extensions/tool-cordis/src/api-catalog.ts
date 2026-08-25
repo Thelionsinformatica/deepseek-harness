@@ -3910,7 +3910,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MemoryCreateRequest',
-    declaration: 'export interface MemoryCreateRequest {\n    readonly scope: MemoryScope;\n    readonly content: string;\n    readonly source: MemorySource;\n}',
+    declaration: 'export interface MemoryCreateRequest {\n    readonly scope: MemoryScope;\n    readonly content: string;\n    readonly source: MemorySource;\n    readonly importance?: number;\n    readonly confidence?: number;\n    readonly validation?: MemoryValidation;\n}',
   },
   {
     name: 'MemoryEventSchemaVersion',
@@ -3934,7 +3934,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MemoryRecord',
-    declaration: 'export interface MemoryRecord {\n    readonly id: MemoryId;\n    readonly scope: MemoryScope;\n    readonly content: string;\n    readonly revision: number;\n    readonly source: MemorySource;\n    readonly schemaVersion?: MemoryRecordSchemaVersion;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+    declaration: 'export interface MemoryRecord {\n    readonly id: MemoryId;\n    readonly scope: MemoryScope;\n    readonly content: string;\n    readonly revision: number;\n    readonly source: MemorySource;\n    readonly importance?: number;\n    readonly confidence?: number;\n    readonly validation?: MemoryValidation;\n    readonly schemaVersion?: MemoryRecordSchemaVersion;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
     name: 'MemoryRecordSchemaVersion',
@@ -3963,6 +3963,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'MemoryUpdateRequest',
     declaration: 'export interface MemoryUpdateRequest {\n    readonly scope: MemoryScope;\n    readonly ref: MemoryRef;\n    readonly content: string;\n}',
+  },
+  {
+    name: 'MemoryValidation',
+    declaration: 'export type MemoryValidation = \'explicit\' | \'reviewed\';',
   },
   {
     name: 'Message',

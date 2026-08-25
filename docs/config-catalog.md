@@ -1618,7 +1618,7 @@ export interface MemoryRuntimeConfig {
 }
 ```
 
-Source: [`packages/memory/memory/src/index.ts:85`](../packages/memory/memory/src/index.ts)
+Source: [`packages/memory/memory/src/index.ts:86`](../packages/memory/memory/src/index.ts)
 
 <a id="deepseek-aidsh-memory-local"></a>
 
@@ -2961,10 +2961,28 @@ export interface Config {
   shadowExtraction?: boolean
   /** Stable local owner label for extracted candidates; required when shadow extraction is enabled. */
   shadowOwnerId?: string
+  /** Deterministic final ranking shared by explicit search and automatic recall. */
+  ranking?: MemoryRankingConfig
+}
+
+/** Optional final-ranking policy shared by explicit and automatic recall. */
+export interface MemoryRankingConfig {
+  /** Apply metadata-aware final scoring; false retains validated provider-score order. */
+  readonly enabled?: boolean
+  /** Exponential recency half-life in days; must be greater than zero and at most 3,650. */
+  readonly halfLifeDays?: number
+  /** Non-negative weight for provider relevance normalized within one candidate set. */
+  readonly relevanceWeight?: number
+  /** Non-negative weight for exponential recency. */
+  readonly recencyWeight?: number
+  /** Non-negative weight for the record's normalized importance. */
+  readonly importanceWeight?: number
+  /** Non-negative weight for confirmation class multiplied by source confidence. */
+  readonly validationWeight?: number
 }
 ```
 
-Source: [`packages/memory/tool-memory/src/index.ts:54`](../packages/memory/tool-memory/src/index.ts)
+Source: [`packages/memory/tool-memory/src/index.ts:60`](../packages/memory/tool-memory/src/index.ts)
 
 <a id="deepseek-aidsh-tool-pwsh"></a>
 

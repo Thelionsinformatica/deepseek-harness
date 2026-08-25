@@ -195,6 +195,9 @@ export class MemoryCandidateReviewService extends TypertRemoteService {
         scope: { workspaceId },
         content,
         source: { kind: 'session', sessionId: current.sessionId },
+        ...(current.importance === undefined ? {} : { importance: current.importance }),
+        confidence: current.confidence,
+        validation: 'reviewed',
       })
     } catch (error: unknown) {
       await table.put(current.id, withAutoWrite(current, 'failed', 'provider-failed'))

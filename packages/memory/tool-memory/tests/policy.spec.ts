@@ -91,6 +91,20 @@ describe('candidate memory policy', () => {
     expect(store.reason).toBe('high-confidence')
   })
 
+  it('keeps an explicit search trace review-only even when final ranking is high', () => {
+    const decision = evaluateCandidatePolicy({
+      operation: 'tool_call_memory_search',
+      query: 'porta do painel',
+      total: 1,
+      omittedSensitive: 0,
+      inserted: 1,
+      confidence: 1,
+      topScore: 0.95,
+    })
+
+    expect(decision).toMatchObject({ decision: 'shadow', reason: 'moderate-confidence' })
+  })
+
   it.each([
     [{ category: 'decision', confidence: 0.95, importance: 0.8, sensitivity: 'blocked' }, 'block', 'credential-signal'],
     [{ category: 'decision', confidence: 0.95, importance: 0.8, sensitivity: 'review' }, 'confirm', 'sensitivity-review-required'],

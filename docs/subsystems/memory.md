@@ -17,9 +17,10 @@ Every operation carries a `MemoryScope` containing a stable `WorkspaceId`. Raw d
 | Type | Meaning |
 |---|---|
 | `MemoryId` | stable branded identity independent of content and provider |
-| `MemoryRecord` | normalized content, scope, session provenance, timestamps, and revision |
+| `MemoryRecord` | normalized content, scope, session provenance, optional ranking metadata, timestamps, and revision |
 | `MemoryRef` | exact `{ id, revision }` compare-and-set reference |
-| `MemoryCreateRequest` | workspace scope, content, and source session |
+| `MemoryCreateRequest` | workspace scope, content, source session, and optional ranking metadata |
+| `MemoryValidation` | `explicit` or `reviewed` confirmation class used by final ranking |
 | `MemorySearchRequest` / `MemorySearchHit` | bounded query and provider-ranked result |
 | `MemoryUpdateRequest` | replacement content for one exact revision |
 | `MemoryForgetRequest` | deletion of one exact revision |

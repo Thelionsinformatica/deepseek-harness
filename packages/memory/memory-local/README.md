@@ -6,7 +6,7 @@ This package is the local Service Provider for `ctx.memory`. It opens the versio
 
 ## Behavior
 
-- Records are keyed by generated `MemoryId` values and carry stable `WorkspaceId` ownership, session provenance, ISO timestamps, and a compare-and-set revision.
+- Records are keyed by generated `MemoryId` values and carry stable `WorkspaceId` ownership, session provenance, ISO timestamps, a compare-and-set revision, and any optional importance, confidence, and confirmation metadata supplied at creation.
 - Create, correct, and forget operations are serialized. The durable write lands before the operation resolves.
 - Search always filters by workspace before ranking or sending candidate text to another local component. Deterministic, accent-insensitive lexical matching remains available on every request.
 - Optional hybrid retrieval uses the loopback Ollama `/api/embed` endpoint with `nomic-embed-text:latest`. Queries and documents use the model's `search_query:` and `search_document:` task prefixes, then semantic and lexical scores are merged under bounded configuration.

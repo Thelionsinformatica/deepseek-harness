@@ -183,6 +183,15 @@
     automaticRecall: true
     recallLimit: 4
     recallMaxChars: 4000
+    # One deterministic final score ranks either lexical or local semantic
+    # provider candidates. Set enabled to false for provider-score rollback.
+    ranking:
+      enabled: true
+      halfLifeDays: 30
+      relevanceWeight: 0.55
+      recencyWeight: 0.2
+      importanceWeight: 0.15
+      validationWeight: 0.1
     # This shipped preset targets Leon's single-user local Windows deployment.
     # Multi-user hosts must override this label or leave shadow extraction off.
     shadowExtraction: true

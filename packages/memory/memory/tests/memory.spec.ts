@@ -115,6 +115,48 @@ describe('MemoryRuntime provider selection', () => {
     expect(forget).toHaveBeenCalledOnce()
   })
 
+  it('validates and forwards optional ranking metadata at the provider-neutral boundary', async () => {
+    const ctx = await harness()
+    const create = vi.fn((request: MemoryCreateRequest) => Promise.resolve({
+      ...record(request.content),
+      ...(request.importance === undefined ? {} : { importance: request.importance }),
+      ...(request.confidence === undefined ? {} : { confidence: request.confidence }),
+      ...(request.validation === undefined ? {} : { validation: request.validation }),
+    }))
+    ctx.memory.registerProvider({ ...provider('local'), create })
+
+    await expect(ctx.memory.create({
+      scope,
+      content: 'validated memory',
+      source,
+      importance: 0.8,
+      confidence: 0.95,
+      validation: 'reviewed',
+    })).resolves.toMatchObject({ importance: 0.8, confidence: 0.95, validation: 'reviewed' })
+    expect(create.mock.calls[0]?.[0]).toMatchObject({
+      importance: 0.8,
+      confidence: 0.95,
+      validation: 'reviewed',
+    })
+
+    for (const importance of [Number.NaN, -0.1, 2]) {
+      await expect(ctx.memory.create({ ...{ scope, content: 'bad', source }, importance }))
+        .rejects.toThrow(expect.objectContaining({ code: 'MEMORY_INVALID_IMPORTANCE' }))
+    }
+    for (const confidence of [Number.NaN, -0.1, 2]) {
+      await expect(ctx.memory.create({ ...{ scope, content: 'bad', source }, confidence }))
+        .rejects.toThrow(expect.objectContaining({ code: 'MEMORY_INVALID_CONFIDENCE' }))
+    }
+    await expect(ctx.memory.create({ scope, content: 'explicit', source, validation: 'explicit' }))
+      .resolves.toMatchObject({ content: 'explicit' })
+    await expect(ctx.memory.create({
+      scope,
+      content: 'bad',
+      source,
+      validation: 'unknown' as 'reviewed',
+    })).rejects.toThrow(expect.objectContaining({ code: 'MEMORY_INVALID_VALIDATION' }))
+  })
+
   it('emits runtime memory operation events when telemetry is enabled', async () => {
     const ctx = await harness()
     const events: MemoryOperationEvent[] = []

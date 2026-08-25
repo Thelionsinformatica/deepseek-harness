@@ -19,6 +19,7 @@
 - 设置 `autoRecallMode=off`。
 - 设置 `automaticRecall=false`。
 - 设置 `memory-local.semanticSearch.enabled: false`。词法搜索仍然可用，进程内向量缓存在重启后会被丢弃，并且不需要回滚持久 schema。
+- 设置 `tool-memory.ranking.enabled: false`，即可使用已验证的提供方分数顺序，同时保留 workspace 过滤、去重、敏感信息过滤与上下文限制。
 - 把 `memory-candidate-review` Host 配置设为 `automaticWrite: false`，并清空两个精确允许列表。
 - 已有可选手动回忆时予以保留。
 

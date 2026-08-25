@@ -12,7 +12,7 @@
 
 ## 服务 API
 
-每项操作都携带稳定的 `WorkspaceId`；原始路径绝不作为所有权键。`create()` 存储规范化内容和来源，`search()` 返回有界的排序结果，`update()` 替换一个精确 revision，`forget()` 删除一个精确 revision。纠正和删除使用 `{ id, revision }`，因此模型上下文中的陈旧内容无法覆盖较新的事实。
+每项操作都携带稳定的 `WorkspaceId`；原始路径绝不作为所有权键。`create()` 存储规范化内容和来源，还可存储从零到一的 importance、confidence 信号以及 `explicit` 或 `reviewed` 确认类别。旧记录可以不包含这些排序信号。`search()` 返回有界的提供方排序结果，`update()` 替换一个精确 revision，`forget()` 删除一个精确 revision。纠正和删除使用 `{ id, revision }`，因此模型上下文中的陈旧内容无法覆盖较新的事实。
 
 提供方选择发生在执行时，且不依赖注册顺序。显式 `provider` 必须已注册且可用。未指定时必须恰好只有一个可用提供方；没有或存在多个可用提供方都会通过结构化 `MemoryError` code 失败。
 

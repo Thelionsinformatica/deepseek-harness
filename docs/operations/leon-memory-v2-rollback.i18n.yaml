@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/operations/leon-memory-v2-rollback.md
-leon-memory-v2-rollback.md: 90e4fab902cdc588edebd2db6b46d35d93d1aa58
-leon-memory-v2-rollback.zh.md: 49111d196a07b3919fd1826de92d92d562e7e6b3
+leon-memory-v2-rollback.md: 608d25f7cad7a63be11e66f6a67979ee6fdb3230
+leon-memory-v2-rollback.zh.md: a08b81763bd20908908179123ed44d153cf7ad03

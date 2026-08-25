@@ -6,7 +6,7 @@
 
 ## 行为
 
-- 记录以生成的 `MemoryId` 值作为键，并携带稳定的 `WorkspaceId` 所有权、会话来源、ISO 时间戳和用于比较并设置的 revision。
+- 记录以生成的 `MemoryId` 值作为键，并携带稳定的 `WorkspaceId` 所有权、会话来源、ISO 时间戳、用于比较并设置的 revision，以及创建时提供的可选 importance、confidence 与确认元数据。
 - 创建、纠正和遗忘操作会串行执行。持久写入落地后，操作才会完成。
 - 搜索始终先按 workspace 过滤，之后才会排序或把候选文本发送给其他本地组件。每次请求仍会执行确定性的、忽略重音符号的词法匹配。
 - 可选的混合检索通过回环地址上的 Ollama `/api/embed` 端点使用 `nomic-embed-text:latest`。查询和文档分别使用模型要求的 `search_query:` 与 `search_document:` 任务前缀，再按有界配置合并语义分数和词法分数。

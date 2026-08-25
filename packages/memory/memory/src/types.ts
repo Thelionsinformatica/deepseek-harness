@@ -32,6 +32,9 @@ export interface MemorySource {
   readonly sessionId: SessionId
 }
 
+/** How one durable memory was confirmed before storage. */
+export type MemoryValidation = 'explicit' | 'reviewed'
+
 /** One normalized durable memory returned by any provider. */
 export interface MemoryRecord {
   readonly id: MemoryId
@@ -40,6 +43,12 @@ export interface MemoryRecord {
   /** Compare-and-set revision; every successful correction increments it. */
   readonly revision: number
   readonly source: MemorySource
+  /** Optional normalized importance retained from deterministic extraction or an explicit write. */
+  readonly importance?: number
+  /** Optional confidence of the source decision that produced this record. */
+  readonly confidence?: number
+  /** Optional confirmation class; legacy records remain valid without it. */
+  readonly validation?: MemoryValidation
   /** Persistent record schema version; legacy records default to 1. */
   readonly schemaVersion?: MemoryRecordSchemaVersion
   readonly createdAt: string
@@ -81,6 +90,12 @@ export interface MemoryCreateRequest {
   readonly scope: MemoryScope
   readonly content: string
   readonly source: MemorySource
+  /** Optional normalized importance from zero through one. */
+  readonly importance?: number
+  /** Optional source confidence from zero through one. */
+  readonly confidence?: number
+  /** Optional confirmation class used by final retrieval ranking. */
+  readonly validation?: MemoryValidation
 }
 
 /** Request to retrieve relevant memories inside one workspace. */

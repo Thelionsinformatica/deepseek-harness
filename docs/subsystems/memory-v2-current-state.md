@@ -12,19 +12,11 @@ English | [中文](memory-v2-current-state.zh.md)
   - Tool and recall consumer: [`packages/memory/tool-memory/src/index.ts`](../../packages/memory/tool-memory/src/index.ts)
   - Shared types: [`packages/memory/memory/src/types.ts`](../../packages/memory/memory/src/types.ts)
 - The Leon preset has configuration-controlled automatic memory:
-  - `automaticRecall: true`, `recallLimit: 4`, and `recallMaxChars: 4000` in [`apps/cli/config/agent-presets/leon/agent.cordis.yml`](../../apps/cli/config/agent-presets/leon/agent.cordis.yml)
+  - `automaticRecall: true`, `recallLimit: 4`, `recallMaxChars: 4000`, and deterministic final-ranking weights in [`apps/cli/config/agent-presets/leon/agent.cordis.yml`](../../apps/cli/config/agent-presets/leon/agent.cordis.yml)
 
 ## 2) Current test coverage
 
-- Test files in memory scope:
-  - `packages/memory/memory/tests/memory.spec.ts` (7 cases)
-  - `packages/memory/memory-local/tests/memory-local.spec.ts` (40 cases)
-  - `packages/memory/memory-local/tests/semantic.spec.ts` (16 cases)
-  - `packages/memory/tool-memory/tests/extractor.spec.ts` (4 cases)
-  - `packages/memory/tool-memory/tests/integration.spec.ts` (17 cases)
-  - `packages/memory/tool-memory/tests/loader-composition.spec.ts` (2 cases)
-  - `packages/memory/tool-memory/tests/policy.spec.ts` (10 cases)
-- Current count: **7 `.spec.ts` files** and **96 runtime cases** in memory scope, plus 4 browser-component cases for the review panel.
+- Current count: **8 `.spec.ts` files** and **112 runtime cases** in memory scope, plus 4 browser-component cases for the review panel.
 - Covered ranges:
   - Provider selection, content normalization, telemetry, and central validation in `memory.spec.ts`.
   - Local isolation, durability, revision handling, blocked-event telemetry, semantic configuration bounds, lexical fallback, and same-meaning recall in the two `memory-local` suites.
@@ -49,6 +41,7 @@ English | [中文](memory-v2-current-state.zh.md)
   - A browser-safe Remote projection that omits internal workspace and owner identifiers.
   - Controlled final writes after explicit operator approval, gated by a master switch plus exact user and workspace allowlists, with durable `skipped`, `writing`, `stored`, or `failed` trace state.
   - Optional local hybrid semantic retrieval through loopback-only Ollama and `nomic-embed-text:latest`, with workspace filtering before embedding, a bounded ephemeral cache, content-free metrics, and deterministic lexical fallback.
+  - One deterministic final rank for explicit search and automatic recall, with provider-output validation, id deduplication, configurable relevance, recency, importance and confirmation weights, bounded over-fetching, and provider-score rollback.
   - Workspace isolation and revision checks for correction and forgetting.
 - Not yet implemented for V2:
   - A settings UI for changing automatic-write allowlists; the shipped Host composition remains off by default.

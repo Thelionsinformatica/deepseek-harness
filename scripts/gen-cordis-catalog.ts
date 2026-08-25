@@ -522,6 +522,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   MemorySearchHit: 'memory.md',
   MemorySearchRequest: 'memory.md',
   MemorySource: 'memory.md',
+  MemoryValidation: 'memory.md',
   MemoryUpdateRequest: 'memory.md',
   WorkflowRun: 'workflow.md',
   PresetOption: 'permission-presets.md',

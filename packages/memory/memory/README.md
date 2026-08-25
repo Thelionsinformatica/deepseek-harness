@@ -12,7 +12,7 @@ English | [中文](README.zh.md)
 
 ## Service API
 
-Every operation carries a stable `WorkspaceId`; raw paths are never ownership keys. `create()` stores normalized content and provenance, `search()` returns bounded ranked hits, `update()` replaces an exact revision, and `forget()` deletes an exact revision. Corrections and deletion use `{ id, revision }` so stale model context cannot overwrite a newer fact.
+Every operation carries a stable `WorkspaceId`; raw paths are never ownership keys. `create()` stores normalized content and provenance plus optional zero-to-one importance and confidence signals and an `explicit` or `reviewed` confirmation class. Legacy records may omit those ranking signals. `search()` returns bounded provider-ranked hits, `update()` replaces an exact revision, and `forget()` deletes an exact revision. Corrections and deletion use `{ id, revision }` so stale model context cannot overwrite a newer fact.
 
 Provider selection is execution-time and registration-order independent. An explicit `provider` must be registered and usable. Without one, exactly one usable provider is required; zero or several usable providers fail with a structured `MemoryError` code.
 

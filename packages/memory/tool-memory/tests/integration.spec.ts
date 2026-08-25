@@ -319,6 +319,9 @@ describe('memory tools through the real agent loop', () => {
     expect(hits[0]?.record).toMatchObject({
       content: 'Eu prefiro respostas diretas em português brasileiro.',
       revision: 1,
+      importance: 0.7,
+      confidence: 0.95,
+      validation: 'reviewed',
     })
     const repeated = await ctx.memoryCandidateReview.markReviewed({
       sessionId: agent.session.header.id,
@@ -727,6 +730,41 @@ describe('memory tools through the real agent loop', () => {
     await ctx.fiber.dispose()
   })
 
+  it('bounds the provider candidate window and rejects an invalid final search limit', async () => {
+    const adapter = new MockAdapter([
+      toolCallResponse('search-default', 'memory_search', { query: 'memória padrão' }),
+      toolCallResponse('search-max', 'memory_search', { query: 'memória máxima', limit: 50 }),
+      toolCallResponse('search-zero', 'memory_search', { query: 'memória zero', limit: 0 }),
+      toolCallResponse('search-fraction', 'memory_search', { query: 'memória fracionária', limit: 1.5 }),
+      toolCallResponse('search-invalid', 'memory_search', { query: 'memória inválida', limit: 51 }),
+      textResponse('Limites verificados.'),
+    ])
+    const { ctx, cwd } = await harness(adapter)
+    const search = vi.spyOn(ctx.memory, 'search')
+    const agent = ctx.agentLoop.create(
+      SessionId('leon-memory-search-limits'),
+      { provider: 'mock', model: 'mock' },
+      { cwd },
+    )
+
+    agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Verifique os limites da busca.' }],
+      source: { kind: 'user' },
+    }))
+    await agent.whenIdle()
+
+    expect(search.mock.calls.map(([request]) => request.limit)).toEqual([24, 50])
+    const results = agent.session.events.filter(event => event.type === 'tool/result')
+    expect(results).toHaveLength(5)
+    expect(results[0]?.data.message.content[0]?.isError).toBe(false)
+    expect(results[1]?.data.message.content[0]?.isError).toBe(false)
+    expect(results[2]?.data.message.content[0]?.isError).toBe(true)
+    expect(results[3]?.data.message.content[0]?.isError).toBe(true)
+    expect(results[4]?.data.message.content[0]?.isError).toBe(true)
+    expect(JSON.stringify(results.slice(2))).toContain('memory result limit must be an integer from 1-50')
+    await ctx.fiber.dispose()
+  })
+
   it('recalls only safe records from the current workspace once per turn without writing', async () => {
     const adapter = new MockAdapter([
       toolCallResponse('search-1', 'memory_search', { query: 'porta do painel local', limit: 8 }),
@@ -822,6 +860,47 @@ describe('memory tools through the real agent loop', () => {
     })
     expect(stored).toHaveLength(2)
     expect(stored.some(hit => hit.record.content.includes('API key'))).toBe(true)
+    await ctx.fiber.dispose()
+  })
+
+  it('skips an oversized memory instead of exceeding or truncating the recall budget', async () => {
+    const adapter = new MockAdapter([textResponse('A memória curta foi recuperada.')])
+    const { ctx, cwd, workspace } = await harness(adapter, {
+      automaticRecall: true,
+      recallLimit: 4,
+      recallMaxChars: 512,
+    })
+    await ctx.memory.create({
+      scope: { workspaceId: workspace.id },
+      content: `limite orçamento contexto ${'LONG_RECORD_SHOULD_BE_SKIPPED '.repeat(30)}`,
+      source: { kind: 'session', sessionId: SessionId('memory-seed-oversized') },
+    })
+    await ctx.memory.create({
+      scope: { workspaceId: workspace.id },
+      content: 'O limite de orçamento de contexto preserva esta memória curta.',
+      source: { kind: 'session', sessionId: SessionId('memory-seed-short') },
+    })
+    const agent = ctx.agentLoop.create(
+      SessionId('leon-memory-recall-budget'),
+      { provider: 'mock', model: 'mock' },
+      { cwd },
+    )
+
+    agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Qual memória fala sobre limite de orçamento de contexto?' }],
+      source: { kind: 'user' },
+    }))
+    await agent.whenIdle()
+
+    const snapshot = agent.session.events.find(event => event.type === 'user/message'
+      && event.data.source.kind === 'plugin'
+      && event.data.source.plugin === 'tool-memory')
+    if (snapshot?.type !== 'user/message') throw new Error('expected one bounded recall snapshot')
+    const block = snapshot.data.content[0]
+    if (block?.type !== 'text') throw new Error('expected text in the recall snapshot')
+    expect(block.text.length).toBeLessThanOrEqual(512)
+    expect(block.text).toContain('preserva esta memória curta')
+    expect(block.text).not.toContain('LONG_RECORD_SHOULD_BE_SKIPPED')
     await ctx.fiber.dispose()
   })
 

@@ -103,6 +103,28 @@ describe('the shipped shell composition (real bundle layers)', () => {
 describe('shipped agent presets gate both shell tools by platform', () => {
   const presetRoot = resolve(fileURLToPath(new URL('../package.json', import.meta.url)), '..', 'config', 'agent-presets')
 
+  it('pins Leon memory ranking and its provider-score rollback switch', () => {
+    const entries: unknown = yaml.load(
+      readFileSync(join(presetRoot, 'leon', 'agent.cordis.yml'), 'utf8'),
+      { schema: entryListSchema },
+    )
+    if (!Array.isArray(entries)) throw new TypeError('preset leon must parse to an entry array')
+    const row = entries.find((entry): entry is Record<string, unknown> => (
+      typeof entry === 'object' && entry !== null && (entry as Record<string, unknown>).id === 'tool-memory'
+    ))
+    if (row === undefined) throw new TypeError('preset leon must mount tool-memory')
+    expect(row.config).toMatchObject({
+      ranking: {
+        enabled: true,
+        halfLifeDays: 30,
+        relevanceWeight: 0.55,
+        recencyWeight: 0.2,
+        importanceWeight: 0.15,
+        validationWeight: 0.1,
+      },
+    })
+  })
+
   it.each(['standard', 'code', 'cordis', 'leon'])('preset %s gates its shell tool rows by platform', (preset) => {
     const entries: unknown = yaml.load(
       readFileSync(join(presetRoot, preset, 'agent.cordis.yml'), 'utf8'),

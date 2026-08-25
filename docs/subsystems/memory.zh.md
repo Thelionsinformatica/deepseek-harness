@@ -17,9 +17,10 @@
 | 类型 | 含义 |
 |---|---|
 | `MemoryId` | 独立于内容和提供方的稳定品牌化标识 |
-| `MemoryRecord` | 规范化内容、作用域、会话来源、时间戳与修订号 |
+| `MemoryRecord` | 规范化内容、作用域、会话来源、可选排序元数据、时间戳与修订号 |
 | `MemoryRef` | 精确的 `{ id, revision }` 比较并设置引用 |
-| `MemoryCreateRequest` | 工作区作用域、内容与来源会话 |
+| `MemoryCreateRequest` | 工作区作用域、内容、来源会话与可选排序元数据 |
+| `MemoryValidation` | 最终排序使用的 `explicit` 或 `reviewed` 确认类别 |
 | `MemorySearchRequest` / `MemorySearchHit` | 有界查询与提供方排序的结果 |
 | `MemoryUpdateRequest` | 针对某个精确修订号的替换内容 |
 | `MemoryForgetRequest` | 删除某个精确修订号 |

@@ -13,9 +13,15 @@ This Consumer gives an agent explicit long-term memory controls over `ctx.memory
 
 ## Activation and policy
 
-The plugin always requires `tools` and `systemPrompt`, then activates its prompt section and four tools only when both `memory` and `workspaceRegistry` are available. A headless profile that does not compose memory therefore receives no broken tool. `automaticRecall` is opt-in and additionally activates only when the agent registry exists; `recallLimit` defaults to 4 and `recallMaxChars` to 4,000. `shadowExtraction` is a separate opt-in and requires a stable `shadowOwnerId`; it never enables durable memory writes.
+The plugin always requires `tools` and `systemPrompt`, then activates its prompt section and four tools only when both `memory` and `workspaceRegistry` are available. A headless profile that does not compose memory therefore receives no broken tool. `automaticRecall` is opt-in and additionally activates only when the agent registry exists; `recallLimit` defaults to 4 and `recallMaxChars` to 4,000. `ranking` defaults to deterministic final reranking and can be disabled to preserve provider-score order. `shadowExtraction` is a separate opt-in and requires a stable `shadowOwnerId`; it never enables durable memory writes.
 
 The model guidance permits writes only for explicit remember intent or a clearly confirmed durable fact. It forbids storing passwords, API keys, access tokens, private keys, and other authentication secrets. The model-facing boundary also rejects credential-like writes and omits credential-like records from explicit and automatic recall. This detector is defense in depth, not a general data-loss-prevention system.
+
+## Final ranking
+
+Explicit search and automatic recall over-fetch at most three times the requested result count, capped at 50 provider hits, then validate exact workspace ownership, timestamps, revision, optional metadata, and content before deduplicating by memory id. The final score weights normalized provider relevance at 55%, exponential recency at 20% with a 30-day half-life, importance at 15%, and confirmation plus confidence at 10%. Legacy records receive neutral importance and confirmation values. Ties resolve by score, update time, then id, so identical inputs produce identical order.
+
+The weights and half-life are deployment configuration. Invalid values fail during plugin activation. `ranking.enabled: false` is the rollback switch: validation, workspace filtering, deduplication, sensitive filtering, result limits, and context limits remain active while the retained hits follow provider-score order.
 
 ## Shadow candidate telemetry
 
@@ -64,7 +70,7 @@ Prefix-stable while service availability and policy text are unchanged. Activati
 
 #### What the model sees
 
-When enabled, the first accepted step of a turn derives a bounded query from human-authored text, searches only the registered current workspace, removes credential-like records, and prepends at most `recallLimit` compact hits. Records that would exceed `recallMaxChars` are skipped rather than truncated. The source is a durable plugin `snapshot` named `memory:recall`. It contains no workspace id or raw path. Missing services, an unregistered workspace, no relevant safe record, cancellation, or provider failure produces no snapshot; provider failure is logged and the turn continues.
+When enabled, the first accepted step of a turn derives a bounded query from human-authored text, searches only the registered current workspace, applies the shared final ranking, removes credential-like records, and prepends at most `recallLimit` compact hits. Records that would exceed `recallMaxChars` are skipped rather than truncated. The source is a durable plugin `snapshot` named `memory:recall`. It contains no workspace id or raw path. Missing services, an unregistered workspace, no relevant safe record, cancellation, or provider failure produces no snapshot; provider failure is logged and the turn continues.
 
 ##### Example snapshot
 
@@ -141,5 +147,5 @@ Append-only; individual calls and results follow the reusable request prefix and
 
 - Controlled writes require an explicit approval plus exact Host configuration; the current UI does not yet edit the per-user or per-workspace allowlists.
 - Global memories and cross-workspace search are intentionally unavailable.
-- Automatic recall is lexical with the local provider; semantic retrieval remains provider work.
+- Semantic candidate retrieval is optional provider work and remains disabled in the shipped Leon composition until LEON-EVAL-PTBR accepts its latency and recall trade-off; final ranking works with either lexical or hybrid provider scores.
 - Credential detection is conservative defense in depth and cannot recognize every possible secret format.

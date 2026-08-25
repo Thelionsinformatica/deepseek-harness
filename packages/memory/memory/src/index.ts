@@ -43,6 +43,7 @@ export type {
   MemoryRecordSchemaVersion,
   MemoryProvider,
   MemoryRecord,
+  MemoryValidation,
   MemoryRef,
   MemoryScope,
   MemorySearchHit,
@@ -135,7 +136,11 @@ export class MemoryRuntime extends Service {
    * @returns the created normalized record after durability.
    */
   async create(request: MemoryCreateRequest, signal?: AbortSignal): Promise<MemoryRecord> {
-    const normalized = { ...request, content: normalizeContent(request.content) }
+    const normalized = {
+      ...request,
+      content: normalizeContent(request.content),
+      ...normalizeRankingMetadata(request),
+    }
     const startedAt = Date.now()
     try {
       const provider = this.resolveProvider()
@@ -398,6 +403,35 @@ function normalizeContent(content: string): string {
     )
   }
   return normalized
+}
+
+/** Validate optional ranking signals at the provider-neutral write boundary. */
+function normalizeRankingMetadata(request: MemoryCreateRequest): Pick<
+  MemoryCreateRequest,
+  'importance' | 'confidence' | 'validation'
+> {
+  const importance = optionalUnitInterval('importance', request.importance)
+  const confidence = optionalUnitInterval('confidence', request.confidence)
+  const validation: unknown = request.validation
+  if (validation !== undefined && validation !== 'explicit' && validation !== 'reviewed') {
+    throw new MemoryError(
+      'memory validation must be "explicit" or "reviewed"',
+      'MEMORY_INVALID_VALIDATION',
+    )
+  }
+  return {
+    ...(importance === undefined ? {} : { importance }),
+    ...(confidence === undefined ? {} : { confidence }),
+    ...(validation === undefined ? {} : { validation }),
+  }
+}
+
+function optionalUnitInterval(name: string, value: number | undefined): number | undefined {
+  if (value === undefined) return undefined
+  if (!Number.isFinite(value) || value < 0 || value > 1) {
+    throw new MemoryError(`memory ${name} must be a finite number from 0-1`, `MEMORY_INVALID_${name.toUpperCase()}`)
+  }
+  return value
 }
 
 /** Validate compare-and-set revisions before a provider sees them. */

@@ -33,6 +33,12 @@ import { evaluateCandidatePolicy, evaluateExtractedCandidatePolicy } from './pol
 import { extractMemoryCandidate } from './extractor.ts'
 import { looksSensitive } from './sensitivity.ts'
 import {
+  rankMemoryHits,
+  resolveRankingConfig,
+  type MemoryRankingConfig,
+  type ResolvedMemoryRankingConfig,
+} from './ranking.ts'
+import {
   type MemoryCandidateOperation,
   type MemoryCandidateRecord,
   type MemoryCandidateId as MemoryCandidateIdType,
@@ -62,6 +68,8 @@ export interface Config {
   shadowExtraction?: boolean
   /** Stable local owner label for extracted candidates; required when shadow extraction is enabled. */
   shadowOwnerId?: string
+  /** Deterministic final ranking shared by explicit search and automatic recall. */
+  ranking?: MemoryRankingConfig
 }
 
 /** Schemastery validation for {@link Config}. */
@@ -71,6 +79,14 @@ export const Config: z<Config> = z.object({
   recallMaxChars: z.number(),
   shadowExtraction: z.boolean(),
   shadowOwnerId: z.string(),
+  ranking: z.object({
+    enabled: z.boolean().default(true),
+    halfLifeDays: z.number().default(30),
+    relevanceWeight: z.number().default(0.55),
+    recencyWeight: z.number().default(0.2),
+    importanceWeight: z.number().default(0.15),
+    validationWeight: z.number().default(0.1),
+  }),
 })
 
 const RECORD_SCHEMA = {
@@ -93,6 +109,7 @@ const RECORD_OUTPUT = {
 /** Register tools only when the host composes both memory and workspace services. */
 export function apply(ctx: Context, config: Config = {}): void {
   const recall = resolveRecallConfig(config)
+  const ranking = resolveRankingConfig(config.ranking)
   const shadowOwnerId = resolveShadowOwnerId(config)
   ctx.inject(['memory', 'workspaceRegistry'], (memoryCtx) => {
     const candidateShadow = new MemoryCandidateShadowStore(memoryCtx)
@@ -125,6 +142,8 @@ export function apply(ctx: Context, config: Config = {}): void {
           scope: owner.scope,
           content: args.content,
           source: { kind: 'session', sessionId: owner.sessionId },
+          confidence: 1,
+          validation: 'explicit',
         }, exec.signal))
       },
       presentCall: args => ({ card: 'generic', title: 'Remember workspace fact', kind: 'other', rawInput: args.content }),
@@ -165,17 +184,25 @@ export function apply(ctx: Context, config: Config = {}): void {
       },
       async execute(args, exec) {
         const owner = await resolveOwner(memoryCtx, exec)
+        const finalLimit = toolResultLimit(args.limit)
         const hits = await memoryCtx.memory.search({
           scope: owner.scope,
           query: args.query,
-          limit: args.limit ?? DEFAULT_LIMIT,
+          limit: providerResultLimit(finalLimit),
         }, exec.signal)
-        const safe = hits.filter(hit => !looksSensitive(hit.record.content))
+        const nonSensitive = hits.filter(hit => !looksSensitive(hit.record.content))
+        const omittedSensitive = hits.length - nonSensitive.length
+        const safe = rankMemoryHits(
+          nonSensitive,
+          owner.scope.workspaceId,
+          finalLimit,
+          ranking,
+        )
         const policyDecision = evaluateCandidatePolicy({
           operation: 'tool_call_memory_search',
           query: args.query,
           total: hits.length,
-          omittedSensitive: hits.length - safe.length,
+          omittedSensitive,
           inserted: safe.length,
           topScore: topScoreOf(safe),
           confidence: confidenceOf(safe.length, hits.length),
@@ -186,7 +213,7 @@ export function apply(ctx: Context, config: Config = {}): void {
             source: 'tool-memory',
             queryLength: args.query.length,
             total: hits.length,
-            omittedSensitive: hits.length - safe.length,
+            omittedSensitive,
             inserted: safe.length,
             topScore: topScoreOf(safe),
             confidence: confidenceOf(safe.length, hits.length),
@@ -202,7 +229,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           source: 'tool-memory',
           queryLength: args.query.length,
           total: hits.length,
-          omittedSensitive: hits.length - safe.length,
+          omittedSensitive,
           inserted: safe.length,
           operation: 'tool_call_memory_search',
           policyDecision: policyDecision.decision,
@@ -270,7 +297,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     }))
 
     if (shadowOwnerId !== undefined) registerShadowExtraction(memoryCtx, candidateShadow, shadowOwnerId)
-    if (recall.enabled) registerAutomaticRecall(memoryCtx, recall, candidateShadow)
+    if (recall.enabled) registerAutomaticRecall(memoryCtx, recall, ranking, candidateShadow)
   })
 }
 
@@ -370,10 +397,27 @@ function resolveRecallConfig(config: Config): RecallConfig {
   return { enabled: config.automaticRecall === true, limit, maxChars }
 }
 
+function toolResultLimit(value: number | undefined): number {
+  const limit = value ?? DEFAULT_LIMIT
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_PROVIDER_RESULTS) {
+    throw new MemoryError(
+      `memory result limit must be an integer from 1-${MAX_PROVIDER_RESULTS}`,
+      'MEMORY_INVALID_LIMIT',
+    )
+  }
+  return limit
+}
+
+/** Over-fetch a bounded provider window so final metadata ranking can reorder without another query. */
+function providerResultLimit(finalLimit: number): number {
+  return Math.min(finalLimit * 3, MAX_PROVIDER_RESULTS)
+}
+
 /** Install automatic recall only when the agent runtime is present in this composition. */
 function registerAutomaticRecall(
   ctx: Context,
   config: RecallConfig,
+  ranking: ResolvedMemoryRankingConfig,
   candidateShadow: MemoryCandidateShadowStore,
 ): void {
   ctx.inject(['agents'], (agentCtx) => {
@@ -393,7 +437,7 @@ function registerAutomaticRecall(
         hits = await agentCtx.memory.search({
           scope,
           query,
-          limit: Math.min(config.limit * 2, MAX_PROVIDER_RESULTS),
+          limit: providerResultLimit(config.limit),
         }, signal)
       } catch (error: unknown) {
         if (!isAborted(signal)) {
@@ -405,13 +449,15 @@ function registerAutomaticRecall(
         return decision
       }
       if (isAborted(signal)) return decision
-      const safe = hits.filter(hit => !looksSensitive(hit.record.content))
-      const inserted = Math.min(safe.length, config.limit)
+      const nonSensitive = hits.filter(hit => !looksSensitive(hit.record.content))
+      const omittedSensitive = hits.length - nonSensitive.length
+      const safe = rankMemoryHits(nonSensitive, scope.workspaceId, config.limit, ranking)
+      const inserted = safe.length
       const policyDecision = evaluateCandidatePolicy({
         operation: 'memory_recall',
         query,
         total: hits.length,
-        omittedSensitive: hits.length - safe.length,
+        omittedSensitive,
         inserted,
         topScore: topScoreOf(safe),
         confidence: confidenceOf(safe.length, hits.length),
@@ -422,7 +468,7 @@ function registerAutomaticRecall(
           source: 'tool-memory',
           queryLength: query.length,
           total: hits.length,
-          omittedSensitive: hits.length - safe.length,
+          omittedSensitive,
           inserted,
           topScore: topScoreOf(safe),
           confidence: confidenceOf(safe.length, hits.length),
@@ -438,14 +484,14 @@ function registerAutomaticRecall(
         source: 'tool-memory',
         queryLength: query.length,
         total: hits.length,
-        omittedSensitive: hits.length - safe.length,
+        omittedSensitive,
         inserted,
         operation: 'memory_recall',
         policyDecision: policyDecision.decision,
         policyReason: policyDecision.reason,
         policyVersion: policyDecision.policyVersion,
       })
-      const text = renderRecall(safe.slice(0, config.limit), config.maxChars)
+      const text = renderRecall(safe, config.maxChars)
       if (text === undefined) return decision
       return {
         kind: 'enter',

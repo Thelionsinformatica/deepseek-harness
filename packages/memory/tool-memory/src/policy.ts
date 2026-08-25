@@ -103,7 +103,8 @@ export function evaluateCandidatePolicy(context: CandidatePolicyContext): Candid
     context.topScore >= 0.72 &&
     context.confidence >= 0.78 &&
     context.inserted <= 3 &&
-    context.total <= 8
+    context.total <= 8 &&
+    context.operation !== 'tool_call_memory_search'
   ) {
     return {
       policyVersion: MEMORY_POLICY_VERSION,

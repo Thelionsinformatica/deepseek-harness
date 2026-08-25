@@ -12,19 +12,11 @@
   - 工具与回忆消费方：[`packages/memory/tool-memory/src/index.ts`](../../packages/memory/tool-memory/src/index.ts)
   - 共享类型：[`packages/memory/memory/src/types.ts`](../../packages/memory/memory/src/types.ts)
 - Leon preset 具有由配置控制的自动记忆：
-  - [`apps/cli/config/agent-presets/leon/agent.cordis.yml`](../../apps/cli/config/agent-presets/leon/agent.cordis.yml) 中的 `automaticRecall: true`、`recallLimit: 4` 与 `recallMaxChars: 4000`
+  - [`apps/cli/config/agent-presets/leon/agent.cordis.yml`](../../apps/cli/config/agent-presets/leon/agent.cordis.yml) 中的 `automaticRecall: true`、`recallLimit: 4`、`recallMaxChars: 4000` 与确定性最终排序权重
 
 ## 2) 当前测试覆盖率
 
-- 记忆范围内的测试文件：
-  - `packages/memory/memory/tests/memory.spec.ts`（7 个用例）
-  - `packages/memory/memory-local/tests/memory-local.spec.ts`（40 个用例）
-  - `packages/memory/memory-local/tests/semantic.spec.ts`（16 个用例）
-  - `packages/memory/tool-memory/tests/extractor.spec.ts`（4 个用例）
-  - `packages/memory/tool-memory/tests/integration.spec.ts`（17 个用例）
-  - `packages/memory/tool-memory/tests/loader-composition.spec.ts`（2 个用例）
-  - `packages/memory/tool-memory/tests/policy.spec.ts`（10 个用例）
-- 当前计数：记忆范围内有 **7 个 `.spec.ts` 文件**和 **96 个运行时用例**，另有 4 个审查面板浏览器组件用例。
+- 当前计数：记忆范围内有 **8 个 `.spec.ts` 文件**和 **112 个运行时用例**，另有 4 个审查面板浏览器组件用例。
 - 已覆盖范围：
   - `memory.spec.ts` 中的提供方选择、内容规范化、遥测与核心验证。
   - 两个 `memory-local` suite 覆盖本地隔离、持久性、修订处理、阻止事件遥测、语义配置边界、词法回退和同义召回。
@@ -49,6 +41,7 @@
   - 面向浏览器的安全 Remote 投影会省略内部 workspace 与所有者标识符。
   - 操作员明确批准后才允许最终受控写入，并由总开关以及精确的用户与 workspace 允许列表共同门控，同时持久记录 `skipped`、`writing`、`stored` 或 `failed` 状态。
   - 通过仅允许回环地址的 Ollama 与 `nomic-embed-text:latest` 提供可选的本地混合语义检索；在 embedding 前执行 workspace 过滤，并带有有界临时缓存、不含正文的指标和确定性词法回退。
+  - 显式搜索与自动回忆共享一个确定性最终排序，包含提供方输出验证、id 去重、可配置的相关性、新近程度、importance 与确认权重、有界的额外候选获取，以及提供方分数回滚。
   - 工作区隔离，以及纠正与遗忘时的修订检查。
 - V2 尚未实现：
   - 用于更改自动写入允许列表的设置 UI；随产品提供的 Host 组合仍默认关闭。

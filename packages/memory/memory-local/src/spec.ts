@@ -4,7 +4,12 @@ import { z } from 'zod'
 import { SessionId, type SessionId as SessionIdentity } from '@deepseek-ai/dsh-session'
 import { WorkspaceId, type WorkspaceId as WorkspaceIdentity } from '@deepseek-ai/dsh-workspace'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
-import { type MemoryRecordSchemaVersion, MEMORY_RECORD_SCHEMA_VERSION, MemoryId } from '@deepseek-ai/dsh-memory'
+import {
+  type MemoryRecordSchemaVersion,
+  type MemoryValidation,
+  MEMORY_RECORD_SCHEMA_VERSION,
+  MemoryId,
+} from '@deepseek-ai/dsh-memory'
 
 /** Stored record shape; the table key carries the public memory id. */
 export interface LocalMemoryRecord {
@@ -12,6 +17,9 @@ export interface LocalMemoryRecord {
   readonly content: string
   readonly revision: number
   readonly source: { readonly kind: 'session'; readonly sessionId: SessionIdentity }
+  readonly importance?: number
+  readonly confidence?: number
+  readonly validation?: MemoryValidation
   readonly schemaVersion: MemoryRecordSchemaVersion
   readonly createdAt: string
   readonly updatedAt: string
@@ -26,6 +34,9 @@ export const localMemoryRecord = z.object({
     kind: z.literal('session'),
     sessionId: z.string().transform(SessionId),
   }),
+  importance: z.number().min(0).max(1).optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  validation: z.enum(['explicit', 'reviewed']).optional(),
   schemaVersion: z.number().int().positive().optional().default(MEMORY_RECORD_SCHEMA_VERSION),
   createdAt: z.string(),
   updatedAt: z.string(),

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -14,7 +14,7 @@ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-test
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import * as ToolMemory from '@deepseek-ai/dsh-tool-memory'
-import MemoryCandidateReview from '../src/review.ts'
+import MemoryCandidateReview, { type Config as MemoryCandidateReviewConfig } from '../src/review.ts'
 import type { MemoryCandidateRecord } from '../src/spec.ts'
 import { memoryCandidateDomainSpec } from '../src/spec.ts'
 import { MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
@@ -27,7 +27,13 @@ afterEach(async () => {
 })
 
 /** Mount the real agent loop, workspace registry, memory seam, local provider, and tool Consumer. */
-async function harness(adapter: MockAdapter, config: ToolMemory.Config = {}) {
+async function harness(
+  adapter: MockAdapter,
+  config: ToolMemory.Config = {},
+  reviewConfig: MemoryCandidateReviewConfig | ((workspaceId: string) => MemoryCandidateReviewConfig) = {
+    reviewedBy: 'test-local-reviewer',
+  },
+) {
   const cwd = await realpath(await mkdtemp(join(tmpdir(), 'dsh-tool-memory-')))
   tempDirs.push(cwd)
   const ctx = new Context()
@@ -47,7 +53,10 @@ async function harness(adapter: MockAdapter, config: ToolMemory.Config = {}) {
   await ctx.plugin(MemoryRuntime, { provider: 'local' })
   await ctx.plugin(MemoryLocal)
   await ctx.plugin(ToolMemory, config)
-  await ctx.plugin(MemoryCandidateReview, { reviewedBy: 'test-local-reviewer' })
+  await ctx.plugin(
+    MemoryCandidateReview,
+    typeof reviewConfig === 'function' ? reviewConfig(workspace.id) : reviewConfig,
+  )
   await ctx.plugin(AgentLoop, { agents: [] })
   ctx.llm.registerAdapter(['mock'], adapter)
   return { ctx, cwd, workspace }
@@ -210,6 +219,350 @@ describe('memory tools through the real agent loop', () => {
       decision: 'reject',
     })
     expect(conflicting).toMatchObject({ ok: false, error: { code: 'memory-candidate-already-reviewed' } })
+    await ctx.fiber.dispose()
+  })
+
+  it('keeps reviewed automatic writes disabled by default and journals the reason', async () => {
+    const adapter = new MockAdapter([textResponse('Preferência observada.')])
+    const { ctx, cwd, workspace } = await harness(adapter, {
+      shadowExtraction: true,
+      shadowOwnerId: 'test-local-owner',
+    })
+    const agent = ctx.agentLoop.create(
+      SessionId('leon-memory-auto-write-disabled'),
+      { provider: 'mock', model: 'mock' },
+      { cwd },
+    )
+
+    agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Leon, lembre que eu prefiro respostas diretas em português brasileiro.' }],
+      source: { kind: 'user' },
+    }))
+    await agent.whenIdle()
+    const [candidate] = readCandidateRows(ctx)
+    if (candidate === undefined) throw new Error('expected one candidate')
+
+    const reviewed = await ctx.memoryCandidateReview.markReviewed({
+      sessionId: agent.session.header.id,
+      id: candidate.id,
+      decision: 'accept',
+    })
+
+    expect(reviewed).toMatchObject({
+      ok: true,
+      value: { item: { autoWrite: { status: 'skipped', reason: 'feature-disabled' } } },
+    })
+    expect(readCandidateRows(ctx)[0]).toMatchObject({
+      autoWrite: { status: 'skipped', reason: 'feature-disabled' },
+    })
+    await expect(ctx.memory.search({
+      scope: { workspaceId: workspace.id },
+      query: 'respostas diretas português brasileiro',
+      limit: 8,
+    })).resolves.toEqual([])
+    await ctx.fiber.dispose()
+  })
+
+  it('stores an approved candidate only for an explicitly enabled user and workspace pair', async () => {
+    const adapter = new MockAdapter([textResponse('Preferência observada.')])
+    const { ctx, cwd, workspace } = await harness(
+      adapter,
+      { shadowExtraction: true, shadowOwnerId: 'test-local-owner' },
+      workspaceId => ({
+        reviewedBy: 'test-local-reviewer',
+        automaticWrite: true,
+        automaticWriteWorkspaceIds: [workspaceId],
+        automaticWriteUserIds: ['test-local-owner'],
+      }),
+    )
+    const agent = ctx.agentLoop.create(
+      SessionId('leon-memory-auto-write-enabled'),
+      { provider: 'mock', model: 'mock' },
+      { cwd },
+    )
+
+    agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Leon, lembre que eu prefiro respostas diretas em português brasileiro.' }],
+      source: { kind: 'user' },
+    }))
+    await agent.whenIdle()
+    const [candidate] = readCandidateRows(ctx)
+    if (candidate === undefined) throw new Error('expected one candidate')
+
+    const reviewed = await ctx.memoryCandidateReview.markReviewed({
+      sessionId: agent.session.header.id,
+      id: candidate.id,
+      decision: 'accept',
+    })
+
+    expect(reviewed).toMatchObject({
+      ok: true,
+      value: { item: {
+        reviewed: true,
+        reviewDecision: 'accept',
+        autoWrite: {
+          status: 'stored',
+          reason: 'approved-and-authorized',
+          revision: 1,
+        },
+      } },
+    })
+    if (!reviewed.ok) throw new Error('expected reviewed automatic write')
+    expect(reviewed.value.item.autoWrite?.memoryId).toEqual(expect.any(String))
+    expect(Date.parse(reviewed.value.item.autoWrite?.recordedAt ?? '')).not.toBeNaN()
+    const hits = await ctx.memory.search({
+      scope: { workspaceId: workspace.id },
+      query: 'respostas diretas português brasileiro',
+      limit: 8,
+    })
+    expect(hits).toHaveLength(1)
+    expect(hits[0]?.record).toMatchObject({
+      content: 'Eu prefiro respostas diretas em português brasileiro.',
+      revision: 1,
+    })
+    const repeated = await ctx.memoryCandidateReview.markReviewed({
+      sessionId: agent.session.header.id,
+      id: candidate.id,
+      decision: 'accept',
+    })
+    expect(repeated).toMatchObject({
+      ok: true,
+      value: { item: { autoWrite: { memoryId: reviewed.value.item.autoWrite?.memoryId } } },
+    })
+    await expect(ctx.memory.search({
+      scope: { workspaceId: workspace.id },
+      query: 'respostas diretas português brasileiro',
+      limit: 8,
+    })).resolves.toHaveLength(1)
+    await ctx.fiber.dispose()
+  })
+
+  it('requires both workspace and user flags before an approved candidate can be stored', async () => {
+    const adapter = new MockAdapter([textResponse('Preferência observada.'), textResponse('Preferência observada.')])
+    const { ctx, cwd, workspace } = await harness(
+      adapter,
+      { shadowExtraction: true, shadowOwnerId: 'test-local-owner' },
+      workspaceId => ({
+        reviewedBy: 'test-local-reviewer',
+        automaticWrite: true,
+        automaticWriteWorkspaceIds: [workspaceId],
+        automaticWriteUserIds: ['another-owner'],
+      }),
+    )
+    const agent = ctx.agentLoop.create(
+      SessionId('leon-memory-auto-write-owner-disabled'),
+      { provider: 'mock', model: 'mock' },
+      { cwd },
+    )
+
+    agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Leon, lembre que eu prefiro respostas curtas.' }],
+      source: { kind: 'user' },
+    }))
+    await agent.whenIdle()
+    const [candidate] = readCandidateRows(ctx)
+    if (candidate === undefined) throw new Error('expected one candidate')
+    await expect(ctx.memoryCandidateReview.markReviewed({
+      sessionId: agent.session.header.id,
+      id: candidate.id,
+      decision: 'accept',
+    })).resolves.toMatchObject({
+      ok: true,
+      value: { item: { autoWrite: { status: 'skipped', reason: 'user-not-enabled' } } },
+    })
+    await expect(ctx.memory.search({
+      scope: { workspaceId: workspace.id },
+      query: 'respostas curtas',
+      limit: 8,
+    })).resolves.toEqual([])
+    await ctx.fiber.dispose()
+  })
+
+  it('does not treat a user flag as authorization for an unlisted workspace', async () => {
+    const adapter = new MockAdapter([textResponse('Preferência observada.')])
+    const { ctx, cwd, workspace } = await harness(
+      adapter,
+      { shadowExtraction: true, shadowOwnerId: 'test-local-owner' },
+      {
+        reviewedBy: 'test-local-reviewer',
+        automaticWrite: true,
+        automaticWriteWorkspaceIds: ['another-workspace'],
+        automaticWriteUserIds: ['test-local-owner'],
+      },
+    )
+    const agent = ctx.agentLoop.create(
+      SessionId('leon-memory-auto-write-workspace-disabled'),
+      { provider: 'mock', model: 'mock' },
+      { cwd },
+    )
+
+    agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Leon, lembre que eu prefiro respostas curtas.' }],
+      source: { kind: 'user' },
+    }))
+    await agent.whenIdle()
+    const [candidate] = readCandidateRows(ctx)
+    if (candidate === undefined) throw new Error('expected one candidate')
+    await expect(ctx.memoryCandidateReview.markReviewed({
+      sessionId: agent.session.header.id,
+      id: candidate.id,
+      decision: 'accept',
+    })).resolves.toMatchObject({
+      ok: true,
+      value: { item: { autoWrite: { status: 'skipped', reason: 'workspace-not-enabled' } } },
+    })
+    await expect(ctx.memory.search({
+      scope: { workspaceId: workspace.id },
+      query: 'respostas curtas',
+      limit: 8,
+    })).resolves.toEqual([])
+    await ctx.fiber.dispose()
+  })
+
+  it('keeps non-store policy decisions in review even when both feature flags are enabled', async () => {
+    const adapter = new MockAdapter([textResponse('Decisão observada.')])
+    const { ctx, cwd, workspace } = await harness(
+      adapter,
+      { shadowExtraction: true, shadowOwnerId: 'test-local-owner' },
+      workspaceId => ({
+        reviewedBy: 'test-local-reviewer',
+        automaticWrite: true,
+        automaticWriteWorkspaceIds: [workspaceId],
+        automaticWriteUserIds: ['test-local-owner'],
+      }),
+    )
+    const agent = ctx.agentLoop.create(
+      SessionId('leon-memory-auto-write-policy-blocked'),
+      { provider: 'mock', model: 'mock' },
+      { cwd },
+    )
+
+    agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'A decisão do projeto é usar Ollama primeiro e Gemini como fallback.' }],
+      source: { kind: 'user' },
+    }))
+    await agent.whenIdle()
+    const [candidate] = readCandidateRows(ctx)
+    if (candidate === undefined) throw new Error('expected one candidate')
+    expect(candidate.policyDecision).toBe('shadow')
+    await expect(ctx.memoryCandidateReview.markReviewed({
+      sessionId: agent.session.header.id,
+      id: candidate.id,
+      decision: 'accept',
+    })).resolves.toMatchObject({
+      ok: true,
+      value: { item: { autoWrite: { status: 'skipped', reason: 'policy-not-eligible' } } },
+    })
+    await expect(ctx.memory.search({
+      scope: { workspaceId: workspace.id },
+      query: 'Ollama Gemini fallback',
+      limit: 8,
+    })).resolves.toEqual([])
+    await ctx.fiber.dispose()
+  })
+
+  it('keeps an approved candidate retryable when the durable provider fails', async () => {
+    const adapter = new MockAdapter([textResponse('Preferência observada.')])
+    const { ctx, cwd } = await harness(
+      adapter,
+      { shadowExtraction: true, shadowOwnerId: 'test-local-owner' },
+      workspaceId => ({
+        reviewedBy: 'test-local-reviewer',
+        automaticWrite: true,
+        automaticWriteWorkspaceIds: [workspaceId],
+        automaticWriteUserIds: ['test-local-owner'],
+      }),
+    )
+    const agent = ctx.agentLoop.create(
+      SessionId('leon-memory-auto-write-provider-failure'),
+      { provider: 'mock', model: 'mock' },
+      { cwd },
+    )
+    agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Leon, lembre que eu prefiro respostas curtas.' }],
+      source: { kind: 'user' },
+    }))
+    await agent.whenIdle()
+    const [candidate] = readCandidateRows(ctx)
+    if (candidate === undefined) throw new Error('expected one candidate')
+    vi.spyOn(ctx.memory, 'create').mockRejectedValueOnce(new Error('provider offline'))
+
+    await expect(ctx.memoryCandidateReview.markReviewed({
+      sessionId: agent.session.header.id,
+      id: candidate.id,
+      decision: 'accept',
+    })).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'memory-candidate-auto-write-failed', id: candidate.id },
+    })
+    expect(readCandidateRows(ctx)[0]).toMatchObject({
+      reviewed: false,
+      autoWrite: { status: 'failed', reason: 'provider-failed' },
+    })
+    await expect(ctx.memoryCandidateReview.markReviewed({
+      sessionId: agent.session.header.id,
+      id: candidate.id,
+      decision: 'accept',
+    })).resolves.toMatchObject({
+      ok: true,
+      value: { item: { reviewed: true, autoWrite: { status: 'stored' } } },
+    })
+    expect(readCandidateRows(ctx)[0]).toMatchObject({
+      reviewed: true,
+      autoWrite: { status: 'stored' },
+    })
+    await ctx.fiber.dispose()
+  })
+
+  it('refuses to repeat an uncertain write journal and cannot create a duplicate memory', async () => {
+    const adapter = new MockAdapter([textResponse('Preferência observada.')])
+    const { ctx, cwd } = await harness(
+      adapter,
+      { shadowExtraction: true, shadowOwnerId: 'test-local-owner' },
+      workspaceId => ({
+        reviewedBy: 'test-local-reviewer',
+        automaticWrite: true,
+        automaticWriteWorkspaceIds: [workspaceId],
+        automaticWriteUserIds: ['test-local-owner'],
+      }),
+    )
+    const agent = ctx.agentLoop.create(
+      SessionId('leon-memory-auto-write-uncertain-journal'),
+      { provider: 'mock', model: 'mock' },
+      { cwd },
+    )
+    agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Leon, lembre que eu prefiro respostas curtas.' }],
+      source: { kind: 'user' },
+    }))
+    await agent.whenIdle()
+    const [candidate] = readCandidateRows(ctx)
+    if (candidate === undefined) throw new Error('expected one candidate')
+    const domain = ctx.storageDomain.get(memoryCandidateDomainSpec.name)
+    if (domain === undefined) throw new Error('expected memory candidate domain')
+    await domain.table('candidates').put(candidate.id, {
+      ...candidate,
+      autoWrite: {
+        status: 'writing',
+        reason: 'write-started',
+        recordedAt: new Date().toISOString(),
+      },
+    })
+    const create = vi.spyOn(ctx.memory, 'create')
+
+    await expect(ctx.memoryCandidateReview.markReviewed({
+      sessionId: agent.session.header.id,
+      id: candidate.id,
+      decision: 'accept',
+    })).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'memory-candidate-auto-write-failed', id: candidate.id },
+    })
+    expect(create).not.toHaveBeenCalled()
+    expect(readCandidateRows(ctx)[0]).toMatchObject({
+      reviewed: false,
+      autoWrite: { status: 'writing', reason: 'write-started' },
+    })
     await ctx.fiber.dispose()
   })
 

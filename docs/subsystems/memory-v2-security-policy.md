@@ -41,7 +41,7 @@ English | [中文](memory-v2-security-policy.zh.md)
 | `confidence >= 0.90`, `importance >= 0.70`, and category is not `fact` | Recommend storage after operator approval | `store` |
 | Other safe candidates | Retain for comparison and review | `shadow` |
 
-The extracted-candidate evaluator receives metadata only, not the candidate text. A `store` result is a recommendation recorded in the local queue; it is not authorization to call `ctx.memory.create()`.
+The extracted-candidate evaluator receives metadata only, not the candidate text. A `store` result is a recommendation recorded in the local queue; by itself it is not authorization to call `ctx.memory.create()`. Final storage additionally requires explicit operator acceptance plus exact user and workspace feature flags.
 
 ## Traces recorded in the project
 
@@ -55,6 +55,7 @@ The extracted-candidate evaluator receives metadata only, not the candidate text
 - No memory event stores recalled or rejected content.
 - The durable `memory_candidate.candidates` domain includes the same fields for review and replay.
 - A safe `message_candidate` may retain its proposed text only in the local review row. Credential-like candidate text is omitted before persistence, and no candidate text is emitted through runtime events.
+- Every reviewed candidate records an `autoWrite` trace with status, reason, and timestamp. Successful writes also retain the resulting memory id and revision; an uncertain `writing` state is never retried automatically.
 
 ### Mandatory confirmation
 
@@ -100,4 +101,4 @@ The extracted-candidate evaluator receives metadata only, not the candidate text
 
 - Deterministic trace and extracted-candidate policy without automatic write effects: implemented.
 - M2-007 operator review is implemented: the browser lists only the workspace authorized by the addressed Session, receives no internal `workspaceId` or `userId`, and records immutable accept or reject decisions with date and deployment-owned reviewer identity.
-- An accepted decision still does not call `ctx.memory.create()`. Final persistence remains a separate future stage requiring another validation gate.
+- M2-008 controlled persistence is implemented but shipped off: only an accepted, non-sensitive `store` candidate whose exact user and workspace are allowlisted can call `ctx.memory.create()`.

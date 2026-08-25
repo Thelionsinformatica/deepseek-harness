@@ -1107,7 +1107,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote(\'markReviewed\') markReviewed(request: MemoryCandidateReviewMarkRequest): Promise<MemoryCandidateReviewMarkResult>',
-        description: 'Record one immutable human decision without writing to `ctx.memory`.',
+        description: 'Record one immutable human decision and optionally persist an authorized candidate.',
         parameters: [{ name: 'request', description: 'session authorization anchor, candidate id, and decision.' }],
         returns: 'the reviewed projection or an explicit business failure.',
       },
@@ -3793,6 +3793,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface MemoryBlockedEvent {\n    readonly schemaVersion: MemoryEventSchemaVersion;\n    readonly reason: \'cross-scope-write\' | \'sensitive-content\' | \'provider-invalid\' | \'provider-unavailable\' | \'provider-missing\' | \'validation\';\n    readonly workspaceId: WorkspaceId;\n    readonly source: \'memory-tool\' | \'memory-runtime\' | \'memory-local\';\n    readonly memoryId?: MemoryId;\n    readonly detail?: string;\n}',
   },
   {
+    name: 'MemoryCandidateAutoWriteFailed',
+    declaration: 'export interface MemoryCandidateAutoWriteFailed {\n    readonly code: \'memory-candidate-auto-write-failed\';\n    readonly id: MemoryCandidateId;\n}',
+  },
+  {
+    name: 'MemoryCandidateAutoWriteReason',
+    declaration: 'export type MemoryCandidateAutoWriteReason = \'feature-disabled\' | \'workspace-not-enabled\' | \'user-not-enabled\' | \'policy-not-eligible\' | \'human-ignored\' | \'human-rejected\' | \'write-started\' | \'approved-and-authorized\' | \'provider-failed\';',
+  },
+  {
+    name: 'MemoryCandidateAutoWriteStatus',
+    declaration: 'export type MemoryCandidateAutoWriteStatus = \'skipped\' | \'writing\' | \'stored\' | \'failed\';',
+  },
+  {
+    name: 'MemoryCandidateAutoWriteTrace',
+    declaration: 'export interface MemoryCandidateAutoWriteTrace {\n    readonly status: MemoryCandidateAutoWriteStatus;\n    readonly reason: MemoryCandidateAutoWriteReason;\n    readonly recordedAt: string;\n    readonly memoryId?: string;\n    readonly revision?: number;\n}',
+  },
+  {
     name: 'MemoryCandidateCategory',
     declaration: 'export type MemoryCandidateCategory = \'preference\' | \'decision\' | \'configuration\' | \'procedure\' | \'fact\';',
   },
@@ -3810,7 +3826,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MemoryCandidateRecord',
-    declaration: 'export interface MemoryCandidateRecord {\n    readonly id: MemoryCandidateId;\n    readonly workspaceId: WorkspaceIdentity;\n    readonly sessionId: SessionIdentity;\n    readonly userId?: string;\n    readonly source: \'tool-memory\';\n    readonly operation: MemoryCandidateOperation;\n    readonly queryLength: number;\n    readonly confidence: number;\n    readonly total: number;\n    readonly omittedSensitive: number;\n    readonly inserted: number;\n    readonly topScore: number;\n    readonly candidateContent?: string;\n    readonly category?: MemoryCandidateCategory;\n    readonly importance?: number;\n    readonly scopeCandidate?: \'workspace\';\n    readonly sensitivity?: MemoryCandidateSensitivity;\n    readonly policyVersion: MemoryPolicyVersion;\n    readonly policyDecision: MemoryPolicyDecision;\n    readonly policyReason: MemoryPolicyReason;\n    readonly reviewed: boolean;\n    readonly reviewDecision?: MemoryCandidateReviewDecision;\n    readonly reviewedAt?: string;\n    readonly reviewedBy?: string;\n    readonly createdAt: string;\n    readonly schemaVersion: MemoryCandidateSchemaVersion;\n}',
+    declaration: 'export interface MemoryCandidateRecord {\n    readonly id: MemoryCandidateId;\n    readonly workspaceId: WorkspaceIdentity;\n    readonly sessionId: SessionIdentity;\n    readonly userId?: string;\n    readonly source: \'tool-memory\';\n    readonly operation: MemoryCandidateOperation;\n    readonly queryLength: number;\n    readonly confidence: number;\n    readonly total: number;\n    readonly omittedSensitive: number;\n    readonly inserted: number;\n    readonly topScore: number;\n    readonly candidateContent?: string;\n    readonly category?: MemoryCandidateCategory;\n    readonly importance?: number;\n    readonly scopeCandidate?: \'workspace\';\n    readonly sensitivity?: MemoryCandidateSensitivity;\n    readonly policyVersion: MemoryPolicyVersion;\n    readonly policyDecision: MemoryPolicyDecision;\n    readonly policyReason: MemoryPolicyReason;\n    readonly reviewed: boolean;\n    readonly reviewDecision?: MemoryCandidateReviewDecision;\n    readonly reviewedAt?: string;\n    readonly reviewedBy?: string;\n    readonly autoWrite?: MemoryCandidateAutoWriteTrace;\n    readonly createdAt: string;\n    readonly schemaVersion: MemoryCandidateSchemaVersion;\n}',
   },
   {
     name: 'MemoryCandidateReviewAlreadyReviewed',
@@ -3822,11 +3838,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MemoryCandidateReviewFailure',
-    declaration: 'export type MemoryCandidateReviewFailure = MemoryCandidateReviewSessionNotFound | MemoryCandidateReviewWorkspaceUnavailable | MemoryCandidateReviewNotFound | MemoryCandidateReviewWorkspaceMismatch | MemoryCandidateReviewAlreadyReviewed | MemoryCandidateReviewNotAcceptable;',
+    declaration: 'export type MemoryCandidateReviewFailure = MemoryCandidateReviewSessionNotFound | MemoryCandidateReviewWorkspaceUnavailable | MemoryCandidateReviewNotFound | MemoryCandidateReviewWorkspaceMismatch | MemoryCandidateReviewAlreadyReviewed | MemoryCandidateReviewNotAcceptable | MemoryCandidateAutoWriteFailed;',
   },
   {
     name: 'MemoryCandidateReviewItem',
-    declaration: 'export interface MemoryCandidateReviewItem {\n    readonly id: MemoryCandidateId;\n    readonly sessionId: SessionId;\n    readonly operation: MemoryCandidateOperation;\n    readonly candidateContent?: string;\n    readonly category?: MemoryCandidateCategory;\n    readonly confidence: number;\n    readonly importance?: number;\n    readonly sensitivity?: MemoryCandidateSensitivity;\n    readonly policyVersion: MemoryPolicyVersion;\n    readonly policyDecision: MemoryPolicyDecision;\n    readonly policyReason: MemoryPolicyReason;\n    readonly reviewed: boolean;\n    readonly reviewDecision?: MemoryCandidateReviewDecision;\n    readonly reviewedAt?: string;\n    readonly reviewedBy?: string;\n    readonly createdAt: string;\n}',
+    declaration: 'export interface MemoryCandidateReviewItem {\n    readonly id: MemoryCandidateId;\n    readonly sessionId: SessionId;\n    readonly operation: MemoryCandidateOperation;\n    readonly candidateContent?: string;\n    readonly category?: MemoryCandidateCategory;\n    readonly confidence: number;\n    readonly importance?: number;\n    readonly sensitivity?: MemoryCandidateSensitivity;\n    readonly policyVersion: MemoryPolicyVersion;\n    readonly policyDecision: MemoryPolicyDecision;\n    readonly policyReason: MemoryPolicyReason;\n    readonly reviewed: boolean;\n    readonly reviewDecision?: MemoryCandidateReviewDecision;\n    readonly reviewedAt?: string;\n    readonly reviewedBy?: string;\n    readonly autoWrite?: MemoryCandidateAutoWriteTrace;\n    readonly createdAt: string;\n}',
   },
   {
     name: 'MemoryCandidateReviewListRequest',

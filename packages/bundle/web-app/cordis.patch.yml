@@ -66,6 +66,12 @@
       name: '@deepseek-ai/dsh-tool-memory/review'
       config:
         reviewedBy: leon-local-operator
+        # Final writes require all three gates: this master switch, the exact
+        # workspace id, and the exact local owner id. The shipped product writes
+        # nothing automatically until the operator opts in deliberately.
+        automaticWrite: false
+        automaticWriteWorkspaceIds: []
+        automaticWriteUserIds: []
 
     - id: message-feedback
       name: '@deepseek-ai/dsh-message-feedback'

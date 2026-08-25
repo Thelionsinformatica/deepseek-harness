@@ -18,14 +18,15 @@ Reverse increments with low risk while preserving existing memory.
 
 - Set `autoRecallMode=off`.
 - Set `automaticRecall=false`.
-- Remove automatic-write and automatic-scope feature flags.
+- Set the `memory-candidate-review` Host config `automaticWrite: false` and empty both exact allowlists.
 - Retain optional manual recall when it already exists.
 
 ### Level 2 — Disable per workspace or user
 
-- Disable Memory V2 with runtime workspace-level flags:
-  - `memory.v2.enabled = false`
-  - `memory.autowrite.enabled = false`
+- Disable controlled writes without deleting review evidence:
+  - `automaticWrite: false`
+  - `automaticWriteWorkspaceIds: []`
+  - `automaticWriteUserIds: []`
 - Retain the explicit fallback through `memory_remember`, `memory_search`, `memory_update`, and `memory_forget`.
 
 ### Level 3 — Operational isolation
@@ -45,3 +46,4 @@ Reverse increments with low risk while preserving existing memory.
 - Do not remove old memory records during the initial rollback.
 - Do not delete the journal without an authorized export or import.
 - Do not change public interfaces without updating the preset and documentation.
+- A candidate left at `autoWrite.status = writing` is an uncertain prior write. Do not retry it automatically; reconcile its local memory and journal records first.

@@ -37,13 +37,16 @@ function candidate(
   }
 }
 
-function mount(items: readonly MemoryCandidateReviewItem[]) {
+function mount(
+  items: readonly MemoryCandidateReviewItem[],
+  reviewResult: Partial<MemoryCandidateReviewItem> = {},
+) {
   const list = vi.fn(() => Promise.resolve({ items, hasMore: false, nextOffset: items.length }))
   const review = vi.fn((
     _sessionId: SessionId,
     id: MemoryCandidateId,
     decision: 'accept' | 'ignore' | 'reject',
-  ) => Promise.resolve(candidate({ id, reviewed: true, reviewDecision: decision })))
+  ) => Promise.resolve(candidate({ id, reviewed: true, reviewDecision: decision, ...reviewResult })))
   render(<MemoryReviewButton {...({
     sessionId,
     list,
@@ -69,7 +72,27 @@ describe('Leon memory candidate review', () => {
       expect(actions.review).toHaveBeenCalledWith(sessionId, candidateId('candidate-one'), 'accept')
     })
     expect(within(dialog).getByText(pt['memory.empty'])).toBeTruthy()
+    expect(within(dialog).getByRole('status').textContent).toBe(pt['memory.feedback.reviewed'])
     expect(within(dialog).getByText(pt['memory.notice'])).toBeTruthy()
+  })
+
+  it('confirms when an approved candidate was stored by the controlled local policy', async () => {
+    const actions = mount([candidate()], {
+      autoWrite: {
+        status: 'stored',
+        reason: 'approved-and-authorized',
+        recordedAt: '2026-08-25T11:01:00.000Z',
+        memoryId: 'memory-one',
+        revision: 1,
+      },
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: pt['memory.open'] }))
+    const dialog = await screen.findByRole('dialog')
+    await waitFor(() => { expect(within(dialog).getByText('O usuário prefere respostas diretas.')).toBeTruthy() })
+    fireEvent.click(within(dialog).getByRole('button', { name: pt['memory.accept'] }))
+    await waitFor(() => { expect(actions.review).toHaveBeenCalledTimes(1) })
+    expect(within(dialog).getByRole('status').textContent).toBe(pt['memory.feedback.stored'])
   })
 
   it('allows rejection but disables approval for blocked or content-free records', async () => {

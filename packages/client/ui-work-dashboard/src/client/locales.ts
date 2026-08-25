@@ -43,7 +43,9 @@ export const pt = {
   'memory.recommendation': 'Recomendação: {value}',
   'memory.confidence': 'Confiança: {value}%',
   'memory.noContent': 'Registro técnico sem conteúdo disponível para aprovação.',
-  'memory.notice': 'A aprovação registra sua decisão. A memória definitiva continua desligada nesta etapa.',
+  'memory.feedback.stored': 'Memória aprovada e gravada localmente neste espaço de trabalho.',
+  'memory.feedback.reviewed': 'Decisão registrada; a gravação automática permaneceu desligada para este contexto.',
+  'memory.notice': 'A gravação automática é desligada por padrão e exige autorização para este usuário e espaço de trabalho.',
   'memory.close': 'Fechar revisão de memória',
 } satisfies Record<string, string>
 
@@ -90,7 +92,9 @@ export const en = {
   'memory.recommendation': 'Recommendation: {value}',
   'memory.confidence': 'Confidence: {value}%',
   'memory.noContent': 'Technical record with no content available for approval.',
-  'memory.notice': 'Approval records your decision. Final memory storage remains disabled at this stage.',
+  'memory.feedback.stored': 'Memory approved and stored locally in this workspace.',
+  'memory.feedback.reviewed': 'Decision recorded; automatic storage remained disabled for this context.',
+  'memory.notice': 'Automatic storage is off by default and requires authorization for this user and workspace.',
   'memory.close': 'Close memory review',
 } satisfies Record<WorkDashboardKey, string>
 
@@ -134,6 +138,8 @@ export const zh = {
   'memory.recommendation': '建议：{value}',
   'memory.confidence': '置信度：{value}%',
   'memory.noContent': '技术记录没有可供批准的内容。',
-  'memory.notice': '批准只会记录你的决定。此阶段仍不会写入最终记忆。',
+  'memory.feedback.stored': '记忆已批准并在此工作区本地存储。',
+  'memory.feedback.reviewed': '决定已记录；此上下文的自动存储仍处于关闭状态。',
+  'memory.notice': '自动存储默认关闭，必须同时获得此用户与工作区的授权。',
   'memory.close': '关闭记忆审查',
 } satisfies Record<WorkDashboardKey, string>

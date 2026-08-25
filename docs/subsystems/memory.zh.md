@@ -122,7 +122,7 @@ async recordCandidate(record: MemoryCandidateRecord): Promise<void>
 @Remote('list') async list(request: MemoryCandidateReviewListRequest): Promise<MemoryCandidateReviewListResult>
 
 /**
- * Record one immutable human decision without writing to `ctx.memory`.
+ * Record one immutable human decision and optionally persist an authorized candidate.
  * @param request - session authorization anchor, candidate id, and decision.
  * @returns the reviewed projection or an explicit business failure.
  */

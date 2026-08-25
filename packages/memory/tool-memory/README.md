@@ -34,7 +34,9 @@ When `shadowExtraction` is enabled, the first step of a turn also inspects only 
 
 The optional Host service exported at `@deepseek-ai/dsh-tool-memory/review` owns the canonical candidate queue and exposes a generated `memoryCandidateReview` Remote. Every browser request uses a Session id as an authorization anchor, resolves that Session to its registered workspace, and lists or mutates only the matching partition. The browser-safe row omits internal `workspaceId` and `userId` fields.
 
-The review operation records an immutable accept or reject decision with timestamp and deployment-owned reviewer identity. Repeating the same decision is idempotent; replacing it with a conflicting decision fails. Blocked, policy-rejected, or content-free rows cannot be accepted. Neither listing nor approval enters model context, and approval deliberately does not call `ctx.memory.create()`.
+The review operation records an immutable accept or reject decision with timestamp and deployment-owned reviewer identity. Repeating the same decision is idempotent; replacing it with a conflicting decision fails. Blocked, policy-rejected, or content-free rows cannot be accepted. Neither listing nor approval enters model context.
+
+Final local writes are off by default. They run only after an explicit `accept` when `automaticWrite` is true, the candidate's exact `workspaceId` is listed in `automaticWriteWorkspaceIds`, its local `userId` is listed in `automaticWriteUserIds`, and the deterministic policy says `store` with non-sensitive content. The service records `writing` before calling `ctx.memory.create()`, then records `stored` with the memory id and revision. Provider failure records `failed` and leaves the candidate retryable; an uncertain prior write is never repeated automatically. A missing gate records a `skipped` reason without writing.
 
 ## Model Experience
 
@@ -137,7 +139,7 @@ Append-only; individual calls and results follow the reusable request prefix and
 
 ## Known Limitations and Deferred Work
 
-- Reviewed conversation candidates still do not write durable memory automatically; the panel records the human decision only.
+- Controlled writes require an explicit approval plus exact Host configuration; the current UI does not yet edit the per-user or per-workspace allowlists.
 - Global memories and cross-workspace search are intentionally unavailable.
 - Automatic recall is lexical with the local provider; semantic retrieval remains provider work.
 - Credential detection is conservative defense in depth and cannot recognize every possible secret format.

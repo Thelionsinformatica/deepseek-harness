@@ -13,6 +13,7 @@ import {
 import {
   MemoryCandidateId,
   type MemoryCandidateCategory,
+  type MemoryCandidateAutoWriteTrace,
   type MemoryCandidateOperation,
   type MemoryCandidateReviewDecision,
   type MemoryCandidateSensitivity,
@@ -57,6 +58,7 @@ export interface MemoryCandidateRecord {
   readonly reviewDecision?: MemoryCandidateReviewDecision
   readonly reviewedAt?: string
   readonly reviewedBy?: string
+  readonly autoWrite?: MemoryCandidateAutoWriteTrace
   readonly createdAt: string
   readonly schemaVersion: MemoryCandidateSchemaVersion
 }
@@ -100,6 +102,23 @@ export const memoryCandidateRecord = z.object({
   reviewDecision: z.enum(['accept', 'ignore', 'reject']).optional(),
   reviewedAt: z.string().optional(),
   reviewedBy: z.string().optional(),
+  autoWrite: z.object({
+    status: z.enum(['skipped', 'writing', 'stored', 'failed']),
+    reason: z.enum([
+      'feature-disabled',
+      'workspace-not-enabled',
+      'user-not-enabled',
+      'policy-not-eligible',
+      'human-ignored',
+      'human-rejected',
+      'write-started',
+      'approved-and-authorized',
+      'provider-failed',
+    ]),
+    recordedAt: z.string(),
+    memoryId: z.string().optional(),
+    revision: z.number().int().positive().optional(),
+  }).optional(),
   createdAt: z.string(),
   schemaVersion: z.number().int().positive().default(MEMORY_CANDIDATE_SCHEMA_VERSION),
 }) as unknown as z.ZodType<MemoryCandidateRecord>

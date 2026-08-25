@@ -33,6 +33,8 @@ type ViewState =
   | { readonly status: 'error' }
   | { readonly status: 'ready'; readonly items: readonly MemoryCandidateReviewItem[] }
 
+type DecisionFeedback = 'reviewed' | 'stored' | null
+
 /** Whether the operator may accept this row for a later storage stage. */
 function canAccept(item: MemoryCandidateReviewItem): boolean {
   return item.candidateContent !== undefined
@@ -54,6 +56,7 @@ export function MemoryReviewButton({
   const [reload, setReload] = useState(0)
   const [busy, setBusy] = useState<MemoryCandidateReviewItem['id'] | null>(null)
   const [state, setState] = useState<ViewState>({ status: 'idle' })
+  const [feedback, setFeedback] = useState<DecisionFeedback>(null)
 
   const load = useCallback((): void => {
     setState({ status: 'loading' })
@@ -72,6 +75,7 @@ export function MemoryReviewButton({
 
   const show = (): void => {
     setOpen(true)
+    setFeedback(null)
     load()
   }
 
@@ -81,7 +85,8 @@ export function MemoryReviewButton({
   ): Promise<void> => {
     setBusy(item.id)
     try {
-      await review(sessionId, item.id, decision)
+      const reviewed = await review(sessionId, item.id, decision)
+      setFeedback(reviewed.autoWrite?.status === 'stored' ? 'stored' : 'reviewed')
       setState(previous => previous.status === 'ready'
         ? { status: 'ready', items: previous.items.filter(candidate => candidate.id !== item.id) }
         : previous)
@@ -151,6 +156,12 @@ export function MemoryReviewButton({
                 </li>
               ))}
             </ul>
+          ) : null}
+          {feedback === 'stored' ? (
+            <p className={css.notice} role="status">{t('memory.feedback.stored')}</p>
+          ) : null}
+          {feedback === 'reviewed' ? (
+            <p className={css.notice} role="status">{t('memory.feedback.reviewed')}</p>
           ) : null}
           <p className={css.notice}>{t('memory.notice')}</p>
         </div>

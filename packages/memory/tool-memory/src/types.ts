@@ -31,6 +31,31 @@ export type MemoryCandidateSensitivity = 'none' | 'review' | 'blocked'
 /** Human review decision captured on a candidate row from operator flow. */
 export type MemoryCandidateReviewDecision = 'accept' | 'ignore' | 'reject'
 
+/** Durable outcome of the controlled write that may follow human acceptance. */
+export type MemoryCandidateAutoWriteStatus = 'skipped' | 'writing' | 'stored' | 'failed'
+
+/** Stable reason behind one controlled automatic-write outcome. */
+export type MemoryCandidateAutoWriteReason =
+  | 'feature-disabled'
+  | 'workspace-not-enabled'
+  | 'user-not-enabled'
+  | 'policy-not-eligible'
+  | 'human-ignored'
+  | 'human-rejected'
+  | 'write-started'
+  | 'approved-and-authorized'
+  | 'provider-failed'
+
+/** Append-only decision trace projected from the candidate review journal. */
+export interface MemoryCandidateAutoWriteTrace {
+  readonly status: MemoryCandidateAutoWriteStatus
+  readonly reason: MemoryCandidateAutoWriteReason
+  readonly recordedAt: string
+  /** Opaque provider-returned id; the browser cannot use it as a write authority. */
+  readonly memoryId?: string
+  readonly revision?: number
+}
+
 /** Stable policy version exposed to the review Client. */
 export type MemoryPolicyVersion = 1
 
@@ -65,6 +90,7 @@ export interface MemoryCandidateReviewItem {
   readonly reviewDecision?: MemoryCandidateReviewDecision
   readonly reviewedAt?: string
   readonly reviewedBy?: string
+  readonly autoWrite?: MemoryCandidateAutoWriteTrace
   readonly createdAt: string
 }
 
@@ -125,6 +151,12 @@ export interface MemoryCandidateReviewNotAcceptable {
   readonly id: MemoryCandidateId
 }
 
+/** The approved write failed and the candidate remains retryable and unreviewed. */
+export interface MemoryCandidateAutoWriteFailed {
+  readonly code: 'memory-candidate-auto-write-failed'
+  readonly id: MemoryCandidateId
+}
+
 /** Failure union for candidate list and review operations. */
 export type MemoryCandidateReviewFailure =
   | MemoryCandidateReviewSessionNotFound
@@ -133,6 +165,7 @@ export type MemoryCandidateReviewFailure =
   | MemoryCandidateReviewWorkspaceMismatch
   | MemoryCandidateReviewAlreadyReviewed
   | MemoryCandidateReviewNotAcceptable
+  | MemoryCandidateAutoWriteFailed
 
 /** Request to record one human review decision. */
 export interface MemoryCandidateReviewMarkRequest {
@@ -140,7 +173,7 @@ export interface MemoryCandidateReviewMarkRequest {
   readonly sessionId: SessionId
   /** Target candidate identity. */
   readonly id: MemoryCandidateId
-  /** Human decision; acceptance still does not write durable memory. */
+  /** Human decision; acceptance writes only when all controlled feature flags authorize it. */
   readonly decision: MemoryCandidateReviewDecision
 }
 

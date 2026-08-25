@@ -20,10 +20,10 @@
   - `packages/memory/memory/tests/memory.spec.ts`（7 个用例）
   - `packages/memory/memory-local/tests/memory-local.spec.ts`（7 个用例）
   - `packages/memory/tool-memory/tests/extractor.spec.ts`（4 个用例）
-  - `packages/memory/tool-memory/tests/integration.spec.ts`（10 个用例）
+  - `packages/memory/tool-memory/tests/integration.spec.ts`（17 个用例）
   - `packages/memory/tool-memory/tests/loader-composition.spec.ts`（1 个用例）
   - `packages/memory/tool-memory/tests/policy.spec.ts`（10 个用例）
-- 当前计数：记忆范围内有 **6 个 `.spec.ts` 文件**和 **39 个运行时用例**，另有 3 个审查面板浏览器组件用例。
+- 当前计数：记忆范围内有 **6 个 `.spec.ts` 文件**和 **46 个运行时用例**，另有 4 个审查面板浏览器组件用例。
 - 已覆盖范围：
   - `memory.spec.ts` 中的提供方选择、内容规范化、遥测与核心验证。
   - `memory-local.spec.ts` 中的本地隔离、持久性、修订处理与阻止事件遥测。
@@ -45,9 +45,10 @@
   - 审查词汇与持久审查字段，包括 `reviewed`、`reviewDecision`、`reviewedAt` 与 `reviewedBy`。
   - 会话头部审查面板只列出当前 workspace 分区，并记录不可变的批准或拒绝决定，不写入最终记忆。
   - 面向浏览器的安全 Remote 投影会省略内部 workspace 与所有者标识符。
+  - 操作员明确批准后才允许最终受控写入，并由总开关以及精确的用户与 workspace 允许列表共同门控，同时持久记录 `skipped`、`writing`、`stored` 或 `failed` 状态。
   - 工作区隔离，以及纠正与遗忘时的修订检查。
 - V2 尚未实现：
-  - 最终验证后，由 `store` 或 `confirm` 决策触发的自动写入。
+  - 用于更改自动写入允许列表的设置 UI；随产品提供的 Host 组合仍默认关闭。
   - 具有有效性与跨时间元数据控制的本地语义检索。
   - 具有去重与每会话 token 计费能力的安全上下文组合器。
   - 可执行的 LEON-EVAL-PTBR 套件。

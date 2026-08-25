@@ -20,10 +20,10 @@ English | [中文](memory-v2-current-state.zh.md)
   - `packages/memory/memory/tests/memory.spec.ts` (7 cases)
   - `packages/memory/memory-local/tests/memory-local.spec.ts` (7 cases)
   - `packages/memory/tool-memory/tests/extractor.spec.ts` (4 cases)
-  - `packages/memory/tool-memory/tests/integration.spec.ts` (10 cases)
+  - `packages/memory/tool-memory/tests/integration.spec.ts` (17 cases)
   - `packages/memory/tool-memory/tests/loader-composition.spec.ts` (1 case)
   - `packages/memory/tool-memory/tests/policy.spec.ts` (10 cases)
-- Current count: **6 `.spec.ts` files** and **39 runtime cases** in memory scope, plus 3 browser-component cases for the review panel.
+- Current count: **6 `.spec.ts` files** and **46 runtime cases** in memory scope, plus 4 browser-component cases for the review panel.
 - Covered ranges:
   - Provider selection, content normalization, telemetry, and central validation in `memory.spec.ts`.
   - Local isolation, durability, revision handling, and blocked-event telemetry in `memory-local.spec.ts`.
@@ -45,9 +45,10 @@ English | [中文](memory-v2-current-state.zh.md)
   - Review vocabulary and durable review fields, including `reviewed`, `reviewDecision`, `reviewedAt`, and `reviewedBy`.
   - A session-header review panel that lists only the current workspace partition and records immutable accept or reject decisions without writing final memory.
   - A browser-safe Remote projection that omits internal workspace and owner identifiers.
+  - Controlled final writes after explicit operator approval, gated by a master switch plus exact user and workspace allowlists, with durable `skipped`, `writing`, `stored`, or `failed` trace state.
   - Workspace isolation and revision checks for correction and forgetting.
 - Not yet implemented for V2:
-  - Automatic writes triggered by `store` or `confirm` decisions after final validation.
+  - A settings UI for changing automatic-write allowlists; the shipped Host composition remains off by default.
   - Local semantic retrieval with validity and cross-temporal metadata controls.
   - A safe context composer with deduplication and per-session token accounting.
   - The executable LEON-EVAL-PTBR suite.

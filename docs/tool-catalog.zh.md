@@ -1254,6 +1254,14 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
     "content": {
       "type": "string",
       "description": "A self-contained fact to remember."
+    },
+    "valid_from": {
+      "type": "string",
+      "description": "Optional ISO timestamp that schedules activation."
+    },
+    "expires_at": {
+      "type": "string",
+      "description": "Optional ISO timestamp that expires active recall."
     }
   },
   "required": [
@@ -1279,6 +1287,10 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
     "limit": {
       "type": "number",
       "description": "Maximum results; defaults to 8."
+    },
+    "include_history": {
+      "type": "boolean",
+      "description": "Include superseded, scheduled, and expired revisions for an explicit audit."
     }
   },
   "required": [

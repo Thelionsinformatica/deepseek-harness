@@ -134,6 +134,8 @@ export function apply(ctx: Context, config: Config = {}): void {
         + 'store credentials or authentication secrets.',
       parameters: {
         content: { type: 'string', required: true, description: 'A self-contained fact to remember.' },
+        valid_from: { type: 'string', description: 'Optional ISO timestamp that schedules activation.' },
+        expires_at: { type: 'string', description: 'Optional ISO timestamp that expires active recall.' },
       },
       output: RECORD_OUTPUT,
       async execute(args, exec) {
@@ -145,6 +147,8 @@ export function apply(ctx: Context, config: Config = {}): void {
           source: { kind: 'session', sessionId: owner.sessionId },
           confidence: 1,
           validation: 'explicit',
+          ...(args.valid_from === undefined ? {} : { validFrom: args.valid_from }),
+          ...(args.expires_at === undefined ? {} : { expiresAt: args.expires_at }),
         }, exec.signal))
       },
       presentCall: args => ({ card: 'generic', title: 'Remember workspace fact', kind: 'other', rawInput: args.content }),
@@ -157,6 +161,10 @@ export function apply(ctx: Context, config: Config = {}): void {
       parameters: {
         query: { type: 'string', required: true, description: 'What to recall.' },
         limit: { type: 'number', description: `Maximum results; defaults to ${DEFAULT_LIMIT}.` },
+        include_history: {
+          type: 'boolean',
+          description: 'Include superseded, scheduled, and expired revisions for an explicit audit.',
+        },
       },
       output: {
         schema: {
@@ -190,6 +198,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           scope: owner.scope,
           query: args.query,
           limit: providerResultLimit(finalLimit),
+          includeHistory: args.include_history === true,
         }, exec.signal)
         const nonSensitive = hits.filter(hit => !looksSensitive(hit.record.content))
         const omittedSensitive = hits.length - nonSensitive.length
@@ -198,6 +207,8 @@ export function apply(ctx: Context, config: Config = {}): void {
           owner.scope.workspaceId,
           finalLimit,
           ranking,
+          Date.now(),
+          args.include_history === true,
         )
         const policyDecision = evaluateCandidatePolicy({
           operation: 'tool_call_memory_search',
@@ -263,6 +274,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           scope: owner.scope,
           ref: memoryRef(args.memory_id, args.revision),
           content: args.content,
+          source: { kind: 'session', sessionId: owner.sessionId },
         }, exec.signal))
       },
       presentCall: args => ({ card: 'generic', title: 'Correct workspace memory', kind: 'other', rawInput: args.memory_id }),

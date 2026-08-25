@@ -70,6 +70,7 @@ export function resolveRankingConfig(input: MemoryRankingConfig = {}): ResolvedM
  * @param limit - Final number of hits exposed to a tool or model snapshot.
  * @param config - Resolved ranking and rollback policy.
  * @param nowMs - Stable clock sample shared by every hit in this ranking call.
+ * @param includeHistory - Retain validated inactive revisions for an explicit audit search.
  * @returns validated, deduplicated, deterministically ordered hits capped to the requested limit.
  */
 export function rankMemoryHits(
@@ -78,12 +79,16 @@ export function rankMemoryHits(
   limit: number,
   config: ResolvedMemoryRankingConfig,
   nowMs = Date.now(),
+  includeHistory = false,
 ): MemorySearchHit[] {
-  const unique = new Map<MemorySearchHit['record']['id'], MemorySearchHit>()
+  const unique = new Map<string, MemorySearchHit>()
   for (const hit of hits) {
-    if (!validHit(hit, workspaceId)) continue
-    const current = unique.get(hit.record.id)
-    if (current === undefined || strongerDuplicate(hit, current)) unique.set(hit.record.id, hit)
+    if (!validHit(hit, workspaceId, nowMs, includeHistory)) continue
+    const key = includeHistory
+      ? `${String(hit.record.id)}\u0000${String(hit.record.revision)}`
+      : String(hit.record.id)
+    const current = unique.get(key)
+    if (current === undefined || strongerDuplicate(hit, current)) unique.set(key, hit)
   }
   const candidates = [...unique.values()]
   if (!config.enabled) return stableOrder(candidates).slice(0, limit)
@@ -107,7 +112,12 @@ export function rankMemoryHits(
   return stableOrder(ranked).slice(0, limit)
 }
 
-function validHit(hit: MemorySearchHit, workspaceId: WorkspaceId): boolean {
+function validHit(
+  hit: MemorySearchHit,
+  workspaceId: WorkspaceId,
+  nowMs: number,
+  includeHistory: boolean,
+): boolean {
   if (!Number.isFinite(hit.score) || hit.record.scope.workspaceId !== workspaceId) return false
   if (hit.record.content.trim().length === 0 || !Number.isSafeInteger(hit.record.revision) || hit.record.revision < 1) {
     return false
@@ -116,7 +126,30 @@ function validHit(hit: MemorySearchHit, workspaceId: WorkspaceId): boolean {
   const updatedAt = Date.parse(hit.record.updatedAt)
   if (!Number.isFinite(createdAt) || !Number.isFinite(updatedAt) || updatedAt < createdAt) return false
   if (!optionalUnitInterval(hit.record.importance) || !optionalUnitInterval(hit.record.confidence)) return false
-  return validValidation(hit.record.validation)
+  if (!validValidation(hit.record.validation) || !validRef(hit.record.supersedes)
+    || !validRef(hit.record.supersededBy)) return false
+  const validFrom = optionalDate(hit.record.validFrom)
+  const validUntil = optionalDate(hit.record.validUntil)
+  const expiresAt = optionalDate(hit.record.expiresAt)
+  if (validFrom === false || validUntil === false || expiresAt === false) return false
+  if (typeof validFrom === 'number' && typeof validUntil === 'number' && validUntil < validFrom) return false
+  if (typeof validFrom === 'number' && typeof expiresAt === 'number' && expiresAt <= validFrom) return false
+  if (includeHistory) return true
+  if (hit.record.supersededBy !== undefined) return false
+  if (typeof validFrom === 'number' && validFrom > nowMs) return false
+  if (typeof validUntil === 'number' && validUntil <= nowMs) return false
+  return typeof expiresAt !== 'number' || expiresAt > nowMs
+}
+
+function optionalDate(value: string | undefined): number | undefined | false {
+  if (value === undefined) return undefined
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? parsed : false
+}
+
+function validRef(ref: MemorySearchHit['record']['supersedes']): boolean {
+  return ref === undefined
+    || (String(ref.id).length > 0 && Number.isSafeInteger(ref.revision) && ref.revision > 0)
 }
 
 function optionalUnitInterval(value: number | undefined): boolean {

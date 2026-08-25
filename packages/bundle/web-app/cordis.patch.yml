@@ -59,6 +59,9 @@
     - id: memory-local
       name: '@deepseek-ai/dsh-memory-local'
       config:
+        # Corrections preserve prior revisions atomically. Set to v1 only as
+        # an emergency rollback that resumes in-place overwrites.
+        historyMode: temporal-v2
         # Hybrid semantic recall is available through local Ollama only. It
         # remains opt-in until LEON-EVAL-PTBR proves the latency/recall tradeoff.
         semanticSearch:

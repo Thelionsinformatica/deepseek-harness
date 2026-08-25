@@ -1248,6 +1248,14 @@ Persist one stable fact, preference, decision, or configuration in the current w
     "content": {
       "type": "string",
       "description": "A self-contained fact to remember."
+    },
+    "valid_from": {
+      "type": "string",
+      "description": "Optional ISO timestamp that schedules activation."
+    },
+    "expires_at": {
+      "type": "string",
+      "description": "Optional ISO timestamp that expires active recall."
     }
   },
   "required": [
@@ -1273,6 +1281,10 @@ Search durable memories belonging only to the current workspace. Use this before
     "limit": {
       "type": "number",
       "description": "Maximum results; defaults to 8."
+    },
+    "include_history": {
+      "type": "boolean",
+      "description": "Include superseded, scheduled, and expired revisions for an explicit audit."
     }
   },
   "required": [

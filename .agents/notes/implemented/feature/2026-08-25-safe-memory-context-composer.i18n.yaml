@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-25-safe-memory-context-composer.md
-2026-08-25-safe-memory-context-composer.md: 8ba47329570bc6db7e244969faa207098029094e
-2026-08-25-safe-memory-context-composer.zh.md: 7b676cc47c56d375e9e77f1386ba1c7ed2a7966f
+2026-08-25-safe-memory-context-composer.md: 9ee7f20ca559cc17a7c3fc986929d0cae8132757
+2026-08-25-safe-memory-context-composer.zh.md: af88b79a5cd341f0af64c0e306610282467703df

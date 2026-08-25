@@ -139,7 +139,310 @@ describe('local durable memory operations', () => {
         revision: 1,
       },
     })
+    await expect(ctx.memory.update({
+      scope: alpha,
+      ref: { id: legacyId, revision: 1 },
+      content: 'Projeto Leon atualizou a memória legado em português.',
+    })).resolves.toMatchObject({ revision: 2, supersedes: { id: legacyId, revision: 1 } })
     await ctx.fiber.dispose()
+  })
+
+  it('preserves contradictory revisions atomically and returns history only on demand', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-25T12:00:00.000Z'))
+    const { ctx, pool } = await harness()
+    const created = await ctx.memory.create({
+      scope: alpha,
+      content: 'O painel Leon usa a porta 3080.',
+      source,
+    })
+    vi.setSystemTime(new Date('2026-08-25T13:00:00.000Z'))
+    const updateSource = { kind: 'session' as const, sessionId: SessionId('session-correction') }
+    const corrected = await ctx.memory.update({
+      scope: alpha,
+      ref: { id: created.id, revision: 1 },
+      content: 'O painel Leon usa a porta 4175.',
+      source: updateSource,
+    })
+
+    expect(corrected).toMatchObject({
+      id: created.id,
+      revision: 2,
+      schemaVersion: 2,
+      source: updateSource,
+      validFrom: '2026-08-25T13:00:00.000Z',
+      supersedes: { id: created.id, revision: 1 },
+    })
+    await expect(ctx.memory.search({ scope: alpha, query: 'painel Leon porta', limit: 8 }))
+      .resolves.toMatchObject([{ record: { revision: 2, content: 'O painel Leon usa a porta 4175.' } }])
+    const history = await ctx.memory.search({
+      scope: alpha,
+      query: 'painel Leon porta',
+      limit: 8,
+      includeHistory: true,
+    })
+    expect(history.map(hit => hit.record.revision)).toEqual([2, 1])
+    expect(history[1]).toMatchObject({ record: {
+      id: created.id,
+      revision: 1,
+      content: 'O painel Leon usa a porta 3080.',
+      validUntil: '2026-08-25T13:00:00.000Z',
+      supersededBy: { id: created.id, revision: 2 },
+    } })
+    const stored = pool.media.get('memory_local')?.tables.get('memories')?.get(String(created.id)) as {
+      history?: unknown[]
+    }
+    expect(stored.history).toHaveLength(1)
+    await ctx.fiber.dispose()
+  })
+
+  it('hides scheduled and expired records from active search while retaining audit history', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-25T12:00:00.000Z'))
+    const { ctx } = await harness()
+    const created = await ctx.memory.create({
+      scope: alpha,
+      content: 'A janela temporária do Leon está ativa.',
+      source,
+      validFrom: '2026-08-25T13:00:00.000Z',
+      expiresAt: '2026-08-25T14:00:00.000Z',
+    })
+
+    await expect(ctx.memory.search({ scope: alpha, query: 'janela temporaria', limit: 8 })).resolves.toEqual([])
+    vi.setSystemTime(new Date('2026-08-25T13:30:00.000Z'))
+    await expect(ctx.memory.search({ scope: alpha, query: 'janela temporaria', limit: 8 }))
+      .resolves.toMatchObject([{ record: {
+        id: created.id,
+        validFrom: '2026-08-25T13:00:00.000Z',
+        expiresAt: '2026-08-25T14:00:00.000Z',
+      } }])
+    vi.setSystemTime(new Date('2026-08-25T14:00:00.000Z'))
+    await expect(ctx.memory.search({ scope: alpha, query: 'janela temporaria', limit: 8 })).resolves.toEqual([])
+    await expect(ctx.memory.search({
+      scope: alpha,
+      query: 'janela temporaria',
+      limit: 8,
+      includeHistory: true,
+    })).resolves.toMatchObject([{ record: { id: created.id, revision: 1 } }])
+    await ctx.fiber.dispose()
+  })
+
+  it('inherits a future expiry and can explicitly clear it in a later preserved revision', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-25T12:00:00.000Z'))
+    const { ctx } = await harness()
+    const created = await ctx.memory.create({
+      scope: alpha,
+      content: 'Política temporal inicial.',
+      source,
+      importance: 0.8,
+      confidence: 0.9,
+      validation: 'reviewed',
+      expiresAt: '2026-08-25T15:00:00.000Z',
+    })
+    vi.setSystemTime(new Date('2026-08-25T13:00:00.000Z'))
+    const second = await ctx.memory.update({
+      scope: alpha,
+      ref: { id: created.id, revision: 1 },
+      content: 'Política temporal corrigida.',
+    })
+    expect(second).toMatchObject({
+      revision: 2,
+      source,
+      importance: 0.8,
+      confidence: 0.9,
+      validation: 'reviewed',
+      expiresAt: '2026-08-25T15:00:00.000Z',
+    })
+    vi.setSystemTime(new Date('2026-08-25T13:00:00.000Z'))
+    const third = await ctx.memory.update({
+      scope: alpha,
+      ref: { id: created.id, revision: 2 },
+      content: 'Política temporal sem expiração.',
+      expiresAt: null,
+    })
+
+    expect(third).toMatchObject({ revision: 3, supersedes: { id: created.id, revision: 2 } })
+    expect(third).not.toHaveProperty('expiresAt')
+    const history = await ctx.memory.search({
+      scope: alpha,
+      query: 'politica temporal',
+      limit: 8,
+      includeHistory: true,
+    })
+    expect(history.map(hit => hit.record.revision)).toEqual([3, 2, 1])
+    expect(history[1]?.record).toMatchObject({
+      expiresAt: '2026-08-25T15:00:00.000Z',
+      supersedes: { id: created.id, revision: 1 },
+      supersededBy: { id: created.id, revision: 3 },
+    })
+    await ctx.fiber.dispose()
+  })
+
+  it('keeps the prior revision active until a scheduled correction becomes valid', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-25T12:00:00.000Z'))
+    const { ctx } = await harness()
+    const created = await ctx.memory.create({
+      scope: alpha,
+      content: 'A janela de manutenção começa hoje.',
+      source,
+    })
+    const scheduled = await ctx.memory.update({
+      scope: alpha,
+      ref: { id: created.id, revision: 1 },
+      content: 'A janela de manutenção começa amanhã.',
+      validFrom: '2026-08-26T12:00:00.000Z',
+    })
+
+    await expect(ctx.memory.search({ scope: alpha, query: 'janela manutencao', limit: 8 }))
+      .resolves.toMatchObject([{ record: { revision: 1, content: 'A janela de manutenção começa hoje.' } }])
+    vi.setSystemTime(new Date('2026-08-26T12:00:00.000Z'))
+    await expect(ctx.memory.search({ scope: alpha, query: 'janela manutencao', limit: 8 }))
+      .resolves.toMatchObject([{ record: {
+        revision: 2,
+        content: 'A janela de manutenção começa amanhã.',
+        validFrom: scheduled.validFrom,
+      } }])
+    await ctx.fiber.dispose()
+  })
+
+  it('filters malformed or inactive temporal rows even when legacy media contains them', async () => {
+    const pool = new MemoryMediaPool()
+    const media = { tables: new Map<string, Map<string, unknown>>(), global: null }
+    const memories = new Map<string, unknown>()
+    const base = {
+      workspaceId: String(alpha.workspaceId),
+      content: 'Estado temporal auditável.',
+      revision: 1,
+      source: { kind: 'session', sessionId: String(source.sessionId) },
+      schemaVersion: 2,
+      createdAt: '2026-08-25T10:00:00.000Z',
+      updatedAt: '2026-08-25T10:00:00.000Z',
+    }
+    memories.set('invalid-date', { ...base, validFrom: 'not-a-date' })
+    memories.set('invalid-validity-order', {
+      ...base,
+      validFrom: '2026-08-25T12:00:00.000Z',
+      validUntil: '2026-08-25T11:00:00.000Z',
+    })
+    memories.set('invalid-expiry-order', {
+      ...base,
+      validFrom: '2026-08-25T12:00:00.000Z',
+      expiresAt: '2026-08-25T12:00:00.000Z',
+    })
+    memories.set('ended-current', {
+      ...base,
+      validFrom: '2026-08-25T10:00:00.000Z',
+      validUntil: '2026-08-25T11:00:00.000Z',
+    })
+    memories.set('superseded-current', {
+      ...base,
+      supersededBy: { id: 'superseded-current', revision: 2 },
+    })
+    memories.set('invalid-ref', { ...base, supersedes: { id: '', revision: 1 } })
+    media.tables.set('memories', memories)
+    pool.media.set('memory_local', media)
+    const { ctx } = await harness(pool)
+
+    await expect(ctx.memory.search({ scope: alpha, query: 'estado temporal', limit: 8 })).resolves.toEqual([])
+    const history = await ctx.memory.search({
+      scope: alpha,
+      query: 'estado temporal',
+      limit: 8,
+      includeHistory: true,
+    })
+    expect(history.map(hit => hit.record.id).sort()).toEqual([
+      MemoryId('ended-current'),
+      MemoryId('superseded-current'),
+    ].sort())
+    await expect(ctx.memory.update({
+      scope: alpha,
+      ref: { id: MemoryId('ended-current'), revision: 1 },
+      content: 'Estado temporal recuperado.',
+    })).resolves.toMatchObject({ revision: 2 })
+    await expect(ctx.memory.update({
+      scope: alpha,
+      ref: { id: MemoryId('superseded-current'), revision: 1 },
+      content: 'Estado substituído recuperado.',
+    })).resolves.toMatchObject({ revision: 2 })
+    await ctx.fiber.dispose()
+  })
+
+  it('rejects an expiry that is already behind the provider-owned activation time', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-25T12:00:00.000Z'))
+    const { ctx } = await harness()
+
+    await expect(ctx.memory.create({
+      scope: alpha,
+      content: 'Expiração passada.',
+      source,
+      expiresAt: '2026-08-25T11:00:00.000Z',
+    })).rejects.toThrow(expect.objectContaining({ code: 'MEMORY_INVALID_TEMPORAL' }))
+    await ctx.fiber.dispose()
+  })
+
+  it('supports a v1 rollback mode that overwrites without adding temporal history', async () => {
+    const { ctx, pool } = await harness(new MemoryMediaPool(), { historyMode: 'v1' })
+    const created = await ctx.memory.create({ scope: alpha, content: 'Valor antigo do rollback.', source })
+    const corrected = await ctx.memory.update({
+      scope: alpha,
+      ref: { id: created.id, revision: 1 },
+      content: 'Valor atual do rollback.',
+    })
+
+    expect(corrected).toMatchObject({ id: created.id, revision: 2 })
+    expect(corrected).not.toHaveProperty('supersedes')
+    await expect(ctx.memory.search({
+      scope: alpha,
+      query: 'rollback',
+      limit: 8,
+      includeHistory: true,
+    })).resolves.toMatchObject([{ record: { revision: 2, content: 'Valor atual do rollback.' } }])
+    const stored = pool.media.get('memory_local')?.tables.get('memories')?.get(String(created.id)) as {
+      history?: unknown[]
+    }
+    expect(stored.history).toBeUndefined()
+    await ctx.fiber.dispose()
+  })
+
+  it('keeps active temporal safety for existing V2 values while v1 write rollback is enabled', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-25T12:00:00.000Z'))
+    const pool = new MemoryMediaPool()
+    const temporal = await harness(pool)
+    const created = await temporal.ctx.memory.create({
+      scope: alpha,
+      content: 'Compatibilidade temporal no rollback.',
+      source,
+      expiresAt: '2026-08-25T13:00:00.000Z',
+    })
+    await temporal.ctx.fiber.dispose()
+    pool.media.get('memory_local')?.tables.get('memories')?.set(MemoryId('malformed-v2'), {
+      workspaceId: String(alpha.workspaceId),
+      content: 'Registro V2 temporalmente inválido.',
+      revision: 1,
+      source: { kind: 'session', sessionId: String(source.sessionId) },
+      schemaVersion: 2,
+      validFrom: 'not-a-date',
+      createdAt: '2026-08-25T12:00:00.000Z',
+      updatedAt: '2026-08-25T12:00:00.000Z',
+    })
+
+    vi.setSystemTime(new Date('2026-08-25T14:00:00.000Z'))
+    const rollback = await harness(pool, { historyMode: 'v1' })
+    await expect(rollback.ctx.memory.search({ scope: alpha, query: 'compatibilidade temporal', limit: 8 }))
+      .resolves.toEqual([])
+    await expect(rollback.ctx.memory.search({
+      scope: alpha,
+      query: 'compatibilidade temporal',
+      limit: 8,
+      includeHistory: true,
+    })).resolves.toMatchObject([{ record: { id: created.id, revision: 1 } }])
+    await expect(rollback.ctx.memory.search({ scope: alpha, query: 'registro V2 invalido', limit: 8 }))
+      .resolves.toEqual([])
+    await rollback.ctx.fiber.dispose()
   })
 
   it('never returns or mutates a record through another workspace scope', async () => {
@@ -222,6 +525,10 @@ describe('local durable memory operations', () => {
     })).rejects.toThrow('injected write failure')
     await expect(ctx.memory.search({ scope: alpha, query: 'original', limit: 8 }))
       .resolves.toMatchObject([{ record: { id: created.id, revision: 1 } }])
+    const stored = pool.media.get('memory_local')?.tables.get('memories')?.get(String(created.id)) as {
+      history?: unknown[]
+    }
+    expect(stored.history).toBeUndefined()
     await ctx.fiber.dispose()
   })
 

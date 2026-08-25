@@ -30,4 +30,4 @@ Unit tests keep a simulated `Ignore previous instructions` value inside the untr
 
 ## Consequences
 
-Leon receives compact and auditable automatic memory context with an explicit instruction-authority boundary. This is structural prompt-injection defense, not a claim that arbitrary stored text can never influence a model. Temporal expiry and supersession remain a separate active-record filter and must be completed before the full M2-012 acceptance gate closes.
+Leon receives compact and auditable automatic memory context with an explicit instruction-authority boundary. This is structural prompt-injection defense, not a claim that arbitrary stored text can never influence a model. Temporal expiry and supersession are now enforced by the provider and final ranking, so inactive revisions cannot reach this automatic context boundary.

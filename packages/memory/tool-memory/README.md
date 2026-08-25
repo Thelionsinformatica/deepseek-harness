@@ -6,8 +6,8 @@ This Consumer gives an agent explicit long-term memory controls over `ctx.memory
 
 | Tool | Purpose |
 |---|---|
-| `memory_remember` | Retain one self-contained stable fact, preference, decision, or configuration |
-| `memory_search` | Retrieve ranked memories from the current workspace only |
+| `memory_remember` | Retain one self-contained stable fact, optionally with activation and expiry timestamps |
+| `memory_search` | Retrieve active ranked memories, or explicitly request audit history, from the current workspace only |
 | `memory_update` | Correct the exact id and revision returned by search |
 | `memory_forget` | Delete the exact id and revision returned by search |
 
@@ -19,7 +19,7 @@ The model guidance permits writes only for explicit remember intent or a clearly
 
 ## Final ranking
 
-Explicit search and automatic recall over-fetch at most three times the requested result count, capped at 50 provider hits, then validate exact workspace ownership, timestamps, revision, optional metadata, and content before deduplicating by memory id. The final score weights normalized provider relevance at 55%, exponential recency at 20% with a 30-day half-life, importance at 15%, and confirmation plus confidence at 10%. Legacy records receive neutral importance and confirmation values. Ties resolve by score, update time, then id, so identical inputs produce identical order.
+Explicit search and automatic recall over-fetch at most three times the requested result count, capped at 50 provider hits, then validate exact workspace ownership, timestamps, temporal lineage, revision, optional metadata, and content. Active retrieval removes scheduled, expired, and superseded records before deduplicating by memory id. Explicit `include_history` audit search retains validated revisions and deduplicates by id plus revision. The final score weights normalized provider relevance at 55%, exponential recency at 20% with a 30-day half-life, importance at 15%, and confirmation plus confidence at 10%. Legacy records receive neutral importance and confirmation values. Ties resolve by score, update time, then id, so identical inputs produce identical order.
 
 The weights and half-life are deployment configuration. Invalid values fail during plugin activation. `ranking.enabled: false` is the rollback switch: validation, workspace filtering, deduplication, sensitive filtering, result limits, and context limits remain active while the retained hits follow provider-score order.
 
@@ -70,7 +70,7 @@ Prefix-stable while service availability and policy text are unchanged. Activati
 
 #### What the model sees
 
-When enabled, the first accepted step of a turn derives a bounded query from human-authored text, searches only the registered current workspace, applies the shared final ranking, removes credential-like records, and prepends at most `recallLimit` compact hits. A final context composer deduplicates ids, rechecks workspace and sensitive-content boundaries, trims values, skips records that would exceed `recallMaxChars`, and labels the envelope as untrusted data with no instruction authority. Every retained value carries its memory id, revision, and source session for local audit, but no workspace id or raw path. The source is a durable plugin `snapshot` named `memory:recall`. Missing services, an unregistered workspace, no relevant safe record, cancellation, or provider failure produces no snapshot; provider failure is logged and the turn continues.
+When enabled, the first accepted step of a turn derives a bounded query from human-authored text, searches only active revisions in the registered current workspace, applies the shared final ranking, removes credential-like records, and prepends at most `recallLimit` compact hits. A final context composer deduplicates ids, rechecks workspace and sensitive-content boundaries, trims values, skips records that would exceed `recallMaxChars`, and labels the envelope as untrusted data with no instruction authority. Every retained value carries its memory id, revision, and source session for local audit, but no workspace id or raw path. The source is a durable plugin `snapshot` named `memory:recall`. Missing services, an unregistered workspace, no relevant safe record, cancellation, or provider failure produces no snapshot; provider failure is logged and the turn continues. Historical revisions are available only through an explicit tool audit and never enter automatic recall.
 
 ##### Example snapshot
 
@@ -147,5 +147,6 @@ Append-only; individual calls and results follow the reusable request prefix and
 
 - Controlled writes require an explicit approval plus exact Host configuration; the current UI does not yet edit the per-user or per-workspace allowlists.
 - Global memories and cross-workspace search are intentionally unavailable.
+- History is returned only when the model explicitly requests `include_history`; active automatic recall never uses it.
 - Semantic candidate retrieval is optional provider work and remains disabled in the shipped Leon composition until LEON-EVAL-PTBR accepts its latency and recall trade-off; final ranking works with either lexical or hybrid provider scores.
 - Credential detection is conservative defense in depth and cannot recognize every possible secret format.

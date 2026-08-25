@@ -12,7 +12,9 @@ English | [中文](README.zh.md)
 
 ## Service API
 
-Every operation carries a stable `WorkspaceId`; raw paths are never ownership keys. `create()` stores normalized content and provenance plus optional zero-to-one importance and confidence signals and an `explicit` or `reviewed` confirmation class. Legacy records may omit those ranking signals. `search()` returns bounded provider-ranked hits, `update()` replaces an exact revision, and `forget()` deletes an exact revision. Corrections and deletion use `{ id, revision }` so stale model context cannot overwrite a newer fact.
+Every operation carries a stable `WorkspaceId`; raw paths are never ownership keys. `create()` stores normalized content and provenance plus optional zero-to-one importance and confidence signals, an `explicit` or `reviewed` confirmation class, and optional activation or expiry timestamps. Legacy records may omit those fields. `search()` returns bounded provider-ranked hits and requests active records by default; `includeHistory` explicitly asks a provider for inactive revisions as well. `update()` corrects an exact revision, and `forget()` deletes an exact revision. Corrections and deletion use `{ id, revision }` so stale model context cannot overwrite a newer fact.
+
+Record schema V2 adds `validFrom`, `validUntil`, `expiresAt`, `supersedes`, and `supersededBy`. The contract still accepts schema V1 records. Preservation and physical layout are provider responsibilities; the shipped local provider preserves revisions atomically instead of silently overwriting them.
 
 Provider selection is execution-time and registration-order independent. An explicit `provider` must be registered and usable. Without one, exactly one usable provider is required; zero or several usable providers fail with a structured `MemoryError` code.
 
@@ -28,4 +30,5 @@ No direct invalidation. A Consumer owns any model-visible schema or prompt chang
 
 - The first contract supports workspace scope only; user-global and organization scopes are deferred until their authority rules are explicit.
 - Imported-provider provenance and embeddings are deferred. The normalized API can add them without changing memory ownership.
+- Historical search is an explicit audit operation. Automatic recall remains active-only and workspace-scoped.
 - The service does not decide what deserves retention. That policy belongs to the Consumer.

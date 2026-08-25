@@ -23,7 +23,7 @@ import {
   type MemoryUpdateRequest,
 } from '@deepseek-ai/dsh-memory'
 import { localMemoryDomainSpec } from './spec.ts'
-import type { LocalMemoryRecord } from './spec.ts'
+import type { LocalMemoryRecord, LocalMemoryVersion } from './spec.ts'
 import {
   OllamaSemanticIndex,
   SemanticSearchError,
@@ -32,8 +32,8 @@ import {
   type SemanticFallbackCode,
 } from './semantic.ts'
 
-export { localMemoryDomainSpec, localMemoryRecord } from './spec.ts'
-export type { LocalMemoryRecord } from './spec.ts'
+export { localMemoryDomainSpec, localMemoryRecord, localMemoryVersion } from './spec.ts'
+export type { LocalMemoryRecord, LocalMemoryVersion } from './spec.ts'
 
 export const name = 'memory-local'
 export const inject = ['memory', 'storageDomain']
@@ -66,11 +66,14 @@ export interface SemanticSearchConfig {
 
 /** Local provider configuration. */
 export interface Config {
+  /** Revision-history policy; `v1` overwrites in place as an emergency rollback. */
+  readonly historyMode?: 'v1' | 'temporal-v2'
   /** Optional semantic layer over the durable lexical provider. */
   readonly semanticSearch?: SemanticSearchConfig
 }
 
 export const Config: z<Config> = z.object({
+  historyMode: z.union(['v1', 'temporal-v2'] as const).default('temporal-v2'),
   semanticSearch: z.object({
     enabled: z.boolean().default(false),
     baseUrl: z.string().default('http://127.0.0.1:11434'),
@@ -133,6 +136,7 @@ export class LocalMemoryProvider implements MemoryProvider {
     private readonly table: KvTable<ReturnType<typeof MemoryId>, LocalMemoryRecord>,
     private readonly emitBlocked?: (event: Omit<MemoryBlockedEvent, 'schemaVersion'>) => void,
     private readonly semantic?: SemanticRuntime,
+    private readonly historyMode: NonNullable<Config['historyMode']> = 'temporal-v2',
   ) {}
 
   available(): boolean {
@@ -144,6 +148,8 @@ export class LocalMemoryProvider implements MemoryProvider {
       assertNotAborted(signal)
       const id = MemoryId(randomUUID())
       const now = new Date().toISOString()
+      const validFrom = request.validFrom ?? now
+      assertExpiryAfter(request.expiresAt, validFrom)
       const stored: LocalMemoryRecord = {
         workspaceId: request.scope.workspaceId,
         content: request.content,
@@ -152,7 +158,11 @@ export class LocalMemoryProvider implements MemoryProvider {
         ...(request.importance === undefined ? {} : { importance: request.importance }),
         ...(request.confidence === undefined ? {} : { confidence: request.confidence }),
         ...(request.validation === undefined ? {} : { validation: request.validation }),
-        schemaVersion: MEMORY_RECORD_SCHEMA_VERSION,
+        schemaVersion: this.historyMode === 'temporal-v2' ? MEMORY_RECORD_SCHEMA_VERSION : 1,
+        ...(this.historyMode === 'temporal-v2' ? { validFrom } : {}),
+        ...(this.historyMode === 'temporal-v2' && request.expiresAt !== undefined
+          ? { expiresAt: request.expiresAt }
+          : {}),
         createdAt: now,
         updatedAt: now,
       }
@@ -163,9 +173,14 @@ export class LocalMemoryProvider implements MemoryProvider {
 
   async search(request: MemorySearchRequest, signal?: AbortSignal): Promise<readonly MemorySearchHit[]> {
     assertNotAborted(signal)
-    const lexical = lexicalSearch(this.table, request)
-    if (this.semantic === undefined) return lexical
-    const candidates = workspaceCandidates(this.table, request, this.semantic.config.maxCandidates)
+    const lexical = lexicalSearch(this.table, request, this.historyMode)
+    if (this.semantic === undefined || request.includeHistory === true) return lexical
+    const candidates = workspaceCandidates(
+      this.table,
+      request,
+      this.semantic.config.maxCandidates,
+      this.historyMode,
+    )
     const startedAt = Date.now()
     try {
       const ranking = await this.semantic.index.rank(request.query, candidates, signal)
@@ -217,12 +232,15 @@ export class LocalMemoryProvider implements MemoryProvider {
             request.ref.revision,
             this.emitBlocked,
           )
-          return {
-            ...current,
-            content: request.content,
-            revision: current.revision + 1,
-            updatedAt: new Date().toISOString(),
+          if (this.historyMode === 'v1') {
+            return {
+              ...current,
+              content: request.content,
+              revision: current.revision + 1,
+              updatedAt: new Date().toISOString(),
+            }
           }
+          return supersede(current, request.ref.id, request)
         })
         this.semantic?.index.invalidate(request.ref.id)
         return project(request.ref.id, updated)
@@ -277,25 +295,29 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       schemaVersion: MEMORY_EVENT_SCHEMA_VERSION,
       source: 'memory-local',
     })
-  }, semantic)
+  }, semantic, config.historyMode ?? 'temporal-v2')
   ctx.effect(() => ctx.memory.registerProvider(provider), 'memory-local.registerProvider')
 }
 
 function lexicalSearch(
   table: KvTable<ReturnType<typeof MemoryId>, LocalMemoryRecord>,
   request: MemorySearchRequest,
+  historyMode: NonNullable<Config['historyMode']>,
 ): MemorySearchHit[] {
   const query = normalize(request.query)
   const terms = uniqueTokens(query)
   const hits: MemorySearchHit[] = []
+  const now = Date.now()
   for (const [id, stored] of table.entries()) {
     if (stored.workspaceId !== request.scope.workspaceId) continue
-    const candidate = normalize(stored.content)
-    const matched = terms.filter(term => candidate.includes(term)).length
-    if (matched === 0 && !candidate.includes(query)) continue
-    const exactPhrase = candidate.includes(query) ? 2 : 0
-    const coverage = terms.length === 0 ? 0 : matched / terms.length
-    hits.push({ record: project(id, stored), score: exactPhrase + coverage })
+    for (const record of searchableRecords(id, stored, request.includeHistory === true, historyMode, now)) {
+      const candidate = normalize(record.content)
+      const matched = terms.filter(term => candidate.includes(term)).length
+      if (matched === 0 && !candidate.includes(query)) continue
+      const exactPhrase = candidate.includes(query) ? 2 : 0
+      const coverage = terms.length === 0 ? 0 : matched / terms.length
+      hits.push({ record, score: exactPhrase + coverage })
+    }
   }
   return sortHits(hits).slice(0, request.limit)
 }
@@ -304,10 +326,13 @@ function workspaceCandidates(
   table: KvTable<ReturnType<typeof MemoryId>, LocalMemoryRecord>,
   request: MemorySearchRequest,
   maxCandidates: number,
+  historyMode: NonNullable<Config['historyMode']>,
 ): SemanticCandidate[] {
+  const now = Date.now()
   return [...table.entries()]
     .filter(([, stored]) => stored.workspaceId === request.scope.workspaceId)
-    .map(([id, stored]) => ({ record: project(id, stored) }))
+    .flatMap(([id, stored]) => searchableRecords(id, stored, false, historyMode, now)
+      .map(record => ({ record })))
     .sort((left, right) => right.record.updatedAt.localeCompare(left.record.updatedAt)
       || String(left.record.id).localeCompare(String(right.record.id)))
     .slice(0, maxCandidates)
@@ -339,7 +364,8 @@ function hybridHits(
 function sortHits(hits: MemorySearchHit[]): MemorySearchHit[] {
   return hits.sort((left, right) => right.score - left.score
     || right.record.updatedAt.localeCompare(left.record.updatedAt)
-    || String(left.record.id).localeCompare(String(right.record.id)))
+    || String(left.record.id).localeCompare(String(right.record.id))
+    || right.record.revision - left.record.revision)
 }
 
 function resolveSemanticConfig(input: SemanticSearchConfig = {}): ResolvedSemanticSearchConfig {
@@ -418,10 +444,129 @@ function semanticFallbackCode(error: unknown): SemanticSearchError['code'] {
   return 'TRANSPORT'
 }
 
+function supersede(
+  current: LocalMemoryRecord,
+  id: ReturnType<typeof MemoryId>,
+  request: MemoryUpdateRequest,
+): LocalMemoryRecord {
+  const now = new Date().toISOString()
+  const validFrom = request.validFrom ?? now
+  const inheritedExpiry = current.expiresAt !== undefined && current.expiresAt > validFrom
+    ? current.expiresAt
+    : undefined
+  const expiresAt = request.expiresAt === null ? undefined : request.expiresAt ?? inheritedExpiry
+  assertExpiryAfter(expiresAt, validFrom)
+  const previousRef = { id, revision: current.revision }
+  const nextRef = { id, revision: current.revision + 1 }
+  const prior: LocalMemoryVersion = {
+    ...versionOf(current),
+    validUntil: validFrom,
+    supersededBy: nextRef,
+  }
+  return {
+    workspaceId: current.workspaceId,
+    content: request.content,
+    revision: nextRef.revision,
+    source: request.source ?? current.source,
+    ...(current.importance === undefined ? {} : { importance: current.importance }),
+    ...(current.confidence === undefined ? {} : { confidence: current.confidence }),
+    ...(current.validation === undefined ? {} : { validation: current.validation }),
+    schemaVersion: MEMORY_RECORD_SCHEMA_VERSION,
+    validFrom,
+    ...(expiresAt === undefined ? {} : { expiresAt }),
+    supersedes: previousRef,
+    createdAt: current.createdAt,
+    updatedAt: now,
+    history: [...(current.history ?? []), prior],
+  }
+}
+
+function versionOf(record: LocalMemoryRecord): LocalMemoryVersion {
+  return {
+    content: record.content,
+    revision: record.revision,
+    source: record.source,
+    ...(record.importance === undefined ? {} : { importance: record.importance }),
+    ...(record.confidence === undefined ? {} : { confidence: record.confidence }),
+    ...(record.validation === undefined ? {} : { validation: record.validation }),
+    schemaVersion: record.schemaVersion,
+    ...(record.validFrom === undefined ? {} : { validFrom: record.validFrom }),
+    ...(record.validUntil === undefined ? {} : { validUntil: record.validUntil }),
+    ...(record.expiresAt === undefined ? {} : { expiresAt: record.expiresAt }),
+    ...(record.supersedes === undefined ? {} : { supersedes: record.supersedes }),
+    ...(record.supersededBy === undefined ? {} : { supersededBy: record.supersededBy }),
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  }
+}
+
+function searchableRecords(
+  id: ReturnType<typeof MemoryId>,
+  stored: LocalMemoryRecord,
+  includeHistory: boolean,
+  historyMode: NonNullable<Config['historyMode']>,
+  now: number,
+): MemoryRecord[] {
+  const current = project(id, stored)
+  if (historyMode === 'v1') {
+    if (!validTemporalRecord(current)) return []
+    return includeHistory || activeAt(current, now) ? [current] : []
+  }
+  const lineage = [
+    current,
+    ...(stored.history ?? []).map(version => projectVersion(id, stored.workspaceId, version)),
+  ]
+  return includeHistory ? lineage.filter(validTemporalRecord) : lineage.filter(record => activeAt(record, now))
+}
+
+function activeAt(record: MemoryRecord, now: number): boolean {
+  if (!validTemporalRecord(record)) return false
+  if (record.supersededBy !== undefined && record.validUntil === undefined) return false
+  if (record.validFrom !== undefined && Date.parse(record.validFrom) > now) return false
+  if (record.validUntil !== undefined && Date.parse(record.validUntil) <= now) return false
+  return record.expiresAt === undefined || Date.parse(record.expiresAt) > now
+}
+
+function validTemporalRecord(record: MemoryRecord): boolean {
+  const validFrom = optionalTime(record.validFrom)
+  const validUntil = optionalTime(record.validUntil)
+  const expiresAt = optionalTime(record.expiresAt)
+  if (validFrom === false || validUntil === false || expiresAt === false) return false
+  if (typeof validFrom === 'number' && typeof validUntil === 'number' && validUntil < validFrom) return false
+  if (typeof validFrom === 'number' && typeof expiresAt === 'number' && expiresAt <= validFrom) return false
+  return validRef(record.supersedes) && validRef(record.supersededBy)
+}
+
+function optionalTime(value: string | undefined): number | undefined | false {
+  if (value === undefined) return undefined
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? parsed : false
+}
+
+function validRef(ref: MemoryRecord['supersedes']): boolean {
+  return ref === undefined || (String(ref.id).length > 0 && Number.isSafeInteger(ref.revision) && ref.revision > 0)
+}
+
+function assertExpiryAfter(expiresAt: string | undefined, validFrom: string): void {
+  if (expiresAt === undefined) return
+  const start = Date.parse(validFrom)
+  const expiry = Date.parse(expiresAt)
+  if (Number.isFinite(start) && Number.isFinite(expiry) && expiry > start) return
+  throw new MemoryError('memory expiresAt must be later than validFrom', 'MEMORY_INVALID_TEMPORAL')
+}
+
 function project(id: ReturnType<typeof MemoryId>, stored: LocalMemoryRecord): MemoryRecord {
+  return projectVersion(id, stored.workspaceId, stored)
+}
+
+function projectVersion(
+  id: ReturnType<typeof MemoryId>,
+  workspaceId: LocalMemoryRecord['workspaceId'],
+  stored: LocalMemoryVersion,
+): MemoryRecord {
   return {
     id,
-    scope: { workspaceId: stored.workspaceId },
+    scope: { workspaceId },
     content: stored.content,
     revision: stored.revision,
     schemaVersion: stored.schemaVersion,
@@ -429,6 +574,11 @@ function project(id: ReturnType<typeof MemoryId>, stored: LocalMemoryRecord): Me
     ...(stored.importance === undefined ? {} : { importance: stored.importance }),
     ...(stored.confidence === undefined ? {} : { confidence: stored.confidence }),
     ...(stored.validation === undefined ? {} : { validation: stored.validation }),
+    ...(stored.validFrom === undefined ? {} : { validFrom: stored.validFrom }),
+    ...(stored.validUntil === undefined ? {} : { validUntil: stored.validUntil }),
+    ...(stored.expiresAt === undefined ? {} : { expiresAt: stored.expiresAt }),
+    ...(stored.supersedes === undefined ? {} : { supersedes: stored.supersedes }),
+    ...(stored.supersededBy === undefined ? {} : { supersededBy: stored.supersededBy }),
     createdAt: stored.createdAt,
     updatedAt: stored.updatedAt,
   }

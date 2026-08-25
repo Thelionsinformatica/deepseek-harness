@@ -766,6 +766,52 @@ describe('memory tools through the real agent loop', () => {
     await ctx.fiber.dispose()
   })
 
+  it('returns superseded revisions only when the model explicitly requests memory history', async () => {
+    const adapter = new MockAdapter([
+      toolCallResponse('search-active', 'memory_search', { query: 'porta painel Leon', limit: 8 }),
+      toolCallResponse('search-history', 'memory_search', {
+        query: 'porta painel Leon',
+        limit: 8,
+        include_history: true,
+      }),
+      textResponse('Histórico auditado.'),
+    ])
+    const { ctx, cwd, workspace } = await harness(adapter)
+    const created = await ctx.memory.create({
+      scope: { workspaceId: workspace.id },
+      content: 'O painel Leon usa a porta 3080.',
+      source: { kind: 'session', sessionId: SessionId('memory-history-old') },
+    })
+    await ctx.memory.update({
+      scope: { workspaceId: workspace.id },
+      ref: { id: created.id, revision: 1 },
+      content: 'O painel Leon usa a porta 4175.',
+      source: { kind: 'session', sessionId: SessionId('memory-history-new') },
+    })
+    const agent = ctx.agentLoop.create(
+      SessionId('leon-memory-explicit-history'),
+      { provider: 'mock', model: 'mock' },
+      { cwd },
+    )
+
+    agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Mostre a configuração atual e depois audite o histórico.' }],
+      source: { kind: 'user' },
+    }))
+    await agent.whenIdle()
+
+    const results = agent.session.events.filter(event => event.type === 'tool/result')
+    const active = JSON.stringify(results[0]?.data.message.content)
+    const history = JSON.stringify(results[1]?.data.message.content)
+    expect(active).toContain('porta 4175')
+    expect(active).not.toContain('porta 3080')
+    expect(history).toContain('porta 4175')
+    expect(history).toContain('porta 3080')
+    expect(history).toContain('\\"revision\\":2')
+    expect(history).toContain('\\"revision\\":1')
+    await ctx.fiber.dispose()
+  })
+
   it('recalls only safe records from the current workspace once per turn without writing', async () => {
     const adapter = new MockAdapter([
       toolCallResponse('search-1', 'memory_search', { query: 'porta do painel local', limit: 8 }),
@@ -909,7 +955,7 @@ describe('memory tools through the real agent loop', () => {
 
     const decision = await agentEvents(ctx, agent).waterfall(
       'agent/pre-step',
-      { agent, messages: [message], turn: 1, step: 1, signal: controller.signal },
+      { messages: [message], turn: 1, step: 1, signal: controller.signal },
       async () => ({ kind: 'enter' as const, messages: [message] }),
     )
 

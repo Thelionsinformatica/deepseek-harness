@@ -157,6 +157,70 @@ describe('MemoryRuntime provider selection', () => {
     })).rejects.toThrow(expect.objectContaining({ code: 'MEMORY_INVALID_VALIDATION' }))
   })
 
+  it('normalizes temporal bounds and forwards an explicit history search', async () => {
+    const ctx = await harness()
+    const create = vi.fn((request: MemoryCreateRequest) => Promise.resolve({
+      ...record(request.content),
+      ...(request.validFrom === undefined ? {} : { validFrom: request.validFrom }),
+      ...(request.expiresAt === undefined ? {} : { expiresAt: request.expiresAt }),
+    }))
+    const search = vi.fn((_request: MemorySearchRequest) => Promise.resolve([]))
+    const update = vi.fn((request: MemoryUpdateRequest) => Promise.resolve(record(request.content)))
+    ctx.memory.registerProvider({ ...provider('local'), create, search, update })
+
+    await ctx.memory.create({
+      scope,
+      content: 'temporária',
+      source,
+      validFrom: '2026-08-25T13:00:00-03:00',
+      expiresAt: '2026-08-25T17:00:00.000Z',
+    })
+    await ctx.memory.search({ scope, query: 'temporária', limit: 8, includeHistory: true })
+    await ctx.memory.update({
+      scope,
+      ref: { id: MemoryId('id'), revision: 1 },
+      content: 'sem expiração',
+      validFrom: '2026-08-25T14:00:00-03:00',
+      expiresAt: null,
+    })
+
+    expect(create.mock.calls[0]?.[0]).toMatchObject({
+      validFrom: '2026-08-25T16:00:00.000Z',
+      expiresAt: '2026-08-25T17:00:00.000Z',
+    })
+    expect(search.mock.calls[0]?.[0]).toMatchObject({ includeHistory: true })
+    expect(update.mock.calls[0]?.[0]).toMatchObject({
+      validFrom: '2026-08-25T17:00:00.000Z',
+      expiresAt: null,
+    })
+    await expect(ctx.memory.create({
+      scope,
+      content: 'inválida',
+      source,
+      validFrom: 'not-a-date',
+    })).rejects.toThrow(expect.objectContaining({ code: 'MEMORY_INVALID_TEMPORAL' }))
+    await expect(ctx.memory.create({
+      scope,
+      content: 'ordem inválida',
+      source,
+      validFrom: '2026-08-25T18:00:00.000Z',
+      expiresAt: '2026-08-25T17:00:00.000Z',
+    })).rejects.toThrow(expect.objectContaining({ code: 'MEMORY_INVALID_TEMPORAL' }))
+    await expect(ctx.memory.update({
+      scope,
+      ref: { id: MemoryId('id'), revision: 1 },
+      content: 'data inválida',
+      expiresAt: 'not-a-date',
+    })).rejects.toThrow(expect.objectContaining({ code: 'MEMORY_INVALID_TEMPORAL' }))
+    await expect(ctx.memory.update({
+      scope,
+      ref: { id: MemoryId('id'), revision: 1 },
+      content: 'ordem inválida',
+      validFrom: '2026-08-25T18:00:00.000Z',
+      expiresAt: '2026-08-25T17:00:00.000Z',
+    })).rejects.toThrow(expect.objectContaining({ code: 'MEMORY_INVALID_TEMPORAL' }))
+  })
+
   it('emits runtime memory operation events when telemetry is enabled', async () => {
     const ctx = await harness()
     const events: MemoryOperationEvent[] = []

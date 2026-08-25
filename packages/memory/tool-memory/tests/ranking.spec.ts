@@ -115,6 +115,44 @@ describe('deterministic final memory ranking', () => {
     expect(ranked).toMatchObject([{ record: { id: MemoryId('valid') } }])
   })
 
+  it('keeps only temporally active records by default and permits validated history on demand', () => {
+    const candidates = [
+      hit('active', 1, {
+        validFrom: '2026-08-25T11:00:00.000Z',
+        validUntil: '2026-08-25T13:00:00.000Z',
+      }),
+      hit('scheduled', 1, { validFrom: '2026-08-25T13:00:00.000Z' }),
+      hit('expired', 1, { expiresAt: '2026-08-25T12:00:00.000Z' }),
+      hit('ended', 1, {
+        validFrom: '2026-08-25T10:00:00.000Z',
+        validUntil: '2026-08-25T12:00:00.000Z',
+      }),
+      hit('superseded', 1, { supersededBy: { id: MemoryId('superseded'), revision: 2 } }),
+      hit('bad-temporal', 1, { expiresAt: 'not-a-date' }),
+      hit('bad-window', 1, {
+        validFrom: '2026-08-25T11:00:00.000Z',
+        validUntil: '2026-08-25T10:00:00.000Z',
+      }),
+      hit('bad-expiry-order', 1, {
+        validFrom: '2026-08-25T11:00:00.000Z',
+        expiresAt: '2026-08-25T11:00:00.000Z',
+      }),
+      hit('bad-link', 1, { supersedes: { id: MemoryId('bad-link'), revision: 0 } }),
+    ]
+
+    const active = rankMemoryHits(candidates, workspaceId, 10, resolveRankingConfig(), now)
+    const history = rankMemoryHits(candidates, workspaceId, 10, resolveRankingConfig(), now, true)
+
+    expect(active.map(item => item.record.id)).toEqual([MemoryId('active')])
+    expect(history.map(item => item.record.id).sort()).toEqual([
+      MemoryId('active'),
+      MemoryId('ended'),
+      MemoryId('expired'),
+      MemoryId('scheduled'),
+      MemoryId('superseded'),
+    ].sort())
+  })
+
   it('can roll back to deterministic provider-score ordering', () => {
     const ranked = rankMemoryHits([
       hit('b', 1, { updatedAt: '2026-08-24T12:00:00.000Z', importance: 1, validation: 'reviewed' }),

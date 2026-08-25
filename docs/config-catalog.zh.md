@@ -1631,6 +1631,8 @@ export interface MemoryRuntimeConfig {
 ```ts config-catalog
 /** Local provider configuration. */
 export interface Config {
+  /** Revision-history policy; `v1` overwrites in place as an emergency rollback. */
+  readonly historyMode?: 'v1' | 'temporal-v2'
   /** Optional semantic layer over the durable lexical provider. */
   readonly semanticSearch?: SemanticSearchConfig
 }
@@ -2984,7 +2986,7 @@ export interface MemoryRankingConfig {
 }
 ```
 
-来源：[`packages/memory/tool-memory/src/index.ts:60`](../packages/memory/tool-memory/src/index.ts)
+来源：[`packages/memory/tool-memory/src/index.ts:61`](../packages/memory/tool-memory/src/index.ts)
 
 <a id="deepseek-aidsh-tool-pwsh"></a>
 

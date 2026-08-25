@@ -3910,7 +3910,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MemoryCreateRequest',
-    declaration: 'export interface MemoryCreateRequest {\n    readonly scope: MemoryScope;\n    readonly content: string;\n    readonly source: MemorySource;\n    readonly importance?: number;\n    readonly confidence?: number;\n    readonly validation?: MemoryValidation;\n}',
+    declaration: 'export interface MemoryCreateRequest {\n    readonly scope: MemoryScope;\n    readonly content: string;\n    readonly source: MemorySource;\n    readonly importance?: number;\n    readonly confidence?: number;\n    readonly validation?: MemoryValidation;\n    readonly validFrom?: string;\n    readonly expiresAt?: string;\n}',
   },
   {
     name: 'MemoryEventSchemaVersion',
@@ -3934,11 +3934,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MemoryRecord',
-    declaration: 'export interface MemoryRecord {\n    readonly id: MemoryId;\n    readonly scope: MemoryScope;\n    readonly content: string;\n    readonly revision: number;\n    readonly source: MemorySource;\n    readonly importance?: number;\n    readonly confidence?: number;\n    readonly validation?: MemoryValidation;\n    readonly schemaVersion?: MemoryRecordSchemaVersion;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+    declaration: 'export interface MemoryRecord {\n    readonly id: MemoryId;\n    readonly scope: MemoryScope;\n    readonly content: string;\n    readonly revision: number;\n    readonly source: MemorySource;\n    readonly importance?: number;\n    readonly confidence?: number;\n    readonly validation?: MemoryValidation;\n    readonly schemaVersion?: MemoryRecordSchemaVersion;\n    readonly validFrom?: string;\n    readonly validUntil?: string;\n    readonly expiresAt?: string;\n    readonly supersedes?: MemoryRef;\n    readonly supersededBy?: MemoryRef;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
     name: 'MemoryRecordSchemaVersion',
-    declaration: 'export type MemoryRecordSchemaVersion = typeof MEMORY_RECORD_SCHEMA_VERSION;',
+    declaration: 'export type MemoryRecordSchemaVersion = 1 | typeof MEMORY_RECORD_SCHEMA_VERSION;',
   },
   {
     name: 'MemoryRef',
@@ -3954,7 +3954,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MemorySearchRequest',
-    declaration: 'export interface MemorySearchRequest {\n    readonly scope: MemoryScope;\n    readonly query: string;\n    readonly limit: number;\n}',
+    declaration: 'export interface MemorySearchRequest {\n    readonly scope: MemoryScope;\n    readonly query: string;\n    readonly limit: number;\n    readonly includeHistory?: boolean;\n}',
   },
   {
     name: 'MemorySource',
@@ -3962,7 +3962,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MemoryUpdateRequest',
-    declaration: 'export interface MemoryUpdateRequest {\n    readonly scope: MemoryScope;\n    readonly ref: MemoryRef;\n    readonly content: string;\n}',
+    declaration: 'export interface MemoryUpdateRequest {\n    readonly scope: MemoryScope;\n    readonly ref: MemoryRef;\n    readonly content: string;\n    readonly source?: MemorySource;\n    readonly validFrom?: string;\n    readonly expiresAt?: string | null;\n}',
   },
   {
     name: 'MemoryValidation',

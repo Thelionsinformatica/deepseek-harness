@@ -51,6 +51,16 @@ export interface MemoryRecord {
   readonly validation?: MemoryValidation
   /** Persistent record schema version; legacy records default to 1. */
   readonly schemaVersion?: MemoryRecordSchemaVersion
+  /** Inclusive instant from which this revision may participate in active search. */
+  readonly validFrom?: string
+  /** Exclusive instant at which this revision was replaced by another revision. */
+  readonly validUntil?: string
+  /** Exclusive deployment-owned expiry instant; omitted means no scheduled expiry. */
+  readonly expiresAt?: string
+  /** Previous revision replaced by this record, when the lineage has been corrected. */
+  readonly supersedes?: MemoryRef
+  /** Newer revision that replaced this historical record. */
+  readonly supersededBy?: MemoryRef
   readonly createdAt: string
   readonly updatedAt: string
 }
@@ -96,6 +106,10 @@ export interface MemoryCreateRequest {
   readonly confidence?: number
   /** Optional confirmation class used by final retrieval ranking. */
   readonly validation?: MemoryValidation
+  /** Optional ISO timestamp that schedules when the memory becomes active. */
+  readonly validFrom?: string
+  /** Optional ISO timestamp that expires the memory from active search. */
+  readonly expiresAt?: string
 }
 
 /** Request to retrieve relevant memories inside one workspace. */
@@ -103,6 +117,8 @@ export interface MemorySearchRequest {
   readonly scope: MemoryScope
   readonly query: string
   readonly limit: number
+  /** Include superseded, scheduled, and expired revisions for audit; false returns active records only. */
+  readonly includeHistory?: boolean
 }
 
 /** One provider-ranked search result. Higher scores are more relevant. */
@@ -116,6 +132,12 @@ export interface MemoryUpdateRequest {
   readonly scope: MemoryScope
   readonly ref: MemoryRef
   readonly content: string
+  /** Optional provenance for the correcting session; legacy callers retain the prior source. */
+  readonly source?: MemorySource
+  /** Optional ISO timestamp that schedules activation of the corrected revision. */
+  readonly validFrom?: string
+  /** Optional replacement expiry; null removes a previous expiry and undefined preserves it. */
+  readonly expiresAt?: string | null
 }
 
 /** Request to forget one exact memory revision. */
@@ -127,12 +149,12 @@ export interface MemoryForgetRequest {
 /** Constant schema version for event payloads emitted by memory observability. */
 export const MEMORY_EVENT_SCHEMA_VERSION = 3 as const
 /** Constant schema version for durable memory records. */
-export const MEMORY_RECORD_SCHEMA_VERSION = 1 as const
+export const MEMORY_RECORD_SCHEMA_VERSION = 2 as const
 
 /** Stable event payload schema version for memory observability. */
 export type MemoryEventSchemaVersion = typeof MEMORY_EVENT_SCHEMA_VERSION
 /** Stable payload schema version for durable memory records. */
-export type MemoryRecordSchemaVersion = typeof MEMORY_RECORD_SCHEMA_VERSION
+export type MemoryRecordSchemaVersion = 1 | typeof MEMORY_RECORD_SCHEMA_VERSION
 
 /** Canonical shape emitted after each decision over memory candidate generation. */
 export interface MemoryCandidateEvent {

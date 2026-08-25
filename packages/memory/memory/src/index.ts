@@ -140,6 +140,7 @@ export class MemoryRuntime extends Service {
       ...request,
       content: normalizeContent(request.content),
       ...normalizeRankingMetadata(request),
+      ...normalizeCreateTemporal(request),
     }
     const startedAt = Date.now()
     try {
@@ -236,7 +237,11 @@ export class MemoryRuntime extends Service {
    */
   async update(request: MemoryUpdateRequest, signal?: AbortSignal): Promise<MemoryRecord> {
     validateRef(request.ref.revision)
-    const normalized = { ...request, content: normalizeContent(request.content) }
+    const normalized = {
+      ...request,
+      content: normalizeContent(request.content),
+      ...normalizeUpdateTemporal(request),
+    }
     const provider = this.resolveProvider({
       scope: request.scope,
       action: 'write',
@@ -432,6 +437,50 @@ function optionalUnitInterval(name: string, value: number | undefined): number |
     throw new MemoryError(`memory ${name} must be a finite number from 0-1`, `MEMORY_INVALID_${name.toUpperCase()}`)
   }
   return value
+}
+
+/** Normalize optional creation validity without assigning a provider-owned clock value. */
+function normalizeCreateTemporal(request: MemoryCreateRequest): Pick<
+  MemoryCreateRequest,
+  'validFrom' | 'expiresAt'
+> {
+  const validFrom = optionalTimestamp('validFrom', request.validFrom)
+  const expiresAt = optionalTimestamp('expiresAt', request.expiresAt)
+  assertTemporalOrder(validFrom, expiresAt)
+  return {
+    ...(validFrom === undefined ? {} : { validFrom }),
+    ...(expiresAt === undefined ? {} : { expiresAt }),
+  }
+}
+
+/** Normalize optional correction validity while retaining null as the explicit expiry-removal signal. */
+function normalizeUpdateTemporal(request: MemoryUpdateRequest): Pick<
+  MemoryUpdateRequest,
+  'validFrom' | 'expiresAt'
+> {
+  const validFrom = optionalTimestamp('validFrom', request.validFrom)
+  const expiresAt = request.expiresAt === null
+    ? null
+    : optionalTimestamp('expiresAt', request.expiresAt)
+  if (expiresAt !== null) assertTemporalOrder(validFrom, expiresAt)
+  return {
+    ...(validFrom === undefined ? {} : { validFrom }),
+    ...(expiresAt === undefined ? {} : { expiresAt }),
+  }
+}
+
+function optionalTimestamp(name: string, value: string | undefined): string | undefined {
+  if (value === undefined) return undefined
+  const parsed = Date.parse(value)
+  if (!Number.isFinite(parsed)) {
+    throw new MemoryError(`memory ${name} must be a valid ISO timestamp`, 'MEMORY_INVALID_TEMPORAL')
+  }
+  return new Date(parsed).toISOString()
+}
+
+function assertTemporalOrder(validFrom: string | undefined, expiresAt: string | undefined): void {
+  if (validFrom === undefined || expiresAt === undefined || expiresAt > validFrom) return
+  throw new MemoryError('memory expiresAt must be later than validFrom', 'MEMORY_INVALID_TEMPORAL')
 }
 
 /** Validate compare-and-set revisions before a provider sees them. */

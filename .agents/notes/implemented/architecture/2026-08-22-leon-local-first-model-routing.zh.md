@@ -22,7 +22,7 @@ Models 设置界面首先呈现活跃且无需引用的路由，然后是其他�
 
 Web 网关会在两个本地角色之间进行确定性的会话级自适应路由。空白自动会话会在 `session.models` 报告当前状态前以最低推理强度预置 Qwen，因此新会话会明确从高效本地层级开始。简短且独立的提示词保持 Qwen 并关闭推理；较长、多行、代码、技术及依赖上下文的继续请求保持 Qwen 并把推理强度提升到 medium。图片、超大结构化提示词、明确的高复杂度标记及自动目标轮次使用 high 强度的 Ornith。Ollama 模型配置会把 `off` 明确映射到 OpenAI 兼容的 `reasoning_effort: none`，因为省略该参数可能让本地模型默认继续思考。模型选择器公开 `Leon 自动`，并在旁边显示实际选中的路由和推理强度。显式选择模型或推理强度会在该会话中停用自动化，用户可以从同一菜单重新启用。提示词只能在部署策略已命名的路由之间选择，不能自行引入 DeepSeek 或其他提供方。
 
-外部升级由失败触发并按顺序进行。第一个不可用的 Ollama 请求切换到回环 `omniroute/auto`；若 OmniRoute 或它选择的上游不可用，Leon 会绕过网关，直接切换到 `google/gemini-3.6-flash`，再切换到 `openai/gpt-5.6-terra`。每次合格切换都会追加 `llm/failover`，成为同一请求的活动路由，并持续显示在聊天中。OmniRoute 负责提供方健康、上游选择、配额及自身用量账本，但不持有 Leon 的 persona 或本地任务分类。直接路由仍通过凭据引用配置，没有用户提供的密钥就不会生效。Web 成本投影把两个本地模型定价为零，并记录当前 Gemini／OpenAI 直接调用的 token 价格快照；OmniRoute 的可变路由成本保留在它自己的权威账本中，而不是被猜成固定模型价格。
+外部升级由失败触发并按顺序进行。第一个不可用的 Ollama 请求切换到回环 `omniroute/auto`；若 OmniRoute 或它选择的上游不可用，Leon 会绕过网关，直接切换到 `google/gemini-3.6-flash`，再切换到 `openai/gpt-5.6-terra`。每次合格切换都会追加 `llm/failover`，成为同一请求的活动路由，并持续显示在聊天中。在已配置远程路由时启用 Leon 自动模式，即表示部署所有者授权该回退，包括带图片的会话；要求更严格的部署可将替代路由标记为外部驻留，以拒绝图片的自动外传。OmniRoute 负责提供方健康、上游选择、配额及自身用量账本，但不持有 Leon 的 persona 或本地任务分类。直接路由仍通过凭据引用配置，没有用户提供的密钥就不会生效。Web 成本投影把两个本地模型定价为零，并记录当前 Gemini／OpenAI 直接调用的 token 价格快照；OmniRoute 的可变路由成本保留在它自己的权威账本中，而不是被猜成固定模型价格。
 
 OpenCode 是下属执行器，而不是另一个 Leon persona。在 Windows 上，基础组合可以通过 `dsh-subagent-acp` 挂载 OpenCode 的官方 ACP 服务器，并将其公开为显式的 `opencode` 单次委派工具。两个提供方行会保持禁用，直到启动器验证 `E:\computador\.leon` 下由安装程序持有的可执行文件与配置并设置 `LEON_OPENCODE_ENABLED=1`；因此缺失的可选运行时不会阻塞基础组合。子进程只接收独立任务与所选 workspace 路径，以 Ornith 作为主模型、Qwen 作为小模型，并只返回最终文本。其配置启用项目内编辑、shell、LSP、快照与压缩，同时拒绝外部目录访问、嵌套 Agent、commit、push、hard reset 与递归删除。Leon 仍负责判断何时适合委派，并验证返回的工作。
 

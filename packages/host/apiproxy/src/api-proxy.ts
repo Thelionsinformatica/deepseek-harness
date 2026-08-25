@@ -1091,10 +1091,33 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   const pendingApprovals = new Map<RpcId, PendingApproval>()
   const muxQueues = new Set<FrameQueue<RpcRequest<MuxFrame>>>()
   const imageAdmissionChains = new WeakMap<Agent, Promise<void>>()
+  /**
+   * Route decisions for ordinary messages admitted while another turn is
+   * still converging. Applying them at admission would change the active
+   * turn's later tool steps; applying them when the inbox claims the exact
+   * message makes the next turn use its own decision from the first assembly.
+   */
+  const pendingAdaptiveSelections = new WeakMap<Agent, Map<string, ModelSelection>>()
 
   if (defaults.adaptiveRoutingShadow !== undefined) {
     installAdaptiveRoutingShadow(ctx, defaults.adaptiveRoutingShadow, automaticFor)
   }
+
+  ctx.on('agent/inbox/claimed', ({ agent, message }) => {
+    const pending = pendingAdaptiveSelections.get(agent)
+    const resolved = pending?.get(message.id)
+    if (resolved === undefined) return
+    pending?.delete(message.id)
+    if (pending?.size === 0) pendingAdaptiveSelections.delete(agent)
+    // A manual selection made after this message was queued wins.
+    if (!automaticFor(agent)) return
+    selectionFor(agent).current = resolved
+  })
+  ctx.on('agent/inbox/discarded', ({ agent, message }) => {
+    const pending = pendingAdaptiveSelections.get(agent)
+    pending?.delete(message.id)
+    if (pending?.size === 0) pendingAdaptiveSelections.delete(agent)
+  })
 
   /** Serialize image admission with model selection for one agent. */
   function serializeImageAdmission<T>(agent: Agent, operation: () => Promise<T>): Promise<T> {
@@ -2550,9 +2573,24 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         }
         const hasImage = content.some(part => part.type === 'image')
         const admit = async (): Promise<RpcResponse<{ accepted: true }>> => {
+          let stagedMessageId: string | undefined
           try {
-            await applyAdaptiveSelection(agent, content)
-            const active = selectionFor(agent).current
+            // A queued follow-up may arrive during the previous turn's final
+            // bookkeeping. Resolve its route now, but bind the change to the
+            // exact inbox message so the running turn cannot be rerouted.
+            const maySelect = mode !== 'steer' || agent.status !== 'running'
+            let adaptive: ModelSelection | undefined
+            if (maySelect) {
+              try {
+                adaptive = await resolveAdaptiveSelection(agent, {
+                  content,
+                  hasHistory: agent.session.events.some(event => event.type === 'turn/start'),
+                })
+              } catch (error: unknown) {
+                ctx.logger.warn(`api-proxy: adaptive model selection failed; preserving the current route: ${String(error)}`)
+              }
+            }
+            const active = adaptive ?? selectionFor(agent).current
             if (!routeServed(active.provider)) {
               return err(request, {
                 code: 'model-unavailable',
@@ -2573,9 +2611,24 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             }
             const durable = await durablePromptContent(ctx, content)
             const message: UserMessage = createUserMessage({ content: durable, source })
+            if (adaptive !== undefined) {
+              if (agent.status === 'running') {
+                const pending = pendingAdaptiveSelections.get(agent) ?? new Map<string, ModelSelection>()
+                pending.set(message.id, adaptive)
+                pendingAdaptiveSelections.set(agent, pending)
+                stagedMessageId = message.id
+              } else {
+                selectionFor(agent).current = adaptive
+              }
+            }
             if (mode === 'steer') agent.steer(message)
             else agent.followup(message)
           } catch (error: unknown) {
+            if (stagedMessageId !== undefined) {
+              const pending = pendingAdaptiveSelections.get(agent)
+              pending?.delete(stagedMessageId)
+              if (pending?.size === 0) pendingAdaptiveSelections.delete(agent)
+            }
             if (error instanceof AttachmentError) {
               return err(request, {
                 code: 'attachment-error',

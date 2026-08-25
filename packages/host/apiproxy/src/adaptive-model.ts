@@ -157,17 +157,19 @@ export function chooseAdaptiveModel(
   const hasImage = input.content.some(part => part.type === 'image')
   const lineCount = text.split(/\r?\n/u).length
   const contextualContinuation = input.hasHistory && CONTINUATION_MARKERS.test(text)
+  const explicitExpert = EXPERT_MARKERS.some(marker => marker.test(text))
   const complex = hasImage
     || text.length > max
     || lineCount > 4
     || MAIN_MARKERS.some(marker => marker.test(text))
+    || explicitExpert
     || contextualContinuation
   const expertEnabled = config.expertModel !== undefined || config.expertReasoningEffort !== undefined
   const expert = complex && expertEnabled
     && (hasImage
       || text.length >= expertMin
       || lineCount > 12
-      || EXPERT_MARKERS.some(marker => marker.test(text)))
+      || explicitExpert)
   const reasoningEffort = expert
     ? config.expertReasoningEffort
     : complex ? config.mainReasoningEffort : config.fastReasoningEffort

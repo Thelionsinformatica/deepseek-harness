@@ -131,6 +131,12 @@ describe('chooseAdaptiveModel()', () => {
 
   it.each([
     { content: [{ type: 'text' as const, text: 'Faça uma auditoria completa deste projeto.' }] },
+    {
+      content: [{
+        type: 'text' as const,
+        text: 'Faça uma análise profunda, em no máximo cinco linhas, sobre por que um assistente local deve usar fallback de API.',
+      }],
+    },
     { content: [{ type: 'image' as const, mediaType: 'image/png' as const, data: 'AQ==' }] },
   ])('uses the local specialist tier for complex or multimodal work', ({ content }) => {
     expect(chooseAdaptiveModel(config, { content, hasHistory: false }))

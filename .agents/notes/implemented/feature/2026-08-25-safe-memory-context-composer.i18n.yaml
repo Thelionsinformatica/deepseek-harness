@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-25-safe-memory-context-composer.md
+2026-08-25-safe-memory-context-composer.md: 8ba47329570bc6db7e244969faa207098029094e
+2026-08-25-safe-memory-context-composer.zh.md: 7b676cc47c56d375e9e77f1386ba1c7ed2a7966f

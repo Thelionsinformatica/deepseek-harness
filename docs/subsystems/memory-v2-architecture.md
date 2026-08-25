@@ -23,6 +23,7 @@ Current implementations:
 - `ctx.memory`: provider-neutral seam.
 - `memory-local`: local provider backed by the storage domain.
 - `tool-memory`: explicit tools, optional automatic recall, and opt-in local shadow extraction without durable memory writes.
+- `MemoryContextComposer`: final deduplication, scope and sensitive-content recheck, character budget, source labels, and an explicit untrusted-data boundary before automatic recall reaches the model.
 - `ctx.workspaceRegistry`: workspace resolution from `cwd`.
 
 ## 2) V2 target architecture
@@ -59,6 +60,7 @@ Current implementations:
 - `tool-memory` remains the consumer of the `ctx.memory` API.
 - `MemoryRuntime` remains the provider-neutral contract.
 - The current `automaticRecall` becomes the initial read and context-preparation stage in V2, without mutation.
+- Recalled values enter one plugin snapshot as quoted JSON data with `instructionAuthority: none`; stored text never becomes a system or developer instruction.
 
 ## 3) Evolution points compatible with the current code
 

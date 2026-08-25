@@ -23,6 +23,7 @@ User
 - `ctx.memory`：提供方中立的接缝。
 - `memory-local`：由存储域支持的本地提供方。
 - `tool-memory`：显式工具、可选自动回忆，以及不会写入持久记忆的选择加入本地影子提取。
+- `MemoryContextComposer`：在自动回忆到达模型之前执行最终去重、scope 与敏感内容复查、字符预算、来源标注和明确的不可信数据边界。
 - `ctx.workspaceRegistry`：根据 `cwd` 解析工作区。
 
 ## 2) V2 目标架构
@@ -59,6 +60,7 @@ User
 - `tool-memory` 继续作为 `ctx.memory` API 的消费方。
 - `MemoryRuntime` 继续作为提供方中立的约定。
 - 当前的 `automaticRecall` 在 V2 中成为初始读取与上下文准备阶段，不执行变更。
+- 回忆值以带引号的 JSON 数据形式进入一个插件快照，并明确带有 `instructionAuthority: none`；已存文本绝不会成为 system 或 developer 指令。
 
 ## 3) 与当前代码兼容的演进点
 

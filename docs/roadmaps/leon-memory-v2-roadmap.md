@@ -44,7 +44,9 @@ English | [中文](leon-memory-v2-roadmap.zh.md)
 
 ### Phase M2-09 — LEON-EVAL and stability
 
-- Run the initial suites.
+- Run the 31-scenario keyless suite across three stable baselines.
+- Hard-fail missing or failed isolation, privacy, cloud-consent, and prompt-injection evidence.
+- Keep semantic retrieval opt-in until a deployment-specific live Ollama profile also passes.
 - Correct critical regressions.
 
 ### Phase M2-10 — Optional Letta experiment

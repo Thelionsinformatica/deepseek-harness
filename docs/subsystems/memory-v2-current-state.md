@@ -16,16 +16,15 @@ English | [中文](memory-v2-current-state.zh.md)
 
 ## 2) Current test coverage
 
-- Current count: **9 `.spec.ts` files** and **128 runtime cases** in memory scope, plus the browser-component cases for the review panel.
+- Current count: **9 `.spec.ts` files** and **139 runtime cases** in memory scope, plus the browser-component cases for the review panel and the LEON-EVAL coordinator tests.
 - Covered ranges:
   - Provider selection, content normalization, telemetry, and central validation in `memory.spec.ts`.
   - Local isolation, durability, revision handling, blocked-event telemetry, semantic configuration bounds, lexical fallback, and same-meaning recall in the two `memory-local` suites.
   - Real Loader composition for both review-only candidate extraction and opt-in hybrid semantic retrieval.
   - Explicit operations, read-only automatic recall, shadow candidate persistence, and sensitive-data blocking in the real agent flow.
   - Deterministic policy decisions, including block, reject, confirm, and store paths.
-- Identified gaps:
-  - There is no dedicated LEON-EVAL suite covering long-duration regression, performance, and generated cross-scope security scenarios.
-  - There is no executable LEON-EVAL-PTBR scenario suite yet.
+- The executable [LEON-EVAL-PTBR](../evals/leon-eval-ptbr.md) gate maps 31 PT-BR scenarios to exact keyless evidence, repeats the baseline three times, and measures pass rates, leakage families, p50/p95 latency, heap, and process RSS.
+- Remaining evaluation gap: real Ollama cold-start, GPU throughput, and embedding quality require a deployment-specific hardware run; the deterministic suite uses a controlled loopback semantic endpoint.
 
 ## 3) Difference between the current state and Memory V2
 
@@ -45,10 +44,11 @@ English | [中文](memory-v2-current-state.zh.md)
   - A safe automatic context composer with workspace and sensitive-content revalidation, id deduplication, source labels, a hard character budget, and `instructionAuthority: none`.
   - Schema V2 temporal lineage with activation, expiry, `supersedes`, `supersededBy`, active-only default retrieval, explicit audit history, atomic local revision preservation, and `historyMode: v1` rollback.
   - Workspace isolation and revision checks for correction and forgetting.
+  - LEON-EVAL-PTBR with 31 content-free, keyless scenarios, three-run stability, hard failures for critical isolation/privacy paths, and a sanitized local report.
 - Not yet implemented for V2:
   - A settings UI for changing automatic-write allowlists; the shipped Host composition remains off by default.
   - Exact tokenizer-based accounting across a full session; the current automatic snapshot uses a deterministic hard character budget.
-  - The executable LEON-EVAL-PTBR suite.
+  - A deployment-specific live-model performance profile for the optional semantic index.
 
 ## 4) Existing dependencies that must remain contractual
 
@@ -67,6 +67,6 @@ English | [中文](memory-v2-current-state.zh.md)
 1. Consolidated target architecture document: complete.
 2. Event layer and deterministic decision policy: initial implementation complete.
 3. Shadow mode and human approval: local extraction, telemetry, review fields, and the operator decision UI are complete; final-memory writes remain intentionally disabled.
-4. Hybrid retrieval, safe context composition, and temporal history: implemented; semantic retrieval remains behind an off-by-default switch pending evaluation.
-5. LEON-EVAL-PTBR with objective criteria: specification exists; executable suite remains pending.
+4. Hybrid retrieval, safe context composition, and temporal history: implemented; semantic retrieval remains behind an off-by-default switch pending live-hardware validation.
+5. LEON-EVAL-PTBR with objective criteria: executable 31-scenario suite complete.
 6. Reversible migration and rollback plans: documented.

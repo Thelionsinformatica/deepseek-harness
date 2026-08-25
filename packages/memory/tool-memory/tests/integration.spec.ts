@@ -1080,6 +1080,48 @@ describe('memory tools through the real agent loop', () => {
     await ctx.fiber.dispose()
   })
 
+  it('recalls an explicit memory from a second session in the same workspace', async () => {
+    const adapter = new MockAdapter([
+      toolCallResponse('remember-cross-session', 'memory_remember', {
+        content: 'O serviço de homologação usa a porta 4175.',
+      }),
+      textResponse('Memória preservada.'),
+      toolCallResponse('search-cross-session', 'memory_search', {
+        query: 'porta do serviço de homologação',
+        limit: 8,
+      }),
+      textResponse('Memória recuperada na nova sessão.'),
+    ])
+    const { ctx, cwd } = await harness(adapter)
+    const first = ctx.agentLoop.create(
+      SessionId('leon-memory-cross-session-source'),
+      { provider: 'mock', model: 'mock' },
+      { cwd },
+    )
+    first.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Lembre a porta do serviço de homologação.' }],
+      source: { kind: 'user' },
+    }))
+    await first.whenIdle()
+
+    const second = ctx.agentLoop.create(
+      SessionId('leon-memory-cross-session-target'),
+      { provider: 'mock', model: 'mock' },
+      { cwd },
+    )
+    second.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Recupere a porta do serviço de homologação.' }],
+      source: { kind: 'user' },
+    }))
+    await second.whenIdle()
+
+    const results = second.session.events.filter(event => event.type === 'tool/result')
+    expect(results).toHaveLength(1)
+    expect(JSON.stringify(results)).toContain('O serviço de homologação usa a porta 4175.')
+    expect(first.session.header.id).not.toBe(second.session.header.id)
+    await ctx.fiber.dispose()
+  })
+
   it('bounds the provider candidate window and rejects an invalid final search limit', async () => {
     const adapter = new MockAdapter([
       toolCallResponse('search-default', 'memory_search', { query: 'memória padrão' }),
@@ -1258,6 +1300,42 @@ describe('memory tools through the real agent loop', () => {
     })
     expect(stored).toHaveLength(2)
     expect(stored.some(hit => hit.record.content.includes('API key'))).toBe(true)
+    await ctx.fiber.dispose()
+  })
+
+  it('does not inject unrelated memory for an irrelevant PT-BR message', async () => {
+    const adapter = new MockAdapter([textResponse('Aqui está uma resposta sem memória do projeto.')])
+    const { ctx, cwd, workspace } = await harness(adapter, { automaticRecall: true })
+    await ctx.memory.create({
+      scope: { workspaceId: workspace.id },
+      content: 'O painel local usa a porta 3080.',
+      source: { kind: 'session', sessionId: SessionId('memory-seed-irrelevant') },
+    })
+    const agent = ctx.agentLoop.create(
+      SessionId('leon-memory-irrelevant-query'),
+      { provider: 'mock', model: 'mock' },
+      { cwd },
+    )
+
+    agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Conte uma piada curta sobre praias.' }],
+      source: { kind: 'user' },
+    }))
+    await agent.whenIdle()
+
+    expect(JSON.stringify(adapter.requests[0]?.messages)).not.toContain('Workspace memory context')
+    expect(JSON.stringify(adapter.requests[0]?.messages)).not.toContain('porta 3080')
+    const snapshots = agent.session.events.filter(event => event.type === 'user/message'
+      && event.data.source.kind === 'plugin'
+      && event.data.source.plugin === 'tool-memory')
+    expect(snapshots).toEqual([])
+    expect(readCandidateRows(ctx)).toContainEqual(expect.objectContaining({
+      operation: 'memory_recall',
+      total: 0,
+      inserted: 0,
+      policyDecision: 'reject',
+      policyReason: 'no-candidates',
+    }))
     await ctx.fiber.dispose()
   })
 

@@ -56,6 +56,22 @@ describe('memory candidate extractor', () => {
     expect(extractMemoryCandidate([userMessage('Qual modelo devemos usar hoje?')])).toBeUndefined()
   })
 
+  it('classifies an explicit fact and ignores suggestions and hypotheses', () => {
+    expect(extractMemoryCandidate([
+      userMessage('Leon, lembre que a equipe de suporte atende aos sábados.'),
+    ])).toMatchObject({
+      category: 'fact',
+      confidence: 0.95,
+      sensitivity: 'none',
+    })
+    expect(extractMemoryCandidate([
+      userMessage('Talvez seja melhor trocar o banco de dados no futuro.'),
+    ])).toBeUndefined()
+    expect(extractMemoryCandidate([
+      userMessage('Eu sugiro avaliar outro modelo antes de decidir.'),
+    ])).toBeUndefined()
+  })
+
   it('marks credential-like candidates as blocked and drops their content', () => {
     const candidate = extractMemoryCandidate([
       userMessage('Lembre que minha API key é sk-proj-1234567890abcdefghijklmnop.'),

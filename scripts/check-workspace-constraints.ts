@@ -50,6 +50,9 @@ const repositoryUrl = 'git+https://github.com/deepseek-harness/deepseek-harness.
  * their trusted publishing against the repository that runs the workflow.
  */
 const publishedRepositoryUrl = 'git+https://github.com/deepseek-ai/deepseek-harness.git'
+/** Fork source used by Leon-owned release members during the repository transition. */
+const leonPublishedRepositoryUrl = 'git+https://github.com/Thelionsinformatica/deepseek-harness.git'
+const publishedRepositoryUrls = new Set([publishedRepositoryUrl, leonPublishedRepositoryUrl])
 /** Private packages that participate in workspace checks but not releases. */
 const experimentalPackageDirectory = /^packages\/experimental\/[^/]+$/
 /** npm namespace reserved for private experimental packages. */
@@ -300,9 +303,12 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
       errors.push(`${label}: release member must set publishConfig.access to "public"`)
     }
     if (manifest.repository?.type !== 'git'
-      || manifest.repository.url !== publishedRepositoryUrl
+      || manifest.repository.url === undefined
+      || !publishedRepositoryUrls.has(manifest.repository.url)
       || manifest.repository.directory !== dir) {
-      errors.push(`${label}: release member repository must use ${publishedRepositoryUrl} with directory ${dir}`)
+      errors.push(
+        `${label}: release member repository must use an approved source URL with directory ${dir}`,
+      )
     }
   } else if (!experimentalPackageDirectory.test(dir) && manifest.private !== true) {
     errors.push(`${label}: package.json must set "private": true`)

@@ -136,7 +136,10 @@ export type MemoryStatus = 'active' | 'scheduled' | 'expired' | 'superseded'
  * @param now - Epoch milliseconds used as the deterministic comparison instant.
  * @returns The revision's operator-facing lifecycle state.
  */
-export function memoryStatusAt(record: MemoryRecord, now = Date.now()): MemoryStatus {
+export function memoryStatusAt(
+  record: Pick<MemoryRecord, 'validFrom' | 'validUntil' | 'supersededBy' | 'expiresAt'>,
+  now = Date.now(),
+): MemoryStatus {
   if (record.validFrom !== undefined && Date.parse(record.validFrom) > now) return 'scheduled'
   if (record.validUntil !== undefined && Date.parse(record.validUntil) <= now) return 'superseded'
   if (record.supersededBy !== undefined && record.validUntil === undefined) return 'superseded'

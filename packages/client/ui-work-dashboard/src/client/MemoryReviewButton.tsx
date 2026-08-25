@@ -14,9 +14,10 @@ import type {
 } from '@deepseek-ai/dsh-tool-memory/types'
 import type { WorkDashboardKey } from './locales.ts'
 import css from './MemoryReviewButton.module.css'
+import { PersonalMemoryPanel, type PersonalMemoryInjected } from './PersonalMemoryPanel.tsx'
 
 /** Registration-side Host Remote face for the memory control. */
-export interface MemoryReviewInjected {
+export interface MemoryReviewInjected extends PersonalMemoryInjected {
   list: (sessionId: SessionId) => Promise<MemoryCandidateReviewListValue>
   review: (
     sessionId: SessionId,
@@ -50,7 +51,7 @@ type MemoryViewState =
 
 type DecisionFeedback = 'reviewed' | 'stored' | null
 type MemoryFeedback = 'corrected' | 'forgotten' | null
-type Tab = 'suggestions' | 'saved'
+type Tab = 'suggestions' | 'saved' | 'personal'
 type StatusFilter = MemoryAdminStatus | 'all'
 const allMemoryStatuses = ['active', 'scheduled', 'expired', 'superseded'] as const satisfies readonly MemoryAdminStatus[]
 type Confirmation =
@@ -74,7 +75,9 @@ function memoryKey(item: MemoryAdminItem): string {
 
 /** Open candidate review and durable memory administration for one Session workspace. */
 export function MemoryReviewButton({
-  sessionId, list, review, listMemories, correctMemory, forgetMemory, t,
+  sessionId, list, review, listMemories, correctMemory, forgetMemory,
+  listPersonalMemories, rememberPersonalMemory, correctPersonalMemory,
+  forgetPersonalMemory, setPersonalMemoryEnabled, t,
 }: MemoryReviewButtonProps): ReactNode {
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<Tab>('suggestions')
@@ -226,6 +229,9 @@ export function MemoryReviewButton({
             <button type="button" role="tab" aria-selected={tab === 'saved'} onClick={() => { selectTab('saved') }}>
               {t('memory.tabs.saved')}
             </button>
+            <button type="button" role="tab" aria-selected={tab === 'personal'} onClick={() => { selectTab('personal') }}>
+              {t('memory.tabs.personal')}
+            </button>
           </div>
 
           {tab === 'suggestions' ? (
@@ -271,7 +277,7 @@ export function MemoryReviewButton({
               {feedback === 'reviewed' ? <p className={css.notice} role="status">{t('memory.feedback.reviewed')}</p> : null}
               <p className={css.notice}>{t('memory.notice')}</p>
             </section>
-          ) : (
+          ) : tab === 'saved' ? (
             <section className={css.saved} aria-busy={memoryState.status === 'loading'}>
               <form className={css.filters} onSubmit={submitFilter}>
                 <label className={css.srOnly} htmlFor="memory-search">{t('memory.saved.search')}</label>
@@ -361,6 +367,16 @@ export function MemoryReviewButton({
               {memoryFeedback === 'corrected' ? <p className={css.notice} role="status">{t('memory.feedback.corrected')}</p> : null}
               {memoryFeedback === 'forgotten' ? <p className={css.notice} role="status">{t('memory.feedback.forgotten')}</p> : null}
             </section>
+          ) : (
+            <PersonalMemoryPanel
+              sessionId={sessionId}
+              listPersonalMemories={listPersonalMemories}
+              rememberPersonalMemory={rememberPersonalMemory}
+              correctPersonalMemory={correctPersonalMemory}
+              forgetPersonalMemory={forgetPersonalMemory}
+              setPersonalMemoryEnabled={setPersonalMemoryEnabled}
+              t={t}
+            />
           )}
         </div>
       </Modal>

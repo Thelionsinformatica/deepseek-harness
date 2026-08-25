@@ -96,6 +96,8 @@
         # Correction/forget stay confirmation-gated in the UI and endpoint.
         # Set this back to read-only for an immediate mutation rollback.
         administrationMode: full
+        # Stable local partition for personal preferences shared across projects.
+        personalOwnerId: leon-local-owner
 
     - id: message-feedback
       name: '@deepseek-ai/dsh-message-feedback'

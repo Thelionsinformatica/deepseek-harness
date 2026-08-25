@@ -126,4 +126,24 @@ describe('PersonalMemoryRuntime', () => {
       .rejects.toThrow(expect.objectContaining({ code: 'PERSONAL_MEMORY_PROVIDER_MISSING' }))
     await missing.fiber.dispose()
   })
+
+  it('disables model and mutation operations while preserving administrative listing', async () => {
+    const ctx = await harness()
+    const local = provider()
+    ctx.personalMemory.registerProvider(local)
+    ctx.personalMemory.setEnabled(false)
+
+    expect(ctx.personalMemory.isEnabled()).toBe(false)
+    await expect(ctx.personalMemory.search({ scope, query: 'preferência', limit: 1 }))
+      .rejects.toThrow(expect.objectContaining({ code: 'PERSONAL_MEMORY_DISABLED' }))
+    await expect(ctx.personalMemory.create({ scope, content: 'Prefere respostas diretas.', source }))
+      .rejects.toThrow(expect.objectContaining({ code: 'PERSONAL_MEMORY_DISABLED' }))
+    const page = await ctx.personalMemory.list({ scope, offset: 0, limit: 1 })
+    expect(page.items).toHaveLength(1)
+    expect(page.items[0]?.record.content).toBe('Leon prefere respostas em português.')
+
+    ctx.personalMemory.setEnabled(true)
+    await expect(ctx.personalMemory.search({ scope, query: 'preferência', limit: 1 })).resolves.toHaveLength(1)
+    await ctx.fiber.dispose()
+  })
 })

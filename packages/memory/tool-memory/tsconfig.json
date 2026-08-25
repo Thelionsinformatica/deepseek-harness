@@ -17,6 +17,7 @@
     { "path": "../../typert/protocol" },
     { "path": "../memory" },
     { "path": "../personal-memory" },
+    { "path": "../../settings/settings" },
     { "path": "../../runtime-diagnostics/invariants" }
   ]
 }

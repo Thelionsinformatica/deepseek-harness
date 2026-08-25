@@ -160,6 +160,41 @@ async recordCandidate(record: MemoryCandidateRecord): Promise<void>
 @Remote('forgetMemory') forgetMemory(request: MemoryAdminForgetRequest): Promise<MemoryAdminForgetResult>
 
 /**
+ * List the configured local owner's personal memories without exposing the owner id.
+ * @param request - Session authorization anchor and bounded list filters.
+ * @returns Browser-safe personal rows plus the current enablement state, or an explicit failure.
+ */
+@Remote('listPersonalMemories') async listPersonalMemories(request: MemoryAdminListRequest): Promise<PersonalMemoryAdminListResult>
+
+/**
+ * Add one explicit personal fact after a visible confirmation.
+ * @param request - Session provenance, complete fact, and explicit confirmation.
+ * @returns The created browser-safe row and content-free audit id, or an explicit failure.
+ */
+@Remote('rememberPersonalMemory') rememberPersonalMemory(request: PersonalMemoryAdminRememberRequest): Promise<PersonalMemoryAdminRememberResult>
+
+/**
+ * Correct one exact personal-memory revision after confirmation.
+ * @param request - Session anchor, exact revision, replacement text, and confirmation.
+ * @returns The corrected browser-safe row and content-free audit id, or an explicit failure.
+ */
+@Remote('correctPersonalMemory') correctPersonalMemory(request: MemoryAdminCorrectRequest): Promise<MemoryAdminCorrectResult>
+
+/**
+ * Permanently remove one personal-memory lineage after confirmation.
+ * @param request - Session anchor, exact personal-memory revision, and confirmation.
+ * @returns The forgotten reference and content-free audit id, or an explicit failure.
+ */
+@Remote('forgetPersonalMemory') forgetPersonalMemory(request: MemoryAdminForgetRequest): Promise<MemoryAdminForgetResult>
+
+/**
+ * Persist the user's personal-memory enablement preference after confirmation.
+ * @param request - Session anchor, desired state, and explicit confirmation.
+ * @returns The applied enablement state and content-free audit id, or an explicit failure.
+ */
+@Remote('setPersonalMemoryEnabled') setPersonalMemoryEnabled(request: PersonalMemoryAdminToggleRequest): Promise<PersonalMemoryAdminToggleResult>
+
+/**
  * Record one immutable human decision and optionally persist an authorized candidate.
  * @param request - session authorization anchor, candidate id, and decision.
  * @returns the reviewed projection or an explicit business failure.
@@ -182,6 +217,19 @@ Personal-memory service with an independent provider registry and lifecycle.
  * @returns disposer that removes this exact registration.
  */
 registerProvider(provider: PersonalMemoryProvider): () => void
+
+/**
+ * Read whether model and mutation operations may use personal memory.
+ * Administrative listing and forgetting remain available while disabled so the user can inspect or delete data.
+ * @returns the current process-local operation state.
+ */
+isEnabled(): boolean
+
+/**
+ * Apply a deployment or durable-settings preference to all personal-memory Consumers.
+ * @param enabled - Whether create, search, and correction operations may reach a provider.
+ */
+setEnabled(enabled: boolean): void
 
 /**
  * Create one normalized personal fact in an explicit local-owner partition.

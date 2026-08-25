@@ -65,6 +65,50 @@ async function bench(declare = true) {
     ok: true as const,
     value: { id: request.id, revision: request.revision, auditId: 'audit-forget' },
   }))
+  const listPersonalMemories = vi.fn((_request: unknown) => Promise.resolve({
+    ok: true as const,
+    value: { items: [], hasMore: false, nextOffset: 0, readOnly: false, enabled: true },
+  }))
+  const rememberPersonalMemory = vi.fn((request: { content: string }) => Promise.resolve({
+    ok: true as const,
+    value: {
+      item: {
+        id: 'personal-one',
+        revision: 1,
+        content: request.content,
+        redacted: false,
+        status: 'active' as const,
+        sourceSessionId: 'session-one' as SessionId,
+        createdAt: '2026-08-25T12:00:00.000Z',
+        updatedAt: '2026-08-25T12:00:00.000Z',
+      },
+      auditId: 'audit-personal-create',
+    },
+  }))
+  const correctPersonalMemory = vi.fn((request: { id: string; revision: number; content: string }) => Promise.resolve({
+    ok: true as const,
+    value: {
+      item: {
+        id: request.id,
+        revision: request.revision + 1,
+        content: request.content,
+        redacted: false,
+        status: 'active' as const,
+        sourceSessionId: 'session-one' as SessionId,
+        createdAt: '2026-08-25T12:00:00.000Z',
+        updatedAt: '2026-08-25T13:00:00.000Z',
+      },
+      auditId: 'audit-personal-correct',
+    },
+  }))
+  const forgetPersonalMemory = vi.fn((request: { id: string; revision: number }) => Promise.resolve({
+    ok: true as const,
+    value: { id: request.id, revision: request.revision, auditId: 'audit-personal-forget' },
+  }))
+  const setPersonalMemoryEnabled = vi.fn((request: { enabled: boolean }) => Promise.resolve({
+    ok: true as const,
+    value: { enabled: request.enabled, auditId: 'audit-personal-toggle' },
+  }))
   ctx.provide('sessions', { open })
   ctx.provide('workspaces', { startSession })
   ctx.provide('locale', new LocaleRuntime(ctx))
@@ -79,6 +123,21 @@ async function bench(declare = true) {
     }),
     forgetMemory: async (request: Parameters<typeof forgetMemory>[0]) => ({
       ok: true as const, value: await forgetMemory(request),
+    }),
+    listPersonalMemories: async (request: unknown) => ({
+      ok: true as const, value: await listPersonalMemories(request),
+    }),
+    rememberPersonalMemory: async (request: Parameters<typeof rememberPersonalMemory>[0]) => ({
+      ok: true as const, value: await rememberPersonalMemory(request),
+    }),
+    correctPersonalMemory: async (request: Parameters<typeof correctPersonalMemory>[0]) => ({
+      ok: true as const, value: await correctPersonalMemory(request),
+    }),
+    forgetPersonalMemory: async (request: Parameters<typeof forgetPersonalMemory>[0]) => ({
+      ok: true as const, value: await forgetPersonalMemory(request),
+    }),
+    setPersonalMemoryEnabled: async (request: Parameters<typeof setPersonalMemoryEnabled>[0]) => ({
+      ok: true as const, value: await setPersonalMemoryEnabled(request),
     }),
   }
   ctx.provide('remote', { memoryCandidateReview } as never)
@@ -97,6 +156,8 @@ async function bench(declare = true) {
   const disposeHole = declare ? declareHole() : undefined
   return {
     ctx, slots, open, startSession, list, markReviewed, listMemories, correctMemory, forgetMemory,
+    listPersonalMemories, rememberPersonalMemory, correctPersonalMemory,
+    forgetPersonalMemory, setPersonalMemoryEnabled,
     memoryCandidateReview, declareHole, disposeHole,
   }
 }
@@ -161,6 +222,11 @@ describe('ui-work-dashboard browser plugin', () => {
     } as Parameters<typeof actions.correctMemory>[1]
     const corrected = await actions.correctMemory(sessionId, item, 'porta 4175')
     await actions.forgetMemory(sessionId, corrected)
+    const personal = await actions.listPersonalMemories(sessionId, 'respostas')
+    const remembered = await actions.rememberPersonalMemory(sessionId, 'Prefere respostas diretas.')
+    const correctedPersonal = await actions.correctPersonalMemory(sessionId, remembered, 'Prefere respostas curtas.')
+    await actions.forgetPersonalMemory(sessionId, correctedPersonal)
+    const enabled = await actions.setPersonalMemoryEnabled(sessionId, false)
 
     expect(page.items).toEqual([])
     expect(b.list).toHaveBeenCalledWith({ sessionId, reviewed: false, limit: 50 })
@@ -187,6 +253,33 @@ describe('ui-work-dashboard browser plugin', () => {
       revision: 2,
       confirmed: true,
     })
+    expect(personal.enabled).toBe(true)
+    expect(b.listPersonalMemories).toHaveBeenCalledWith({
+      sessionId,
+      query: 'respostas',
+      statuses: ['active'],
+      limit: 100,
+    })
+    expect(b.rememberPersonalMemory).toHaveBeenCalledWith({
+      sessionId,
+      content: 'Prefere respostas diretas.',
+      confirmed: true,
+    })
+    expect(b.correctPersonalMemory).toHaveBeenCalledWith({
+      sessionId,
+      id: 'personal-one',
+      revision: 1,
+      content: 'Prefere respostas curtas.',
+      confirmed: true,
+    })
+    expect(b.forgetPersonalMemory).toHaveBeenCalledWith({
+      sessionId,
+      id: 'personal-one',
+      revision: 2,
+      confirmed: true,
+    })
+    expect(b.setPersonalMemoryEnabled).toHaveBeenCalledWith({ sessionId, enabled: false, confirmed: true })
+    expect(enabled).toBe(false)
   })
 
   it('surfaces transport and business failures from every memory Remote', async () => {
@@ -216,6 +309,11 @@ describe('ui-work-dashboard browser plugin', () => {
       ['listMemories', () => actions.listMemories(sessionId)],
       ['correctMemory', () => actions.correctMemory(sessionId, item, 'porta 4175')],
       ['forgetMemory', () => actions.forgetMemory(sessionId, item)],
+      ['listPersonalMemories', () => actions.listPersonalMemories(sessionId)],
+      ['rememberPersonalMemory', () => actions.rememberPersonalMemory(sessionId, 'Prefere respostas diretas.')],
+      ['correctPersonalMemory', () => actions.correctPersonalMemory(sessionId, item, 'Resposta curta.')],
+      ['forgetPersonalMemory', () => actions.forgetPersonalMemory(sessionId, item)],
+      ['setPersonalMemoryEnabled', () => actions.setPersonalMemoryEnabled(sessionId, false)],
     ] as const) {
       const spy = vi.spyOn(b.memoryCandidateReview, method)
       spy.mockResolvedValueOnce(transport as never)

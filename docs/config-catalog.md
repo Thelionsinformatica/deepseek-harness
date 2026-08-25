@@ -1754,6 +1754,8 @@ export interface Config {
   readonly provider?: string
   /** Emit content-free operation and blocked events. */
   readonly telemetryEnabled?: boolean
+  /** Initial operation state before an optional settings Consumer applies a durable preference. */
+  readonly enabled?: boolean
 }
 ```
 

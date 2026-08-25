@@ -105,6 +105,6 @@ export interface PersonalMemoryBlockedEvent {
   readonly schemaVersion: 1
   readonly operation: PersonalMemoryOperationEvent['operation']
   readonly ownerId: PersonalMemoryOwnerId
-  readonly reason: 'credential-like' | 'validation' | 'provider'
+  readonly reason: 'credential-like' | 'disabled' | 'validation' | 'provider'
   readonly errorCode: string
 }

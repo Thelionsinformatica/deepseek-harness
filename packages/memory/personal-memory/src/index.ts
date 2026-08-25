@@ -68,11 +68,14 @@ export interface Config {
   readonly provider?: string
   /** Emit content-free operation and blocked events. */
   readonly telemetryEnabled?: boolean
+  /** Initial operation state before an optional settings Consumer applies a durable preference. */
+  readonly enabled?: boolean
 }
 
 export const Config: z<Config> = z.object({
   provider: z.string(),
   telemetryEnabled: z.boolean(),
+  enabled: z.boolean(),
 })
 
 const MAX_CONTENT_CHARS = 16_384
@@ -87,11 +90,13 @@ export class PersonalMemoryRuntime extends Service {
   private readonly providers = new Map<string, PersonalMemoryProvider>()
   private readonly configuredProvider: string | undefined
   private readonly telemetryEnabled: boolean
+  private enabledState: boolean
 
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'personalMemory')
     this.configuredProvider = config.provider
     this.telemetryEnabled = config.telemetryEnabled ?? true
+    this.enabledState = config.enabled ?? true
   }
 
   /**
@@ -110,6 +115,23 @@ export class PersonalMemoryRuntime extends Service {
     return () => {
       if (this.providers.get(provider.id) === provider) this.providers.delete(provider.id)
     }
+  }
+
+  /**
+   * Read whether model and mutation operations may use personal memory.
+   * Administrative listing and forgetting remain available while disabled so the user can inspect or delete data.
+   * @returns the current process-local operation state.
+   */
+  isEnabled(): boolean {
+    return this.enabledState
+  }
+
+  /**
+   * Apply a deployment or durable-settings preference to all personal-memory Consumers.
+   * @param enabled - Whether create, search, and correction operations may reach a provider.
+   */
+  setEnabled(enabled: boolean): void {
+    this.enabledState = enabled
   }
 
   /**
@@ -251,6 +273,9 @@ export class PersonalMemoryRuntime extends Service {
     const startedAt = Date.now()
     let provider: PersonalMemoryProvider
     try {
+      if (!this.enabledState && operation !== 'list' && operation !== 'forget') {
+        throw new MemoryError('personal memory is disabled by the user', 'PERSONAL_MEMORY_DISABLED')
+      }
       provider = this.resolveProvider()
       const result = await call(provider)
       this.emitOperation({
@@ -266,7 +291,8 @@ export class PersonalMemoryRuntime extends Service {
       const errorCode = codeOf(error)
       const reason = errorCode === 'PERSONAL_MEMORY_SENSITIVE_CONTENT'
         ? 'credential-like'
-        : errorCode.includes('PROVIDER') ? 'provider' : 'validation'
+        : errorCode === 'PERSONAL_MEMORY_DISABLED' ? 'disabled'
+          : errorCode.includes('PROVIDER') ? 'provider' : 'validation'
       this.emitBlocked({ operation, ownerId: scope.ownerId, reason, errorCode })
       throw error
     }

@@ -20,6 +20,28 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
+interface RemoteTransportFailure {
+  readonly ok: false
+  readonly error: { readonly code: string; readonly message: string }
+}
+
+interface RemoteBusinessFailure {
+  readonly ok: false
+  readonly error: { readonly code: string }
+}
+
+type CarriedRemoteResult<T> = RemoteTransportFailure | {
+  readonly ok: true
+  readonly value: RemoteBusinessFailure | { readonly ok: true; readonly value: T }
+}
+
+/** Unwrap the transport and business envelopes shared by dashboard Remotes. */
+function remoteValue<T>(carried: CarriedRemoteResult<T>): T {
+  if (!carried.ok) throw new Error(`${carried.error.code}: ${carried.error.message}`)
+  if (!carried.value.ok) throw new Error(carried.value.error.code)
+  return carried.value.value
+}
+
 /** Services required by the dashboard plugin. */
 export const inject = ['slots', 'sessions', 'workspaces', 'locale', 'remote', 'remote.memoryCandidateReview']
 
@@ -41,15 +63,11 @@ export function apply(ctx: ClientContext): void {
   const memoryReview: MemoryReviewInjected = {
     list: async (sessionId) => {
       const carried = await ctx.remote.memoryCandidateReview.list({ sessionId, reviewed: false, limit: 50 })
-      if (!carried.ok) throw new Error(`${carried.error.code}: ${carried.error.message}`)
-      if (!carried.value.ok) throw new Error(carried.value.error.code)
-      return carried.value.value
+      return remoteValue(carried)
     },
     review: async (sessionId, id, decision) => {
       const carried = await ctx.remote.memoryCandidateReview.markReviewed({ sessionId, id, decision })
-      if (!carried.ok) throw new Error(`${carried.error.code}: ${carried.error.message}`)
-      if (!carried.value.ok) throw new Error(carried.value.error.code)
-      return carried.value.value.item
+      return remoteValue(carried).item
     },
     listMemories: async (sessionId, query, statuses) => {
       const carried = await ctx.remote.memoryCandidateReview.listMemories({
@@ -58,9 +76,7 @@ export function apply(ctx: ClientContext): void {
         ...(statuses === undefined ? {} : { statuses }),
         limit: 100,
       })
-      if (!carried.ok) throw new Error(`${carried.error.code}: ${carried.error.message}`)
-      if (!carried.value.ok) throw new Error(carried.value.error.code)
-      return carried.value.value
+      return remoteValue(carried)
     },
     correctMemory: async (sessionId, item, content) => {
       const carried = await ctx.remote.memoryCandidateReview.correctMemory({
@@ -70,9 +86,7 @@ export function apply(ctx: ClientContext): void {
         content,
         confirmed: true,
       })
-      if (!carried.ok) throw new Error(`${carried.error.code}: ${carried.error.message}`)
-      if (!carried.value.ok) throw new Error(carried.value.error.code)
-      return carried.value.value.item
+      return remoteValue(carried).item
     },
     forgetMemory: async (sessionId, item) => {
       const carried = await ctx.remote.memoryCandidateReview.forgetMemory({
@@ -81,8 +95,51 @@ export function apply(ctx: ClientContext): void {
         revision: item.revision,
         confirmed: true,
       })
-      if (!carried.ok) throw new Error(`${carried.error.code}: ${carried.error.message}`)
-      if (!carried.value.ok) throw new Error(carried.value.error.code)
+      remoteValue(carried)
+    },
+    listPersonalMemories: async (sessionId, query) => {
+      const carried = await ctx.remote.memoryCandidateReview.listPersonalMemories({
+        sessionId,
+        ...(query === undefined ? {} : { query }),
+        statuses: ['active'],
+        limit: 100,
+      })
+      return remoteValue(carried)
+    },
+    rememberPersonalMemory: async (sessionId, content) => {
+      const carried = await ctx.remote.memoryCandidateReview.rememberPersonalMemory({
+        sessionId,
+        content,
+        confirmed: true,
+      })
+      return remoteValue(carried).item
+    },
+    correctPersonalMemory: async (sessionId, item, content) => {
+      const carried = await ctx.remote.memoryCandidateReview.correctPersonalMemory({
+        sessionId,
+        id: item.id,
+        revision: item.revision,
+        content,
+        confirmed: true,
+      })
+      return remoteValue(carried).item
+    },
+    forgetPersonalMemory: async (sessionId, item) => {
+      const carried = await ctx.remote.memoryCandidateReview.forgetPersonalMemory({
+        sessionId,
+        id: item.id,
+        revision: item.revision,
+        confirmed: true,
+      })
+      remoteValue(carried)
+    },
+    setPersonalMemoryEnabled: async (sessionId, enabled) => {
+      const carried = await ctx.remote.memoryCandidateReview.setPersonalMemoryEnabled({
+        sessionId,
+        enabled,
+        confirmed: true,
+      })
+      return remoteValue(carried).enabled
     },
   }
   ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({

@@ -11,6 +11,7 @@ import {
   type MemoryPolicyReason,
   type MemoryPolicyVersion,
 } from '@deepseek-ai/dsh-memory'
+import { PersonalMemoryOwnerId, type PersonalMemoryOwnerIdentity } from '@deepseek-ai/dsh-personal-memory'
 import {
   MemoryCandidateId,
   MemoryAdminActionId,
@@ -168,5 +169,48 @@ export const memoryAdminDomainSpec = defineDomain({
   version: 1,
   tables: {
     actions: domainTable<ReturnType<typeof MemoryAdminActionId>, MemoryAdminActionRecord>(memoryAdminActionRecord),
+  },
+})
+
+/** Durable, content-free trace of one user-confirmed personal-memory administration action. */
+export interface PersonalMemoryAdminActionRecord {
+  readonly id: MemoryAdminActionId
+  readonly ownerId: PersonalMemoryOwnerIdentity
+  readonly sessionId: SessionIdentity
+  readonly memoryId?: ReturnType<typeof MemoryId>
+  readonly expectedRevision?: number
+  readonly resultRevision?: number
+  readonly desiredEnabled?: boolean
+  readonly action: 'remember' | 'correct' | 'forget' | 'toggle'
+  readonly status: 'requested' | 'succeeded' | 'failed'
+  readonly failureCode?: string
+  readonly createdAt: string
+  readonly completedAt?: string
+}
+
+/** Boundary schema for a content-free personal-memory administrative trace. */
+export const personalMemoryAdminActionRecord = z.object({
+  id: z.string().transform(MemoryAdminActionId),
+  ownerId: z.string().transform(PersonalMemoryOwnerId),
+  sessionId: z.string().transform(SessionId),
+  memoryId: z.string().transform(MemoryId).optional(),
+  expectedRevision: z.number().int().positive().optional(),
+  resultRevision: z.number().int().positive().optional(),
+  desiredEnabled: z.boolean().optional(),
+  action: z.enum(['remember', 'correct', 'forget', 'toggle']),
+  status: z.enum(['requested', 'succeeded', 'failed']),
+  failureCode: z.string().optional(),
+  createdAt: z.string(),
+  completedAt: z.string().optional(),
+}) as unknown as z.ZodType<PersonalMemoryAdminActionRecord>
+
+/** Separate personal audit domain so workspace and owner activity never share a partition. */
+export const personalMemoryAdminDomainSpec = defineDomain({
+  name: 'personal_memory_admin',
+  version: 1,
+  tables: {
+    actions: domainTable<ReturnType<typeof MemoryAdminActionId>, PersonalMemoryAdminActionRecord>(
+      personalMemoryAdminActionRecord,
+    ),
   },
 })

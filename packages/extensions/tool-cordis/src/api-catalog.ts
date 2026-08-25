@@ -1130,6 +1130,36 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'The forgotten reference and audit id, or an explicit failure.',
       },
       {
+        signature: '@Remote(\'listPersonalMemories\') async listPersonalMemories(request: MemoryAdminListRequest): Promise<PersonalMemoryAdminListResult>',
+        description: 'List the configured local owner\'s personal memories without exposing the owner id.',
+        parameters: [{ name: 'request', description: 'Session authorization anchor and bounded list filters.' }],
+        returns: 'Browser-safe personal rows plus the current enablement state, or an explicit failure.',
+      },
+      {
+        signature: '@Remote(\'rememberPersonalMemory\') rememberPersonalMemory(request: PersonalMemoryAdminRememberRequest): Promise<PersonalMemoryAdminRememberResult>',
+        description: 'Add one explicit personal fact after a visible confirmation.',
+        parameters: [{ name: 'request', description: 'Session provenance, complete fact, and explicit confirmation.' }],
+        returns: 'The created browser-safe row and content-free audit id, or an explicit failure.',
+      },
+      {
+        signature: '@Remote(\'correctPersonalMemory\') correctPersonalMemory(request: MemoryAdminCorrectRequest): Promise<MemoryAdminCorrectResult>',
+        description: 'Correct one exact personal-memory revision after confirmation.',
+        parameters: [{ name: 'request', description: 'Session anchor, exact revision, replacement text, and confirmation.' }],
+        returns: 'The corrected browser-safe row and content-free audit id, or an explicit failure.',
+      },
+      {
+        signature: '@Remote(\'forgetPersonalMemory\') forgetPersonalMemory(request: MemoryAdminForgetRequest): Promise<MemoryAdminForgetResult>',
+        description: 'Permanently remove one personal-memory lineage after confirmation.',
+        parameters: [{ name: 'request', description: 'Session anchor, exact personal-memory revision, and confirmation.' }],
+        returns: 'The forgotten reference and content-free audit id, or an explicit failure.',
+      },
+      {
+        signature: '@Remote(\'setPersonalMemoryEnabled\') setPersonalMemoryEnabled(request: PersonalMemoryAdminToggleRequest): Promise<PersonalMemoryAdminToggleResult>',
+        description: 'Persist the user\'s personal-memory enablement preference after confirmation.',
+        parameters: [{ name: 'request', description: 'Session anchor, desired state, and explicit confirmation.' }],
+        returns: 'The applied enablement state and content-free audit id, or an explicit failure.',
+      },
+      {
         signature: '@Remote(\'markReviewed\') markReviewed(request: MemoryCandidateReviewMarkRequest): Promise<MemoryCandidateReviewMarkResult>',
         description: 'Record one immutable human decision and optionally persist an authorized candidate.',
         parameters: [{ name: 'request', description: 'session authorization anchor, candidate id, and decision.' }],
@@ -1210,6 +1240,17 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Register one personal-memory provider for the caller-controlled fiber lifetime.',
         parameters: [{ name: 'provider', description: 'Provider implementation keyed by its stable id.' }],
         returns: 'disposer that removes this exact registration.',
+      },
+      {
+        signature: 'isEnabled(): boolean',
+        description: 'Read whether model and mutation operations may use personal memory. Administrative listing and forgetting remain available while disabled so the user can inspect or delete data.',
+        parameters: [],
+        returns: 'the current process-local operation state.',
+      },
+      {
+        signature: 'setEnabled(enabled: boolean): void',
+        description: 'Apply a deployment or durable-settings preference to all personal-memory Consumers.',
+        parameters: [{ name: 'enabled', description: 'Whether create, search, and correction operations may reach a provider.' }],
       },
       {
         signature: 'async create( request: PersonalMemoryCreateRequest, signal?: AbortSignal, ): Promise<PersonalMemoryRecord>',
@@ -3905,7 +3946,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MemoryAdminFailure',
-    declaration: 'export type MemoryAdminFailure = MemoryCandidateReviewSessionNotFound | MemoryCandidateReviewWorkspaceUnavailable | MemoryAdminReadOnly | MemoryAdminConfirmationRequired | MemoryAdminSensitiveContent | MemoryAdminOperationFailed;',
+    declaration: 'export type MemoryAdminFailure = MemoryCandidateReviewSessionNotFound | MemoryCandidateReviewWorkspaceUnavailable | MemoryAdminReadOnly | MemoryAdminConfirmationRequired | MemoryAdminSensitiveContent | MemoryAdminOperationFailed | PersonalMemoryAdminUnavailable;',
   },
   {
     name: 'MemoryAdminForgetRequest',
@@ -3941,7 +3982,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MemoryAdminOperationFailed',
-    declaration: 'export interface MemoryAdminOperationFailed {\n    readonly code: \'memory-admin-operation-failed\';\n    readonly action: \'list\' | \'correct\' | \'forget\';\n    readonly auditId?: MemoryAdminActionId;\n}',
+    declaration: 'export interface MemoryAdminOperationFailed {\n    readonly code: \'memory-admin-operation-failed\';\n    readonly action: \'list\' | \'remember\' | \'correct\' | \'forget\' | \'toggle\';\n    readonly auditId?: MemoryAdminActionId;\n}',
   },
   {
     name: 'MemoryAdminReadOnly',
@@ -4260,8 +4301,44 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PermissionSelect {\n    options: PresetOption[];\n    currentValue: string;\n}',
   },
   {
+    name: 'PersonalMemoryAdminListResult',
+    declaration: 'export type PersonalMemoryAdminListResult = {\n    readonly ok: true;\n    readonly value: PersonalMemoryAdminListValue;\n} | {\n    readonly ok: false;\n    readonly error: MemoryAdminFailure;\n};',
+  },
+  {
+    name: 'PersonalMemoryAdminListValue',
+    declaration: 'export interface PersonalMemoryAdminListValue extends MemoryAdminListValue {\n    readonly enabled: boolean;\n}',
+  },
+  {
+    name: 'PersonalMemoryAdminRememberRequest',
+    declaration: 'export interface PersonalMemoryAdminRememberRequest {\n    readonly sessionId: SessionId;\n    readonly content: string;\n    readonly confirmed: boolean;\n}',
+  },
+  {
+    name: 'PersonalMemoryAdminRememberResult',
+    declaration: 'export type PersonalMemoryAdminRememberResult = {\n    readonly ok: true;\n    readonly value: PersonalMemoryAdminRememberValue;\n} | {\n    readonly ok: false;\n    readonly error: MemoryAdminFailure;\n};',
+  },
+  {
+    name: 'PersonalMemoryAdminRememberValue',
+    declaration: 'export interface PersonalMemoryAdminRememberValue {\n    readonly item: MemoryAdminItem;\n    readonly auditId: MemoryAdminActionId;\n}',
+  },
+  {
+    name: 'PersonalMemoryAdminToggleRequest',
+    declaration: 'export interface PersonalMemoryAdminToggleRequest {\n    readonly sessionId: SessionId;\n    readonly enabled: boolean;\n    readonly confirmed: boolean;\n}',
+  },
+  {
+    name: 'PersonalMemoryAdminToggleResult',
+    declaration: 'export type PersonalMemoryAdminToggleResult = {\n    readonly ok: true;\n    readonly value: PersonalMemoryAdminToggleValue;\n} | {\n    readonly ok: false;\n    readonly error: MemoryAdminFailure;\n};',
+  },
+  {
+    name: 'PersonalMemoryAdminToggleValue',
+    declaration: 'export interface PersonalMemoryAdminToggleValue {\n    readonly enabled: boolean;\n    readonly auditId: MemoryAdminActionId;\n}',
+  },
+  {
+    name: 'PersonalMemoryAdminUnavailable',
+    declaration: 'export interface PersonalMemoryAdminUnavailable {\n    readonly code: \'memory-admin-personal-unavailable\';\n}',
+  },
+  {
     name: 'PersonalMemoryBlockedEvent',
-    declaration: 'export interface PersonalMemoryBlockedEvent {\n    readonly schemaVersion: 1;\n    readonly operation: PersonalMemoryOperationEvent[\'operation\'];\n    readonly ownerId: PersonalMemoryOwnerId;\n    readonly reason: \'credential-like\' | \'validation\' | \'provider\';\n    readonly errorCode: string;\n}',
+    declaration: 'export interface PersonalMemoryBlockedEvent {\n    readonly schemaVersion: 1;\n    readonly operation: PersonalMemoryOperationEvent[\'operation\'];\n    readonly ownerId: PersonalMemoryOwnerId;\n    readonly reason: \'credential-like\' | \'disabled\' | \'validation\' | \'provider\';\n    readonly errorCode: string;\n}',
   },
   {
     name: 'PersonalMemoryCreateRequest',

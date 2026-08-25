@@ -267,8 +267,13 @@ export interface MemoryAdminSensitiveContent {
 /** The provider rejected or could not complete an administrative operation. */
 export interface MemoryAdminOperationFailed {
   readonly code: 'memory-admin-operation-failed'
-  readonly action: 'list' | 'correct' | 'forget'
+  readonly action: 'list' | 'remember' | 'correct' | 'forget' | 'toggle'
   readonly auditId?: MemoryAdminActionId
+}
+
+/** Personal-memory administration was not composed for this deployment. */
+export interface PersonalMemoryAdminUnavailable {
+  readonly code: 'memory-admin-personal-unavailable'
 }
 
 /** Failure union for administrative memory operations. */
@@ -279,6 +284,7 @@ export type MemoryAdminFailure =
   | MemoryAdminConfirmationRequired
   | MemoryAdminSensitiveContent
   | MemoryAdminOperationFailed
+  | PersonalMemoryAdminUnavailable
 
 /** Administrative list result. */
 export type MemoryAdminListResult =
@@ -323,4 +329,51 @@ export type MemoryAdminCorrectResult =
 /** Administrative forgetting result. */
 export type MemoryAdminForgetResult =
   | { readonly ok: true; readonly value: MemoryAdminForgetValue }
+  | { readonly ok: false; readonly error: MemoryAdminFailure }
+
+/** One page of owner-isolated personal memories. */
+export interface PersonalMemoryAdminListValue extends MemoryAdminListValue {
+  /** Whether Leon may recall or add personal memories. Listing and forgetting remain available. */
+  readonly enabled: boolean
+}
+
+/** Personal-memory list result. */
+export type PersonalMemoryAdminListResult =
+  | { readonly ok: true; readonly value: PersonalMemoryAdminListValue }
+  | { readonly ok: false; readonly error: MemoryAdminFailure }
+
+/** Request to add one explicit personal fact. */
+export interface PersonalMemoryAdminRememberRequest {
+  readonly sessionId: SessionId
+  readonly content: string
+  readonly confirmed: boolean
+}
+
+/** Successful personal-memory creation response. */
+export interface PersonalMemoryAdminRememberValue {
+  readonly item: MemoryAdminItem
+  readonly auditId: MemoryAdminActionId
+}
+
+/** Personal-memory creation result. */
+export type PersonalMemoryAdminRememberResult =
+  | { readonly ok: true; readonly value: PersonalMemoryAdminRememberValue }
+  | { readonly ok: false; readonly error: MemoryAdminFailure }
+
+/** Request to enable or disable personal recall and storage. */
+export interface PersonalMemoryAdminToggleRequest {
+  readonly sessionId: SessionId
+  readonly enabled: boolean
+  readonly confirmed: boolean
+}
+
+/** Successful personal-memory preference mutation. */
+export interface PersonalMemoryAdminToggleValue {
+  readonly enabled: boolean
+  readonly auditId: MemoryAdminActionId
+}
+
+/** Personal-memory enablement result. */
+export type PersonalMemoryAdminToggleResult =
+  | { readonly ok: true; readonly value: PersonalMemoryAdminToggleValue }
   | { readonly ok: false; readonly error: MemoryAdminFailure }

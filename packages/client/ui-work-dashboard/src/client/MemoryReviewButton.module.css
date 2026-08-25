@@ -32,7 +32,7 @@
 
 .tabs {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 0.35rem;
   padding: 0.25rem;
   background: rgb(255 255 255 / 4%);
@@ -57,6 +57,54 @@
 .saved {
   display: grid;
   gap: 1rem;
+}
+
+.personalControl {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.8rem;
+  background: rgb(255 255 255 / 4%);
+  border: 1px solid rgb(255 255 255 / 9%);
+  border-radius: 0.65rem;
+}
+
+.personalControl p {
+  margin: 0.2rem 0 0;
+  color: var(--dsh-color-text-secondary, #a8a8ad);
+  font-size: 0.8rem;
+}
+
+.personalControl button,
+.personalComposer button {
+  padding: 0.45rem 0.75rem;
+  color: var(--dsh-color-text-primary, #fff);
+  background: rgb(255 255 255 / 7%);
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font: inherit;
+}
+
+.personalComposer {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.personalComposer label {
+  color: var(--dsh-color-text-secondary, #a8a8ad);
+  font-size: 0.82rem;
+}
+
+.personalComposer button {
+  justify-self: end;
+}
+
+.personalControl button:disabled,
+.personalComposer button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .filters {
@@ -212,6 +260,15 @@
 }
 
 @media (max-width: 38rem) {
+  .tabs {
+    grid-template-columns: 1fr;
+  }
+
+  .personalControl {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .filters {
     grid-template-columns: 1fr;
   }

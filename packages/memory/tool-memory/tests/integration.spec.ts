@@ -9,7 +9,9 @@ import MemoryRuntime from '@deepseek-ai/dsh-memory'
 import type { MemoryCandidateEvent, MemoryRecord } from '@deepseek-ai/dsh-memory'
 import * as MemoryLocal from '@deepseek-ai/dsh-memory-local'
 import PersonalMemoryRuntime from '@deepseek-ai/dsh-personal-memory'
+import { PersonalMemoryOwnerId } from '@deepseek-ai/dsh-personal-memory'
 import * as PersonalMemoryLocal from '@deepseek-ai/dsh-personal-memory-local'
+import { SettingsProvider, settingsNamespace, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import WorkspaceRegistry from '@deepseek-ai/dsh-workspace'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { agentEvents } from '@deepseek-ai/dsh-agent'
@@ -18,12 +20,33 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import * as ToolMemory from '@deepseek-ai/dsh-tool-memory'
 import MemoryCandidateReview, { type Config as MemoryCandidateReviewConfig } from '../src/review.ts'
-import type { MemoryAdminActionRecord, MemoryCandidateRecord } from '../src/spec.ts'
-import { memoryAdminDomainSpec, memoryCandidateDomainSpec } from '../src/spec.ts'
+import type {
+  MemoryAdminActionRecord,
+  MemoryCandidateRecord,
+  PersonalMemoryAdminActionRecord,
+} from '../src/spec.ts'
+import { memoryAdminDomainSpec, memoryCandidateDomainSpec, personalMemoryAdminDomainSpec } from '../src/spec.ts'
 import { MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 
 const tempDirs: string[] = []
+
+class TestSettings extends SettingsProvider {
+  private readonly storedDocument: Record<string, unknown> = {}
+
+  get writable(): boolean {
+    return true
+  }
+
+  protected load(): Promise<Record<string, unknown>> {
+    return Promise.resolve(structuredClone(this.storedDocument))
+  }
+
+  protected persist(namespace: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
+    this.storedDocument[namespace] = structuredClone(section)
+    return Promise.resolve()
+  }
+}
 
 afterEach(async () => {
   for (const dir of tempDirs.splice(0)) await rm(dir, { recursive: true, force: true })
@@ -58,6 +81,7 @@ async function harness(
   await ctx.plugin(MemoryLocal)
   await ctx.plugin(PersonalMemoryRuntime, { provider: 'local' })
   await ctx.plugin(PersonalMemoryLocal)
+  await ctx.plugin(TestSettings)
   await ctx.plugin(ToolMemory, config)
   await ctx.plugin(
     MemoryCandidateReview,
@@ -79,6 +103,12 @@ function readAdminActions(ctx: Context): MemoryAdminActionRecord[] {
   const domain = ctx.storageDomain.get(memoryAdminDomainSpec.name)
   if (domain === undefined) return []
   return [...domain.table('actions').entries()].map(([, value]) => value) as MemoryAdminActionRecord[]
+}
+
+function readPersonalAdminActions(ctx: Context): PersonalMemoryAdminActionRecord[] {
+  const domain = ctx.storageDomain.get(personalMemoryAdminDomainSpec.name)
+  if (domain === undefined) return []
+  return [...domain.table('actions').entries()].map(([, value]) => value) as PersonalMemoryAdminActionRecord[]
 }
 
 describe('memory tools through the real agent loop', () => {
@@ -722,6 +752,102 @@ describe('memory tools through the real agent loop', () => {
       },
     ])
     expect(JSON.stringify(readAdminActions(ctx))).not.toContain('porta 4175')
+    await ctx.fiber.dispose()
+  })
+
+  it('administers one isolated personal partition and persists the enablement preference', async () => {
+    const adapter = new MockAdapter([])
+    const { ctx, cwd } = await harness(
+      adapter,
+      {},
+      {
+        reviewedBy: 'test-local-reviewer',
+        administrationMode: 'full',
+        personalOwnerId: 'test-local-owner',
+      },
+    )
+    const agent = ctx.agentLoop.create(
+      SessionId('leon-personal-memory-administration'),
+      { provider: 'mock', model: 'mock' },
+      { cwd },
+    )
+    await ctx.personalMemory.create({
+      scope: { ownerId: PersonalMemoryOwnerId('another-owner') },
+      content: 'Esta memória pertence a outra pessoa.',
+      source: { kind: 'session', sessionId: agent.session.header.id },
+    })
+
+    await expect(ctx.memoryCandidateReview.listPersonalMemories({
+      sessionId: agent.session.header.id,
+    })).resolves.toMatchObject({ ok: true, value: { enabled: true, items: [] } })
+    await expect(ctx.memoryCandidateReview.rememberPersonalMemory({
+      sessionId: agent.session.header.id,
+      content: 'Prefiro respostas diretas em português brasileiro.',
+      confirmed: false,
+    })).resolves.toMatchObject({ ok: false, error: { code: 'memory-admin-confirmation-required' } })
+    expect(readPersonalAdminActions(ctx)).toEqual([])
+
+    const remembered = await ctx.memoryCandidateReview.rememberPersonalMemory({
+      sessionId: agent.session.header.id,
+      content: 'Prefiro respostas diretas em português brasileiro.',
+      confirmed: true,
+    })
+    expect(remembered).toMatchObject({
+      ok: true,
+      value: { item: { revision: 1, content: 'Prefiro respostas diretas em português brasileiro.' } },
+    })
+    if (!remembered.ok) throw new Error('expected personal-memory creation to succeed')
+
+    const corrected = await ctx.memoryCandidateReview.correctPersonalMemory({
+      sessionId: agent.session.header.id,
+      id: remembered.value.item.id,
+      revision: 1,
+      content: 'Prefiro respostas curtas e diretas em português brasileiro.',
+      confirmed: true,
+    })
+    expect(corrected).toMatchObject({ ok: true, value: { item: { revision: 2 } } })
+    if (!corrected.ok) throw new Error('expected personal-memory correction to succeed')
+
+    await expect(ctx.memoryCandidateReview.setPersonalMemoryEnabled({
+      sessionId: agent.session.header.id,
+      enabled: false,
+      confirmed: false,
+    })).resolves.toMatchObject({ ok: false, error: { code: 'memory-admin-confirmation-required' } })
+    await expect(ctx.memoryCandidateReview.setPersonalMemoryEnabled({
+      sessionId: agent.session.header.id,
+      enabled: false,
+      confirmed: true,
+    })).resolves.toMatchObject({ ok: true, value: { enabled: false } })
+    expect(ctx.personalMemory.isEnabled()).toBe(false)
+    expect(ctx.settings.get(settingsNamespace('personal-memory'))).toEqual({ enabled: false })
+    await expect(ctx.personalMemory.search({
+      scope: { ownerId: PersonalMemoryOwnerId('test-local-owner') },
+      query: 'respostas',
+      limit: 5,
+    })).rejects.toMatchObject({ code: 'PERSONAL_MEMORY_DISABLED' })
+    await expect(ctx.memoryCandidateReview.listPersonalMemories({
+      sessionId: agent.session.header.id,
+    })).resolves.toMatchObject({ ok: true, value: { enabled: false, items: [{ revision: 2 }] } })
+
+    await expect(ctx.memoryCandidateReview.forgetPersonalMemory({
+      sessionId: agent.session.header.id,
+      id: corrected.value.item.id,
+      revision: corrected.value.item.revision,
+      confirmed: true,
+    })).resolves.toMatchObject({ ok: true })
+    await expect(ctx.memoryCandidateReview.listPersonalMemories({
+      sessionId: agent.session.header.id,
+    })).resolves.toMatchObject({ ok: true, value: { items: [] } })
+    await expect(ctx.memoryCandidateReview.setPersonalMemoryEnabled({
+      sessionId: agent.session.header.id,
+      enabled: true,
+      confirmed: true,
+    })).resolves.toMatchObject({ ok: true, value: { enabled: true } })
+
+    const audit = readPersonalAdminActions(ctx)
+    expect(audit.map(action => action.action)).toEqual(['remember', 'correct', 'toggle', 'forget', 'toggle'])
+    expect(audit.every(action => action.ownerId === 'test-local-owner' && action.status === 'succeeded')).toBe(true)
+    expect(JSON.stringify(audit)).not.toContain('português brasileiro')
     await ctx.fiber.dispose()
   })
 

@@ -6,7 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import MemoryRuntime from '@deepseek-ai/dsh-memory'
-import type { MemoryCandidateEvent } from '@deepseek-ai/dsh-memory'
+import type { MemoryCandidateEvent, MemoryRecord } from '@deepseek-ai/dsh-memory'
 import * as MemoryLocal from '@deepseek-ai/dsh-memory-local'
 import WorkspaceRegistry from '@deepseek-ai/dsh-workspace'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
@@ -16,8 +16,8 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import * as ToolMemory from '@deepseek-ai/dsh-tool-memory'
 import MemoryCandidateReview, { type Config as MemoryCandidateReviewConfig } from '../src/review.ts'
-import type { MemoryCandidateRecord } from '../src/spec.ts'
-import { memoryCandidateDomainSpec } from '../src/spec.ts'
+import type { MemoryAdminActionRecord, MemoryCandidateRecord } from '../src/spec.ts'
+import { memoryAdminDomainSpec, memoryCandidateDomainSpec } from '../src/spec.ts'
 import { MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 
@@ -41,6 +41,7 @@ async function harness(
   await mountAgentLoopTestDependencies(ctx)
   ctx.provide('sessionPersistence', {
     list: () => Promise.resolve([]),
+    listSnapshots: () => Promise.resolve([]),
     load: () => Promise.reject(new Error('not used')),
     inspect: () => Promise.reject(new Error('not used')),
   } as never)
@@ -68,6 +69,12 @@ function readCandidateRows(ctx: Context): MemoryCandidateRecord[] {
   if (domain === undefined) return []
   const rows = [...domain.table('candidates').entries()].map(([, value]) => value)
   return rows as MemoryCandidateRecord[]
+}
+
+function readAdminActions(ctx: Context): MemoryAdminActionRecord[] {
+  const domain = ctx.storageDomain.get(memoryAdminDomainSpec.name)
+  if (domain === undefined) return []
+  return [...domain.table('actions').entries()].map(([, value]) => value) as MemoryAdminActionRecord[]
 }
 
 describe('memory tools through the real agent loop', () => {
@@ -606,6 +613,348 @@ describe('memory tools through the real agent loop', () => {
       id: candidate.id,
       decision: 'accept',
     })).resolves.toMatchObject({ ok: false, error: { code: 'memory-candidate-workspace-mismatch' } })
+    await ctx.fiber.dispose()
+  })
+
+  it('lists, corrects, and forgets exact workspace memories with confirmation and a session audit trail', async () => {
+    const adapter = new MockAdapter([])
+    const { ctx, cwd, workspace } = await harness(
+      adapter,
+      {},
+      { reviewedBy: 'test-local-reviewer', administrationMode: 'full' },
+    )
+    const agent = ctx.agentLoop.create(
+      SessionId('leon-memory-administration'),
+      { provider: 'mock', model: 'mock' },
+      { cwd },
+    )
+    const created = await ctx.memory.create({
+      scope: { workspaceId: workspace.id },
+      content: 'O Leon usa a porta 3080.',
+      source: { kind: 'session', sessionId: agent.session.header.id },
+      validation: 'explicit',
+    })
+
+    await expect(ctx.memoryCandidateReview.listMemories({
+      sessionId: agent.session.header.id,
+      statuses: ['active'],
+    })).resolves.toMatchObject({
+      ok: true,
+      value: {
+        readOnly: false,
+        items: [{ id: created.id, revision: 1, content: 'O Leon usa a porta 3080.', status: 'active' }],
+      },
+    })
+    await expect(ctx.memoryCandidateReview.listMemories({
+      sessionId: agent.session.header.id,
+      query: '  porta  ',
+      statuses: ['active'],
+      offset: Number.NaN,
+      limit: Number.NaN,
+    })).resolves.toMatchObject({ ok: true, value: { items: [{ id: created.id }] } })
+    await expect(ctx.memoryCandidateReview.correctMemory({
+      sessionId: agent.session.header.id,
+      id: created.id,
+      revision: 1,
+      content: 'O Leon usa a porta 4175.',
+      confirmed: false,
+    })).resolves.toMatchObject({ ok: false, error: { code: 'memory-admin-confirmation-required' } })
+    expect(readAdminActions(ctx)).toEqual([])
+
+    const corrected = await ctx.memoryCandidateReview.correctMemory({
+      sessionId: agent.session.header.id,
+      id: created.id,
+      revision: 1,
+      content: 'O Leon usa a porta 4175.',
+      confirmed: true,
+    })
+    expect(corrected).toMatchObject({
+      ok: true,
+      value: { item: { revision: 2, content: 'O Leon usa a porta 4175.', status: 'active' } },
+    })
+    await expect(ctx.memoryCandidateReview.listMemories({
+      sessionId: agent.session.header.id,
+      statuses: ['active', 'superseded'],
+    })).resolves.toMatchObject({
+      ok: true,
+      value: { items: [
+        { revision: 2, status: 'active' },
+        { revision: 1, status: 'superseded' },
+      ] },
+    })
+    await expect(ctx.memoryCandidateReview.forgetMemory({
+      sessionId: agent.session.header.id,
+      id: created.id,
+      revision: 2,
+      confirmed: false,
+    })).resolves.toMatchObject({ ok: false, error: { code: 'memory-admin-confirmation-required' } })
+    await expect(ctx.memoryCandidateReview.forgetMemory({
+      sessionId: agent.session.header.id,
+      id: created.id,
+      revision: 2,
+      confirmed: true,
+    })).resolves.toMatchObject({ ok: true, value: { id: created.id, revision: 2 } })
+    await expect(ctx.memoryCandidateReview.listMemories({
+      sessionId: agent.session.header.id,
+      statuses: ['active', 'superseded'],
+    })).resolves.toMatchObject({ ok: true, value: { items: [] } })
+    expect(readAdminActions(ctx)).toMatchObject([
+      {
+        workspaceId: workspace.id,
+        sessionId: agent.session.header.id,
+        memoryId: created.id,
+        expectedRevision: 1,
+        resultRevision: 2,
+        action: 'correct',
+        status: 'succeeded',
+      },
+      {
+        workspaceId: workspace.id,
+        sessionId: agent.session.header.id,
+        memoryId: created.id,
+        expectedRevision: 2,
+        action: 'forget',
+        status: 'succeeded',
+      },
+    ])
+    expect(JSON.stringify(readAdminActions(ctx))).not.toContain('porta 4175')
+    await ctx.fiber.dispose()
+  })
+
+  it('rejects invalid administrative requests and audits provider failures without content', async () => {
+    const adapter = new MockAdapter([])
+    const { ctx, cwd, workspace } = await harness(
+      adapter,
+      {},
+      { reviewedBy: 'test-local-reviewer', administrationMode: 'full' },
+    )
+    const agent = ctx.agentLoop.create(
+      SessionId('leon-memory-administration-failures'),
+      { provider: 'mock', model: 'mock' },
+      { cwd },
+    )
+    const created = await ctx.memory.create({
+      scope: { workspaceId: workspace.id },
+      content: 'Memória administrativa segura.',
+      source: { kind: 'session', sessionId: agent.session.header.id },
+    })
+
+    await expect(ctx.memoryCandidateReview.listMemories({
+      sessionId: agent.session.header.id,
+      query: '   ',
+    })).resolves.toMatchObject({ ok: false, error: { code: 'memory-admin-operation-failed', action: 'list' } })
+    await expect(ctx.memoryCandidateReview.listMemories({
+      sessionId: agent.session.header.id,
+      statuses: ['invalid' as 'active'],
+    })).resolves.toMatchObject({ ok: false, error: { code: 'memory-admin-operation-failed', action: 'list' } })
+    await expect(ctx.memoryCandidateReview.correctMemory({
+      sessionId: agent.session.header.id,
+      id: created.id,
+      revision: 1,
+      content: `API key = ${['sk', 'proj', 'fixture-memory-admin-secret'].join('-')}`,
+      confirmed: true,
+    })).resolves.toMatchObject({ ok: false, error: { code: 'memory-admin-sensitive-content' } })
+
+    await expect(ctx.memoryCandidateReview.correctMemory({
+      sessionId: agent.session.header.id,
+      id: created.id,
+      revision: 99,
+      content: 'Correção com revisão obsoleta.',
+      confirmed: true,
+    })).resolves.toMatchObject({ ok: false, error: { code: 'memory-admin-operation-failed', action: 'correct' } })
+    await expect(ctx.memoryCandidateReview.forgetMemory({
+      sessionId: agent.session.header.id,
+      id: created.id,
+      revision: 99,
+      confirmed: true,
+    })).resolves.toMatchObject({ ok: false, error: { code: 'memory-admin-operation-failed', action: 'forget' } })
+    const update = vi.spyOn(ctx.memory, 'update').mockRejectedValueOnce(new Error('private provider failure'))
+    await expect(ctx.memoryCandidateReview.correctMemory({
+      sessionId: agent.session.header.id,
+      id: created.id,
+      revision: 1,
+      content: 'Falha sem código público.',
+      confirmed: true,
+    })).resolves.toMatchObject({ ok: false, error: { code: 'memory-admin-operation-failed', action: 'correct' } })
+    update.mockRestore()
+
+    const unknownSession = SessionId('unknown-administrative-session')
+    await expect(ctx.memoryCandidateReview.listMemories({ sessionId: unknownSession }))
+      .resolves.toMatchObject({ ok: false })
+    await expect(ctx.memoryCandidateReview.correctMemory({
+      sessionId: unknownSession,
+      id: created.id,
+      revision: 1,
+      content: 'Não deve mudar.',
+      confirmed: true,
+    })).resolves.toMatchObject({ ok: false })
+    await expect(ctx.memoryCandidateReview.forgetMemory({
+      sessionId: unknownSession,
+      id: created.id,
+      revision: 1,
+      confirmed: true,
+    })).resolves.toMatchObject({ ok: false })
+
+    expect(readAdminActions(ctx)).toMatchObject([
+      { action: 'correct', status: 'failed', failureCode: 'MEMORY_REVISION_CONFLICT' },
+      { action: 'forget', status: 'failed', failureCode: 'MEMORY_REVISION_CONFLICT' },
+      { action: 'correct', status: 'failed', failureCode: 'UNKNOWN' },
+    ])
+    expect(JSON.stringify(readAdminActions(ctx))).not.toContain('Correção com revisão obsoleta')
+    await ctx.fiber.dispose()
+  })
+
+  it('projects provider-neutral temporal states and preserves success when audit completion fails', async () => {
+    const adapter = new MockAdapter([])
+    const { ctx, cwd, workspace } = await harness(
+      adapter,
+      {},
+      { reviewedBy: 'test-local-reviewer', administrationMode: 'full' },
+    )
+    const agent = ctx.agentLoop.create(
+      SessionId('leon-memory-administration-provider-projection'),
+      { provider: 'mock', model: 'mock' },
+      { cwd },
+    )
+    const created = await ctx.memory.create({
+      scope: { workspaceId: workspace.id },
+      content: 'Base temporal.',
+      source: { kind: 'session', sessionId: agent.session.header.id },
+    })
+    const base = {
+      ...created,
+      revision: 2,
+      content: 'Base temporal corrigida.',
+      importance: 0.8,
+      confidence: 0.9,
+      validation: 'reviewed' as const,
+      updatedAt: '2026-08-25T18:00:00.000Z',
+    } satisfies MemoryRecord
+    const update = vi.spyOn(ctx.memory, 'update')
+    update
+      .mockResolvedValueOnce({ ...base, validFrom: '2999-01-01T00:00:00.000Z' })
+      .mockResolvedValueOnce({ ...base, validUntil: '2000-01-01T00:00:00.000Z' })
+      .mockResolvedValueOnce({ ...base, supersededBy: { id: created.id, revision: 1 } })
+      .mockResolvedValueOnce({ ...base, expiresAt: '2000-01-01T00:00:00.000Z' })
+
+    for (const expected of ['scheduled', 'superseded', 'superseded', 'expired'] as const) {
+      await expect(ctx.memoryCandidateReview.correctMemory({
+        sessionId: agent.session.header.id,
+        id: created.id,
+        revision: 1,
+        content: `Estado ${expected}`,
+        confirmed: true,
+      })).resolves.toMatchObject({
+        ok: true,
+        value: { item: { status: expected, importance: 0.8, confidence: 0.9, validation: 'reviewed' } },
+      })
+    }
+    update.mockRestore()
+
+    const adminDomain = ctx.storageDomain.get(memoryAdminDomainSpec.name)
+    if (adminDomain === undefined) throw new Error('administrative domain missing in test')
+    const adminTable = adminDomain.table('actions')
+    const originalPut = adminTable.put.bind(adminTable)
+    const put = vi.spyOn(adminTable, 'put')
+    put.mockImplementationOnce(originalPut).mockRejectedValueOnce(new Error('audit completion unavailable'))
+    await expect(ctx.memoryCandidateReview.correctMemory({
+      sessionId: agent.session.header.id,
+      id: created.id,
+      revision: 1,
+      content: 'Mutação confirmada pelo provedor.',
+      confirmed: true,
+    })).resolves.toMatchObject({ ok: true, value: { item: { revision: 2 } } })
+    put.mockRestore()
+
+    await ctx.fiber.dispose()
+  })
+
+  it('blocks a mutation when the content-free audit intent cannot be admitted', async () => {
+    const adapter = new MockAdapter([])
+    const { ctx, cwd, workspace } = await harness(
+      adapter,
+      {},
+      { reviewedBy: 'test-local-reviewer', administrationMode: 'full' },
+    )
+    const agent = ctx.agentLoop.create(
+      SessionId('leon-memory-administration-audit-admission'),
+      { provider: 'mock', model: 'mock' },
+      { cwd },
+    )
+    const created = await ctx.memory.create({
+      scope: { workspaceId: workspace.id },
+      content: 'Não deve mudar sem auditoria.',
+      source: { kind: 'session', sessionId: agent.session.header.id },
+    })
+    const adminDomain = ctx.storageDomain.get(memoryAdminDomainSpec.name)
+    if (adminDomain === undefined) throw new Error('administrative domain missing in test')
+    const put = vi.spyOn(adminDomain.table('actions'), 'put').mockRejectedValueOnce(new Error('audit unavailable'))
+
+    await expect(ctx.memoryCandidateReview.correctMemory({
+      sessionId: agent.session.header.id,
+      id: created.id,
+      revision: 1,
+      content: 'Tentativa bloqueada.',
+      confirmed: true,
+    })).resolves.toMatchObject({ ok: false, error: { code: 'memory-admin-operation-failed', action: 'correct' } })
+    put.mockRestore()
+    const forgetPut = vi.spyOn(adminDomain.table('actions'), 'put').mockRejectedValueOnce(new Error('audit unavailable'))
+    await expect(ctx.memoryCandidateReview.forgetMemory({
+      sessionId: agent.session.header.id,
+      id: created.id,
+      revision: 1,
+      confirmed: true,
+    })).resolves.toMatchObject({ ok: false, error: { code: 'memory-admin-operation-failed', action: 'forget' } })
+    forgetPut.mockRestore()
+
+    const originalPut = adminDomain.table('actions').put.bind(adminDomain.table('actions'))
+    const finalizationPut = vi.spyOn(adminDomain.table('actions'), 'put')
+    finalizationPut.mockImplementationOnce(originalPut).mockRejectedValueOnce(new Error('audit finalization unavailable'))
+    const update = vi.spyOn(ctx.memory, 'update').mockRejectedValueOnce(new Error('provider unavailable'))
+    await expect(ctx.memoryCandidateReview.correctMemory({
+      sessionId: agent.session.header.id,
+      id: created.id,
+      revision: 1,
+      content: 'Falha do provedor com falha de auditoria.',
+      confirmed: true,
+    })).resolves.toMatchObject({ ok: false, error: { code: 'memory-admin-operation-failed', action: 'correct' } })
+    update.mockRestore()
+    finalizationPut.mockRestore()
+    await expect(ctx.memory.search({
+      scope: { workspaceId: workspace.id },
+      query: 'não deve mudar',
+      limit: 8,
+    })).resolves.toMatchObject([{ record: { revision: 1, content: 'Não deve mudar sem auditoria.' } }])
+    await ctx.fiber.dispose()
+  })
+
+  it('keeps memory administration read-only by default and redacts legacy credential-like content', async () => {
+    const adapter = new MockAdapter([])
+    const { ctx, cwd, workspace } = await harness(adapter)
+    const agent = ctx.agentLoop.create(
+      SessionId('leon-memory-administration-read-only'),
+      { provider: 'mock', model: 'mock' },
+      { cwd },
+    )
+    const created = await ctx.memory.create({
+      scope: { workspaceId: workspace.id },
+      content: `API key = ${['sk', 'proj', 'fixture-memory-admin-secret'].join('-')}`,
+      source: { kind: 'session', sessionId: agent.session.header.id },
+    })
+
+    const listed = await ctx.memoryCandidateReview.listMemories({ sessionId: agent.session.header.id })
+    expect(listed).toMatchObject({
+      ok: true,
+      value: { readOnly: true, items: [{ id: created.id, redacted: true }] },
+    })
+    expect(JSON.stringify(listed)).not.toContain('sk-proj-')
+    await expect(ctx.memoryCandidateReview.forgetMemory({
+      sessionId: agent.session.header.id,
+      id: created.id,
+      revision: 1,
+      confirmed: true,
+    })).resolves.toMatchObject({ ok: false, error: { code: 'memory-admin-read-only' } })
+    expect(readAdminActions(ctx)).toEqual([])
     await ctx.fiber.dispose()
   })
 

@@ -19,6 +19,27 @@ export function MemoryCandidateId(id: string): MemoryCandidateId {
   return id as MemoryCandidateId
 }
 
+/** Unique content-free audit identity for one administrative memory mutation. */
+export type MemoryAdminActionId = Branded<'MemoryAdminActionId'>
+
+/**
+ * Brand one locally generated administrative audit identity.
+ * @param id - Raw locally generated audit identifier.
+ * @returns The same string carrying the administrative-audit brand.
+ */
+export function MemoryAdminActionId(id: string): MemoryAdminActionId {
+  return id as MemoryAdminActionId
+}
+
+/** Browser-safe identity compatible with the provider-owned memory id brand. */
+export type MemoryAdminId = Branded<'MemoryId'>
+
+/** Browser-side lifecycle state copied from the provider-neutral administrative projection. */
+export type MemoryAdminStatus = 'active' | 'scheduled' | 'expired' | 'superseded'
+
+/** Browser-side confirmation class copied from one durable memory. */
+export type MemoryAdminValidation = 'explicit' | 'reviewed'
+
 /** Candidate events used by memory extraction telemetry and shadow persistence. */
 export type MemoryCandidateOperation = 'message_candidate' | 'memory_recall' | 'tool_call_memory_search'
 
@@ -191,3 +212,115 @@ export interface MemoryCandidateReviewMarkValue {
 export type MemoryCandidateReviewMarkResult =
   | { readonly ok: true; readonly value: MemoryCandidateReviewMarkValue }
   | { readonly ok: false; readonly error: MemoryCandidateReviewFailure }
+
+/** Browser-safe projection of one durable memory revision. */
+export interface MemoryAdminItem {
+  readonly id: MemoryAdminId
+  readonly revision: number
+  /** Omitted when a legacy credential signature requires local redaction. */
+  readonly content?: string
+  readonly redacted: boolean
+  readonly status: MemoryAdminStatus
+  readonly sourceSessionId: SessionId
+  readonly importance?: number
+  readonly confidence?: number
+  readonly validation?: MemoryAdminValidation
+  readonly validFrom?: string
+  readonly validUntil?: string
+  readonly expiresAt?: string
+  readonly createdAt: string
+  readonly updatedAt: string
+}
+
+/** List one authorized workspace memory partition with bounded filters. */
+export interface MemoryAdminListRequest {
+  readonly sessionId: SessionId
+  readonly query?: string
+  readonly statuses?: readonly MemoryAdminStatus[]
+  readonly offset?: number
+  readonly limit?: number
+}
+
+/** One page of administrative memory rows. */
+export interface MemoryAdminListValue {
+  readonly items: readonly MemoryAdminItem[]
+  readonly hasMore: boolean
+  readonly nextOffset: number
+  readonly readOnly: boolean
+}
+
+/** Mutation is disabled by the deployment rollback switch. */
+export interface MemoryAdminReadOnly {
+  readonly code: 'memory-admin-read-only'
+}
+
+/** A destructive or corrective action lacked explicit operator confirmation. */
+export interface MemoryAdminConfirmationRequired {
+  readonly code: 'memory-admin-confirmation-required'
+}
+
+/** Corrected text matched a credential signature and was rejected before persistence. */
+export interface MemoryAdminSensitiveContent {
+  readonly code: 'memory-admin-sensitive-content'
+}
+
+/** The provider rejected or could not complete an administrative operation. */
+export interface MemoryAdminOperationFailed {
+  readonly code: 'memory-admin-operation-failed'
+  readonly action: 'list' | 'correct' | 'forget'
+  readonly auditId?: MemoryAdminActionId
+}
+
+/** Failure union for administrative memory operations. */
+export type MemoryAdminFailure =
+  | MemoryCandidateReviewSessionNotFound
+  | MemoryCandidateReviewWorkspaceUnavailable
+  | MemoryAdminReadOnly
+  | MemoryAdminConfirmationRequired
+  | MemoryAdminSensitiveContent
+  | MemoryAdminOperationFailed
+
+/** Administrative list result. */
+export type MemoryAdminListResult =
+  | { readonly ok: true; readonly value: MemoryAdminListValue }
+  | { readonly ok: false; readonly error: MemoryAdminFailure }
+
+/** Request to correct one exact memory revision. */
+export interface MemoryAdminCorrectRequest {
+  readonly sessionId: SessionId
+  readonly id: MemoryAdminId
+  readonly revision: number
+  readonly content: string
+  readonly confirmed: boolean
+}
+
+/** Request to forget one exact memory lineage. */
+export interface MemoryAdminForgetRequest {
+  readonly sessionId: SessionId
+  readonly id: MemoryAdminId
+  readonly revision: number
+  readonly confirmed: boolean
+}
+
+/** Successful administrative correction response. */
+export interface MemoryAdminCorrectValue {
+  readonly item: MemoryAdminItem
+  readonly auditId: MemoryAdminActionId
+}
+
+/** Successful administrative forget response. */
+export interface MemoryAdminForgetValue {
+  readonly id: MemoryAdminId
+  readonly revision: number
+  readonly auditId: MemoryAdminActionId
+}
+
+/** Administrative correction result. */
+export type MemoryAdminCorrectResult =
+  | { readonly ok: true; readonly value: MemoryAdminCorrectValue }
+  | { readonly ok: false; readonly error: MemoryAdminFailure }
+
+/** Administrative forgetting result. */
+export type MemoryAdminForgetResult =
+  | { readonly ok: true; readonly value: MemoryAdminForgetValue }
+  | { readonly ok: false; readonly error: MemoryAdminFailure }

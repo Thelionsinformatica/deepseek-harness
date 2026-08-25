@@ -11,11 +11,15 @@ import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import {
   MemoryError,
   MemoryId,
+  memoryStatusAt,
   MEMORY_EVENT_SCHEMA_VERSION,
   MEMORY_RECORD_SCHEMA_VERSION,
   type MemoryBlockedEvent,
   type MemoryCreateRequest,
   type MemoryForgetRequest,
+  type MemoryListItem,
+  type MemoryListPage,
+  type MemoryListRequest,
   type MemoryProvider,
   type MemoryRecord,
   type MemorySearchHit,
@@ -218,6 +222,35 @@ export class LocalMemoryProvider implements MemoryProvider {
       })
       return lexical
     }
+  }
+
+  list(request: MemoryListRequest, signal?: AbortSignal): Promise<MemoryListPage> {
+    assertNotAborted(signal)
+    const query = request.query === undefined ? undefined : normalize(request.query)
+    const statusFilter = request.statuses === undefined ? undefined : new Set(request.statuses)
+    const now = Date.now()
+    const matching: MemoryListItem[] = []
+    for (const [id, stored] of this.table.entries()) {
+      if (stored.workspaceId !== request.scope.workspaceId) continue
+      for (const record of searchableRecords(id, stored, true, this.historyMode, now)) {
+        const status = memoryStatusAt(record, now)
+        if (statusFilter !== undefined && !statusFilter.has(status)) continue
+        if (query !== undefined
+          && !normalize(record.content).includes(query)
+          && !normalize(String(record.id)).includes(query)) continue
+        matching.push({ record, status })
+      }
+    }
+    matching.sort((left, right) => right.record.updatedAt.localeCompare(left.record.updatedAt)
+      || String(left.record.id).localeCompare(String(right.record.id))
+      || right.record.revision - left.record.revision)
+    const offset = request.offset ?? 0
+    const items = matching.slice(offset, offset + request.limit)
+    return Promise.resolve(Object.freeze({
+      items: Object.freeze(items),
+      hasMore: offset + items.length < matching.length,
+      nextOffset: offset + items.length,
+    }))
   }
 
   update(request: MemoryUpdateRequest, signal?: AbortSignal): Promise<MemoryRecord> {

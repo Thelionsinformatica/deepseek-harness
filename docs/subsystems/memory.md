@@ -44,6 +44,8 @@ The Leon preset enables bounded automatic recall on the first model request of e
 
 `tool-memory` emits deterministic policy metadata for each `memory/candidate` event and each persisted shadow candidate row: `policyVersion`, `policyDecision`, and `policyReason`. Candidate telemetry carries only the transient query length, never its text, including when policy blocks the query or requires confirmation. This supports replay and review workflows without changing recall content behavior yet.
 
+The browser review control also exposes a saved-memory administration tab. Its Host Remote resolves the requesting Session to one workspace, lists current and historical revisions by text and lifecycle status, redacts credential-like legacy content, and requires visible confirmation plus the exact revision before correction or forgetting. Mutations are recorded in a separate content-free `memory_admin` audit domain before durable state changes. `administrationMode: read-only` disables mutations without removing inspection, and none of these operations enter model context or change the four public memory tools.
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -81,6 +83,14 @@ async create(request: MemoryCreateRequest, signal?: AbortSignal): Promise<Memory
  * @returns ranked hits capped to the requested limit.
  */
 async search(request: MemorySearchRequest, signal?: AbortSignal): Promise<readonly MemorySearchHit[]>
+
+/**
+ * Enumerate one bounded workspace partition for an authorized administrative surface.
+ * @param request - Workspace scope, optional filters, and page coordinates.
+ * @param signal - Optional cancellation forwarded to the selected provider.
+ * @returns a stable page of provider-projected memory revisions.
+ */
+async list(request: MemoryListRequest, signal?: AbortSignal): Promise<MemoryListPage>
 
 /**
  * Correct one exact memory revision through the selected provider.
@@ -121,6 +131,27 @@ async recordCandidate(record: MemoryCandidateRecord): Promise<void>
  * @returns projected rows or an explicit ownership failure.
  */
 @Remote('list') async list(request: MemoryCandidateReviewListRequest): Promise<MemoryCandidateReviewListResult>
+
+/**
+ * List durable memories for the addressed Session's exact workspace partition.
+ * @param request - Session authorization anchor, lifecycle filters, and bounded page coordinates.
+ * @returns Browser-safe workspace rows or an explicit administrative failure.
+ */
+@Remote('listMemories') async listMemories(request: MemoryAdminListRequest): Promise<MemoryAdminListResult>
+
+/**
+ * Correct one exact memory revision after explicit operator confirmation.
+ * @param request - Session anchor, exact memory revision, replacement content, and confirmation.
+ * @returns The corrected browser-safe row and audit id, or an explicit failure.
+ */
+@Remote('correctMemory') correctMemory(request: MemoryAdminCorrectRequest): Promise<MemoryAdminCorrectResult>
+
+/**
+ * Forget one exact memory lineage after explicit operator confirmation.
+ * @param request - Session anchor, exact memory revision, and confirmation.
+ * @returns The forgotten reference and audit id, or an explicit failure.
+ */
+@Remote('forgetMemory') forgetMemory(request: MemoryAdminForgetRequest): Promise<MemoryAdminForgetResult>
 
 /**
  * Record one immutable human decision and optionally persist an authorized candidate.

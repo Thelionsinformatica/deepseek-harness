@@ -127,6 +127,49 @@ export interface MemorySearchHit {
   readonly score: number
 }
 
+/** Administrative lifecycle state derived from one memory revision at read time. */
+export type MemoryStatus = 'active' | 'scheduled' | 'expired' | 'superseded'
+
+/**
+ * Derive one provider-neutral lifecycle state from temporal lineage metadata.
+ * @param record - Validated durable memory revision to classify.
+ * @param now - Epoch milliseconds used as the deterministic comparison instant.
+ * @returns The revision's operator-facing lifecycle state.
+ */
+export function memoryStatusAt(record: MemoryRecord, now = Date.now()): MemoryStatus {
+  if (record.validFrom !== undefined && Date.parse(record.validFrom) > now) return 'scheduled'
+  if (record.validUntil !== undefined && Date.parse(record.validUntil) <= now) return 'superseded'
+  if (record.supersededBy !== undefined && record.validUntil === undefined) return 'superseded'
+  if (record.expiresAt !== undefined && Date.parse(record.expiresAt) <= now) return 'expired'
+  return 'active'
+}
+
+/** Request to enumerate one workspace partition without exposing provider storage details. */
+export interface MemoryListRequest {
+  readonly scope: MemoryScope
+  /** Optional content/id substring filter; omitted lists the whole bounded partition. */
+  readonly query?: string
+  /** Optional lifecycle-state filter; omitted includes every state. */
+  readonly statuses?: readonly MemoryStatus[]
+  /** Zero-based page offset. */
+  readonly offset?: number
+  /** Maximum returned rows. */
+  readonly limit: number
+}
+
+/** One listed revision paired with its derived lifecycle state. */
+export interface MemoryListItem {
+  readonly record: MemoryRecord
+  readonly status: MemoryStatus
+}
+
+/** Stable page returned by provider-neutral administrative listing. */
+export interface MemoryListPage {
+  readonly items: readonly MemoryListItem[]
+  readonly hasMore: boolean
+  readonly nextOffset: number
+}
+
 /** Request to replace the content of one exact memory revision. */
 export interface MemoryUpdateRequest {
   readonly scope: MemoryScope
@@ -191,7 +234,7 @@ export interface MemoryCandidateEvent {
 export interface MemoryOperationEvent {
   readonly schemaVersion: MemoryEventSchemaVersion
   /** Human-readable operation verb. */
-  readonly operation: 'create' | 'search' | 'update' | 'forget'
+  readonly operation: 'create' | 'search' | 'list' | 'update' | 'forget'
   /** Name of the selected provider, or `'unknown'` when no provider was resolved. */
   readonly provider: string
   /** Whether the operation call succeeded after provider execution. */
@@ -239,6 +282,7 @@ export interface MemoryProvider {
   available(): boolean
   create(request: MemoryCreateRequest, signal?: AbortSignal): Promise<MemoryRecord>
   search(request: MemorySearchRequest, signal?: AbortSignal): Promise<readonly MemorySearchHit[]>
+  list(request: MemoryListRequest, signal?: AbortSignal): Promise<MemoryListPage>
   update(request: MemoryUpdateRequest, signal?: AbortSignal): Promise<MemoryRecord>
   forget(request: MemoryForgetRequest, signal?: AbortSignal): Promise<void>
 }

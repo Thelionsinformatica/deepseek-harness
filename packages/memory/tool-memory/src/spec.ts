@@ -6,12 +6,14 @@ import { WorkspaceId, type WorkspaceId as WorkspaceIdentity } from '@deepseek-ai
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 import {
   MEMORY_POLICY_VERSION,
+  MemoryId,
   type MemoryPolicyDecision,
   type MemoryPolicyReason,
   type MemoryPolicyVersion,
 } from '@deepseek-ai/dsh-memory'
 import {
   MemoryCandidateId,
+  MemoryAdminActionId,
   type MemoryCandidateCategory,
   type MemoryCandidateAutoWriteTrace,
   type MemoryCandidateOperation,
@@ -128,4 +130,43 @@ export const memoryCandidateDomainSpec = defineDomain({
   name: 'memory_candidate',
   version: 2,
   tables: { candidates: domainTable<ReturnType<typeof MemoryCandidateId>, MemoryCandidateRecord>(memoryCandidateRecord) },
+})
+
+/** Durable, content-free trace of one user-confirmed memory administration action. */
+export interface MemoryAdminActionRecord {
+  readonly id: MemoryAdminActionId
+  readonly workspaceId: WorkspaceIdentity
+  readonly sessionId: SessionIdentity
+  readonly memoryId: ReturnType<typeof MemoryId>
+  readonly expectedRevision: number
+  readonly resultRevision?: number
+  readonly action: 'correct' | 'forget'
+  readonly status: 'requested' | 'succeeded' | 'failed'
+  readonly failureCode?: string
+  readonly createdAt: string
+  readonly completedAt?: string
+}
+
+/** Boundary schema for a content-free administrative mutation trace. */
+export const memoryAdminActionRecord = z.object({
+  id: z.string().transform(MemoryAdminActionId),
+  workspaceId: z.string().transform(WorkspaceId),
+  sessionId: z.string().transform(SessionId),
+  memoryId: z.string().transform(MemoryId),
+  expectedRevision: z.number().int().positive(),
+  resultRevision: z.number().int().positive().optional(),
+  action: z.enum(['correct', 'forget']),
+  status: z.enum(['requested', 'succeeded', 'failed']),
+  failureCode: z.string().optional(),
+  createdAt: z.string(),
+  completedAt: z.string().optional(),
+}) as unknown as z.ZodType<MemoryAdminActionRecord>
+
+/** Separate audit domain so the existing candidate queue remains migration-compatible. */
+export const memoryAdminDomainSpec = defineDomain({
+  name: 'memory_admin',
+  version: 1,
+  tables: {
+    actions: domainTable<ReturnType<typeof MemoryAdminActionId>, MemoryAdminActionRecord>(memoryAdminActionRecord),
+  },
 })

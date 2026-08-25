@@ -80,6 +80,9 @@
         automaticWrite: false
         automaticWriteWorkspaceIds: []
         automaticWriteUserIds: []
+        # Correction/forget stay confirmation-gated in the UI and endpoint.
+        # Set this back to read-only for an immediate mutation rollback.
+        administrationMode: full
 
     - id: message-feedback
       name: '@deepseek-ai/dsh-message-feedback'

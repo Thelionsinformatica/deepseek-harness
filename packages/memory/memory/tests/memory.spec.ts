@@ -5,6 +5,7 @@ import MemoryRuntime, {
   type MemoryBlockedEvent,
   type MemoryCreateRequest,
   type MemoryForgetRequest,
+  type MemoryListRequest,
   type MemoryOperationEvent,
   type MemoryProvider,
   type MemoryRecord,
@@ -35,6 +36,11 @@ function provider(id: string, usable = true): MemoryProvider {
     available: () => usable,
     create: request => Promise.resolve(record(request.content)),
     search: () => Promise.resolve([{ record: record(), score: 1 }]),
+    list: () => Promise.resolve({
+      items: [{ record: record(), status: 'active' }],
+      hasMore: false,
+      nextOffset: 1,
+    }),
     update: request => Promise.resolve(record(request.content)),
     forget: () => Promise.resolve(),
   }
@@ -113,6 +119,62 @@ describe('MemoryRuntime provider selection', () => {
     expect(create.mock.calls[0]?.[0].content).toBe('remembered')
     expect(update.mock.calls[0]?.[0].content).toBe('corrected')
     expect(forget).toHaveBeenCalledOnce()
+  })
+
+  it('validates and forwards bounded provider-neutral administrative listing', async () => {
+    const ctx = await harness()
+    const list = vi.fn((_request: MemoryListRequest) => Promise.resolve({
+      items: [{ record: record(), status: 'active' as const }],
+      hasMore: false,
+      nextOffset: 1,
+    }))
+    ctx.memory.registerProvider({ ...provider('local'), list })
+
+    await expect(ctx.memory.list({
+      scope,
+      query: '  servidor  ',
+      statuses: ['active', 'active'],
+      limit: 25,
+    })).resolves.toMatchObject({ items: [{ status: 'active' }] })
+    expect(list.mock.calls[0]?.[0]).toMatchObject({
+      query: 'servidor',
+      statuses: ['active'],
+      offset: 0,
+      limit: 25,
+    })
+    await expect(ctx.memory.list({ scope, query: '   ', limit: 1 }))
+      .rejects.toThrow(expect.objectContaining({ code: 'MEMORY_INVALID_QUERY' }))
+    await expect(ctx.memory.list({ scope, offset: -1, limit: 1 }))
+      .rejects.toThrow(expect.objectContaining({ code: 'MEMORY_INVALID_OFFSET' }))
+    await expect(ctx.memory.list({ scope, limit: 201 }))
+      .rejects.toThrow(expect.objectContaining({ code: 'MEMORY_INVALID_LIMIT' }))
+    await expect(ctx.memory.list({ scope, statuses: ['unknown' as 'active'], limit: 1 }))
+      .rejects.toThrow(expect.objectContaining({ code: 'MEMORY_INVALID_STATUS' }))
+    await expect(ctx.memory.list({ scope, query: 'x'.repeat(2_049), limit: 1 }))
+      .rejects.toThrow(expect.objectContaining({ code: 'MEMORY_INVALID_QUERY' }))
+    await expect(ctx.memory.list({ scope, offset: 1.5, limit: 1 }))
+      .rejects.toThrow(expect.objectContaining({ code: 'MEMORY_INVALID_OFFSET' }))
+    await expect(ctx.memory.list({ scope, limit: 0 }))
+      .rejects.toThrow(expect.objectContaining({ code: 'MEMORY_INVALID_LIMIT' }))
+    await expect(ctx.memory.list({ scope, limit: 1.5 }))
+      .rejects.toThrow(expect.objectContaining({ code: 'MEMORY_INVALID_LIMIT' }))
+  })
+
+  it('emits a sanitized block and preserves provider list failures', async () => {
+    const ctx = await harness()
+    const blocked: MemoryBlockedEvent[] = []
+    ctx.on('memory/blocked', event => blocked.push(event))
+    const failure = Object.assign(new Error('private provider detail'), { code: 'MEMORY_PROVIDER_UNAVAILABLE' })
+    ctx.memory.registerProvider({ ...provider('local'), list: () => Promise.reject(failure) })
+
+    await expect(ctx.memory.list({ scope, limit: 10 })).rejects.toBe(failure)
+    expect(blocked).toMatchObject([{
+      reason: 'provider-unavailable',
+      source: 'memory-runtime',
+      workspaceId: scope.workspaceId,
+      detail: 'MEMORY_PROVIDER_UNAVAILABLE',
+    }])
+    expect(JSON.stringify(blocked)).not.toContain('private provider detail')
   })
 
   it('validates and forwards optional ranking metadata at the provider-neutral boundary', async () => {
@@ -234,11 +296,12 @@ describe('MemoryRuntime provider selection', () => {
 
     const created = await ctx.memory.create({ scope, content: ' mem  ', source })
     await ctx.memory.search({ scope, query: 'mem', limit: 1 })
+    await ctx.memory.list({ scope, limit: 10 })
     await ctx.memory.update({ scope, ref: { id: created.id, revision: 1 }, content: 'corrigido' })
     await ctx.memory.forget({ scope, ref: { id: created.id, revision: 1 } })
 
-    expect(events.map(event => event.operation)).toEqual(['create', 'search', 'update', 'forget'])
-    expect(events).toHaveLength(4)
+    expect(events.map(event => event.operation)).toEqual(['create', 'search', 'list', 'update', 'forget'])
+    expect(events).toHaveLength(5)
     for (const event of events) {
       expect(event.schemaVersion).toBe(3)
       expect(event.success).toBe(true)

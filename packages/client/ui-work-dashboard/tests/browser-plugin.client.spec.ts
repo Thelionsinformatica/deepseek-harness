@@ -41,6 +41,30 @@ async function bench(declare = true) {
       },
     },
   }))
+  const listMemories = vi.fn((_request: unknown) => Promise.resolve({
+    ok: true as const,
+    value: { items: [], hasMore: false, nextOffset: 0, readOnly: false },
+  }))
+  const correctMemory = vi.fn((request: { id: string; revision: number; content: string }) => Promise.resolve({
+    ok: true as const,
+    value: {
+      item: {
+        id: request.id,
+        revision: request.revision + 1,
+        content: request.content,
+        redacted: false,
+        status: 'active' as const,
+        sourceSessionId: 'session-one' as SessionId,
+        createdAt: '2026-08-25T10:00:00.000Z',
+        updatedAt: '2026-08-25T12:00:00.000Z',
+      },
+      auditId: 'audit-correct',
+    },
+  }))
+  const forgetMemory = vi.fn((request: { id: string; revision: number }) => Promise.resolve({
+    ok: true as const,
+    value: { id: request.id, revision: request.revision, auditId: 'audit-forget' },
+  }))
   ctx.provide('sessions', { open })
   ctx.provide('workspaces', { startSession })
   ctx.provide('locale', new LocaleRuntime(ctx))
@@ -48,6 +72,13 @@ async function bench(declare = true) {
     list: async (request: unknown) => ({ ok: true as const, value: await list(request) }),
     markReviewed: async (request: Parameters<typeof markReviewed>[0]) => ({
       ok: true as const, value: await markReviewed(request),
+    }),
+    listMemories: async (request: unknown) => ({ ok: true as const, value: await listMemories(request) }),
+    correctMemory: async (request: Parameters<typeof correctMemory>[0]) => ({
+      ok: true as const, value: await correctMemory(request),
+    }),
+    forgetMemory: async (request: Parameters<typeof forgetMemory>[0]) => ({
+      ok: true as const, value: await forgetMemory(request),
     }),
   }
   ctx.provide('remote', { memoryCandidateReview } as never)
@@ -64,7 +95,10 @@ async function bench(declare = true) {
     children: { 'conversation.hero.dashboard': { kind: 'single', scope: 'root' } },
   } as never, () => null)
   const disposeHole = declare ? declareHole() : undefined
-  return { ctx, slots, open, startSession, list, markReviewed, declareHole, disposeHole }
+  return {
+    ctx, slots, open, startSession, list, markReviewed, listMemories, correctMemory, forgetMemory,
+    memoryCandidateReview, declareHole, disposeHole,
+  }
 }
 
 describe('ui-work-dashboard browser plugin', () => {
@@ -113,11 +147,83 @@ describe('ui-work-dashboard browser plugin', () => {
 
     const page = await actions.list(sessionId)
     const reviewed = await actions.review(sessionId, candidateId, 'accept')
+    const memories = await actions.listMemories(sessionId, 'porta', ['active'])
+    await actions.listMemories(sessionId)
+    const item = {
+      id: 'memory-one',
+      revision: 1,
+      content: 'porta 3080',
+      redacted: false,
+      status: 'active' as const,
+      sourceSessionId: sessionId,
+      createdAt: '2026-08-25T10:00:00.000Z',
+      updatedAt: '2026-08-25T10:00:00.000Z',
+    } as Parameters<typeof actions.correctMemory>[1]
+    const corrected = await actions.correctMemory(sessionId, item, 'porta 4175')
+    await actions.forgetMemory(sessionId, corrected)
 
     expect(page.items).toEqual([])
     expect(b.list).toHaveBeenCalledWith({ sessionId, reviewed: false, limit: 50 })
     expect(b.markReviewed).toHaveBeenCalledWith({ sessionId, id: candidateId, decision: 'accept' })
     expect(reviewed.reviewDecision).toBe('accept')
+    expect(memories.items).toEqual([])
+    expect(b.listMemories).toHaveBeenCalledWith({
+      sessionId,
+      query: 'porta',
+      statuses: ['active'],
+      limit: 100,
+    })
+    expect(b.listMemories).toHaveBeenCalledWith({ sessionId, limit: 100 })
+    expect(b.correctMemory).toHaveBeenCalledWith({
+      sessionId,
+      id: 'memory-one',
+      revision: 1,
+      content: 'porta 4175',
+      confirmed: true,
+    })
+    expect(b.forgetMemory).toHaveBeenCalledWith({
+      sessionId,
+      id: 'memory-one',
+      revision: 2,
+      confirmed: true,
+    })
+  })
+
+  it('surfaces transport and business failures from every memory Remote', async () => {
+    const b = await bench()
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const entry = b.slots.entries('conversation.session.header.actions')[0]!
+    const actions = (entry.inject as unknown as () => MemoryReviewInjected)()
+    const sessionId = 'session-one' as SessionId
+    const candidateId = 'candidate-one' as MemoryCandidateId
+    const item = {
+      id: 'memory-one',
+      revision: 1,
+      content: 'porta 3080',
+      redacted: false,
+      status: 'active' as const,
+      sourceSessionId: sessionId,
+      createdAt: '2026-08-25T10:00:00.000Z',
+      updatedAt: '2026-08-25T10:00:00.000Z',
+    } as Parameters<typeof actions.correctMemory>[1]
+    const transport = { ok: false as const, error: { code: 'transport', message: 'offline' } }
+    const business = { ok: true as const, value: { ok: false as const, error: { code: 'business-rule' } } }
+
+    for (const [method, invoke] of [
+      ['list', () => actions.list(sessionId)],
+      ['markReviewed', () => actions.review(sessionId, candidateId, 'reject')],
+      ['listMemories', () => actions.listMemories(sessionId)],
+      ['correctMemory', () => actions.correctMemory(sessionId, item, 'porta 4175')],
+      ['forgetMemory', () => actions.forgetMemory(sessionId, item)],
+    ] as const) {
+      const spy = vi.spyOn(b.memoryCandidateReview, method)
+      spy.mockResolvedValueOnce(transport as never)
+      await expect(invoke()).rejects.toThrow('transport: offline')
+      spy.mockResolvedValueOnce(business as never)
+      await expect(invoke()).rejects.toThrow('business-rule')
+      spy.mockRestore()
+    }
   })
 
   it('delegates task start and recent-session navigation to their owners', async () => {

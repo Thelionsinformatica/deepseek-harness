@@ -40,6 +40,7 @@ English | [中文](leon-memory-v2-roadmap.zh.md)
 
 - Add explicit supersession and expiration support.
 - Ignore obsolete versions by default during queries.
+- Add workspace-scoped saved-memory administration with explicit confirmation, content-free audit, and read-only rollback.
 
 ### Phase M2-09 — LEON-EVAL and stability
 

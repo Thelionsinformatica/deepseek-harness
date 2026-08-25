@@ -12,7 +12,7 @@ English | [中文](README.zh.md)
 
 ## Service API
 
-Every operation carries a stable `WorkspaceId`; raw paths are never ownership keys. `create()` stores normalized content and provenance plus optional zero-to-one importance and confidence signals, an `explicit` or `reviewed` confirmation class, and optional activation or expiry timestamps. Legacy records may omit those fields. `search()` returns bounded provider-ranked hits and requests active records by default; `includeHistory` explicitly asks a provider for inactive revisions as well. `update()` corrects an exact revision, and `forget()` deletes an exact revision. Corrections and deletion use `{ id, revision }` so stale model context cannot overwrite a newer fact.
+Every operation carries a stable `WorkspaceId`; raw paths are never ownership keys. `create()` stores normalized content and provenance plus optional zero-to-one importance and confidence signals, an `explicit` or `reviewed` confirmation class, and optional activation or expiry timestamps. Legacy records may omit those fields. `search()` returns bounded provider-ranked hits and requests active records by default; `includeHistory` explicitly asks a provider for inactive revisions as well. The administrative `list()` operation returns a bounded page filtered by lifecycle status and optional text, including temporal history only inside the requested workspace. `update()` corrects an exact revision, and `forget()` deletes an exact revision. Corrections and deletion use `{ id, revision }` so stale model context cannot overwrite a newer fact.
 
 Record schema V2 adds `validFrom`, `validUntil`, `expiresAt`, `supersedes`, and `supersededBy`. The contract still accepts schema V1 records. Preservation and physical layout are provider responsibilities; the shipped local provider preserves revisions atomically instead of silently overwriting them.
 
@@ -20,7 +20,7 @@ Provider selection is execution-time and registration-order independent. An expl
 
 ## Model Experience
 
-Indirectly, through a Consumer such as `@deepseek-ai/dsh-tool-memory`. This package contributes no tool, prompt text, or automatic conversation capture.
+Indirectly, through a Consumer such as `@deepseek-ai/dsh-tool-memory`. This package contributes no tool, prompt text, or automatic conversation capture. Administrative listing is a Host/UI capability and does not expand the model-facing tool API.
 
 #### KV Cache effect
 

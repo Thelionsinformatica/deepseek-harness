@@ -3,26 +3,41 @@
  * @module @deepseek-ai/dsh-tool-memory/review
  */
 
+import { randomUUID } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
 import s from '@deepseek-ai/schemastery'
-import type { MemoryRecord } from '@deepseek-ai/dsh-memory'
+import { memoryStatusAt, type MemoryRecord, type MemoryStatus } from '@deepseek-ai/dsh-memory'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
-import { memoryCandidateDomainSpec, type MemoryCandidateRecord } from './spec.ts'
+import {
+  memoryAdminDomainSpec,
+  memoryCandidateDomainSpec,
+  type MemoryAdminActionRecord,
+  type MemoryCandidateRecord,
+} from './spec.ts'
 import { looksSensitive } from './sensitivity.ts'
-import type {
-  MemoryCandidateAutoWriteReason,
-  MemoryCandidateAutoWriteTrace,
-  MemoryCandidateId,
-  MemoryCandidateReviewFailure,
-  MemoryCandidateReviewItem,
-  MemoryCandidateReviewListRequest,
-  MemoryCandidateReviewListResult,
-  MemoryCandidateReviewMarkRequest,
-  MemoryCandidateReviewMarkResult,
+import {
+  MemoryAdminActionId,
+  type MemoryAdminCorrectRequest,
+  type MemoryAdminCorrectResult,
+  type MemoryAdminFailure,
+  type MemoryAdminForgetRequest,
+  type MemoryAdminForgetResult,
+  type MemoryAdminItem,
+  type MemoryAdminListRequest,
+  type MemoryAdminListResult,
+  type MemoryCandidateAutoWriteReason,
+  type MemoryCandidateAutoWriteTrace,
+  type MemoryCandidateId,
+  type MemoryCandidateReviewFailure,
+  type MemoryCandidateReviewItem,
+  type MemoryCandidateReviewListRequest,
+  type MemoryCandidateReviewListResult,
+  type MemoryCandidateReviewMarkRequest,
+  type MemoryCandidateReviewMarkResult,
 } from './types.ts'
 
 /** Deployment-owned reviewer identity written to every human decision. */
@@ -34,6 +49,8 @@ export interface Config {
   readonly automaticWriteWorkspaceIds?: string[]
   /** Exact local owner ids allowed to persist reviewed candidates. */
   readonly automaticWriteUserIds?: string[]
+  /** Administrative mutation switch; `read-only` is the emergency rollback. */
+  readonly administrationMode?: 'read-only' | 'full'
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -55,10 +72,12 @@ export class MemoryCandidateReviewService extends TypertRemoteService {
     automaticWrite: s.boolean(),
     automaticWriteWorkspaceIds: s.array(s.string()),
     automaticWriteUserIds: s.array(s.string()),
+    administrationMode: s.union(['read-only', 'full'] as const).default('read-only'),
   })
 
   private table?: KvTable<MemoryCandidateId, MemoryCandidateRecord>
-  private readonly operationTails = new Map<MemoryCandidateId, Promise<void>>()
+  private adminTable?: KvTable<MemoryAdminActionId, MemoryAdminActionRecord>
+  private readonly operationTails = new Map<string, Promise<void>>()
   private mutationAdmissionOpen = true
   private readonly automaticWriteWorkspaceIds: ReadonlySet<string>
   private readonly automaticWriteUserIds: ReadonlySet<string>
@@ -82,6 +101,13 @@ export class MemoryCandidateReviewService extends TypertRemoteService {
       await domain.close()
     }, 'memory-candidate-review.domainClose')
     this.table = domain.table('candidates')
+    const adminDomain = await this.ctx.storageDomain.open(memoryAdminDomainSpec)
+    this.ctx.effect(() => async () => {
+      this.mutationAdmissionOpen = false
+      await Promise.all(this.operationTails.values())
+      await adminDomain.close()
+    }, 'memory-candidate-review.adminDomainClose')
+    this.adminTable = adminDomain.table('actions')
   }
 
   /**
@@ -116,6 +142,187 @@ export class MemoryCandidateReviewService extends TypertRemoteService {
       hasMore: offset + page.length < matching.length,
       nextOffset: offset + page.length,
     })
+  }
+
+  /**
+   * List durable memories for the addressed Session's exact workspace partition.
+   * @param request - Session authorization anchor, lifecycle filters, and bounded page coordinates.
+   * @returns Browser-safe workspace rows or an explicit administrative failure.
+   */
+  @Remote('listMemories')
+  async listMemories(request: MemoryAdminListRequest): Promise<MemoryAdminListResult> {
+    const workspace = await this.resolveWorkspace(request.sessionId)
+    if (!workspace.ok) return workspace
+    const query = request.query?.trim()
+    if (query !== undefined && query.length === 0) {
+      return rejected({ code: 'memory-admin-operation-failed', action: 'list' })
+    }
+    try {
+      const page = await this.ctx.memory.list({
+        scope: { workspaceId: workspace.value },
+        ...(query === undefined ? {} : { query }),
+        statuses: request.statuses ?? ['active'],
+        offset: clampInteger(request.offset, 0, Number.MAX_SAFE_INTEGER, 0),
+        limit: clampInteger(request.limit, 1, MAX_LIMIT, DEFAULT_LIMIT),
+      })
+      return success({
+        items: Object.freeze(page.items.map(item => projectMemory(item.record, item.status))),
+        hasMore: page.hasMore,
+        nextOffset: page.nextOffset,
+        readOnly: this.config.administrationMode !== 'full',
+      })
+    } catch (error: unknown) {
+      this.ctx.logger.warn('memory-candidate-review: administrative list failed: %o', error)
+      return rejected({ code: 'memory-admin-operation-failed', action: 'list' })
+    }
+  }
+
+  /**
+   * Correct one exact memory revision after explicit operator confirmation.
+   * @param request - Session anchor, exact memory revision, replacement content, and confirmation.
+   * @returns The corrected browser-safe row and audit id, or an explicit failure.
+   */
+  @Remote('correctMemory')
+  correctMemory(request: MemoryAdminCorrectRequest): Promise<MemoryAdminCorrectResult> {
+    return this.enqueue(String(request.id), async () => {
+      const admission = this.checkAdminMutation(request.confirmed)
+      if (admission !== undefined) return admission
+      const workspace = await this.resolveWorkspace(request.sessionId)
+      if (!workspace.ok) return workspace
+      const content = request.content.trim()
+      if (looksSensitive(content)) return rejected({ code: 'memory-admin-sensitive-content' })
+      let audit: MemoryAdminActionRecord
+      try {
+        audit = await this.beginAdminAction(
+          workspace.value,
+          request.sessionId,
+          request.id,
+          request.revision,
+          'correct',
+        )
+      } catch (error: unknown) {
+        this.ctx.logger.error('memory-candidate-review: administrative audit admission failed: %o', error)
+        return rejected({ code: 'memory-admin-operation-failed', action: 'correct' })
+      }
+      try {
+        const updated = await this.ctx.memory.update({
+          scope: { workspaceId: workspace.value },
+          ref: { id: request.id, revision: request.revision },
+          content,
+          source: { kind: 'session', sessionId: request.sessionId },
+        })
+        await this.finishAdminAction(audit, 'succeeded', updated.revision)
+        return success({
+          item: projectMemory(updated, memoryStatusAt(updated)),
+          auditId: audit.id,
+        })
+      } catch (error: unknown) {
+        await this.failAdminAction(audit, error)
+        return rejected({ code: 'memory-admin-operation-failed', action: 'correct', auditId: audit.id })
+      }
+    })
+  }
+
+  /**
+   * Forget one exact memory lineage after explicit operator confirmation.
+   * @param request - Session anchor, exact memory revision, and confirmation.
+   * @returns The forgotten reference and audit id, or an explicit failure.
+   */
+  @Remote('forgetMemory')
+  forgetMemory(request: MemoryAdminForgetRequest): Promise<MemoryAdminForgetResult> {
+    return this.enqueue(String(request.id), async () => {
+      const admission = this.checkAdminMutation(request.confirmed)
+      if (admission !== undefined) return admission
+      const workspace = await this.resolveWorkspace(request.sessionId)
+      if (!workspace.ok) return workspace
+      let audit: MemoryAdminActionRecord
+      try {
+        audit = await this.beginAdminAction(
+          workspace.value,
+          request.sessionId,
+          request.id,
+          request.revision,
+          'forget',
+        )
+      } catch (error: unknown) {
+        this.ctx.logger.error('memory-candidate-review: administrative audit admission failed: %o', error)
+        return rejected({ code: 'memory-admin-operation-failed', action: 'forget' })
+      }
+      try {
+        await this.ctx.memory.forget({
+          scope: { workspaceId: workspace.value },
+          ref: { id: request.id, revision: request.revision },
+        })
+        await this.finishAdminAction(audit, 'succeeded')
+        return success({ id: request.id, revision: request.revision, auditId: audit.id })
+      } catch (error: unknown) {
+        await this.failAdminAction(audit, error)
+        return rejected({ code: 'memory-admin-operation-failed', action: 'forget', auditId: audit.id })
+      }
+    })
+  }
+
+  /** Enforce deployment rollback and explicit per-action confirmation. */
+  private checkAdminMutation(confirmed: boolean): { readonly ok: false; readonly error: MemoryAdminFailure } | undefined {
+    if (this.config.administrationMode !== 'full') return rejected({ code: 'memory-admin-read-only' })
+    if (!confirmed) return rejected({ code: 'memory-admin-confirmation-required' })
+    return undefined
+  }
+
+  /** Write the content-free intent record before mutating durable memory. */
+  private async beginAdminAction(
+    workspaceId: WorkspaceId,
+    sessionId: SessionId,
+    memoryId: MemoryRecord['id'],
+    expectedRevision: number,
+    action: MemoryAdminActionRecord['action'],
+  ): Promise<MemoryAdminActionRecord> {
+    const record = Object.freeze({
+      id: MemoryAdminActionId(randomUUID()),
+      workspaceId,
+      sessionId,
+      memoryId,
+      expectedRevision,
+      action,
+      status: 'requested',
+      createdAt: new Date().toISOString(),
+    }) satisfies MemoryAdminActionRecord
+    await this.requireAdminTable().put(record.id, record)
+    return record
+  }
+
+  /** Finalize one mutation trace after the provider confirms durability. */
+  private async finishAdminAction(
+    record: MemoryAdminActionRecord,
+    status: Extract<MemoryAdminActionRecord['status'], 'succeeded'>,
+    resultRevision?: number,
+  ): Promise<void> {
+    try {
+      await this.requireAdminTable().put(record.id, {
+        ...record,
+        status,
+        ...(resultRevision === undefined ? {} : { resultRevision }),
+        completedAt: new Date().toISOString(),
+      })
+    } catch (error: unknown) {
+      // The provider already confirmed durability. Preserve that successful
+      // outcome for the caller instead of inviting an unsafe duplicate retry.
+      this.ctx.logger.error('memory-candidate-review: administrative audit completion failed: %o', error)
+    }
+  }
+
+  /** Best-effort failure finalization without persisting provider messages or memory content. */
+  private async failAdminAction(record: MemoryAdminActionRecord, error: unknown): Promise<void> {
+    try {
+      await this.requireAdminTable().put(record.id, {
+        ...record,
+        status: 'failed',
+        failureCode: safeErrorCode(error),
+        completedAt: new Date().toISOString(),
+      })
+    } catch (auditError: unknown) {
+      this.ctx.logger.error('memory-candidate-review: administrative audit finalization failed: %o', auditError)
+    }
   }
 
   /**
@@ -243,7 +450,12 @@ export class MemoryCandidateReviewService extends TypertRemoteService {
   /** Resolve a live or persisted Session to its registered workspace partition. */
   private async resolveWorkspace(sessionId: SessionId): Promise<
     | { readonly ok: true; readonly value: WorkspaceId }
-    | { readonly ok: false; readonly error: MemoryCandidateReviewFailure }
+    | {
+      readonly ok: false
+      readonly error: Extract<MemoryCandidateReviewFailure, {
+        readonly code: 'memory-review-session-not-found' | 'memory-review-workspace-unavailable'
+      }>
+    }
   > {
     let header: SessionHeader | undefined = this.ctx.sessions.get(sessionId)?.header
     if (header === undefined) {
@@ -266,7 +478,7 @@ export class MemoryCandidateReviewService extends TypertRemoteService {
   }
 
   /** Serialize review writes per candidate so two local tabs cannot replace each other. */
-  private enqueue<T>(id: MemoryCandidateId, operation: () => Promise<T>): Promise<T> {
+  private enqueue<T>(id: string, operation: () => Promise<T>): Promise<T> {
     if (!this.mutationAdmissionOpen) return Promise.reject(new Error('memory-candidate-review: service is disposing'))
     const previous = this.operationTails.get(id) ?? Promise.resolve()
     const result = previous.then(operation)
@@ -282,6 +494,12 @@ export class MemoryCandidateReviewService extends TypertRemoteService {
     if (this.table === undefined) throw new Error('memory-candidate-review: durable domain is not initialized')
     return this.table
   }
+
+  /** Require the initialized content-free administration audit table. */
+  private requireAdminTable(): KvTable<MemoryAdminActionId, MemoryAdminActionRecord> {
+    if (this.adminTable === undefined) throw new Error('memory-candidate-review: admin domain is not initialized')
+    return this.adminTable
+  }
 }
 
 /** Return a frozen success branch. */
@@ -290,7 +508,7 @@ function success<T>(value: T): { readonly ok: true; readonly value: T } {
 }
 
 /** Return a frozen business-failure branch. */
-function rejected<E extends MemoryCandidateReviewFailure>(error: E): { readonly ok: false; readonly error: E } {
+function rejected<E>(error: E): { readonly ok: false; readonly error: E } {
   return Object.freeze({ ok: false, error: Object.freeze(error) })
 }
 
@@ -315,6 +533,35 @@ function projectCandidate(row: MemoryCandidateRecord): MemoryCandidateReviewItem
     ...(row.autoWrite === undefined ? {} : { autoWrite: row.autoWrite }),
     createdAt: row.createdAt,
   })
+}
+
+/** Copy one provider row into a browser-safe administrative projection. */
+function projectMemory(record: MemoryRecord, status: MemoryStatus): MemoryAdminItem {
+  const redacted = looksSensitive(record.content)
+  return Object.freeze({
+    id: record.id,
+    revision: record.revision,
+    ...(redacted ? {} : { content: record.content }),
+    redacted,
+    status,
+    sourceSessionId: record.source.sessionId,
+    ...(record.importance === undefined ? {} : { importance: record.importance }),
+    ...(record.confidence === undefined ? {} : { confidence: record.confidence }),
+    ...(record.validation === undefined ? {} : { validation: record.validation }),
+    ...(record.validFrom === undefined ? {} : { validFrom: record.validFrom }),
+    ...(record.validUntil === undefined ? {} : { validUntil: record.validUntil }),
+    ...(record.expiresAt === undefined ? {} : { expiresAt: record.expiresAt }),
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  })
+}
+
+/** Return only a stable machine code for the durable content-free audit trail. */
+function safeErrorCode(error: unknown): string {
+  if (typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string') {
+    return error.code.slice(0, 128)
+  }
+  return 'UNKNOWN'
 }
 
 /** Return one frozen row carrying the latest controlled-write journal state. */

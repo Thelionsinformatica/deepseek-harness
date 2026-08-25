@@ -44,6 +44,8 @@ Leon preset 会在每轮第一次模型请求时启用有界自动回忆。查�
 
 `tool-memory` 会为每个 `memory/candidate` 事件和每条持久影子候选记录发出确定性策略元数据：`policyVersion`、`policyDecision` 与 `policyReason`。候选遥测只携带临时查询的长度，绝不携带其文本，包括策略阻止查询或要求确认时。这为回放与审查工作流提供支持，但尚不改变回忆内容行为。
 
+浏览器审查控件还提供已保存记忆管理标签页。其 Host Remote 会把请求 Session 解析到单一 workspace，按文本和生命周期状态列出当前与历史修订，遮蔽旧记录中类似凭据的内容，并在纠正或遗忘前要求可见确认与精确 revision。变更会在持久状态改变前写入独立且不含内容的 `memory_admin` 审计域。`administrationMode: read-only` 可在保留查看能力的同时禁用变更；这些操作不会进入模型上下文，也不会改变四个公开记忆工具。
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -81,6 +83,14 @@ async create(request: MemoryCreateRequest, signal?: AbortSignal): Promise<Memory
  * @returns ranked hits capped to the requested limit.
  */
 async search(request: MemorySearchRequest, signal?: AbortSignal): Promise<readonly MemorySearchHit[]>
+
+/**
+ * Enumerate one bounded workspace partition for an authorized administrative surface.
+ * @param request - Workspace scope, optional filters, and page coordinates.
+ * @param signal - Optional cancellation forwarded to the selected provider.
+ * @returns a stable page of provider-projected memory revisions.
+ */
+async list(request: MemoryListRequest, signal?: AbortSignal): Promise<MemoryListPage>
 
 /**
  * Correct one exact memory revision through the selected provider.
@@ -121,6 +131,27 @@ async recordCandidate(record: MemoryCandidateRecord): Promise<void>
  * @returns projected rows or an explicit ownership failure.
  */
 @Remote('list') async list(request: MemoryCandidateReviewListRequest): Promise<MemoryCandidateReviewListResult>
+
+/**
+ * List durable memories for the addressed Session's exact workspace partition.
+ * @param request - Session authorization anchor, lifecycle filters, and bounded page coordinates.
+ * @returns Browser-safe workspace rows or an explicit administrative failure.
+ */
+@Remote('listMemories') async listMemories(request: MemoryAdminListRequest): Promise<MemoryAdminListResult>
+
+/**
+ * Correct one exact memory revision after explicit operator confirmation.
+ * @param request - Session anchor, exact memory revision, replacement content, and confirmation.
+ * @returns The corrected browser-safe row and audit id, or an explicit failure.
+ */
+@Remote('correctMemory') correctMemory(request: MemoryAdminCorrectRequest): Promise<MemoryAdminCorrectResult>
+
+/**
+ * Forget one exact memory lineage after explicit operator confirmation.
+ * @param request - Session anchor, exact memory revision, and confirmation.
+ * @returns The forgotten reference and audit id, or an explicit failure.
+ */
+@Remote('forgetMemory') forgetMemory(request: MemoryAdminForgetRequest): Promise<MemoryAdminForgetResult>
 
 /**
  * Record one immutable human decision and optionally persist an authorized candidate.

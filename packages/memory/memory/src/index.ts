@@ -11,10 +11,13 @@ import type {
   MemoryCreateRequest,
   MemoryCandidateEvent,
   MemoryForgetRequest,
+  MemoryListPage,
+  MemoryListRequest,
   MemoryProvider,
   MemoryRecord,
   MemorySearchHit,
   MemorySearchRequest,
+  MemoryStatus,
   MemoryScope,
   MemoryId,
   MemoryOperationEvent,
@@ -25,6 +28,7 @@ import { MEMORY_EVENT_SCHEMA_VERSION } from './types.ts'
 export {
   MemoryError,
   MemoryId,
+  memoryStatusAt,
   MEMORY_EVENT_SCHEMA_VERSION,
   MEMORY_RECORD_SCHEMA_VERSION,
   MEMORY_POLICY_VERSION,
@@ -35,6 +39,9 @@ export type {
   MemoryPolicyReason,
   MemoryPolicyVersion,
   MemoryForgetRequest,
+  MemoryListItem,
+  MemoryListPage,
+  MemoryListRequest,
   MemoryCandidateEvent,
   MemoryId as MemoryIdType,
   MemoryEventSchemaVersion,
@@ -48,6 +55,7 @@ export type {
   MemoryScope,
   MemorySearchHit,
   MemorySearchRequest,
+  MemoryStatus,
   MemorySource,
   MemoryUpdateRequest,
 } from './types.ts'
@@ -93,6 +101,8 @@ export interface MemoryRuntimeConfig {
 const MAX_CONTENT_CHARS = 16_384
 const MAX_QUERY_CHARS = 2_048
 const MAX_RESULTS = 50
+const MAX_LIST_RESULTS = 200
+const MEMORY_STATUSES = new Set<MemoryStatus>(['active', 'scheduled', 'expired', 'superseded'])
 
 /** Durable memory service and registration-order-independent provider selector. */
 export class MemoryRuntime extends Service {
@@ -218,14 +228,58 @@ export class MemoryRuntime extends Service {
       })
       return clipped
     } catch (error: unknown) {
-      const code = extractErrorCode(error)
-      this.emitBlocked({
-        reason: mapErrorReason(error, 'provider-unavailable'),
-        source: 'memory-runtime',
+      this.rethrowProviderFailure(error, request.scope)
+    }
+  }
+
+  /**
+   * Enumerate one bounded workspace partition for an authorized administrative surface.
+   * @param request - Workspace scope, optional filters, and page coordinates.
+   * @param signal - Optional cancellation forwarded to the selected provider.
+   * @returns a stable page of provider-projected memory revisions.
+   */
+  async list(request: MemoryListRequest, signal?: AbortSignal): Promise<MemoryListPage> {
+    const query = request.query?.trim()
+    if (query !== undefined && (query.length === 0 || query.length > MAX_QUERY_CHARS)) {
+      throw new MemoryError(
+        `memory list query must contain 1-${MAX_QUERY_CHARS} characters when provided`,
+        'MEMORY_INVALID_QUERY',
+      )
+    }
+    const offset = request.offset ?? 0
+    if (!Number.isSafeInteger(offset) || offset < 0) {
+      throw new MemoryError('memory list offset must be a non-negative integer', 'MEMORY_INVALID_OFFSET')
+    }
+    if (!Number.isSafeInteger(request.limit) || request.limit < 1 || request.limit > MAX_LIST_RESULTS) {
+      throw new MemoryError(
+        `memory list limit must be an integer from 1-${MAX_LIST_RESULTS}`,
+        'MEMORY_INVALID_LIMIT',
+      )
+    }
+    const statuses = request.statuses === undefined ? undefined : [...new Set(request.statuses)]
+    if (statuses?.some(status => !MEMORY_STATUSES.has(status)) === true) {
+      throw new MemoryError('memory list contains an unsupported status', 'MEMORY_INVALID_STATUS')
+    }
+    const provider = this.resolveProvider({ scope: request.scope, action: 'search' })
+    const startedAt = Date.now()
+    try {
+      const page = await provider.list({
+        ...request,
+        ...(query === undefined ? {} : { query }),
+        ...(statuses === undefined ? {} : { statuses }),
+        offset,
+      }, signal)
+      this.emitOperation({
+        operation: 'list',
+        provider: provider.id,
+        success: true,
         workspaceId: request.scope.workspaceId,
-        ...(code === undefined ? {} : { detail: code }),
+        resultCount: page.items.length,
+        durationMs: Date.now() - startedAt,
       })
-      throw error
+      return page
+    } catch (error: unknown) {
+      this.rethrowProviderFailure(error, request.scope)
     }
   }
 
@@ -395,6 +449,18 @@ export class MemoryRuntime extends Service {
   private emitBlocked(event: Omit<MemoryBlockedEvent, 'schemaVersion'>): void {
     if (!this.telemetryEnabled) return
     this.ctx.emit('memory/blocked', { ...event, schemaVersion: MEMORY_EVENT_SCHEMA_VERSION })
+  }
+
+  /** Emit one sanitized provider block before preserving the original failure. */
+  private rethrowProviderFailure(error: unknown, scope: MemoryScope): never {
+    const code = extractErrorCode(error)
+    this.emitBlocked({
+      reason: mapErrorReason(error, 'provider-unavailable'),
+      source: 'memory-runtime',
+      workspaceId: scope.workspaceId,
+      ...(code === undefined ? {} : { detail: code }),
+    })
+    throw error
   }
 }
 

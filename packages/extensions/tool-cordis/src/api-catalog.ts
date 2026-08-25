@@ -1076,6 +1076,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'ranked hits capped to the requested limit.',
       },
       {
+        signature: 'async list(request: MemoryListRequest, signal?: AbortSignal): Promise<MemoryListPage>',
+        description: 'Enumerate one bounded workspace partition for an authorized administrative surface.',
+        parameters: [{ name: 'request', description: 'Workspace scope, optional filters, and page coordinates.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'a stable page of provider-projected memory revisions.',
+      },
+      {
         signature: 'async update(request: MemoryUpdateRequest, signal?: AbortSignal): Promise<MemoryRecord>',
         description: 'Correct one exact memory revision through the selected provider.',
         parameters: [{ name: 'request', description: 'Workspace scope, compare-and-set reference, and replacement content.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
@@ -1104,6 +1110,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'List one workspace partition, using the addressed Session as authorization anchor.',
         parameters: [{ name: 'request', description: 'session anchor, filters, and bounded page coordinates.' }],
         returns: 'projected rows or an explicit ownership failure.',
+      },
+      {
+        signature: '@Remote(\'listMemories\') async listMemories(request: MemoryAdminListRequest): Promise<MemoryAdminListResult>',
+        description: 'List durable memories for the addressed Session\'s exact workspace partition.',
+        parameters: [{ name: 'request', description: 'Session authorization anchor, lifecycle filters, and bounded page coordinates.' }],
+        returns: 'Browser-safe workspace rows or an explicit administrative failure.',
+      },
+      {
+        signature: '@Remote(\'correctMemory\') correctMemory(request: MemoryAdminCorrectRequest): Promise<MemoryAdminCorrectResult>',
+        description: 'Correct one exact memory revision after explicit operator confirmation.',
+        parameters: [{ name: 'request', description: 'Session anchor, exact memory revision, replacement content, and confirmation.' }],
+        returns: 'The corrected browser-safe row and audit id, or an explicit failure.',
+      },
+      {
+        signature: '@Remote(\'forgetMemory\') forgetMemory(request: MemoryAdminForgetRequest): Promise<MemoryAdminForgetResult>',
+        description: 'Forget one exact memory lineage after explicit operator confirmation.',
+        parameters: [{ name: 'request', description: 'Session anchor, exact memory revision, and confirmation.' }],
+        returns: 'The forgotten reference and audit id, or an explicit failure.',
       },
       {
         signature: '@Remote(\'markReviewed\') markReviewed(request: MemoryCandidateReviewMarkRequest): Promise<MemoryCandidateReviewMarkResult>',
@@ -3801,6 +3825,82 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ManualCompactAgentContext extends CompactionAgentContext {\n    runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>;\n}',
   },
   {
+    name: 'MemoryAdminActionId',
+    declaration: 'export type MemoryAdminActionId = Branded<\'MemoryAdminActionId\'>;',
+  },
+  {
+    name: 'MemoryAdminConfirmationRequired',
+    declaration: 'export interface MemoryAdminConfirmationRequired {\n    readonly code: \'memory-admin-confirmation-required\';\n}',
+  },
+  {
+    name: 'MemoryAdminCorrectRequest',
+    declaration: 'export interface MemoryAdminCorrectRequest {\n    readonly sessionId: SessionId;\n    readonly id: MemoryAdminId;\n    readonly revision: number;\n    readonly content: string;\n    readonly confirmed: boolean;\n}',
+  },
+  {
+    name: 'MemoryAdminCorrectResult',
+    declaration: 'export type MemoryAdminCorrectResult = {\n    readonly ok: true;\n    readonly value: MemoryAdminCorrectValue;\n} | {\n    readonly ok: false;\n    readonly error: MemoryAdminFailure;\n};',
+  },
+  {
+    name: 'MemoryAdminCorrectValue',
+    declaration: 'export interface MemoryAdminCorrectValue {\n    readonly item: MemoryAdminItem;\n    readonly auditId: MemoryAdminActionId;\n}',
+  },
+  {
+    name: 'MemoryAdminFailure',
+    declaration: 'export type MemoryAdminFailure = MemoryCandidateReviewSessionNotFound | MemoryCandidateReviewWorkspaceUnavailable | MemoryAdminReadOnly | MemoryAdminConfirmationRequired | MemoryAdminSensitiveContent | MemoryAdminOperationFailed;',
+  },
+  {
+    name: 'MemoryAdminForgetRequest',
+    declaration: 'export interface MemoryAdminForgetRequest {\n    readonly sessionId: SessionId;\n    readonly id: MemoryAdminId;\n    readonly revision: number;\n    readonly confirmed: boolean;\n}',
+  },
+  {
+    name: 'MemoryAdminForgetResult',
+    declaration: 'export type MemoryAdminForgetResult = {\n    readonly ok: true;\n    readonly value: MemoryAdminForgetValue;\n} | {\n    readonly ok: false;\n    readonly error: MemoryAdminFailure;\n};',
+  },
+  {
+    name: 'MemoryAdminForgetValue',
+    declaration: 'export interface MemoryAdminForgetValue {\n    readonly id: MemoryAdminId;\n    readonly revision: number;\n    readonly auditId: MemoryAdminActionId;\n}',
+  },
+  {
+    name: 'MemoryAdminId',
+    declaration: 'export type MemoryAdminId = Branded<\'MemoryId\'>;',
+  },
+  {
+    name: 'MemoryAdminItem',
+    declaration: 'export interface MemoryAdminItem {\n    readonly id: MemoryAdminId;\n    readonly revision: number;\n    readonly content?: string;\n    readonly redacted: boolean;\n    readonly status: MemoryAdminStatus;\n    readonly sourceSessionId: SessionId;\n    readonly importance?: number;\n    readonly confidence?: number;\n    readonly validation?: MemoryAdminValidation;\n    readonly validFrom?: string;\n    readonly validUntil?: string;\n    readonly expiresAt?: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'MemoryAdminListRequest',
+    declaration: 'export interface MemoryAdminListRequest {\n    readonly sessionId: SessionId;\n    readonly query?: string;\n    readonly statuses?: readonly MemoryAdminStatus[];\n    readonly offset?: number;\n    readonly limit?: number;\n}',
+  },
+  {
+    name: 'MemoryAdminListResult',
+    declaration: 'export type MemoryAdminListResult = {\n    readonly ok: true;\n    readonly value: MemoryAdminListValue;\n} | {\n    readonly ok: false;\n    readonly error: MemoryAdminFailure;\n};',
+  },
+  {
+    name: 'MemoryAdminListValue',
+    declaration: 'export interface MemoryAdminListValue {\n    readonly items: readonly MemoryAdminItem[];\n    readonly hasMore: boolean;\n    readonly nextOffset: number;\n    readonly readOnly: boolean;\n}',
+  },
+  {
+    name: 'MemoryAdminOperationFailed',
+    declaration: 'export interface MemoryAdminOperationFailed {\n    readonly code: \'memory-admin-operation-failed\';\n    readonly action: \'list\' | \'correct\' | \'forget\';\n    readonly auditId?: MemoryAdminActionId;\n}',
+  },
+  {
+    name: 'MemoryAdminReadOnly',
+    declaration: 'export interface MemoryAdminReadOnly {\n    readonly code: \'memory-admin-read-only\';\n}',
+  },
+  {
+    name: 'MemoryAdminSensitiveContent',
+    declaration: 'export interface MemoryAdminSensitiveContent {\n    readonly code: \'memory-admin-sensitive-content\';\n}',
+  },
+  {
+    name: 'MemoryAdminStatus',
+    declaration: 'export type MemoryAdminStatus = \'active\' | \'scheduled\' | \'expired\' | \'superseded\';',
+  },
+  {
+    name: 'MemoryAdminValidation',
+    declaration: 'export type MemoryAdminValidation = \'explicit\' | \'reviewed\';',
+  },
+  {
     name: 'MemoryBlockedEvent',
     declaration: 'export interface MemoryBlockedEvent {\n    readonly schemaVersion: MemoryEventSchemaVersion;\n    readonly reason: \'cross-scope-write\' | \'sensitive-content\' | \'provider-invalid\' | \'provider-unavailable\' | \'provider-missing\' | \'validation\';\n    readonly workspaceId: WorkspaceId;\n    readonly source: \'memory-tool\' | \'memory-runtime\' | \'memory-local\';\n    readonly memoryId?: MemoryId;\n    readonly detail?: string;\n}',
   },
@@ -3925,12 +4025,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type MemoryId = Branded<\'MemoryId\'>;',
   },
   {
+    name: 'MemoryListItem',
+    declaration: 'export interface MemoryListItem {\n    readonly record: MemoryRecord;\n    readonly status: MemoryStatus;\n}',
+  },
+  {
+    name: 'MemoryListPage',
+    declaration: 'export interface MemoryListPage {\n    readonly items: readonly MemoryListItem[];\n    readonly hasMore: boolean;\n    readonly nextOffset: number;\n}',
+  },
+  {
+    name: 'MemoryListRequest',
+    declaration: 'export interface MemoryListRequest {\n    readonly scope: MemoryScope;\n    readonly query?: string;\n    readonly statuses?: readonly MemoryStatus[];\n    readonly offset?: number;\n    readonly limit: number;\n}',
+  },
+  {
     name: 'MemoryOperationEvent',
-    declaration: 'export interface MemoryOperationEvent {\n    readonly schemaVersion: MemoryEventSchemaVersion;\n    readonly operation: \'create\' | \'search\' | \'update\' | \'forget\';\n    readonly provider: string;\n    readonly success: boolean;\n    readonly workspaceId: WorkspaceId;\n    readonly resultCount?: number;\n    readonly memoryId?: MemoryId;\n    readonly revision?: number;\n    readonly errorCode?: string;\n    readonly durationMs?: number;\n}',
+    declaration: 'export interface MemoryOperationEvent {\n    readonly schemaVersion: MemoryEventSchemaVersion;\n    readonly operation: \'create\' | \'search\' | \'list\' | \'update\' | \'forget\';\n    readonly provider: string;\n    readonly success: boolean;\n    readonly workspaceId: WorkspaceId;\n    readonly resultCount?: number;\n    readonly memoryId?: MemoryId;\n    readonly revision?: number;\n    readonly errorCode?: string;\n    readonly durationMs?: number;\n}',
   },
   {
     name: 'MemoryProvider',
-    declaration: 'export interface MemoryProvider {\n    readonly id: string;\n    available(): boolean;\n    create(request: MemoryCreateRequest, signal?: AbortSignal): Promise<MemoryRecord>;\n    search(request: MemorySearchRequest, signal?: AbortSignal): Promise<readonly MemorySearchHit[]>;\n    update(request: MemoryUpdateRequest, signal?: AbortSignal): Promise<MemoryRecord>;\n    forget(request: MemoryForgetRequest, signal?: AbortSignal): Promise<void>;\n}',
+    declaration: 'export interface MemoryProvider {\n    readonly id: string;\n    available(): boolean;\n    create(request: MemoryCreateRequest, signal?: AbortSignal): Promise<MemoryRecord>;\n    search(request: MemorySearchRequest, signal?: AbortSignal): Promise<readonly MemorySearchHit[]>;\n    list(request: MemoryListRequest, signal?: AbortSignal): Promise<MemoryListPage>;\n    update(request: MemoryUpdateRequest, signal?: AbortSignal): Promise<MemoryRecord>;\n    forget(request: MemoryForgetRequest, signal?: AbortSignal): Promise<void>;\n}',
   },
   {
     name: 'MemoryRecord',
@@ -3959,6 +4071,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'MemorySource',
     declaration: 'export interface MemorySource {\n    readonly kind: \'session\';\n    readonly sessionId: SessionId;\n}',
+  },
+  {
+    name: 'MemoryStatus',
+    declaration: 'export type MemoryStatus = \'active\' | \'scheduled\' | \'expired\' | \'superseded\';',
   },
   {
     name: 'MemoryUpdateRequest',

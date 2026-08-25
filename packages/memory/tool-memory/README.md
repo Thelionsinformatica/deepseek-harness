@@ -44,6 +44,10 @@ The review operation records an immutable accept or reject decision with timesta
 
 Final local writes are off by default. They run only after an explicit `accept` when `automaticWrite` is true, the candidate's exact `workspaceId` is listed in `automaticWriteWorkspaceIds`, its local `userId` is listed in `automaticWriteUserIds`, and the deterministic policy says `store` with non-sensitive content. The service records `writing` before calling `ctx.memory.create()`, then records `stored` with the memory id and revision. Provider failure records `failed` and leaves the candidate retryable; an uncertain prior write is never repeated automatically. A missing gate records a `skipped` reason without writing.
 
+## Saved-memory administration
+
+The same Host Remote exposes workspace-scoped listing, correction, and forgetting for the browser UI. Listing supports text and lifecycle-status filters and redacts credential-like legacy rows before projection. Correction and forgetting require a visible browser confirmation, the exact id and revision, and `administrationMode: full`; the default `read-only` mode is the rollback switch. Every attempted mutation writes a content-free audit row tied to the Session, workspace, operation, memory id, revision, and outcome before durable state is changed. The model sees none of these administrative calls or rows.
+
 ## Model Experience
 
 ### Static memory policy
@@ -115,6 +119,20 @@ Zero.
 
 No cache entries change.
 
+### Optional saved-memory administration Remote
+
+#### What the model sees
+
+Nothing. Saved-memory listing, filtering, correction, forgetting, confirmation, and audit remain browser-to-Host operations outside the tool registry.
+
+#### Token effect
+
+Zero.
+
+#### KV Cache effect
+
+No cache entries change.
+
 ### Tool schemas
 
 #### What the model sees
@@ -146,6 +164,7 @@ Append-only; individual calls and results follow the reusable request prefix and
 ## Known Limitations and Deferred Work
 
 - Controlled writes require an explicit approval plus exact Host configuration; the current UI does not yet edit the per-user or per-workspace allowlists.
+- Saved-memory administration remains workspace-scoped. User-global and organization-wide memory controls are intentionally unavailable.
 - Global memories and cross-workspace search are intentionally unavailable.
 - History is returned only when the model explicitly requests `include_history`; active automatic recall never uses it.
 - Semantic candidate retrieval is optional provider work and remains disabled in the shipped Leon composition until LEON-EVAL-PTBR accepts its latency and recall trade-off; final ranking works with either lexical or hybrid provider scores.

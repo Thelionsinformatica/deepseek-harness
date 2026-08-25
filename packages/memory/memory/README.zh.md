@@ -12,7 +12,7 @@
 
 ## 服务 API
 
-每项操作都携带稳定的 `WorkspaceId`；原始路径绝不作为所有权键。`create()` 存储规范化内容和来源，还可存储从零到一的 importance、confidence 信号、`explicit` 或 `reviewed` 确认类别，以及可选的激活或过期时间戳。旧记录可以不包含这些字段。`search()` 返回有界的提供方排序结果，并默认请求活动记录；`includeHistory` 会明确要求提供方同时返回非活动修订。`update()` 纠正一个精确 revision，`forget()` 删除一个精确 revision。纠正和删除使用 `{ id, revision }`，因此模型上下文中的陈旧内容无法覆盖较新的事实。
+每项操作都携带稳定的 `WorkspaceId`；原始路径绝不作为所有权键。`create()` 存储规范化内容和来源，还可存储从零到一的 importance、confidence 信号、`explicit` 或 `reviewed` 确认类别，以及可选的激活或过期时间戳。旧记录可以不包含这些字段。`search()` 返回有界的提供方排序结果，并默认请求活动记录；`includeHistory` 会明确要求提供方同时返回非活动修订。管理用的 `list()` 操作会返回有界分页，并按生命周期状态和可选文本筛选；时间历史始终限定在请求的 workspace 内。`update()` 纠正一个精确 revision，`forget()` 删除一个精确 revision。纠正和删除使用 `{ id, revision }`，因此模型上下文中的陈旧内容无法覆盖较新的事实。
 
 记录 schema V2 增加 `validFrom`、`validUntil`、`expiresAt`、`supersedes` 和 `supersededBy`。该约定仍接受 schema V1 记录。历史保留方式与物理布局由提供方负责；随产品提供的本地提供方会原子保留修订，而不是静默覆盖。
 
@@ -20,7 +20,7 @@
 
 ## 模型体验
 
-通过 `@deepseek-ai/dsh-tool-memory` 等 Consumer 间接影响。本包不提供工具、提示词文本或自动对话捕获。
+通过 `@deepseek-ai/dsh-tool-memory` 等 Consumer 间接影响。本包不提供工具、提示词文本或自动对话捕获。管理列表属于 Host/UI 能力，不会扩展面向模型的工具 API。
 
 #### KV Cache 影响
 

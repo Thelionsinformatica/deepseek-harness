@@ -227,6 +227,71 @@ describe('local durable memory operations', () => {
     await ctx.fiber.dispose()
   })
 
+  it('lists only the requested workspace and derives active, scheduled, expired, and superseded states', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-25T12:00:00.000Z'))
+    const { ctx } = await harness()
+    const active = await ctx.memory.create({ scope: alpha, content: 'Ativa no painel.', source })
+    await ctx.memory.create({
+      scope: alpha,
+      content: 'Agendada no painel.',
+      source,
+      validFrom: '2026-08-26T12:00:00.000Z',
+    })
+    await ctx.memory.create({
+      scope: alpha,
+      content: 'Expirada no painel.',
+      source,
+      expiresAt: '2026-08-25T13:00:00.000Z',
+    })
+    await ctx.memory.create({ scope: beta, content: 'SEGREDO DO OUTRO WORKSPACE.', source })
+    vi.setSystemTime(new Date('2026-08-25T14:00:00.000Z'))
+    await ctx.memory.update({
+      scope: alpha,
+      ref: { id: active.id, revision: 1 },
+      content: 'Ativa corrigida no painel.',
+    })
+
+    const page = await ctx.memory.list({ scope: alpha, limit: 20 })
+    expect(page.items.map(item => item.status).sort()).toEqual([
+      'active', 'expired', 'scheduled', 'superseded',
+    ])
+    expect(JSON.stringify(page)).not.toContain('SEGREDO DO OUTRO WORKSPACE')
+    await expect(ctx.memory.list({
+      scope: alpha,
+      query: 'CORRIGIDA',
+      statuses: ['active'],
+      offset: 0,
+      limit: 1,
+    })).resolves.toMatchObject({
+      items: [{ record: { id: active.id, revision: 2 }, status: 'active' }],
+      hasMore: false,
+      nextOffset: 1,
+    })
+    await expect(ctx.memory.list({
+      scope: alpha,
+      query: String(active.id),
+      limit: 20,
+    })).resolves.toMatchObject({
+      items: [
+        { record: { id: active.id, revision: 2 }, status: 'active' },
+        { record: { id: active.id, revision: 1 }, status: 'superseded' },
+      ],
+    })
+    await expect(ctx.memory.list({
+      scope: alpha,
+      query: 'não existe',
+      statuses: ['expired'],
+      limit: 1,
+    })).resolves.toMatchObject({ items: [], hasMore: false, nextOffset: 0 })
+    await expect(ctx.memory.list({ scope: alpha, offset: 1, limit: 1 })).resolves.toMatchObject({
+      items: [expect.any(Object)],
+      hasMore: true,
+      nextOffset: 2,
+    })
+    await ctx.fiber.dispose()
+  })
+
   it('inherits a future expiry and can explicitly clear it in a later preserved revision', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-25T12:00:00.000Z'))

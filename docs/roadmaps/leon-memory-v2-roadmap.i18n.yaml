@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/roadmaps/leon-memory-v2-roadmap.md
-leon-memory-v2-roadmap.md: 6b6c1c8f24e872146e926c53ba84cb334b7cd681
-leon-memory-v2-roadmap.zh.md: 2a23f404ae4bd4f991c41d66d67ad04ab5ffe886
+leon-memory-v2-roadmap.md: 8914a48cb5323fecf62d4bd0c2353e42d87389ab
+leon-memory-v2-roadmap.zh.md: bd365f6ec44ffb0a62a1bfa07c6f6afa4c9f78c1

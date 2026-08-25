@@ -1618,7 +1618,7 @@ export interface MemoryRuntimeConfig {
 }
 ```
 
-Source: [`packages/memory/memory/src/index.ts:86`](../packages/memory/memory/src/index.ts)
+Source: [`packages/memory/memory/src/index.ts:94`](../packages/memory/memory/src/index.ts)
 
 <a id="deepseek-aidsh-memory-local"></a>
 
@@ -1662,7 +1662,7 @@ export interface SemanticSearchConfig {
 }
 ```
 
-Source: [`packages/memory/memory-local/src/index.ts:68`](../packages/memory/memory-local/src/index.ts)
+Source: [`packages/memory/memory-local/src/index.ts:72`](../packages/memory/memory-local/src/index.ts)
 
 <a id="deepseek-aidsh-message-feedback"></a>
 

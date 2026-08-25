@@ -51,6 +51,39 @@ export function apply(ctx: ClientContext): void {
       if (!carried.value.ok) throw new Error(carried.value.error.code)
       return carried.value.value.item
     },
+    listMemories: async (sessionId, query, statuses) => {
+      const carried = await ctx.remote.memoryCandidateReview.listMemories({
+        sessionId,
+        ...(query === undefined ? {} : { query }),
+        ...(statuses === undefined ? {} : { statuses }),
+        limit: 100,
+      })
+      if (!carried.ok) throw new Error(`${carried.error.code}: ${carried.error.message}`)
+      if (!carried.value.ok) throw new Error(carried.value.error.code)
+      return carried.value.value
+    },
+    correctMemory: async (sessionId, item, content) => {
+      const carried = await ctx.remote.memoryCandidateReview.correctMemory({
+        sessionId,
+        id: item.id,
+        revision: item.revision,
+        content,
+        confirmed: true,
+      })
+      if (!carried.ok) throw new Error(`${carried.error.code}: ${carried.error.message}`)
+      if (!carried.value.ok) throw new Error(carried.value.error.code)
+      return carried.value.value.item
+    },
+    forgetMemory: async (sessionId, item) => {
+      const carried = await ctx.remote.memoryCandidateReview.forgetMemory({
+        sessionId,
+        id: item.id,
+        revision: item.revision,
+        confirmed: true,
+      })
+      if (!carried.ok) throw new Error(`${carried.error.code}: ${carried.error.message}`)
+      if (!carried.value.ok) throw new Error(carried.value.error.code)
+    },
   }
   ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({
     name: 'conversation.session.header.actions',

@@ -40,6 +40,7 @@ English | [中文](memory-v2-security-policy.zh.md)
 - Events and durable candidate rows store `queryLength`, never the transient query text.
 - No memory event stores recalled or rejected content.
 - The durable `memory_candidate.candidates` domain includes the same fields for review and replay.
+- A safe `message_candidate` may retain its proposed text only in the local review row. Credential-like candidate text is omitted before persistence, and no candidate text is emitted through runtime events.
 
 ### Mandatory confirmation
 

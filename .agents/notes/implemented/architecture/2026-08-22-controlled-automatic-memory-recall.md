@@ -30,4 +30,4 @@ A real agent-loop integration seeds safe, credential-like, and different-workspa
 
 ## Consequences
 
-Leon now recalls relevant project facts without requiring a tool call on every turn while retaining explicit writes and exact-revision corrections. Dynamic recall consumes bounded suffix tokens and lexical retrieval can miss paraphrases; richer retrieval remains a provider concern. Stored text is not granted instruction authority. Automatic extraction, global memory, cross-workspace recall, and unsupervised learning remain out of scope.
+Leon now recalls relevant project facts without requiring a tool call on every turn while retaining explicit writes and exact-revision corrections. Dynamic recall consumes bounded suffix tokens and lexical retrieval can miss paraphrases; richer retrieval remains a provider concern. Stored text is not granted instruction authority. Automatic durable writes, global memory, cross-workspace recall, and unsupervised learning remain out of scope; the separate [shadow extractor](../feature/2026-08-22-shadow-memory-candidate-extraction.md) creates review candidates without changing memory.

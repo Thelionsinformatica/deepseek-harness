@@ -13,6 +13,7 @@ import {
   MemoryError,
   MemoryId,
   MEMORY_EVENT_SCHEMA_VERSION,
+  MEMORY_POLICY_VERSION,
   type MemoryBlockedEvent,
   type MemoryCandidateEvent,
   type MemoryPolicyDecision,
@@ -28,6 +29,8 @@ import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { evaluateCandidatePolicy } from './policy.ts'
+import { extractMemoryCandidate } from './extractor.ts'
+import { looksSensitive } from './sensitivity.ts'
 import {
   type MemoryCandidateOperation,
   type MemoryCandidateRecord,
@@ -54,6 +57,10 @@ export interface Config {
   recallLimit?: number
   /** Maximum characters in one automatic recall snapshot. Records are skipped, never truncated. */
   recallMaxChars?: number
+  /** Extract conservative local candidates into the review queue without writing durable memory. */
+  shadowExtraction?: boolean
+  /** Stable local owner label for extracted candidates; required when shadow extraction is enabled. */
+  shadowOwnerId?: string
 }
 
 /** Schemastery validation for {@link Config}. */
@@ -61,6 +68,8 @@ export const Config: z<Config> = z.object({
   automaticRecall: z.boolean(),
   recallLimit: z.number(),
   recallMaxChars: z.number(),
+  shadowExtraction: z.boolean(),
+  shadowOwnerId: z.string(),
 })
 
 const RECORD_SCHEMA = {
@@ -83,6 +92,7 @@ const RECORD_OUTPUT = {
 /** Register tools only when the host composes both memory and workspace services. */
 export function apply(ctx: Context, config: Config = {}): void {
   const recall = resolveRecallConfig(config)
+  const shadowOwnerId = resolveShadowOwnerId(config)
   ctx.inject(['memory', 'workspaceRegistry'], (memoryCtx) => {
     const candidateShadow = new MemoryCandidateShadowStore(memoryCtx)
     memoryCtx.effect(() => async () => { await candidateShadow.close() }, 'tool-memory.candidate-shadow')
@@ -258,8 +268,92 @@ export function apply(ctx: Context, config: Config = {}): void {
       presentCall: args => ({ card: 'generic', title: 'Forget workspace memory', kind: 'other', rawInput: args.memory_id }),
     }))
 
+    if (shadowOwnerId !== undefined) registerShadowExtraction(memoryCtx, candidateShadow, shadowOwnerId)
     if (recall.enabled) registerAutomaticRecall(memoryCtx, recall, candidateShadow)
   })
+}
+
+/** Persist local review candidates from the first step without changing durable memory. */
+function registerShadowExtraction(
+  ctx: Context,
+  candidateShadow: MemoryCandidateShadowStore,
+  shadowOwnerId: string,
+): void {
+  ctx.inject(['agents'], (agentCtx) => {
+    agentCtx.on('agent/pre-step', async ({ agent, step, signal }, next): Promise<PreStepDecision> => {
+      const decision = await next()
+      if (decision.kind === 'reject' || step !== 1 || isAborted(signal)) return decision
+      const scope = await resolveScope(agentCtx, agent)
+      if (scope === undefined || isAborted(signal)) return decision
+      const candidate = extractMemoryCandidate(decision.messages)
+      if (candidate === undefined) return decision
+      const policyDecision = candidate.sensitivity === 'blocked'
+        ? 'block'
+        : candidate.sensitivity === 'review' ? 'confirm' : 'shadow'
+      const policyReason = candidate.sensitivity === 'blocked'
+        ? 'credential-signal'
+        : candidate.sensitivity === 'review' ? 'sensitivity-review-required' : 'candidate-extracted'
+      await candidateShadow.recordCandidate({
+        id: MemoryCandidateId(randomUUID()),
+        workspaceId: scope.workspaceId,
+        sessionId: agent.session.header.id,
+        userId: shadowOwnerId,
+        source: 'tool-memory',
+        operation: 'message_candidate',
+        queryLength: candidate.content?.length ?? 0,
+        confidence: candidate.confidence,
+        total: 1,
+        omittedSensitive: candidate.sensitivity === 'blocked' ? 1 : 0,
+        inserted: 0,
+        topScore: candidate.confidence,
+        ...(candidate.content === undefined ? {} : { candidateContent: candidate.content }),
+        category: candidate.category,
+        importance: candidate.importance,
+        scopeCandidate: candidate.scopeCandidate,
+        sensitivity: candidate.sensitivity,
+        policyVersion: MEMORY_POLICY_VERSION,
+        policyDecision,
+        policyReason,
+        reviewed: false,
+        createdAt: new Date().toISOString(),
+        schemaVersion: MEMORY_CANDIDATE_SCHEMA_VERSION,
+      })
+      emitCandidateEvent(agentCtx, {
+        source: 'tool-memory',
+        queryLength: candidate.content?.length ?? 0,
+        total: 1,
+        omittedSensitive: candidate.sensitivity === 'blocked' ? 1 : 0,
+        inserted: 0,
+        operation: 'message_candidate',
+        category: candidate.category,
+        confidence: candidate.confidence,
+        importance: candidate.importance,
+        sensitivity: candidate.sensitivity,
+        policyDecision,
+        policyReason,
+        policyVersion: MEMORY_POLICY_VERSION,
+      })
+      if (candidate.sensitivity === 'blocked') {
+        agentCtx.emit('memory/blocked', {
+          schemaVersion: MEMORY_EVENT_SCHEMA_VERSION,
+          source: 'memory-tool',
+          reason: 'sensitive-content',
+          workspaceId: scope.workspaceId,
+          detail: 'credential-like candidate content was omitted from the shadow queue',
+        } satisfies MemoryBlockedEvent)
+      }
+      return decision
+    }, { prepend: true })
+  })
+}
+
+function resolveShadowOwnerId(config: Config): string | undefined {
+  if (config.shadowExtraction !== true) return undefined
+  const ownerId = config.shadowOwnerId?.trim()
+  if (ownerId === undefined || ownerId.length === 0 || ownerId.length > 128) {
+    throw new TypeError('tool-memory: shadowOwnerId must contain 1-128 characters when shadowExtraction is enabled')
+  }
+  return ownerId
 }
 
 interface RecallConfig {
@@ -523,22 +617,6 @@ function renderRecall(hits: readonly MemorySearchHit[], maxChars: number): strin
 /** Re-read cancellation state without relying on static narrowing across awaited work. */
 function isAborted(signal: AbortSignal): boolean {
   return signal.aborted
-}
-
-/** Conservative credential detector used at the model-facing read/write boundary. */
-function looksSensitive(content: string): boolean {
-  const patterns = [
-    /-----BEGIN [A-Z ]*PRIVATE KEY-----/i,
-    /\bAIza[\w-]{20,}\b/,
-    /\bAQ\.[\w-]{20,}\b/,
-    /\bsk-(?:proj-)?[\w-]{16,}\b/i,
-    /\bgh[pousr]_[\dA-Z]{20,}\b/i,
-    /\bAKIA[0-9A-Z]{16}\b/,
-    /\beyJ[\w-]{10,}\.[\w-]{10,}\.[\w-]{10,}\b/,
-    /\b(?:api[ _-]?key|access[ _-]?token|secret|password)\b\s*(?:[:=]|\bis\b)\s*["']?[\w.~+\/-]{12,}/i,
-    /\b(?:senha|chave de api|credencial)\b\s*(?:[:=]|\bé\b)\s*["']?[\w.~+\/-]{12,}/i,
-  ]
-  return patterns.some(pattern => pattern.test(content))
 }
 
 function assertSafeContent(

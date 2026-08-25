@@ -19,9 +19,11 @@
 - 记忆范围内的测试文件：
   - `packages/memory/memory/tests/memory.spec.ts`（7 个用例）
   - `packages/memory/memory-local/tests/memory-local.spec.ts`（7 个用例）
-  - `packages/memory/tool-memory/tests/integration.spec.ts`（4 个用例）
+  - `packages/memory/tool-memory/tests/extractor.spec.ts`（4 个用例）
+  - `packages/memory/tool-memory/tests/integration.spec.ts`（7 个用例）
+  - `packages/memory/tool-memory/tests/loader-composition.spec.ts`（1 个用例）
   - `packages/memory/tool-memory/tests/policy.spec.ts`（5 个用例）
-- 当前计数：记忆范围内有 **4 个 `.spec.ts` 文件**和 **23 个 `it`/`test` 用例**。
+- 当前计数：记忆范围内有 **6 个 `.spec.ts` 文件**和 **31 个 `it`/`test` 用例**。
 - 已覆盖范围：
   - `memory.spec.ts` 中的提供方选择、内容规范化、遥测与核心验证。
   - `memory-local.spec.ts` 中的本地隔离、持久性、修订处理与阻止事件遥测。
@@ -37,6 +39,7 @@
   - 通过 `memory_*` 工具实现限定于工作区的显式记忆。
   - 通过 `MEMORY_SENSITIVE_CONTENT` 提供针对显式凭据的基础保护。
   - 通过 `agent/pre-step` 执行只读自动快照检索。
+  - 对显式或稳定的人类陈述执行选择加入的本地影子提取，不写入持久记忆。
   - 在 `memory_candidate.candidates` 中持久化影子候选项，包含置信度、分数、插入与敏感信息省略元数据。
   - 初始确定性影子策略，具有 `policyVersion`、`policyDecision` 与 `policyReason` 可追踪性。
   - 审查词汇与持久审查字段，包括 `reviewed`、`reviewDecision`、`reviewedAt` 与 `reviewedBy`。
@@ -57,14 +60,14 @@
 
 ## 5) 当前基线风险
 
-- 四个聚焦记忆套件在 Windows 上通过，且不需要环境特定的前置条件。
+- 六个聚焦记忆套件在 Windows 上通过，且不需要环境特定的前置条件。
 - 仓库级 `check:all` 门禁也在 Windows 上通过；后续记忆 V2 阶段必须让聚焦覆盖与全局覆盖都保持绿色。
 
 ## 6) V2 里程碑交付项
 
 1. 整合后的目标架构文档：已完成。
 2. 事件层与确定性决策策略：初始实现已完成。
-3. 影子模式与人工批准：遥测和审查字段已存在；操作员 UI 仍待完成。
+3. 影子模式与人工批准：本地提取、遥测和审查字段已存在；操作员 UI 仍待完成。
 4. 混合检索与安全上下文组合：待完成。
 5. 具有客观标准的 LEON-EVAL-PTBR：规范已存在；可执行套件仍待完成。
 6. 可逆迁移与回滚计划：已记录。

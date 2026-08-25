@@ -22,7 +22,7 @@ User
 
 - `ctx.memory`：提供方中立的接缝。
 - `memory-local`：由存储域支持的本地提供方。
-- `tool-memory`：显式工具，加上可选的自动回忆，并以影子模式持久化候选项供审查。
+- `tool-memory`：显式工具、可选自动回忆，以及不会写入持久记忆的选择加入本地影子提取。
 - `ctx.workspaceRegistry`：根据 `cwd` 解析工作区。
 
 ## 2) V2 目标架构
@@ -44,6 +44,7 @@ User
   - 读取消息，但暂不存储。
   - 发出包含 `category`、`confidence`、`importance`、`scopeCandidate` 与 `sensitivity` 的候选项。
   - 不更改记忆；只生成追踪记录。
+  - 已在 Leon preset 中使用保守的确定性模式实现。
 - **MemoryPolicyEngine**
   - 应用确定性规则：绝对阻止、确认、自动存储或拒绝。
 - **ShadowStore**

@@ -54,6 +54,7 @@ export type MemoryPolicyVersion = typeof MEMORY_POLICY_VERSION
 export type MemoryPolicyDecision = 'block' | 'reject' | 'shadow' | 'confirm' | 'store'
 /** Stable reason set used for replay and audit. */
 export type MemoryPolicyReason =
+  | 'candidate-extracted'
   | 'no-candidates'
   | 'all-candidates-sensitive'
   | 'low-confidence'
@@ -109,7 +110,7 @@ export interface MemoryForgetRequest {
 }
 
 /** Constant schema version for event payloads emitted by memory observability. */
-export const MEMORY_EVENT_SCHEMA_VERSION = 2 as const
+export const MEMORY_EVENT_SCHEMA_VERSION = 3 as const
 /** Constant schema version for durable memory records. */
 export const MEMORY_RECORD_SCHEMA_VERSION = 1 as const
 
@@ -133,8 +134,14 @@ export interface MemoryCandidateEvent {
   readonly inserted: number
   /** Opaque request context that generated the candidates. */
   readonly operation:
+    | 'message_candidate'
     | 'memory_recall'
     | 'tool_call_memory_search'
+  /** Optional content-free metadata for a newly extracted review candidate. */
+  readonly category?: 'preference' | 'decision' | 'configuration' | 'procedure' | 'fact'
+  readonly confidence?: number
+  readonly importance?: number
+  readonly sensitivity?: 'none' | 'review' | 'blocked'
   /** Deterministic policy outcome for this candidate trace. */
   readonly policyDecision?: MemoryPolicyDecision
   /** Policy reason behind the outcome. */

@@ -2915,10 +2915,14 @@ export interface Config {
   recallLimit?: number
   /** Maximum characters in one automatic recall snapshot. Records are skipped, never truncated. */
   recallMaxChars?: number
+  /** Extract conservative local candidates into the review queue without writing durable memory. */
+  shadowExtraction?: boolean
+  /** Stable local owner label for extracted candidates; required when shadow extraction is enabled. */
+  shadowOwnerId?: string
 }
 ```
 
-Source: [`packages/memory/tool-memory/src/index.ts:50`](../packages/memory/tool-memory/src/index.ts)
+Source: [`packages/memory/tool-memory/src/index.ts:53`](../packages/memory/tool-memory/src/index.ts)
 
 <a id="deepseek-aidsh-tool-pwsh"></a>
 

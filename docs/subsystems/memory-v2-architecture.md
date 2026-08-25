@@ -22,7 +22,7 @@ Current implementations:
 
 - `ctx.memory`: provider-neutral seam.
 - `memory-local`: local provider backed by the storage domain.
-- `tool-memory`: explicit tools plus optional automatic recall with shadow-mode candidate persistence for review.
+- `tool-memory`: explicit tools, optional automatic recall, and opt-in local shadow extraction without durable memory writes.
 - `ctx.workspaceRegistry`: workspace resolution from `cwd`.
 
 ## 2) V2 target architecture
@@ -44,6 +44,7 @@ Current implementations:
   - Reads a message without storing it yet.
   - Emits a candidate with `category`, `confidence`, `importance`, `scopeCandidate`, and `sensitivity`.
   - Does not change memory; it only produces a trace.
+  - Implemented with conservative deterministic patterns for the Leon preset.
 - **MemoryPolicyEngine**
   - Applies deterministic rules: absolute block, confirmation, automatic storage, or rejection.
 - **ShadowStore**

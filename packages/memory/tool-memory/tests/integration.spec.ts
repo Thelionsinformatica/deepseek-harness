@@ -59,6 +59,101 @@ function readCandidateRows(ctx: Context): MemoryCandidateRecord[] {
 }
 
 describe('memory tools through the real agent loop', () => {
+  it('persists a safe message candidate only in the local shadow queue', async () => {
+    const adapter = new MockAdapter([textResponse('Entendido.')])
+    const candidates: MemoryCandidateEvent[] = []
+    const { ctx, cwd, workspace } = await harness(adapter, {
+      shadowExtraction: true,
+      shadowOwnerId: 'test-local-owner',
+    })
+    ctx.on('memory/candidate', event => candidates.push(event))
+    const agent = ctx.agentLoop.create(SessionId('leon-memory-shadow-extraction'), { provider: 'mock', model: 'mock' }, { cwd })
+
+    agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'A decisão do projeto é usar Ollama primeiro e Gemini como fallback.' }],
+      source: { kind: 'user' },
+    }))
+    await agent.whenIdle()
+
+    const persisted = readCandidateRows(ctx)
+    expect(persisted).toHaveLength(1)
+    expect(persisted[0]).toMatchObject({
+      workspaceId: workspace.id,
+      sessionId: agent.session.header.id,
+      userId: 'test-local-owner',
+      operation: 'message_candidate',
+      candidateContent: 'A decisão do projeto é usar Ollama primeiro e Gemini como fallback.',
+      category: 'decision',
+      scopeCandidate: 'workspace',
+      sensitivity: 'none',
+      policyDecision: 'shadow',
+      reviewed: false,
+    })
+    expect(candidates).toContainEqual(expect.objectContaining({
+      operation: 'message_candidate',
+      policyDecision: 'shadow',
+    }))
+    expect(JSON.stringify(candidates)).not.toContain('Ollama primeiro')
+    await expect(ctx.memory.search({
+      scope: { workspaceId: workspace.id },
+      query: 'Ollama Gemini fallback',
+      limit: 8,
+    })).resolves.toEqual([])
+    await ctx.fiber.dispose()
+  })
+
+  it('records a credential candidate without persisting its content', async () => {
+    const secret = 'sk-proj-1234567890abcdefghijklmnop'
+    const adapter = new MockAdapter([textResponse('Não vou guardar a credencial.')])
+    const { ctx, cwd } = await harness(adapter, {
+      shadowExtraction: true,
+      shadowOwnerId: 'test-local-owner',
+    })
+    const agent = ctx.agentLoop.create(SessionId('leon-memory-shadow-secret'), { provider: 'mock', model: 'mock' }, { cwd })
+
+    agent.followup(createUserMessage({
+      content: [{ type: 'text', text: `Lembre que minha API key é ${secret}.` }],
+      source: { kind: 'user' },
+    }))
+    await agent.whenIdle()
+
+    const persisted = readCandidateRows(ctx)
+    expect(persisted).toHaveLength(1)
+    expect(persisted[0]).toMatchObject({
+      operation: 'message_candidate',
+      sensitivity: 'blocked',
+      policyDecision: 'block',
+      policyReason: 'credential-signal',
+    })
+    expect(JSON.stringify(persisted)).not.toContain(secret)
+    expect(persisted[0]).not.toHaveProperty('candidateContent')
+    await ctx.fiber.dispose()
+  })
+
+  it('does not extract a candidate when the session directory has no registered workspace', async () => {
+    const adapter = new MockAdapter([textResponse('Entendido.')])
+    const { ctx } = await harness(adapter, {
+      shadowExtraction: true,
+      shadowOwnerId: 'test-local-owner',
+    })
+    const unregisteredCwd = await realpath(await mkdtemp(join(tmpdir(), 'dsh-tool-memory-unregistered-')))
+    tempDirs.push(unregisteredCwd)
+    const agent = ctx.agentLoop.create(
+      SessionId('leon-memory-shadow-unregistered'),
+      { provider: 'mock', model: 'mock' },
+      { cwd: unregisteredCwd },
+    )
+
+    agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'A decisão do projeto é usar um modelo local.' }],
+      source: { kind: 'user' },
+    }))
+    await agent.whenIdle()
+
+    expect(readCandidateRows(ctx)).toEqual([])
+    await ctx.fiber.dispose()
+  })
+
   it('lets the model retain and retrieve one workspace fact without any API key', async () => {
     const adapter = new MockAdapter([
       toolCallResponse('remember-1', 'memory_remember', { content: 'O painel local usa a porta 3080.' }),
@@ -260,7 +355,7 @@ describe('memory tools through the real agent loop', () => {
       queryLength: query.length,
       policyDecision: 'block',
       policyReason: 'credential-signal',
-      schemaVersion: 2,
+      schemaVersion: 3,
     }))
     expect(JSON.stringify(candidates)).not.toContain(secret)
     expect(JSON.stringify(persisted)).not.toContain(secret)

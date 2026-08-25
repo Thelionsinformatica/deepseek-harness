@@ -134,7 +134,7 @@ describe('MemoryRuntime provider selection', () => {
     expect(events.map(event => event.operation)).toEqual(['create', 'search', 'update', 'forget'])
     expect(events).toHaveLength(4)
     for (const event of events) {
-      expect(event.schemaVersion).toBe(2)
+      expect(event.schemaVersion).toBe(3)
       expect(event.success).toBe(true)
       expect(event.provider).toBe('local')
       expect(event.workspaceId).toBe(scope.workspaceId)

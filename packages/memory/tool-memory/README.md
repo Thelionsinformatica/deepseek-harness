@@ -13,7 +13,7 @@ This Consumer gives an agent explicit long-term memory controls over `ctx.memory
 
 ## Activation and policy
 
-The plugin always requires `tools` and `systemPrompt`, then activates its prompt section and four tools only when both `memory` and `workspaceRegistry` are available. A headless profile that does not compose memory therefore receives no broken tool. `automaticRecall` is opt-in and additionally activates only when the agent registry exists; `recallLimit` defaults to 4 and `recallMaxChars` to 4,000.
+The plugin always requires `tools` and `systemPrompt`, then activates its prompt section and four tools only when both `memory` and `workspaceRegistry` are available. A headless profile that does not compose memory therefore receives no broken tool. `automaticRecall` is opt-in and additionally activates only when the agent registry exists; `recallLimit` defaults to 4 and `recallMaxChars` to 4,000. `shadowExtraction` is a separate opt-in and requires a stable `shadowOwnerId`; it never enables durable memory writes.
 
 The model guidance permits writes only for explicit remember intent or a clearly confirmed durable fact. It forbids storing passwords, API keys, access tokens, private keys, and other authentication secrets. The model-facing boundary also rejects credential-like writes and omits credential-like records from explicit and automatic recall. This detector is defense in depth, not a general data-loss-prevention system.
 
@@ -27,6 +27,8 @@ For each durable recall candidate flow (`memory_search` tool call) and automatic
 This telemetry row stores a content-free summary (`total`, `omittedSensitive`, `inserted`, `confidence`, `topScore`, `source`, `operation`, `queryLength`, `workspaceId`, `sessionId`, `policyVersion`, `policyDecision`, `policyReason`, `reviewed`, `schemaVersion`) for post-hoc policy tuning, human review, and observability. The transient query text is never emitted or persisted, including for blocked and confirmation-required decisions.
 
 The durable telemetry write is best-effort, never blocks tool execution, and does not enter the model context or affect its KV cache.
+
+When `shadowExtraction` is enabled, the first step of a turn also inspects only the latest human-authored message. Conservative explicit-memory and stable-statement patterns create a local `message_candidate` row with category, confidence, importance, workspace, session, and configured owner metadata. Safe candidate text stays only in that local review row; credential-like text is omitted before persistence. An ordinary question creates no row. Neither path calls `ctx.memory.create()`.
 
 ## Model Experience
 
@@ -71,6 +73,20 @@ Zero when disabled or no safe hit is found; otherwise data-dependent and hard-bo
 
 The snapshot is inserted immediately before the current human message and varies with query and stored facts, so that turn's dynamic suffix changes. Earlier durable history remains reusable.
 
+### Optional shadow extraction
+
+#### What the model sees
+
+Nothing. Shadow extraction adds no prompt section, message, tool, or result. Its local candidate row is reserved for operator review and never re-enters model context through this feature.
+
+#### Token effect
+
+Zero.
+
+#### KV Cache effect
+
+No cache entries change.
+
 ### Tool schemas
 
 #### What the model sees
@@ -101,7 +117,7 @@ Append-only; individual calls and results follow the reusable request prefix and
 
 ## Known Limitations and Deferred Work
 
-- There is no automatic write from conversation history. This is a privacy boundary, not missing persistence.
+- Conversation candidates never write durable memory automatically; the opt-in extractor creates local review rows only.
 - Global memories and cross-workspace search are intentionally unavailable.
 - Automatic recall is lexical with the local provider; semantic retrieval remains provider work.
 - Credential detection is conservative defense in depth and cannot recognize every possible secret format.

@@ -183,6 +183,10 @@
     automaticRecall: true
     recallLimit: 4
     recallMaxChars: 4000
+    # This shipped preset targets Leon's single-user local Windows deployment.
+    # Multi-user hosts must override this label or leave shadow extraction off.
+    shadowExtraction: true
+    shadowOwnerId: leon-local-owner
 
 # ── plan mode ───────────────────────────────────────────────────────────────
 

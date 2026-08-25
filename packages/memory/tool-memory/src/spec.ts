@@ -25,21 +25,28 @@ export function MemoryCandidateId(id: string): MemoryCandidateId {
 }
 
 /** Candidate events used by memory extraction telemetry and shadow persistence. */
-export type MemoryCandidateOperation = 'memory_recall' | 'tool_call_memory_search'
+export type MemoryCandidateOperation = 'message_candidate' | 'memory_recall' | 'tool_call_memory_search'
+
+/** Stable classification of a reviewable memory candidate. */
+export type MemoryCandidateCategory = 'preference' | 'decision' | 'configuration' | 'procedure' | 'fact'
+
+/** Local shadow sensitivity outcome; blocked candidates never retain content. */
+export type MemoryCandidateSensitivity = 'none' | 'review' | 'blocked'
 
 /** Human review decision captured on a candidate row from operator flow. */
 export type MemoryCandidateReviewDecision = 'accept' | 'ignore' | 'reject'
 
 /** Schema version for the durable shadow candidate domain. */
-export const MEMORY_CANDIDATE_SCHEMA_VERSION = 2 as const
+export const MEMORY_CANDIDATE_SCHEMA_VERSION = 3 as const
 /** Stable schema version for persisted candidate snapshots. */
-export type MemoryCandidateSchemaVersion = typeof MEMORY_CANDIDATE_SCHEMA_VERSION
+export type MemoryCandidateSchemaVersion = 2 | typeof MEMORY_CANDIDATE_SCHEMA_VERSION
 
 /** One persisted candidate snapshot for review and decision policy tuning. */
 export interface MemoryCandidateRecord {
   readonly id: MemoryCandidateId
   readonly workspaceId: WorkspaceIdentity
   readonly sessionId: SessionIdentity
+  readonly userId?: string
   readonly source: 'tool-memory'
   readonly operation: MemoryCandidateOperation
   readonly queryLength: number
@@ -48,6 +55,11 @@ export interface MemoryCandidateRecord {
   readonly omittedSensitive: number
   readonly inserted: number
   readonly topScore: number
+  readonly candidateContent?: string
+  readonly category?: MemoryCandidateCategory
+  readonly importance?: number
+  readonly scopeCandidate?: 'workspace'
+  readonly sensitivity?: MemoryCandidateSensitivity
   readonly policyVersion: MemoryPolicyVersion
   readonly policyDecision: MemoryPolicyDecision
   readonly policyReason: MemoryPolicyReason
@@ -64,14 +76,24 @@ export const memoryCandidateRecord = z.object({
   id: z.string().transform(MemoryCandidateId),
   workspaceId: z.string().transform(WorkspaceId),
   sessionId: z.string().transform(SessionId),
+  userId: z.string().optional(),
   source: z.literal('tool-memory'),
-  operation: z.union([z.literal('memory_recall'), z.literal('tool_call_memory_search')]),
+  operation: z.union([
+    z.literal('message_candidate'),
+    z.literal('memory_recall'),
+    z.literal('tool_call_memory_search'),
+  ]),
   queryLength: z.number().int().min(0),
   confidence: z.number().min(0).max(1),
   total: z.number().int().min(0),
   omittedSensitive: z.number().int().min(0),
   inserted: z.number().int().min(0),
   topScore: z.number(),
+  candidateContent: z.string().optional(),
+  category: z.enum(['preference', 'decision', 'configuration', 'procedure', 'fact']).optional(),
+  importance: z.number().min(0).max(1).optional(),
+  scopeCandidate: z.literal('workspace').optional(),
+  sensitivity: z.enum(['none', 'review', 'blocked']).optional(),
   policyVersion: z.number().int().positive().default(MEMORY_POLICY_VERSION),
   policyDecision: z.enum(['block', 'reject', 'shadow', 'confirm', 'store']),
   policyReason: z.enum([
@@ -79,6 +101,7 @@ export const memoryCandidateRecord = z.object({
     'all-candidates-sensitive',
     'low-confidence',
     'credential-signal',
+    'candidate-extracted',
     'sensitivity-review-required',
     'high-confidence',
     'moderate-confidence',

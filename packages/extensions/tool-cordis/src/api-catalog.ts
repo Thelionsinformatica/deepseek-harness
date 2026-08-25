@@ -3770,7 +3770,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MemoryCandidateEvent',
-    declaration: 'export interface MemoryCandidateEvent {\n    readonly schemaVersion: MemoryEventSchemaVersion;\n    readonly source: \'tool-memory\';\n    readonly queryLength: number;\n    readonly total: number;\n    readonly omittedSensitive: number;\n    readonly inserted: number;\n    readonly operation: \'memory_recall\' | \'tool_call_memory_search\';\n    readonly policyDecision?: MemoryPolicyDecision;\n    readonly policyReason?: MemoryPolicyReason;\n    readonly policyVersion?: MemoryPolicyVersion;\n}',
+    declaration: 'export interface MemoryCandidateEvent {\n    readonly schemaVersion: MemoryEventSchemaVersion;\n    readonly source: \'tool-memory\';\n    readonly queryLength: number;\n    readonly total: number;\n    readonly omittedSensitive: number;\n    readonly inserted: number;\n    readonly operation: \'message_candidate\' | \'memory_recall\' | \'tool_call_memory_search\';\n    readonly category?: \'preference\' | \'decision\' | \'configuration\' | \'procedure\' | \'fact\';\n    readonly confidence?: number;\n    readonly importance?: number;\n    readonly sensitivity?: \'none\' | \'review\' | \'blocked\';\n    readonly policyDecision?: MemoryPolicyDecision;\n    readonly policyReason?: MemoryPolicyReason;\n    readonly policyVersion?: MemoryPolicyVersion;\n}',
   },
   {
     name: 'MemoryCreateRequest',
@@ -3798,7 +3798,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MemoryPolicyReason',
-    declaration: 'export type MemoryPolicyReason = \'no-candidates\' | \'all-candidates-sensitive\' | \'low-confidence\' | \'credential-signal\' | \'sensitivity-review-required\' | \'high-confidence\' | \'moderate-confidence\';',
+    declaration: 'export type MemoryPolicyReason = \'candidate-extracted\' | \'no-candidates\' | \'all-candidates-sensitive\' | \'low-confidence\' | \'credential-signal\' | \'sensitivity-review-required\' | \'high-confidence\' | \'moderate-confidence\';',
   },
   {
     name: 'MemoryPolicyVersion',

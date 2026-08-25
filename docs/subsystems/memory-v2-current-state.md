@@ -19,9 +19,11 @@ English | [中文](memory-v2-current-state.zh.md)
 - Test files in memory scope:
   - `packages/memory/memory/tests/memory.spec.ts` (7 cases)
   - `packages/memory/memory-local/tests/memory-local.spec.ts` (7 cases)
-  - `packages/memory/tool-memory/tests/integration.spec.ts` (4 cases)
+  - `packages/memory/tool-memory/tests/extractor.spec.ts` (4 cases)
+  - `packages/memory/tool-memory/tests/integration.spec.ts` (7 cases)
+  - `packages/memory/tool-memory/tests/loader-composition.spec.ts` (1 case)
   - `packages/memory/tool-memory/tests/policy.spec.ts` (5 cases)
-- Current count: **4 `.spec.ts` files** and **23 `it`/`test` cases** in memory scope.
+- Current count: **6 `.spec.ts` files** and **31 `it`/`test` cases** in memory scope.
 - Covered ranges:
   - Provider selection, content normalization, telemetry, and central validation in `memory.spec.ts`.
   - Local isolation, durability, revision handling, and blocked-event telemetry in `memory-local.spec.ts`.
@@ -37,6 +39,7 @@ English | [中文](memory-v2-current-state.zh.md)
   - Explicit workspace-scoped memory through `memory_*` tools.
   - Basic protection against explicit credentials through `MEMORY_SENSITIVE_CONTENT`.
   - Read-only automatic snapshot retrieval through `agent/pre-step`.
+  - Opt-in local shadow extraction of explicit or stable human-authored statements, without durable memory writes.
   - Shadow candidate persistence in `memory_candidate.candidates` with confidence, score, insertion, and sensitive-omission metadata.
   - Initial deterministic shadow policy with `policyVersion`, `policyDecision`, and `policyReason` traceability.
   - Review vocabulary and durable review fields, including `reviewed`, `reviewDecision`, `reviewedAt`, and `reviewedBy`.
@@ -57,14 +60,14 @@ English | [中文](memory-v2-current-state.zh.md)
 
 ## 5) Current baseline risks
 
-- The four focused memory suites pass on Windows without environment-specific preconditions.
+- The six focused memory suites pass on Windows without environment-specific preconditions.
 - The repository-wide `check:all` gate also passes on Windows; future Memory V2 phases must keep both focused and global coverage green.
 
 ## 6) V2 milestone deliverables
 
 1. Consolidated target architecture document: complete.
 2. Event layer and deterministic decision policy: initial implementation complete.
-3. Shadow mode and human approval: telemetry and review fields exist; operator UI remains pending.
+3. Shadow mode and human approval: local extraction, telemetry, and review fields exist; operator UI remains pending.
 4. Hybrid retrieval and safe context composition: pending.
 5. LEON-EVAL-PTBR with objective criteria: specification exists; executable suite remains pending.
 6. Reversible migration and rollback plans: documented.

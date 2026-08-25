@@ -19,9 +19,9 @@ English | [中文](memory-v2-current-state.zh.md)
 - Test files in memory scope:
   - `packages/memory/memory/tests/memory.spec.ts` (7 cases)
   - `packages/memory/memory-local/tests/memory-local.spec.ts` (7 cases)
-  - `packages/memory/tool-memory/tests/integration.spec.ts` (3 cases)
+  - `packages/memory/tool-memory/tests/integration.spec.ts` (4 cases)
   - `packages/memory/tool-memory/tests/policy.spec.ts` (5 cases)
-- Current count: **4 `.spec.ts` files** and **22 `it`/`test` cases** in memory scope.
+- Current count: **4 `.spec.ts` files** and **23 `it`/`test` cases** in memory scope.
 - Covered ranges:
   - Provider selection, content normalization, telemetry, and central validation in `memory.spec.ts`.
   - Local isolation, durability, revision handling, and blocked-event telemetry in `memory-local.spec.ts`.
@@ -57,8 +57,8 @@ English | [中文](memory-v2-current-state.zh.md)
 
 ## 5) Current baseline risks
 
-- `NEEDS_VALIDATION`: ensure every executable memory test remains included in global jobs without environment-specific preconditions.
-- `NEEDS_VALIDATION`: confirm by platform which previously reported web-suite failures remain after the Windows fixes.
+- The four focused memory suites pass on Windows without environment-specific preconditions.
+- The repository-wide `check:all` gate also passes on Windows; future Memory V2 phases must keep both focused and global coverage green.
 
 ## 6) V2 milestone deliverables
 

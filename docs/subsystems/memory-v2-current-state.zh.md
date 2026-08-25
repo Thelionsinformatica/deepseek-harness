@@ -19,9 +19,9 @@
 - 记忆范围内的测试文件：
   - `packages/memory/memory/tests/memory.spec.ts`（7 个用例）
   - `packages/memory/memory-local/tests/memory-local.spec.ts`（7 个用例）
-  - `packages/memory/tool-memory/tests/integration.spec.ts`（3 个用例）
+  - `packages/memory/tool-memory/tests/integration.spec.ts`（4 个用例）
   - `packages/memory/tool-memory/tests/policy.spec.ts`（5 个用例）
-- 当前计数：记忆范围内有 **4 个 `.spec.ts` 文件**和 **22 个 `it`/`test` 用例**。
+- 当前计数：记忆范围内有 **4 个 `.spec.ts` 文件**和 **23 个 `it`/`test` 用例**。
 - 已覆盖范围：
   - `memory.spec.ts` 中的提供方选择、内容规范化、遥测与核心验证。
   - `memory-local.spec.ts` 中的本地隔离、持久性、修订处理与阻止事件遥测。
@@ -57,8 +57,8 @@
 
 ## 5) 当前基线风险
 
-- `NEEDS_VALIDATION`：确保所有可执行记忆测试继续包含在全局任务中，且没有环境特定前置条件。
-- `NEEDS_VALIDATION`：按平台确认 Windows 修复后，之前报告的 Web 套件失败还剩哪些。
+- 四个聚焦记忆套件在 Windows 上通过，且不需要环境特定的前置条件。
+- 仓库级 `check:all` 门禁也在 Windows 上通过；后续记忆 V2 阶段必须让聚焦覆盖与全局覆盖都保持绿色。
 
 ## 6) V2 里程碑交付项
 

@@ -31,11 +31,14 @@ English | [中文](memory-v2-security-policy.zh.md)
 
 ## Traces recorded in the project
 
+- `memory/operation` records the provider, operation, result count or revision, duration, and success after the durable operation completes.
+- `memory/blocked` records only a normalized reason, source, scope identity, optional memory id, and safe diagnostic detail.
 - Every `memory/candidate` event includes:
   - `policyVersion` (`1`)
   - `policyDecision` (`block|reject|shadow|confirm|store`)
   - `policyReason`
 - Events and durable candidate rows store `queryLength`, never the transient query text.
+- No memory event stores recalled or rejected content.
 - The durable `memory_candidate.candidates` domain includes the same fields for review and replay.
 
 ### Mandatory confirmation

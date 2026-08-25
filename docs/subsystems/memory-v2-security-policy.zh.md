@@ -31,11 +31,14 @@
 
 ## 项目中记录的追踪信息
 
+- `memory/operation` 会在持久操作完成后记录提供方、操作、结果数量或修订版本、耗时与成功状态。
+- `memory/blocked` 只记录规范化原因、来源、作用域身份、可选记忆 ID 与安全诊断详情。
 - 每个 `memory/candidate` 事件都包含：
   - `policyVersion`（`1`）
   - `policyDecision`（`block|reject|shadow|confirm|store`）
   - `policyReason`
 - 事件和持久候选记录会存储 `queryLength`，绝不存储临时查询文本。
+- 任何记忆事件都不会存储被回忆或被拒绝的内容。
 - 持久 `memory_candidate.candidates` 域包含相同字段，用于审查与回放。
 
 ### 强制确认

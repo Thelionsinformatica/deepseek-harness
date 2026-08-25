@@ -18,6 +18,7 @@
 
 - 设置 `autoRecallMode=off`。
 - 设置 `automaticRecall=false`。
+- 设置 `memory-local.semanticSearch.enabled: false`。词法搜索仍然可用，进程内向量缓存在重启后会被丢弃，并且不需要回滚持久 schema。
 - 把 `memory-candidate-review` Host 配置设为 `automaticWrite: false`，并清空两个精确允许列表。
 - 已有可选手动回忆时予以保留。
 

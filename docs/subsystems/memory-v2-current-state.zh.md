@@ -18,15 +18,17 @@
 
 - 记忆范围内的测试文件：
   - `packages/memory/memory/tests/memory.spec.ts`（7 个用例）
-  - `packages/memory/memory-local/tests/memory-local.spec.ts`（7 个用例）
+  - `packages/memory/memory-local/tests/memory-local.spec.ts`（40 个用例）
+  - `packages/memory/memory-local/tests/semantic.spec.ts`（16 个用例）
   - `packages/memory/tool-memory/tests/extractor.spec.ts`（4 个用例）
   - `packages/memory/tool-memory/tests/integration.spec.ts`（17 个用例）
-  - `packages/memory/tool-memory/tests/loader-composition.spec.ts`（1 个用例）
+  - `packages/memory/tool-memory/tests/loader-composition.spec.ts`（2 个用例）
   - `packages/memory/tool-memory/tests/policy.spec.ts`（10 个用例）
-- 当前计数：记忆范围内有 **6 个 `.spec.ts` 文件**和 **46 个运行时用例**，另有 4 个审查面板浏览器组件用例。
+- 当前计数：记忆范围内有 **7 个 `.spec.ts` 文件**和 **96 个运行时用例**，另有 4 个审查面板浏览器组件用例。
 - 已覆盖范围：
   - `memory.spec.ts` 中的提供方选择、内容规范化、遥测与核心验证。
-  - `memory-local.spec.ts` 中的本地隔离、持久性、修订处理与阻止事件遥测。
+  - 两个 `memory-local` suite 覆盖本地隔离、持久性、修订处理、阻止事件遥测、语义配置边界、词法回退和同义召回。
+  - 真实 Loader 组合同时覆盖仅审查候选提取和需显式启用的混合语义检索。
   - 真实代理流程中的显式操作、只读自动回忆、影子候选项持久化与敏感数据阻止。
   - 确定性策略决策，包括阻止、拒绝、确认与存储路径。
 - 已识别缺口：
@@ -46,10 +48,11 @@
   - 会话头部审查面板只列出当前 workspace 分区，并记录不可变的批准或拒绝决定，不写入最终记忆。
   - 面向浏览器的安全 Remote 投影会省略内部 workspace 与所有者标识符。
   - 操作员明确批准后才允许最终受控写入，并由总开关以及精确的用户与 workspace 允许列表共同门控，同时持久记录 `skipped`、`writing`、`stored` 或 `failed` 状态。
+  - 通过仅允许回环地址的 Ollama 与 `nomic-embed-text:latest` 提供可选的本地混合语义检索；在 embedding 前执行 workspace 过滤，并带有有界临时缓存、不含正文的指标和确定性词法回退。
   - 工作区隔离，以及纠正与遗忘时的修订检查。
 - V2 尚未实现：
   - 用于更改自动写入允许列表的设置 UI；随产品提供的 Host 组合仍默认关闭。
-  - 具有有效性与跨时间元数据控制的本地语义检索。
+  - 在已实现的混合检索核心之上的有效性、状态、替代关系和跨时间元数据过滤。交付的语义开关保持关闭，直到 LEON-EVAL-PTBR 验收其延迟和召回权衡。
   - 具有去重与每会话 token 计费能力的安全上下文组合器。
   - 可执行的 LEON-EVAL-PTBR 套件。
 
@@ -62,7 +65,7 @@
 
 ## 5) 当前基线风险
 
-- 六个聚焦记忆套件在 Windows 上通过，且不需要环境特定的前置条件。
+- 七个聚焦记忆套件在 Windows 上通过，且不需要环境特定的前置条件。
 - 仓库级 `check:all` 门禁也在 Windows 上通过；后续记忆 V2 阶段必须让聚焦覆盖与全局覆盖都保持绿色。
 
 ## 6) V2 里程碑交付项
@@ -70,6 +73,6 @@
 1. 整合后的目标架构文档：已完成。
 2. 事件层与确定性决策策略：初始实现已完成。
 3. 影子模式与人工批准：本地提取、遥测、审查字段和操作员决策 UI 已完成；最终记忆写入仍有意保持禁用。
-4. 混合检索与安全上下文组合：待完成。
+4. 混合检索与安全上下文组合：本地混合检索已在默认关闭的开关后实现；安全组合器仍待完成。
 5. 具有客观标准的 LEON-EVAL-PTBR：规范已存在；可执行套件仍待完成。
 6. 可逆迁移与回滚计划：已记录。

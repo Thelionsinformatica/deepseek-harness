@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
@@ -9,7 +9,11 @@ import * as MemoryLocal from '@deepseek-ai/dsh-memory-local'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 
 /** Mount the real memory seam and local provider over a controllable durable medium. */
-async function harness(pool = new MemoryMediaPool()) {
+async function harness(
+  pool = new MemoryMediaPool(),
+  config: MemoryLocal.Config = {},
+  directApply = false,
+) {
   const ctx = new Context()
   await ctx.plugin(Storage)
   ctx.storage.backend.register('memory', new MemoryStorageBackend(pool))
@@ -17,8 +21,39 @@ async function harness(pool = new MemoryMediaPool()) {
   ctx.storage.mount('domain', facility)
   ctx.provide('storageDomain', facility)
   await ctx.plugin(MemoryRuntime, { provider: 'local' })
-  await ctx.plugin(MemoryLocal)
-  return { ctx, pool }
+  try {
+    if (directApply) await MemoryLocal.apply(ctx, config)
+    else await ctx.plugin(MemoryLocal, config)
+    return { ctx, pool }
+  } catch (error: unknown) {
+    await ctx.fiber.dispose()
+    throw error
+  }
+}
+
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
+
+/** Unit vector used by the deterministic Ollama transport fixture. */
+function unitVector(axis: number): number[] {
+  return Array.from({ length: 64 }, (_value, index) => index === axis ? 1 : 0)
+}
+
+/** Install one Ollama-compatible batch endpoint and retain every requested input. */
+function stubEmbeddings(selectAxis: (input: string) => number): string[][] {
+  const requests: string[][] = []
+  vi.stubGlobal('fetch', vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+    if (typeof init?.body !== 'string') throw new TypeError('expected a serialized Ollama request body')
+    const body = JSON.parse(init.body) as { input: string[]; model: string; dimensions: number }
+    requests.push(body.input)
+    return new Response(JSON.stringify({
+      model: body.model,
+      embeddings: body.input.map(input => unitVector(selectAxis(input))),
+    }), { status: 200, headers: { 'content-type': 'application/json' } })
+  }))
+  return requests
 }
 
 const alpha = { workspaceId: WorkspaceId('workspace-alpha') }
@@ -160,12 +195,218 @@ describe('local durable memory operations', () => {
     await ctx.fiber.dispose()
   })
 
+  it('propagates a non-domain durable failure while preserving the current revision', async () => {
+    const { ctx, pool } = await harness()
+    const created = await ctx.memory.create({ scope: alpha, content: 'revisão original', source })
+    pool.failNextWrites = 1
+
+    await expect(ctx.memory.update({
+      scope: alpha,
+      ref: { id: created.id, revision: 1 },
+      content: 'revisão que não deve persistir',
+    })).rejects.toThrow('injected write failure')
+    await expect(ctx.memory.search({ scope: alpha, query: 'original', limit: 8 }))
+      .resolves.toMatchObject([{ record: { id: created.id, revision: 1 } }])
+    await ctx.fiber.dispose()
+  })
+
+  it('handles punctuation-only lexical queries and deterministically breaks exact score and timestamp ties', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-25T12:00:00.000Z'))
+    const { ctx } = await harness()
+    const first = await ctx.memory.create({ scope: alpha, content: 'Marcador !!! repetido.', source })
+    const second = await ctx.memory.create({ scope: alpha, content: 'Marcador !!! repetido.', source })
+
+    const hits = await ctx.memory.search({ scope: alpha, query: '!!!', limit: 8 })
+
+    expect(hits.map(hit => hit.record.id)).toEqual([first.id, second.id].sort())
+    await ctx.fiber.dispose()
+  })
+
+  it('recalls a same-meaning memory with different words through the optional local semantic index', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-25T12:00:00.000Z'))
+    const requests = stubEmbeddings(input => input.includes('Snapshots') || input.includes('cópias') ? 0 : 1)
+    const { ctx } = await harness(new MemoryMediaPool(), {
+      semanticSearch: { enabled: true, dimensions: 64, minimumScore: 0.5 },
+    })
+    const semanticEvents: Array<{
+      mode: string
+      candidateCount: number
+      embeddedCount: number
+      cacheHitCount: number
+    }> = []
+    ctx.on('memory/semantic-search', event => semanticEvents.push(event))
+    await ctx.memory.create({ scope: alpha, content: 'Snapshots vault volume E.', source })
+    await ctx.memory.create({ scope: alpha, content: 'Faturas vencem mensalmente.', source })
+
+    const first = await ctx.memory.search({
+      scope: alpha,
+      query: 'Onde estão as cópias de segurança?',
+      limit: 1,
+    })
+    const second = await ctx.memory.search({
+      scope: alpha,
+      query: 'Local das cópias protegidas?',
+      limit: 1,
+    })
+
+    expect(first[0]?.record.content).toBe('Snapshots vault volume E.')
+    expect(second[0]?.record.content).toBe('Snapshots vault volume E.')
+    expect(requests).toHaveLength(2)
+    expect(requests[0]).toHaveLength(3)
+    expect(requests[1]).toHaveLength(1)
+    expect(semanticEvents).toMatchObject([
+      { mode: 'hybrid', candidateCount: 2, embeddedCount: 2, cacheHitCount: 0 },
+      { mode: 'hybrid', candidateCount: 2, embeddedCount: 0, cacheHitCount: 2 },
+    ])
+    await ctx.fiber.dispose()
+  })
+
+  it('never sends another workspace memory to the semantic endpoint and reindexes a corrected revision', async () => {
+    const requests = stubEmbeddings(() => 0)
+    const { ctx } = await harness(new MemoryMediaPool(), {
+      semanticSearch: { enabled: true, dimensions: 64 },
+    })
+    const visible = await ctx.memory.create({ scope: alpha, content: 'Conteúdo permitido alpha.', source })
+    await ctx.memory.create({ scope: beta, content: 'SEGREDO DO WORKSPACE BETA.', source })
+
+    await ctx.memory.search({ scope: alpha, query: 'consulta inicial', limit: 8 })
+    await ctx.memory.update({
+      scope: alpha,
+      ref: { id: visible.id, revision: 1 },
+      content: 'Conteúdo corrigido alpha.',
+    })
+    await ctx.memory.search({ scope: alpha, query: 'consulta posterior', limit: 8 })
+
+    expect(JSON.stringify(requests)).not.toContain('SEGREDO DO WORKSPACE BETA')
+    expect(requests[0]).toEqual(expect.arrayContaining([
+      'search_query: consulta inicial',
+      'search_document: Conteúdo permitido alpha.',
+    ]))
+    expect(requests[1]).toEqual(expect.arrayContaining([
+      'search_query: consulta posterior',
+      'search_document: Conteúdo corrigido alpha.',
+    ]))
+    await ctx.fiber.dispose()
+  })
+
+  it('falls back to lexical recall with sanitized telemetry when Ollama is unavailable', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new TypeError('connect ECONNREFUSED secret-detail'))))
+    const { ctx } = await harness(new MemoryMediaPool(), {
+      semanticSearch: { enabled: true, dimensions: 64 },
+    })
+    const events: unknown[] = []
+    ctx.on('memory/semantic-search', event => events.push(event))
+    await ctx.memory.create({ scope: alpha, content: 'Servidor local usa a porta 3080.', source })
+
+    await expect(ctx.memory.search({ scope: alpha, query: 'porta 3080', limit: 8 }))
+      .resolves.toMatchObject([{ record: { content: 'Servidor local usa a porta 3080.' } }])
+    expect(events).toMatchObject([{
+      mode: 'lexical-fallback',
+      fallbackCode: 'TRANSPORT',
+      candidateCount: 1,
+    }])
+    expect(JSON.stringify(events)).not.toContain('porta 3080')
+    expect(JSON.stringify(events)).not.toContain('secret-detail')
+    await ctx.fiber.dispose()
+  })
+
+  it('keeps an exact lexical hit even when it is outside the bounded semantic candidate window', async () => {
+    vi.useFakeTimers()
+    const requests = stubEmbeddings(input => input.includes('search_query:') ? 0 : 1)
+    const { ctx } = await harness(new MemoryMediaPool(), {
+      semanticSearch: {
+        enabled: true,
+        dimensions: 64,
+        maxCandidates: 1,
+        minimumScore: 0.9,
+      },
+    })
+    vi.setSystemTime(new Date('2026-08-25T12:00:00.000Z'))
+    const lexical = await ctx.memory.create({ scope: alpha, content: 'código exato ALFA-42', source })
+    vi.setSystemTime(new Date('2026-08-25T12:00:01.000Z'))
+    await ctx.memory.create({ scope: alpha, content: 'registro recente sem relação', source })
+
+    const hits = await ctx.memory.search({ scope: alpha, query: 'ALFA-42', limit: 8 })
+
+    expect(hits[0]?.record.id).toBe(lexical.id)
+    expect(requests[0]).toHaveLength(2)
+    expect(requests[0]?.join('\n')).not.toContain('código exato ALFA-42')
+    await ctx.fiber.dispose()
+  })
+
+  it('accepts a fully customized disabled semantic configuration including IPv6 loopback', async () => {
+    const { ctx } = await harness(new MemoryMediaPool(), {
+      semanticSearch: {
+        enabled: false,
+        baseUrl: 'http://[::1]:11434',
+        model: ' custom-model ',
+        dimensions: 64,
+        timeoutMs: 1,
+        maxCandidates: 1,
+        maxCacheEntries: 1,
+        maxResponseBytes: 1,
+        minimumScore: 0,
+        semanticWeight: 0,
+        lexicalWeight: 1,
+      },
+    })
+    await ctx.fiber.dispose()
+  })
+
+  it('resolves safe defaults when the provider apply function is used directly', async () => {
+    const { ctx } = await harness(new MemoryMediaPool(), {}, true)
+    await ctx.fiber.dispose()
+  })
+
+  it.each([
+    ['empty model', { model: '   ' }],
+    ['oversized model', { model: 'x'.repeat(257) }],
+    ['non-integer dimensions', { dimensions: 64.5 }],
+    ['dimensions below range', { dimensions: 63 }],
+    ['dimensions above range', { dimensions: 769 }],
+    ['timeout below range', { timeoutMs: 0 }],
+    ['candidate limit above range', { maxCandidates: 10_001 }],
+    ['cache limit below range', { maxCacheEntries: 0 }],
+    ['response limit above range', { maxResponseBytes: 100_000_001 }],
+    ['non-finite score', { minimumScore: Number.NaN }],
+    ['score below range', { minimumScore: -0.1 }],
+    ['score above range', { minimumScore: 1.1 }],
+    ['non-finite semantic weight', { semanticWeight: Number.NaN }],
+    ['negative semantic weight', { semanticWeight: -1 }],
+    ['non-finite lexical weight', { lexicalWeight: Number.NaN }],
+    ['negative lexical weight', { lexicalWeight: -1 }],
+    ['zero combined weights', { semanticWeight: 0, lexicalWeight: 0 }],
+  ] satisfies Array<[string, MemoryLocal.SemanticSearchConfig]>)('rejects invalid semantic config: %s', async (_name, invalid) => {
+    await expect(harness(new MemoryMediaPool(), { semanticSearch: invalid }))
+      .rejects.toThrow('memory-local: semantic')
+  })
+
+  it.each([
+    'not a URL',
+    'https://127.0.0.1:11434',
+    'http://localhost:11434',
+    'http://user@127.0.0.1:11434',
+    'http://:secret@127.0.0.1:11434',
+    'http://127.0.0.1:11434/api',
+    'http://127.0.0.1:11434?query=1',
+    'http://127.0.0.1:11434#fragment',
+  ])('rejects a non-origin or non-loopback semantic endpoint: %s', async (baseUrl) => {
+    await expect(harness(new MemoryMediaPool(), { semanticSearch: { baseUrl } }))
+      .rejects.toThrow('memory-local: semantic baseUrl must be an absolute loopback HTTP origin')
+  })
+
   it('rejects cancellation and invalid bounds before mutation or provider execution', async () => {
     const { ctx } = await harness()
     const abort = new AbortController()
     abort.abort(new Error('cancelled by test'))
     await expect(ctx.memory.create({ scope: alpha, content: 'cancelled', source }, abort.signal))
       .rejects.toThrow('cancelled by test')
+    const plainAbort = new AbortController()
+    plainAbort.abort('plain reason')
+    await expect(ctx.memory.create({ scope: alpha, content: 'also cancelled', source }, plainAbort.signal))
+      .rejects.toThrow(expect.objectContaining({ code: 'MEMORY_ABORTED' }))
     await expect(ctx.memory.search({ scope: alpha, query: '', limit: 8 }))
       .rejects.toThrow(expect.objectContaining({ code: 'MEMORY_INVALID_QUERY' }))
     await expect(ctx.memory.search({ scope: alpha, query: 'valid', limit: 51 }))
@@ -175,6 +416,11 @@ describe('local durable memory operations', () => {
       ref: { id: MemoryId('missing'), revision: 0 },
       content: 'invalid',
     })).rejects.toThrow(expect.objectContaining({ code: 'MEMORY_INVALID_REVISION' }))
+    await expect(ctx.memory.update({
+      scope: alpha,
+      ref: { id: MemoryId('missing-valid-revision'), revision: 1 },
+      content: 'missing',
+    })).rejects.toThrow(expect.objectContaining({ code: 'MEMORY_NOT_FOUND' }))
     await ctx.fiber.dispose()
   })
 })

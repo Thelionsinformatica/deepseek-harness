@@ -18,6 +18,7 @@ Reverse increments with low risk while preserving existing memory.
 
 - Set `autoRecallMode=off`.
 - Set `automaticRecall=false`.
+- Set `memory-local.semanticSearch.enabled: false`. Lexical search remains available, the in-process vector cache is discarded on restart, and no durable schema rollback is required.
 - Set the `memory-candidate-review` Host config `automaticWrite: false` and empty both exact allowlists.
 - Retain optional manual recall when it already exists.
 

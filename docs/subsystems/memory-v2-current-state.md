@@ -18,15 +18,17 @@ English | [中文](memory-v2-current-state.zh.md)
 
 - Test files in memory scope:
   - `packages/memory/memory/tests/memory.spec.ts` (7 cases)
-  - `packages/memory/memory-local/tests/memory-local.spec.ts` (7 cases)
+  - `packages/memory/memory-local/tests/memory-local.spec.ts` (40 cases)
+  - `packages/memory/memory-local/tests/semantic.spec.ts` (16 cases)
   - `packages/memory/tool-memory/tests/extractor.spec.ts` (4 cases)
   - `packages/memory/tool-memory/tests/integration.spec.ts` (17 cases)
-  - `packages/memory/tool-memory/tests/loader-composition.spec.ts` (1 case)
+  - `packages/memory/tool-memory/tests/loader-composition.spec.ts` (2 cases)
   - `packages/memory/tool-memory/tests/policy.spec.ts` (10 cases)
-- Current count: **6 `.spec.ts` files** and **46 runtime cases** in memory scope, plus 4 browser-component cases for the review panel.
+- Current count: **7 `.spec.ts` files** and **96 runtime cases** in memory scope, plus 4 browser-component cases for the review panel.
 - Covered ranges:
   - Provider selection, content normalization, telemetry, and central validation in `memory.spec.ts`.
-  - Local isolation, durability, revision handling, and blocked-event telemetry in `memory-local.spec.ts`.
+  - Local isolation, durability, revision handling, blocked-event telemetry, semantic configuration bounds, lexical fallback, and same-meaning recall in the two `memory-local` suites.
+  - Real Loader composition for both review-only candidate extraction and opt-in hybrid semantic retrieval.
   - Explicit operations, read-only automatic recall, shadow candidate persistence, and sensitive-data blocking in the real agent flow.
   - Deterministic policy decisions, including block, reject, confirm, and store paths.
 - Identified gaps:
@@ -46,10 +48,11 @@ English | [中文](memory-v2-current-state.zh.md)
   - A session-header review panel that lists only the current workspace partition and records immutable accept or reject decisions without writing final memory.
   - A browser-safe Remote projection that omits internal workspace and owner identifiers.
   - Controlled final writes after explicit operator approval, gated by a master switch plus exact user and workspace allowlists, with durable `skipped`, `writing`, `stored`, or `failed` trace state.
+  - Optional local hybrid semantic retrieval through loopback-only Ollama and `nomic-embed-text:latest`, with workspace filtering before embedding, a bounded ephemeral cache, content-free metrics, and deterministic lexical fallback.
   - Workspace isolation and revision checks for correction and forgetting.
 - Not yet implemented for V2:
   - A settings UI for changing automatic-write allowlists; the shipped Host composition remains off by default.
-  - Local semantic retrieval with validity and cross-temporal metadata controls.
+  - Rich validity, status, supersession, and cross-temporal metadata filters on top of the implemented hybrid retrieval core. The shipped semantic switch remains off until LEON-EVAL-PTBR accepts its latency and recall tradeoff.
   - A safe context composer with deduplication and per-session token accounting.
   - The executable LEON-EVAL-PTBR suite.
 
@@ -62,7 +65,7 @@ English | [中文](memory-v2-current-state.zh.md)
 
 ## 5) Current baseline risks
 
-- The six focused memory suites pass on Windows without environment-specific preconditions.
+- The seven focused memory suites pass on Windows without environment-specific preconditions.
 - The repository-wide `check:all` gate also passes on Windows; future Memory V2 phases must keep both focused and global coverage green.
 
 ## 6) V2 milestone deliverables
@@ -70,6 +73,6 @@ English | [中文](memory-v2-current-state.zh.md)
 1. Consolidated target architecture document: complete.
 2. Event layer and deterministic decision policy: initial implementation complete.
 3. Shadow mode and human approval: local extraction, telemetry, review fields, and the operator decision UI are complete; final-memory writes remain intentionally disabled.
-4. Hybrid retrieval and safe context composition: pending.
+4. Hybrid retrieval and safe context composition: local hybrid retrieval is implemented behind an off-by-default switch; the safe composer remains pending.
 5. LEON-EVAL-PTBR with objective criteria: specification exists; executable suite remains pending.
 6. Reversible migration and rollback plans: documented.

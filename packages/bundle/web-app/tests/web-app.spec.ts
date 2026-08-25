@@ -203,6 +203,17 @@ describe('web-app runtime glue', () => {
     })
   })
 
+  it('ships local semantic memory retrieval as an explicit opt-in', () => {
+    const patch = readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
+    const parsed = yaml.load(patch, { schema: entryListSchema })
+    const rows = (parsed as { insert?: { id?: string; config?: Record<string, unknown> }[] }[])
+      .flatMap(entry => entry.insert ?? [])
+
+    expect(rows.find(row => row.id === 'memory-local')?.config).toMatchObject({
+      semanticSearch: { enabled: false },
+    })
+  })
+
   it('mounts dist serving, prompt section, bash variables, and publishes the URL with the LAN snapshot', async () => {
     stageDist()
     const ctx = new Context()

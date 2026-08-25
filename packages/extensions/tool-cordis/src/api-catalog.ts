@@ -2713,6 +2713,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'event', description: 'Operation outcome, workspace boundary, provider, and optional result metadata.' }],
   },
   {
+    name: 'memory/semantic-search',
+    mode: 'emit',
+    signature: '\'memory/semantic-search\'(event: LocalSemanticSearchEvent): void',
+    summary: 'Optional semantic retrieval completed or fell back without exposing query or memory text.',
+    description: 'Optional semantic retrieval completed or fell back without exposing query or memory text.',
+    parameters: [{ name: 'event', description: 'Retrieval mode, bounded cost counters, and sanitized failure class.' }],
+  },
+  {
     name: 'session-telemetry/record',
     mode: 'waterfall',
     signature: '\'session-telemetry/record\'(record: SessionTelemetryRecord, next: () => SessionTelemetryRecord): SessionTelemetryRecord',
@@ -3745,6 +3753,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export class LlmRuntime extends Service {\n    constructor(ctx: Context);\n    registerAdapter(providers: string[], adapter: LlmAdapter): AdapterRegistrationHandle;\n    listProviders(): LlmProviderInfo[];\n    registerConfigurableProviders(entries: readonly LlmConfigurableProvider[]): DirectoryRegistrationHandle;\n    listConfigurableProviders(): LlmConfigurableProvider[];\n    registerModelDiscovery(settingsNs: string, discover: (request: LlmModelDiscoveryRequest) => Promise<readonly LlmDiscoveredModel[]>): () => void;\n    async discoverModels(settingsNs: string, request: LlmModelDiscoveryRequest): Promise<LlmDiscoveredModel[]>;\n    providerRetryPolicy(provider: string): ResolvedRetryPolicy;\n    async listModels(provider: string): Promise<LlmModelInfo[]>;\n    async resolveModelInfo(provider: string, model: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async resolveCallConfig(config: LlmCallConfig, signal?: AbortSignal): Promise<LlmCallConfig>;\n    async prepareCall(config: LlmCallConfig, signal?: AbortSignal): Promise<PreparedLlmCall>;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
   },
   {
+    name: 'LocalSemanticSearchEvent',
+    declaration: 'export interface LocalSemanticSearchEvent {\n    readonly schemaVersion: 1;\n    readonly workspaceId: MemorySearchRequest[\'scope\'][\'workspaceId\'];\n    readonly mode: \'hybrid\' | \'lexical-fallback\';\n    readonly model: string;\n    readonly candidateCount: number;\n    readonly embeddedCount: number;\n    readonly cacheHitCount: number;\n    readonly resultCount: number;\n    readonly durationMs: number;\n    readonly fallbackCode?: SemanticFallbackCode;\n}',
+  },
+  {
     name: 'LspHover',
     declaration: 'export interface LspHover {\n    readonly contents: string;\n    readonly range?: LspRange;\n}',
   },
@@ -4319,6 +4331,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SearchResultView',
     declaration: 'export type SearchResultView = SearchMatchesResultView | SearchPathsResultView;',
+  },
+  {
+    name: 'SemanticFallbackCode',
+    declaration: 'export type SemanticFallbackCode = \'TIMEOUT\' | \'TRANSPORT\' | \'HTTP_ERROR\' | \'INVALID_RESPONSE\' | \'RESPONSE_TOO_LARGE\';',
   },
   {
     name: 'SendTeamMessageRequest',

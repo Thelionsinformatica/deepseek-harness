@@ -1622,6 +1622,48 @@ export interface MemoryRuntimeConfig {
 
 来源：[`packages/memory/memory/src/index.ts:85`](../packages/memory/memory/src/index.ts)
 
+<a id="deepseek-aidsh-memory-local"></a>
+
+## `@deepseek-ai/dsh-memory-local`
+
+需要：`memory` · `storageDomain`
+
+```ts config-catalog
+/** Local provider configuration. */
+export interface Config {
+  /** Optional semantic layer over the durable lexical provider. */
+  readonly semanticSearch?: SemanticSearchConfig
+}
+
+/** Optional local semantic retrieval policy; lexical ranking always remains available. */
+export interface SemanticSearchConfig {
+  /** Enable local Ollama embeddings. Disabled by default. */
+  readonly enabled?: boolean
+  /** Loopback Ollama origin; non-loopback endpoints are rejected. */
+  readonly baseUrl?: string
+  /** Installed Ollama embedding model. */
+  readonly model?: string
+  /** Matryoshka output dimensions from 64 through 768. */
+  readonly dimensions?: number
+  /** Total embedding request deadline in milliseconds. */
+  readonly timeoutMs?: number
+  /** Maximum workspace records considered by one semantic query. */
+  readonly maxCandidates?: number
+  /** Maximum document vectors retained in the process-local LRU index. */
+  readonly maxCacheEntries?: number
+  /** Maximum accepted Ollama response body size in bytes. */
+  readonly maxResponseBytes?: number
+  /** Minimum cosine score for a semantic-only result. */
+  readonly minimumScore?: number
+  /** Semantic contribution to the final hybrid score. */
+  readonly semanticWeight?: number
+  /** Lexical contribution to the final hybrid score. */
+  readonly lexicalWeight?: number
+}
+```
+
+来源：[`packages/memory/memory-local/src/index.ts:68`](../packages/memory/memory-local/src/index.ts)
+
 <a id="deepseek-aidsh-message-feedback"></a>
 
 ## `@deepseek-ai/dsh-message-feedback`
@@ -3571,7 +3613,6 @@ export interface Config {
 - `@deepseek-ai/dsh-host-plugin-inventory` — 需要 `loader`（[`packages/host/plugin-inventory/src/index.ts`](../packages/host/plugin-inventory/src/index.ts)）
 - `@deepseek-ai/dsh-llm`（[`packages/llm/llm/src/index.ts`](../packages/llm/llm/src/index.ts)）
 - `@deepseek-ai/dsh-lsp`（[`packages/lsp/lsp/src/index.ts`](../packages/lsp/lsp/src/index.ts)）
-- `@deepseek-ai/dsh-memory-local` — 需要 `memory` · `storageDomain`（[`packages/memory/memory-local/src/index.ts`](../packages/memory/memory-local/src/index.ts)）
 - `@deepseek-ai/dsh-schedule` — 需要 `agents` · `sessions` · `tools` · `sessionPersistence`（[`packages/schedule/schedule/src/index.ts`](../packages/schedule/schedule/src/index.ts)）
 - `@deepseek-ai/dsh-session`（[`packages/core/session/src/index.ts`](../packages/core/session/src/index.ts)）
 - `@deepseek-ai/dsh-session-checkpoint-policy` — 需要 `llm` · `sessionPersistence` · `sessions` · `tools`（[`packages/session/session-checkpoint-policy/src/index.ts`](../packages/session/session-checkpoint-policy/src/index.ts)）

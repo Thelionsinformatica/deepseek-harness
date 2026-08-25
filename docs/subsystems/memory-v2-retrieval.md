@@ -10,11 +10,13 @@ Deliver robust, auditable, local-first retrieval, beginning with the existing le
 
 1. **Exact match**
    - Deterministic matching for exact tokens.
-2. **Lexical search (current)**
-   - The current `memory-local` implementation normalizes and scores terms.
-3. **Local semantic search (future stage)**
-   - `nomic-embed-text` as an optional provider.
-   - Semantic reranking with workspace, validity, and status filters.
+2. **Lexical search (always on)**
+   - `memory-local` normalizes and scores terms and remains the deterministic fallback.
+3. **Local semantic search (implemented, opt-in)**
+   - `nomic-embed-text:latest` through the loopback Ollama embedding endpoint.
+   - Workspace filtering occurs before any candidate text reaches Ollama.
+   - A bounded in-process document-vector cache and hybrid reranking add same-meaning recall without changing the durable schema.
+   - Timeout, transport, validation, and response-size failures fall back to lexical retrieval.
 4. **Business filters**
    - `workspaceId`, `userId`, `status`, temporal validity, and `sensitivity`.
 
@@ -23,7 +25,7 @@ Deliver robust, auditable, local-first retrieval, beginning with the existing le
 1. Build the query from the user's message.
 2. Apply the mandatory workspace filter.
 3. Run literal and lexical search every time.
-4. Optionally run local semantic search when it is available and produces a useful score.
+4. Optionally run local semantic search when enabled, locally available, and above the configured minimum score.
 5. Merge and deduplicate by `id`.
 6. Prioritize by `importance`, recency, and reliability.
 7. Limit results according to policy and token budget.
@@ -43,8 +45,17 @@ Deliver robust, auditable, local-first retrieval, beginning with the existing le
 - Query p95 latency in milliseconds.
 - Sensitive-data false-positive rate.
 - Token reduction per session after composition.
+- Cold-start and warmed batch latency, cache-hit count, embedded-document count, and lexical-fallback rate from the content-free `memory/semantic-search` event.
 
 ## Search migration
 
 - Phase 1: keep lexical search as the default and do not block rollout without demonstrated benefit.
-- Phase 2: add semantic search only when recall or precision gains exceed its latency and operational cost.
+- Phase 2: implemented behind `semanticSearch.enabled: false`; enable only when LEON-EVAL-PTBR demonstrates that recall gains exceed cold-start, latency, and local resource cost.
+
+## Current operational baseline
+
+- Default semantic dimensions: 256.
+- Maximum candidates per workspace-filtered query: 200.
+- Maximum cached document vectors: 2,000.
+- Measured on the Leon development machine with eight inputs: about 7.7 seconds after a cold model load, then 68.5–107.4 ms across four warmed runs.
+- Rollback is immediate: set `semanticSearch.enabled: false`; lexical retrieval continues and no memory migration is required.

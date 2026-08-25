@@ -513,6 +513,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   MemoryCandidateEvent: 'memory.md',
   MemoryForgetRequest: 'memory.md',
   MemoryId: 'memory.md',
+  LocalSemanticSearchEvent: 'memory-v2-retrieval.md',
   MemoryOperationEvent: 'memory.md',
   MemoryProvider: 'memory.md',
   MemoryRecord: 'memory.md',

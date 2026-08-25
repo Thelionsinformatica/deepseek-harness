@@ -188,4 +188,23 @@ A durable memory operation completed or failed after provider selection. Observe
 ```
 
 Source: [`packages/memory/memory/src/index.ts`](../../packages/memory/memory/src/index.ts)
+
+<a id="memorysemantic-search--emit"></a>
+
+#### `memory/semantic-search` — emit
+
+Optional semantic retrieval completed or fell back without exposing query or memory text.
+
+```ts cordis-catalog
+/**
+ * Optional semantic retrieval completed or fell back without exposing query or memory text.
+ * @param event - Retrieval mode, bounded cost counters, and sanitized failure class.
+ * @mode emit
+ */
+'memory/semantic-search'(event: LocalSemanticSearchEvent): void
+```
+
+Types: [LocalSemanticSearchEvent](memory-v2-retrieval.zh.md)
+
+Source: [`packages/memory/memory-local/src/index.ts`](../../packages/memory/memory-local/src/index.ts)
 <!-- END GENERATED cordis-surface -->

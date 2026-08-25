@@ -58,6 +58,11 @@
 
     - id: memory-local
       name: '@deepseek-ai/dsh-memory-local'
+      config:
+        # Hybrid semantic recall is available through local Ollama only. It
+        # remains opt-in until LEON-EVAL-PTBR proves the latency/recall tradeoff.
+        semanticSearch:
+          enabled: false
 
     # One Host-owned source of truth for the shadow queue and its human review
     # trail. The browser addresses a Session; this service resolves and guards

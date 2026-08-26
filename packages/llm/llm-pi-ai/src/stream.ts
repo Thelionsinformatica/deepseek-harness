@@ -14,17 +14,45 @@ import { isContextOverflow } from '@earendil-works/pi-ai'
 import type { AssistantMessage, AssistantMessageEvent, Usage as PiUsage } from '@earendil-works/pi-ai'
 import { toPiReplayState } from './replay.ts'
 
+/** Provider metadata captured before the response body stream is consumed. */
+export interface ProviderUsageMetadata {
+  /** Exact request charge reported by the serving provider or gateway. */
+  providerCostUsdNanos?: number
+}
+
+/**
+ * Parse OmniRoute's decimal USD response charge into integer nanodollars.
+ * Invalid, negative, or unsafe values are ignored rather than poisoning a
+ * durable usage record.
+ * @param headers - provider response headers captured by pi-ai.
+ * @returns the rounded nanodollar charge when the header is valid.
+ */
+export function providerCostUsdNanos(headers: Readonly<Record<string, string>>): number | undefined {
+  const entry = Object.entries(headers)
+    .find(([name]) => name.toLowerCase() === 'x-omniroute-response-cost')
+  const raw = entry?.[1]
+  if (raw === undefined || !/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(raw)) return undefined
+  const [whole = '0', fraction = ''] = raw.split('.')
+  let nanos = BigInt(whole) * 1_000_000_000n
+    + BigInt(fraction.slice(0, 9).padEnd(9, '0'))
+  if ((fraction[9] ?? '0') >= '5') nanos += 1n
+  return nanos <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(nanos) : undefined
+}
+
 /**
  * Map pi-ai usage (reasoning folded into output by pi-ai).
  * @param usage - cumulative usage from the terminal pi-ai event.
  * @returns harness counts; cache fields appear only when non-zero (pi-ai reports zeros, not absence).
  */
-export function mapUsage(usage: PiUsage): TokenUsage {
+export function mapUsage(usage: PiUsage, metadata: ProviderUsageMetadata = {}): TokenUsage {
   return {
     inputTokens: usage.input,
     outputTokens: usage.output,
     ...usage.cacheRead > 0 ? { cacheReadTokens: usage.cacheRead } : {},
     ...usage.cacheWrite > 0 ? { cacheWriteTokens: usage.cacheWrite } : {},
+    ...metadata.providerCostUsdNanos === undefined
+      ? {}
+      : { providerCostUsdNanos: metadata.providerCostUsdNanos },
   }
 }
 
@@ -121,12 +149,14 @@ export function mapStopReason(message: AssistantMessage, contextWindow?: number)
  * `finish` chunks (the harness protocol's other error-delivery style).
  * @param events - one assistant turn's pi-ai event stream.
  * @param contextWindow - resolved catalog capacity for usage-based overflow detection.
+ * @param providerUsage - reads response metadata captured before the terminal event.
  * @returns the harness chunks, ending with `usage` then `finish`; throws
  *   `LlmError` (`STREAM_CLOSED`) if the source ends without a terminal event.
  */
 export async function* toStreamChunks(
   events: AsyncIterable<AssistantMessageEvent>,
   contextWindow?: number,
+  providerUsage: () => ProviderUsageMetadata = () => ({}),
 ): AsyncGenerator<StreamChunk> {
   // pi-ai contentIndex ↔ our block index map 1:1 (both count blocks from 0
   // in stream order), but we track ids per index for tool calls.
@@ -189,7 +219,7 @@ export async function* toStreamChunks(
         }
         break
       case 'done':
-        yield { type: 'usage', usage: mapUsage(event.message.usage) }
+        yield { type: 'usage', usage: mapUsage(event.message.usage, providerUsage()) }
         yield {
           type: 'finish',
           reason: mapStopReason(event.message, contextWindow),
@@ -199,7 +229,7 @@ export async function* toStreamChunks(
       case 'error':
         // In-stream error delivery (pi-ai's style) → error finish chunk
         // (the harness's other sanctioned error path besides throwing).
-        yield { type: 'usage', usage: mapUsage(event.error.usage) }
+        yield { type: 'usage', usage: mapUsage(event.error.usage, providerUsage()) }
         yield { type: 'finish', reason: mapStopReason(event.error, contextWindow) }
         return
       // no default: AssistantMessageEvent is pi-ai's closed union; a new

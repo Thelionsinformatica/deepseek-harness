@@ -300,6 +300,8 @@ describe('LocaleRuntime', () => {
       failureReason: 'Failure reason: ',
       failoverTitle: '{provider} unavailable',
       failoverDetail: 'Leon automatically switched from {fromModel} to {model} through the configured fallback.',
+      quotaTitle: '{provider} has no available credits',
+      quotaDetail: 'The provider reported exhausted quota or credits; Leon automatically switched from {fromModel} to {model}.',
     })
     const t = svc.bind('feature')
     expect(t('settings')).toBe('Configurações')
@@ -324,5 +326,8 @@ describe('LocaleRuntime', () => {
     expect(t('failoverTitle', { provider: 'OmniRoute' })).toBe('OmniRoute indisponível')
     expect(t('failoverDetail', { fromModel: 'auto', model: 'Gemini 3.6 Flash' }))
       .toBe('Leon mudou automaticamente de auto para Gemini 3.6 Flash pelo fallback configurado.')
+    expect(t('quotaTitle', { provider: 'google' })).toBe('google está sem créditos disponíveis')
+    expect(t('quotaDetail', { fromModel: 'Gemini 3.6 Flash', model: 'GPT-5.6 Terra' }))
+      .toBe('O provedor informou cota ou créditos esgotados; Leon mudou automaticamente de Gemini 3.6 Flash para GPT-5.6 Terra.')
   })
 })

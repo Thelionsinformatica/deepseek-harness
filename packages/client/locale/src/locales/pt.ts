@@ -305,6 +305,8 @@ export const ptBrFallbackByEnglish: Readonly<Record<string, string>> = Object.fr
   'Leon is working': 'Leon está trabalhando',
   'Leon is working…': 'Leon está trabalhando…',
   'Leon automatically switched from {fromModel} to {model} through the configured fallback.': 'Leon mudou automaticamente de {fromModel} para {model} pelo fallback configurado.',
+  '{provider} has no available credits': '{provider} está sem créditos disponíveis',
+  'The provider reported exhausted quota or credits; Leon automatically switched from {fromModel} to {model}.': 'O provedor informou cota ou créditos esgotados; Leon mudou automaticamente de {fromModel} para {model}.',
   'Leon stopped — task incomplete': 'Leon está parado — tarefa incompleta',
   'Work completed': 'Trabalho concluído',
   'Took {duration}': 'Levou {duration}',

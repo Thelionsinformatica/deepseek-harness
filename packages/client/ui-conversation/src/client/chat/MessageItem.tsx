@@ -137,12 +137,15 @@ function ModelFailoverItem({ node, t }: {
   node: ModelFailoverNode
   t: ChatViewSlotProps['t']
 }) {
+  const quota = node.failure.code === 'QUOTA'
   return (
     <div className={css.turnErrorRow} role="status">
       <StateDot state="warning" className={css.turnErrorDot} />
       <div className={css.turnErrorCopy}>
-        <span className={css.failoverTitle}>{t('message.failover.title', { provider: node.from.provider })}</span>
-        <span className={css.turnErrorMessage}>{t('message.failover.detail', {
+        <span className={css.failoverTitle}>{t(quota ? 'message.failover.quotaTitle' : 'message.failover.title', {
+          provider: node.from.provider,
+        })}</span>
+        <span className={css.turnErrorMessage}>{t(quota ? 'message.failover.quotaDetail' : 'message.failover.detail', {
           fromModel: node.from.model,
           model: node.to.model,
         })}</span>

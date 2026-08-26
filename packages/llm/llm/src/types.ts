@@ -138,6 +138,8 @@ export interface TokenUsage {
   cacheReadTokens?: number
   cacheWriteTokens?: number
   reasoningTokens?: number
+  /** Exact request charge reported by the serving provider or gateway, in billionths of one US dollar. */
+  providerCostUsdNanos?: number
 }
 
 /** Display metadata for one registered provider route. */

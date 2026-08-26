@@ -12,7 +12,7 @@ Function plugin registering the `sessionStats` projection unit: whole-log conver
 - `ttftMs`/`ttftSteps` sum and count `step/start` → first non-empty delta chunk; the first attempt's boundary survives an in-step `llm/retry` (window `resetForRetry` parity).
 - `decodeMs`/`decodeTokens` sum first token → assembled message and the provider-reported output tokens, only over steps carrying both.
 - `toolMs` sums `tool/call` → `tool/result` pairs matched by callId; unresolved calls are dropped at `turn/end` (results land within their turn).
-- `estimatedApiCostUsdNanos` prices provider-reported usage through an exact configured provider/model table and stores integer billionths of one US dollar. A stream usage sample is replaced by the finalized message sample for the same step, rather than counted twice. `pricedModelCalls` includes configured zero-cost local routes; `unpricedModelCalls` makes usage from unknown routes visible instead of silently presenting an incomplete estimate as complete.
+- `estimatedApiCostUsdNanos` stores integer billionths of one US dollar. An exact `providerCostUsdNanos` reported by a provider or gateway wins; otherwise usage is priced through the configured provider/model table. A stream usage sample is replaced by the finalized message sample for the same step, rather than counted twice. `pricedModelCalls` includes explicit zero charges and configured zero-cost local routes; `unpricedModelCalls` makes usage from unknown routes visible instead of silently presenting an incomplete estimate as complete.
 - Every field is 0 until its first contributing event. A composed registry always serves the key, so clients read the value, never key presence.
 
 ## Composition
@@ -35,7 +35,7 @@ Function plugin registering the `sessionStats` projection unit: whole-log conver
 
 Injects `sessionProjections` — the plugin's whole purpose; in assemblies without the registry the fiber stays pending and nothing registers.
 
-The deployment owns this table because provider prices, paid/free plans, currencies, effective dates, and model identifiers change independently of the package. Omitting `prices` disables cost accounting. The shipped Leon Web composition uses an editable paid Standard price snapshot; the displayed amount is an estimate, not a provider invoice.
+The deployment owns this table because provider prices, paid/free plans, currencies, effective dates, and model identifiers change independently of the package. Omitting `prices` disables table-based estimates, but exact provider-reported charges still fold when present. The shipped Leon Web composition uses an editable paid Standard price snapshot; the displayed total can mix exact gateway charges with token-price estimates and is not a provider invoice.
 
 ## Model Experience
 
@@ -50,6 +50,6 @@ None; the plugin never assembles or sends provider requests.
 - **Steps count work attempted, not visible output** — a step that failed before producing any visible content still closed with `step/end` and counts; a step interrupted by a crash counts after the session reloads, when crash recovery appends its synthetic `step/end` (`interruptedTurnClosers` in dsh-session).
 - **A cancelled step is counted but untimed** — no assistant message assembles, so its partial stream time enters no wall-time figure, matching the window fold's untimed interrupted node; a max-tokens usage-host message conversely contributes model time the surface does not show.
 - **Counts are log-scoped, not surface-scoped** — steps whose messages were later compacted away stay counted; the figures describe the whole session, not the current model-visible surface.
-- **Only reported token charges are estimated** — search/Maps grounding requests, cache storage time, media charged by duration, taxes, credits, free-tier allowances, Batch/Flex/Priority multipliers, and calls that fail without a usage report are outside this projection. The UI exposes unpriced model calls, but non-token extras require a future operation ledger or the provider billing console.
+- **Only durable usage charges are counted** — exact provider/gateway response charges can include what that response reports, while table-priced routes still estimate tokens only. Search/Maps grounding requests, cache storage time, media charged by duration, taxes, credits, free-tier allowances, Batch/Flex/Priority multipliers, and calls that fail without a usage report may remain outside this projection. The UI exposes unpriced model calls, but full invoice reconciliation still requires the provider billing console.
 - **Pricing is a deployment snapshot** — the plugin does not fetch live prices or infer the account's billing tier. Operators must update the exact-route table when providers change rates or a different plan is selected.
 - **Mounted only in the web-app bundle** — other assemblies serve no `sessionStats` key, and their consumers fall back to window-scoped counting (the web stats strip's fallback path).

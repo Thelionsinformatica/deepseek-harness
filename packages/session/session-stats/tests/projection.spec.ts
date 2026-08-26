@@ -221,6 +221,32 @@ describe('sessionStats configured API cost estimate', () => {
     })
   })
 
+  it('prefers an exact gateway-reported charge and treats an explicit zero as priced', () => {
+    const gateway = createMessage({
+      role: 'assistant', content: [{ type: 'text', text: 'gateway' }],
+      source: { kind: 'model', provider: 'omniroute', model: 'auto' },
+    })
+    expect(foldPriced([
+      at(100, 'request/header', { header: { config: { provider: 'omniroute', model: 'auto' } } }),
+      at(110, 'step/start', { turn: 1, step: 1 }),
+      at(120, 'assistant/message', {
+        turn: 1, step: 1, message: gateway,
+        usage: { inputTokens: 1_000, outputTokens: 100, providerCostUsdNanos: 42_000 },
+      }),
+      at(130, 'step/end', { turn: 1, step: 1 }),
+      at(210, 'step/start', { turn: 2, step: 1 }),
+      at(220, 'assistant/message', {
+        turn: 2, step: 1, message: gateway,
+        usage: { inputTokens: 10, outputTokens: 1, providerCostUsdNanos: 0 },
+      }),
+      at(230, 'step/end', { turn: 2, step: 1 }),
+    ])).toMatchObject({
+      estimatedApiCostUsdNanos: 42_000,
+      pricedModelCalls: 2,
+      unpricedModelCalls: 0,
+    })
+  })
+
   it('rejects duplicate provider/model prices at the deployment boundary', () => {
     expect(() => createSessionStatsProjectionDefinition([...prices, prices[0]]))
       .toThrow('duplicate model price for google/gemini-3.6-flash')

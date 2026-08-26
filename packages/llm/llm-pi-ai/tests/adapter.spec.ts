@@ -77,6 +77,61 @@ describe('PiAiAdapter provider routing', () => {
     expect(server.paths).toEqual(['/chat/completions'])
   })
 
+  it('persists a terminal OmniRoute SSE charge as exact provider usage metadata', async () => {
+    const server = await mockServer([{
+      events: textEvents,
+      headers: { 'x-omniroute-route-class': 'CLIENT_API' },
+      commentsBeforeDone: ['x-omniroute-response-cost=0.0000000015'],
+    }])
+    const adapter = adapterOf({ omniroute: {
+      api: 'openai-completions',
+      apiKeyEnv: 'PI_TEST_KEY',
+      baseURL: server.url,
+      models: [{ id: 'auto' }],
+    } })
+
+    const chunks = []
+    for await (const chunk of adapter.stream({ provider: 'omniroute', model: 'auto', messages: [] })) {
+      chunks.push(chunk)
+    }
+
+    expect(chunks.find(chunk => chunk.type === 'usage')).toEqual({
+      type: 'usage',
+      usage: { inputTokens: 3, outputTokens: 1, providerCostUsdNanos: 2 },
+    })
+    expect(server.headers[0]?.['x-dsh-response-telemetry-id']).toMatch(/^\d+-\d+$/)
+  })
+
+  it('keeps concurrent OmniRoute response charges isolated by request', async () => {
+    const server = await mockServer([
+      {
+        events: textEvents,
+        commentsBeforeDone: ['x-omniroute-response-cost=0.0000000015'],
+        delayMs: 1,
+      },
+      {
+        events: textEvents,
+        commentsBeforeDone: ['x-omniroute-response-cost=0.0000000035'],
+        delayMs: 1,
+      },
+    ])
+    const adapter = adapterOf({ omniroute: {
+      api: 'openai-completions',
+      apiKeyEnv: 'PI_TEST_KEY',
+      baseURL: server.url,
+      models: [{ id: 'auto' }],
+    } })
+    const collectCost = async (): Promise<number | undefined> => {
+      for await (const chunk of adapter.stream({ provider: 'omniroute', model: 'auto', messages: [] })) {
+        if (chunk.type === 'usage') return chunk.usage.providerCostUsdNanos
+      }
+      return undefined
+    }
+
+    expect((await Promise.all([collectCost(), collectCost()])).sort()).toEqual([2, 4])
+    expect(new Set(server.headers.map(headers => headers['x-dsh-response-telemetry-id'])).size).toBe(2)
+  })
+
   it('keeps prepared model metadata and dispatch on one profile snapshot', async () => {
     const first = await mockServer([{ events: textEvents }])
     const second = await mockServer([])

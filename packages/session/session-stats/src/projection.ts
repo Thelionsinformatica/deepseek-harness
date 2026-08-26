@@ -169,6 +169,12 @@ function estimateUsageCost(usage: TokenUsage, price: ModelTokenPrice): number {
   )
 }
 
+/** A provider/gateway's exact durable charge, when valid. */
+function reportedUsageCost(usage: TokenUsage): number | undefined {
+  const value = usage.providerCostUsdNanos
+  return value !== undefined && Number.isSafeInteger(value) && value >= 0 ? value : undefined
+}
+
 /** Replace the previous sample for one step instead of counting stream and final usage twice. */
 function applyUsage(
   state: SessionStatsState,
@@ -178,13 +184,14 @@ function applyUsage(
   route: { provider: string; model: string } | null,
   prices: ReadonlyMap<string, ModelTokenPrice>,
 ): SessionStatsState {
-  if (prices.size === 0) return state
+  const reportedCost = reportedUsageCost(usage)
+  if (prices.size === 0 && reportedCost === undefined) return state
   const price = route === null ? undefined : prices.get(priceKey(route.provider, route.model))
   const nextSample = {
     turn,
     step,
-    costUsdNanos: price === undefined ? 0 : estimateUsageCost(usage, price),
-    priced: price !== undefined,
+    costUsdNanos: reportedCost ?? (price === undefined ? 0 : estimateUsageCost(usage, price)),
+    priced: reportedCost !== undefined || price !== undefined,
   }
   const previous = state.lastUsage?.turn === turn && state.lastUsage.step === step
     ? state.lastUsage

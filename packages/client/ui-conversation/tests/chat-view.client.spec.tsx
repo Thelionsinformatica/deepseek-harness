@@ -598,6 +598,22 @@ describe('ChatView', () => {
     expect(status?.textContent).toContain('Leon 已通过配置的故障转移自动从 qwen3.5:9b 切换到 gemini-3.6-flash。')
   })
 
+  it('distinguishes exhausted provider credits from a transient outage', () => {
+    const quota = {
+      ...failover(2),
+      from: { provider: 'google', model: 'gemini-3.6-flash' },
+      to: { provider: 'openai', model: 'gpt-5.6-terra' },
+      failure: { code: 'QUOTA', message: 'prepayment credits are depleted' },
+    } satisfies ModelFailoverNode
+    const h = makeHarness({ nodes: [user(1, 'continue'), quota], running: true })
+    render(<h.ChatView {...h.props} />)
+
+    const status = screen.getByText('google 没有可用额度').closest('[role="status"]')
+    expect(status?.textContent).toContain('该提供方报告额度或点数已耗尽')
+    expect(status?.textContent).toContain('gemini-3.6-flash')
+    expect(status?.textContent).toContain('gpt-5.6-terra')
+  })
+
   it('renders terminal turn failures inline with their durable message and optional code', () => {
     const h = makeHarness({ nodes: [user(1, 'try'), turnError(2, 'AUTH'), turnError(3)] })
     const view = render(<h.ChatView {...h.props} />)

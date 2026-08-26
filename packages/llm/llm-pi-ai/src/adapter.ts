@@ -59,7 +59,8 @@ import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { toPiContext } from './context.ts'
-import { toStreamChunks } from './stream.ts'
+import { responseTelemetryScope } from './response-telemetry.ts'
+import { providerCostUsdNanos, toStreamChunks } from './stream.ts'
 
 /** One resolution's frozen view: the profiles and the collection built from them. */
 interface PiAiSnapshot {
@@ -364,38 +365,57 @@ export class PiAiAdapter extends LlmAdapter {
           maxPixels: profile.requestImagePixelBudget,
           maxBytes: profile.requestImageMaxBytes,
         })
-      const events = snapshot.models.streamSimple(model, context, {
-        ...profileOptions(profile, reasoning, apiKey),
-        ...options.temperature === undefined ? {} : { temperature: options.temperature },
-        ...options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens },
-        ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
-        signal: watchdog.signal,
-        // Profile headers are deployment-owned; attribution names are
-        // Harness-owned and therefore win collisions.
-        headers: requestHeaders(profile.headers),
-      })
-      const iterator = toStreamChunks(events, model.contextWindow)[Symbol.asyncIterator]()
-      let exhausted = false
+      let reportedCostUsdNanos: number | undefined
+      const captureReportedCost = (headers: Readonly<Record<string, string>>): void => {
+        const cost = providerCostUsdNanos(headers)
+        if (cost !== undefined) reportedCostUsdNanos = cost
+      }
+      // Non-streaming OmniRoute responses expose the charge as a response
+      // header. Streaming responses cannot know it at handshake time and emit
+      // the same field as a terminal SSE comment; pi-ai's provider SDK drops
+      // comments, so the scoped observer captures that live path.
+      const responseTelemetry = responseTelemetryScope(options.provider === 'omniroute', captureReportedCost)
       try {
-        while (true) {
-          const result = await watchdog.next(iterator)
-          const timeout = timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT')
-          if (timeout !== undefined) throw timeout
-          if (result.done) {
-            exhausted = true
-            return
+        const events = responseTelemetry.run(() => snapshot.models.streamSimple(model, context, {
+          ...profileOptions(profile, reasoning, apiKey),
+          ...options.temperature === undefined ? {} : { temperature: options.temperature },
+          ...options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens },
+          ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
+          signal: watchdog.signal,
+          // Profile headers are deployment-owned; attribution names are
+          // Harness-owned and therefore win collisions.
+          headers: { ...requestHeaders(profile.headers), ...responseTelemetry.headers },
+          onResponse: (response) => { captureReportedCost(response.headers) },
+        }))
+        const iterator = toStreamChunks(
+          events,
+          model.contextWindow,
+          () => reportedCostUsdNanos === undefined ? {} : { providerCostUsdNanos: reportedCostUsdNanos },
+        )[Symbol.asyncIterator]()
+        let exhausted = false
+        try {
+          while (true) {
+            const result = await watchdog.next(iterator)
+            const timeout = timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT')
+            if (timeout !== undefined) throw timeout
+            if (result.done) {
+              exhausted = true
+              return
+            }
+            yield result.value
           }
-          yield result.value
+        } finally {
+          if (!exhausted) {
+            consumer.abort('pi-ai stream consumer stopped')
+            try {
+              await iterator.return(undefined)
+            } catch (_abortedSdkTeardown) {
+              // The stable signal already owns SDK termination; return-time abort cannot add an outcome.
+            }
+          }
         }
       } finally {
-        if (!exhausted) {
-          consumer.abort('pi-ai stream consumer stopped')
-          try {
-            await iterator.return(undefined)
-          } catch (_abortedSdkTeardown) {
-            // The stable signal already owns SDK termination; return-time abort cannot add an outcome.
-          }
-        }
+        responseTelemetry.close()
       }
     } catch (error: unknown) {
       if (timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT') !== undefined) {

@@ -22,13 +22,13 @@ Models 设置界面首先呈现活跃且无需引用的路由，然后是其他�
 
 Web 网关会在两个本地角色之间进行确定性的会话级自适应路由。空白自动会话会在 `session.models` 报告当前状态前以最低推理强度预置 Qwen，因此新会话会明确从高效本地层级开始。简短且独立的提示词保持 Qwen 并关闭推理；较长、多行、代码、技术及依赖上下文的继续请求保持 Qwen 并把推理强度提升到 medium。图片、超大结构化提示词、明确的高复杂度标记及自动目标轮次使用 high 强度的 Ornith。在另一轮仍在收尾时获准进入的普通 follow-up 会按 `MessageId` 保留已经解析的路由；inbox 认领会在下一次提示词组装前应用该决定，而不改变活动轮次。丢弃消息会移除尚未应用的决定，之后的手动模型选择仍具有最高优先级。Ollama 模型配置会把 `off` 明确映射到 OpenAI 兼容的 `reasoning_effort: none`，因为省略该参数可能让本地模型默认继续思考。模型选择器公开 `Leon 自动`，并在旁边显示实际选中的路由和推理强度。显式选择模型或推理强度会在该会话中停用自动化，用户可以从同一菜单重新启用。提示词只能在部署策略已命名的路由之间选择，不能自行引入 DeepSeek 或其他提供方。
 
-外部升级由失败触发并按顺序进行。第一个不可用的 Ollama 请求切换到回环 `omniroute/auto`；若 OmniRoute 或它选择的上游不可用，Leon 会绕过网关，直接切换到 `google/gemini-3.6-flash`，再切换到 `openai/gpt-5.6-terra`。每次合格切换都会追加 `llm/failover`，成为同一请求的活动路由，并持续显示在聊天中。在已配置远程路由时启用 Leon 自动模式，即表示部署所有者授权该回退，包括带图片的会话；要求更严格的部署可将替代路由标记为外部驻留，以拒绝图片的自动外传。OmniRoute 负责提供方健康、上游选择、配额及自身用量账本，但不持有 Leon 的 persona 或本地任务分类。直接路由仍通过凭据引用配置，没有用户提供的密钥就不会生效。Web 成本投影把两个本地模型定价为零，并记录当前 Gemini／OpenAI 直接调用的 token 价格快照；OmniRoute 的可变路由成本保留在它自己的权威账本中，而不是被猜成固定模型价格。
+外部升级由失败触发并按顺序进行。第一个不可用的 Ollama 请求切换到回环 `omniroute/auto`；若 OmniRoute 或它选择的上游不可用，Leon 会绕过网关，直接切换到 `google/gemini-3.6-flash`，再切换到 `openai/gpt-5.6-terra`。每次合格切换都会追加 `llm/failover`，成为同一请求的活动路由，并持续显示在聊天中。在已配置远程路由时启用 Leon 自动模式，即表示部署所有者授权该回退，包括带图片的会话；要求更严格的部署可将替代路由标记为外部驻留，以拒绝图片的自动外传。OmniRoute 负责提供方健康、上游选择、配额及权威账本，但不持有 Leon 的 persona 或本地任务分类。直接路由仍通过凭据引用配置，没有用户提供的密钥就不会生效。Web 成本投影把两个本地模型定价为零，并记录当前 Gemini／OpenAI 直接调用的 token 价格快照。对于 OmniRoute，pi-ai 适配器会从 HTTP 标头或流式终止 SSE 注释中捕获网关逐响应的 `x-omniroute-response-cost`，并作为精确持久 usage，而不是猜测固定的 `auto` 价格；遥测尚未记录的旧调用会继续明确显示为未定价。规范化为 `QUOTA` 的跳转会显示为额度耗尽，而不是暂时提供方中断。
 
 OpenCode 是下属执行器，而不是另一个 Leon persona。在 Windows 上，基础组合可以通过 `dsh-subagent-acp` 挂载 OpenCode 的官方 ACP 服务器，并将其公开为显式的 `opencode` 单次委派工具。两个提供方行会保持禁用，直到启动器验证 `E:\computador\.leon` 下由安装程序持有的可执行文件与配置并设置 `LEON_OPENCODE_ENABLED=1`；因此缺失的可选运行时不会阻塞基础组合。子进程只接收独立任务与所选 workspace 路径，以 Ornith 作为主模型、Qwen 作为小模型，并只返回最终文本。其配置启用项目内编辑、shell、LSP、快照与压缩，同时拒绝外部目录访问、嵌套 Agent、commit、push、hard reset 与递归删除。Leon 仍负责判断何时适合委派，并验证返回的工作。
 
 ## 验证
 
-Ollama 检测到 NVIDIA GeForce RTX 4070 和已安装的 Qwen 3.5 9B 模型。官方 `ornith-1.5:9b` Ollama 工件已拉取，并通过 OpenAI 兼容端点正常完成葡萄牙语请求及带 `reasoning_effort: high` 的请求。OmniRoute 3.8.49 与 OpenCode 1.18.21 安装在 `E:\computador\.leon\tools` 下；OmniRoute 运行于 `127.0.0.1:20128`，其健康与存储诊断均无失败。聚焦的分类器与组合包测试固定 Qwen 处理 fast／main 工作、Ornith 处理 expert／goal-round 工作、有序的 Ollama 到 OmniRoute 到 Gemini 到 OpenAI 链、零本地价格、直接 GPT-5.6 Terra 价格快照、不存在随附的 4B 路由，以及不存在默认 DeepSeek 模型与搜索行。真实付费的 OmniRoute、Gemini 或 OpenAI 请求仍是受凭据与预算门控的部署检查。
+Ollama 检测到 NVIDIA GeForce RTX 4070 和已安装的 Qwen 3.5 9B 模型。官方 `ornith-1.5:9b` Ollama 工件已拉取，并通过 OpenAI 兼容端点正常完成葡萄牙语请求及带 `reasoning_effort: high` 的请求。OmniRoute 3.8.49 与 OpenCode 1.18.21 安装在 `E:\computador\.leon\tools` 下；OmniRoute 运行于 `127.0.0.1:20128`，其健康与存储诊断均无失败。聚焦的分类器与组合包测试固定 Qwen 处理 fast／main 工作、Ornith 处理 expert／goal-round 工作、有序的 Ollama 到 OmniRoute 到 Gemini 到 OpenAI 链、零本地价格、直接 GPT-5.6 Terra 价格快照、精确及零值 OmniRoute 响应费用、额度耗尽分类、不存在随附的 4B 路由，以及不存在默认 DeepSeek 模型与搜索行。受控真实请求确认本地中断会产生可见的 Ollama 到 OmniRoute 跳转，且 OmniRoute 会在终止 SSE 遥测中返回所选上游与十进制响应费用；Gemini 直连因已配置账户的预付额度耗尽而返回 `RESOURCE_EXHAUSTED`，随后已配置的 OpenAI 后备完成该请求。
 
 ## 考虑过的替代方案
 

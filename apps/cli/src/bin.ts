@@ -47,6 +47,21 @@ switch (invocation.mode) {
     runDumpConfig(invocation.profile, invocation.defaultOnly, invocation.patches)
     break
   }
+  case 'doctor': {
+    const { runDoctor } = await import('./doctor.ts')
+    process.exitCode = await runDoctor(invocation)
+    break
+  }
+  case 'backup': {
+    const { runBackup } = await import('./recovery.ts')
+    process.exitCode = await runBackup(invocation, readVersion())
+    break
+  }
+  case 'restore': {
+    const { runRestore } = await import('./recovery.ts')
+    process.exitCode = await runRestore(invocation, readVersion())
+    break
+  }
   default:
     invocation satisfies never
     throw new Error(`dsh: unhandled invocation mode ${JSON.stringify(invocation)}`)

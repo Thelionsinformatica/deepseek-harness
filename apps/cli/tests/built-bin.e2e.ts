@@ -14,21 +14,55 @@ const cliVersion = (JSON.parse(readFileSync(new URL('../package.json', import.me
 const dshBin = join(repoRoot, 'apps/cli/lib/bin.js')
 const invalidProvider = fileURLToPath(new URL('./fixtures/invalid-provider.cordis.yml', import.meta.url))
 
+// Published-entry acceptance inherits only the OS paths required to launch
+// Node and package-manager children. Every product, routing, proxy, and
+// credential variable must be opted into by the fixture itself.
+const CHILD_ENVIRONMENT_ALLOWLIST = new Set([
+  'APPDATA',
+  'CI',
+  'COMSPEC',
+  'COREPACK_HOME',
+  'HOME',
+  'LANG',
+  'LC_ALL',
+  'LOCALAPPDATA',
+  'PATH',
+  'PATHEXT',
+  'PNPM_HOME',
+  'SYSTEMDRIVE',
+  'SYSTEMROOT',
+  'TEMP',
+  'TMP',
+  'USERPROFILE',
+  'WINDIR',
+  'XDG_CACHE_HOME',
+  'XDG_CONFIG_HOME',
+])
+
+function isolatedEnvironment(overrides: Readonly<Record<string, string | undefined>> = {}): Record<string, string> {
+  const inherited = Object.fromEntries(
+    Object.entries(process.env)
+      .filter((entry): entry is [string, string] => entry[1] !== undefined)
+      .filter(([name]) => CHILD_ENVIRONMENT_ALLOWLIST.has(name.toUpperCase())),
+  )
+  return Object.fromEntries(
+    Object.entries({ ...inherited, ...overrides })
+      .filter((entry): entry is [string, string] => entry[1] !== undefined),
+  )
+}
+
 async function runBuiltBin(
   args: readonly string[] = [],
   env: Readonly<Record<string, string | undefined>> = {},
   cwd?: string,
+  input = '',
 ): Promise<{ stdout: string; code: number; stderr: string }> {
-  const childEnv = Object.fromEntries(
-    Object.entries({ ...process.env, ...env })
-      .filter((entry): entry is [string, string] => entry[1] !== undefined),
-  )
   const result = await execa(process.execPath, [dshBin, ...args], {
-    input: '',
+    input,
     timeout: 25_000,
     killSignal: 'SIGKILL',
     reject: false,
-    env: childEnv,
+    env: isolatedEnvironment(env),
     extendEnv: false,
     ...cwd === undefined ? {} : { cwd },
   })
@@ -136,13 +170,14 @@ function startProfileLifecycle(fixture: ProfileLifecycleFixture, args: readonly 
     cwd: fixture.home,
     input: '',
     reject: false,
-    env: {
+    env: isolatedEnvironment({
       DSH_HOME: fixture.home,
       RAW_READY_FILE: fixture.ready,
       RAW_SETTLED_FILE: fixture.settled,
       RAW_DISPOSED_FILE: fixture.disposed,
       RAW_INTERRUPT_FILE: fixture.interrupt,
-    },
+    }),
+    extendEnv: false,
   })
 }
 
@@ -166,12 +201,15 @@ function createEnvironmentProbeProfile(home: string, project: string): void {
     '  void ctx.loader.await().then(async () => {',
     "    let text = ''",
     '    for await (const chunk of ctx.llm.stream({',
-    "      provider: 'deepseek-official',",
-    "      model: 'deepseek-v4-flash',",
+    "      provider: 'built-environment-mock',",
+    "      model: 'mock-model',",
     '      messages: [],',
     '      maxTokens: 32,',
     '    })) {',
     "      if (chunk.type === 'text-delta') text += chunk.text",
+    "      if (chunk.type === 'finish' && (chunk.reason.kind === 'error' || chunk.reason.kind === 'aborted')) {",
+    '        throw new Error(`mock route failed: ${chunk.reason.failure.code}`)',
+    '      }',
     '    }',
     '    process.stdout.write(`${text}\\n`)',
     "    if (process.platform === 'win32') process.emit('SIGTERM')",
@@ -301,11 +339,12 @@ function startStartupProfile(fixture: StartupFixture, args: readonly string[]) {
     reject: false,
     timeout: 25_000,
     killSignal: 'SIGKILL',
-    env: {
+    env: isolatedEnvironment({
       DSH_HOME: fixture.home,
       RAW_READY_FILE: fixture.ready,
       RAW_INTERRUPT_FILE: fixture.interrupt,
-    },
+    }),
+    extendEnv: false,
   })
 }
 
@@ -375,22 +414,45 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       successText: 'published headless profile reached the mock',
     })
     const home = mkdtempSync(join(tmpdir(), 'dsh-built-headless-'))
+    const project = mkdtempSync(join(tmpdir(), 'dsh-built-headless-project-'))
+    writeFileSync(join(home, 'settings.yaml'), [
+      'agent-default-model:',
+      '  provider: built-headless-mock',
+      '  model: mock-model',
+      'llm-pi-ai:',
+      '  providers:',
+      '    built-headless-mock:',
+      '      displayName: Built Headless Mock',
+      '      api: openai-completions',
+      `      baseURL: ${server.baseURL}`,
+      '      apiKeyEnv: BUILT_HEADLESS_API_KEY',
+      '      retryPolicy:',
+      '        mode: normal',
+      '        maxRetries: 0',
+      '      models:',
+      '        - id: mock-model',
+      '          contextWindow: 32768',
+      '          maxTokens: 8192',
+      '',
+    ].join('\n'))
     try {
       const result = await runBuiltBin(['--profile', 'headless', 'answer', 'from', 'the', 'published', 'entry'], {
         DSH_HOME: home,
         DSH_TELEMETRY_DISABLED: '1',
-        DEEPSEEK_API_KEY: apiKey,
-        DEEPSEEK_BASE_URL: server.baseURL,
-      })
+        LEON_DEFAULT_WORKSPACE: project,
+        BUILT_HEADLESS_API_KEY: apiKey,
+      }, project)
       expect(result.code, result.stderr).toBe(0)
       expect(result.stdout).toBe('published headless profile reached the mock')
       expect(result.stderr).toBe('')
       expect(server.requests.length).toBeGreaterThan(0)
       expect(server.requests.every(request => request.path === '/chat/completions')).toBe(true)
+      expect(server.requests.every(request => request.headers.authorization === `Bearer ${apiKey}`)).toBe(true)
       expect(JSON.stringify(server.requests.map(request => request.body))).toContain('answer from the published entry')
     } finally {
       await server.close()
       rmSync(home, { recursive: true, force: true })
+      rmSync(project, { recursive: true, force: true })
     }
   }, 30_000)
 
@@ -405,6 +467,114 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
     }
   })
 
+  it('runs doctor from the published entry without initializing the selected profile', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-doctor-home-'))
+    const workspace = mkdtempSync(join(tmpdir(), 'dsh-doctor-workspace-'))
+    try {
+      const result = await runBuiltBin(['doctor', '--port', '1', '--json'], {
+        DSH_HOME: home,
+        LEON_DEFAULT_WORKSPACE: workspace,
+        OLLAMA_HOST: 'http://127.0.0.1:1',
+      })
+      expect(result.code, result.stderr).toBe(0)
+      expect(result.stderr).toBe('')
+      const report = JSON.parse(result.stdout) as {
+        schemaVersion: number
+        product: string
+        overall: string
+        checks: Array<{ id: string; status: string }>
+      }
+      expect(report).toMatchObject({ schemaVersion: 1, product: 'Leon', overall: 'warning' })
+      expect(report.checks).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'workspace', status: 'ok' }),
+        expect.objectContaining({ id: 'profile', status: 'warning' }),
+        expect.objectContaining({ id: 'ollama', status: 'warning' }),
+        expect.objectContaining({ id: 'web', status: 'warning' }),
+      ]))
+      expect(existsSync(join(home, 'profiles', 'web'))).toBe(false)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+      rmSync(workspace, { recursive: true, force: true })
+    }
+  })
+
+  it('plans recovery from the published entry without writing or initializing profiles', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-backup-home-'))
+    const workspace = mkdtempSync(join(tmpdir(), 'dsh-backup-workspace-'))
+    try {
+      writeFileSync(join(home, 'settings.yaml'), 'persona: Leon\n')
+      const result = await runBuiltBin(['backup', '--dry-run', '--json'], {
+        DSH_HOME: home,
+        LEON_DEFAULT_WORKSPACE: workspace,
+        OLLAMA_HOST: 'http://127.0.0.1:1',
+      })
+      expect(result.code, result.stderr).toBe(0)
+      expect(result.stderr).toBe('')
+      const report = JSON.parse(result.stdout) as {
+        product: string
+        status: string
+        fileCount: number
+        credentialStoreIncluded: boolean
+      }
+      expect(report).toMatchObject({
+        product: 'Leon',
+        status: 'planned',
+        fileCount: 1,
+        credentialStoreIncluded: false,
+      })
+      expect(existsSync(join(home, 'profiles'))).toBe(false)
+      expect(existsSync(join(workspace, 'Backups'))).toBe(false)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+      rmSync(workspace, { recursive: true, force: true })
+    }
+  })
+
+  it('creates, verifies, and restores an encrypted package through the published entry', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-built-recovery-'))
+    const home = join(root, 'home')
+    const workspace = join(root, 'workspace')
+    const archive = join(root, 'state.leon-backup')
+    const target = join(root, 'restored')
+    const passphrase = 'built-entry-secret-passphrase'
+    mkdirSync(join(home, 'storages'), { recursive: true })
+    mkdirSync(workspace)
+    writeFileSync(join(home, 'settings.yaml'), 'persona: Leon\n')
+    writeFileSync(join(home, '.credentials.yaml'), 'API_KEY=must-not-restore\n')
+    writeFileSync(join(home, 'storages', 'memory_local.json'), '{"memories":["continue"]}\n')
+    const environment = {
+      DSH_HOME: home,
+      LEON_DEFAULT_WORKSPACE: workspace,
+      OLLAMA_HOST: 'http://127.0.0.1:1',
+    }
+    try {
+      const backup = await runBuiltBin([
+        'backup', archive, '--confirm-stopped', '--passphrase-stdin', '--json',
+      ], environment, undefined, `${passphrase}\n`)
+      expect(backup.code, backup.stderr).toBe(0)
+      expect(JSON.parse(backup.stdout)).toMatchObject({ status: 'created', fileCount: 2 })
+      expect(readFileSync(archive).includes(Buffer.from('must-not-restore'))).toBe(false)
+
+      const preview = await runBuiltBin([
+        'restore', archive, '--target', target, '--passphrase-stdin', '--json',
+      ], environment, undefined, `${passphrase}\n`)
+      expect(preview.code, preview.stderr).toBe(0)
+      expect(JSON.parse(preview.stdout)).toMatchObject({ status: 'verified' })
+      expect(existsSync(target)).toBe(false)
+
+      const restored = await runBuiltBin([
+        'restore', archive, '--target', target, '--apply', '--confirm-stopped', '--passphrase-stdin', '--json',
+      ], environment, undefined, `${passphrase}\n`)
+      expect(restored.code, restored.stderr).toBe(0)
+      expect(JSON.parse(restored.stdout)).toMatchObject({ status: 'restored' })
+      expect(readFileSync(join(target, 'settings.yaml'), 'utf8')).toBe('persona: Leon\n')
+      expect(readFileSync(join(target, 'storages', 'memory_local.json'), 'utf8')).toContain('continue')
+      expect(existsSync(join(target, '.credentials.yaml'))).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 30_000)
+
   it('fails loud on a nonexistent profile with the plugin-command hint', async () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-missing-profile-'))
     try {
@@ -417,7 +587,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
     }
   }, 30_000)
 
-  it('uses the launching endpoint and managed credential through the published entry', async () => {
+  it('uses the configured endpoint and managed credential through the published entry', async () => {
     const apiKey = 'built-home-layer-key'
     const server = await startMockLlmServer({
       sequence: ['success'],
@@ -426,7 +596,24 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
     })
     const home = mkdtempSync(join(tmpdir(), 'dsh-home-environment-'))
     const project = mkdtempSync(join(tmpdir(), 'dsh-home-project-'))
-    writeFileSync(join(home, '.credentials.yaml'), `version: 1\nrefs:\n  DEEPSEEK_API_KEY: ${apiKey}\n`, { mode: 0o600 })
+    writeFileSync(join(home, '.credentials.yaml'), `version: 1\nrefs:\n  BUILT_ENVIRONMENT_API_KEY: ${apiKey}\n`, { mode: 0o600 })
+    writeFileSync(join(home, 'settings.yaml'), [
+      'llm-pi-ai:',
+      '  providers:',
+      '    built-environment-mock:',
+      '      displayName: Built Environment Mock',
+      '      api: openai-completions',
+      `      baseURL: ${server.baseURL}`,
+      '      apiKeyEnv: BUILT_ENVIRONMENT_API_KEY',
+      '      retryPolicy:',
+      '        mode: normal',
+      '        maxRetries: 0',
+      '      models:',
+      '        - id: mock-model',
+      '          contextWindow: 32768',
+      '          maxTokens: 32',
+      '',
+    ].join('\n'))
     createEnvironmentProbeProfile(home, project)
     try {
       const result = await runBuiltBin(
@@ -434,8 +621,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
         {
           DSH_HOME: home,
           DSH_TELEMETRY_DISABLED: '1',
-          DEEPSEEK_API_KEY: undefined,
-          DEEPSEEK_BASE_URL: server.baseURL,
+          BUILT_ENVIRONMENT_API_KEY: undefined,
         },
         project,
       )
@@ -641,7 +827,8 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
         timeout: 60_000,
         killSignal: 'SIGKILL',
         reject: false,
-        env: { DSH_HOME: home },
+        env: isolatedEnvironment({ DSH_HOME: home }),
+        extendEnv: false,
       })
       expect(result.exitCode).toBe(0)
       const manifest = JSON.parse(readFileSync(join(home, 'profiles', 'anchor', 'package.json'), 'utf8')) as {

@@ -101,6 +101,10 @@ class MemoryPersistence extends SessionPersistence implements PersistenceBackend
     return this.coordinator.append(id, events)
   }
 
+  override delete(id: SessionId): Promise<void> {
+    return this.coordinator.delete(id)
+  }
+
   override prepare(id: SessionId, signal?: AbortSignal): ReturnType<PersistenceCoordinator['prepare']> {
     return this.coordinator.prepare(id, signal)
   }
@@ -161,6 +165,10 @@ class MemoryPersistence extends SessionPersistence implements PersistenceBackend
     if (closers.length > 0) entry.events.push(...structuredClone(closers) as SessionEvent[])
   }
 
+  async deleteStored(id: SessionId): Promise<void> {
+    this.store.delete(id)
+  }
+
   async list(signal?: AbortSignal): Promise<SessionHeader[]> {
     signal?.throwIfAborted()
     return [...this.store.values()].map(e => structuredClone(e.meta))
@@ -184,7 +192,9 @@ class ControlledBackend implements PersistenceBackend<never> {
   appendAttempts = 0
   loadAttempts = 0
   repairAttempts = 0
+  deleteAttempts = 0
   beforeAppend?: (attempt: number) => Promise<void>
+  beforeDelete?: (attempt: number) => Promise<void>
   beforeLoadStored?: (attempt: number, signal?: AbortSignal) => Promise<void>
   /** When set, the declared seek hook delegates here so readFrom exercises it; unset throws (tests set it first). */
   seekHook?: (id: SessionId, fromSeq: number, signal?: AbortSignal) => Promise<StoredSuffix | undefined>
@@ -228,6 +238,13 @@ class ControlledBackend implements PersistenceBackend<never> {
     this.repairAttempts += 1
     const entry = this.store.get(m.id)
     if (entry !== undefined) entry.events.push(...structuredClone(closers) as SessionEvent[])
+  }
+
+  async deleteStored(id: SessionId): Promise<void> {
+    const attempt = ++this.deleteAttempts
+    await this.beforeDelete?.(attempt)
+    this.store.delete(id)
+    this.lifecycle.push('delete-committed')
   }
 
   async list(): Promise<SessionHeader[]> {
@@ -414,6 +431,47 @@ describe('PersistenceCoordinator bounded writes', () => {
       expect(backend.store.get(session.id)?.events.map(event => event.seq)).toEqual([0, 1])
     } finally {
       appendGate.resolve(true)
+      await fiber.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+})
+
+describe('PersistenceCoordinator permanent deletion', () => {
+  it('waits for an in-flight append, deletes after its commit, and rejects resurrection', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const backend = new ControlledBackend()
+    let coordinator!: PersistenceCoordinator<never>
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      coordinator = new PersistenceCoordinator(inner, backend)
+    }, { inject: ['sessions'] }))
+    const id = SessionId('delete-append-race')
+    try {
+      await coordinator.create(meta(id, '/w'))
+      await coordinator.append(id, oneTurnLog())
+      const started = Promise.withResolvers<undefined>()
+      const release = Promise.withResolvers<undefined>()
+      backend.beforeAppend = async () => {
+        started.resolve(undefined)
+        await release.promise
+      }
+
+      const appending = coordinator.append(id, [{
+        type: 'turn/start', seq: 6, time: 7, data: { turn: 2 },
+      }])
+      await started.promise
+      const deleting = coordinator.delete(id)
+      expect(backend.deleteAttempts).toBe(0)
+
+      release.resolve(undefined)
+      await Promise.all([appending, deleting])
+      expect(backend.lifecycle).toContain('delete-committed')
+      expect(backend.store.has(id)).toBe(false)
+      await expect(coordinator.append(id, [{
+        type: 'turn/start', seq: 0, time: 1, data: { turn: 1 },
+      }])).rejects.toThrow(/being deleted or was deleted/)
+    } finally {
       await fiber.dispose()
       await ctx.fiber.dispose()
     }

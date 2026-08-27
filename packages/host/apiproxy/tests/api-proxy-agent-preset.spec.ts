@@ -429,7 +429,7 @@ describe('automatic model failover', () => {
         }) => {
           observedHasImage = hasImage
           return provider === 'test' && failure.code === 'TRANSPORT'
-            ? { provider: 'cloud', model: 'api-model' }
+            ? { provider: 'cloud', model: 'api-model', residency: 'external' as const }
             : undefined
         },
       },
@@ -440,6 +440,13 @@ describe('automatic model failover', () => {
     } as never)
     const sessionId = SessionId('automatic-failover')
     await api.sessions.create(request({ sessionId }))
+    expect(await api.sessions.selectModel(request({
+      sessionId,
+      provider: 'test',
+      model: 'test-model',
+      automatic: true,
+      externalFailoverConsent: true,
+    }))).toMatchObject({ result: { ok: true, value: { externalFailoverConsent: true } } })
     const agent = ctx.agents.get(sessionId)
     if (agent === undefined) throw new Error('unreachable')
     agent.session.append('user/message', createUserMessage({
@@ -493,6 +500,71 @@ describe('automatic model failover', () => {
     await ctx.fiber.dispose()
   })
 
+  it('denies a text-only external retry until this session explicitly consents', async () => {
+    const { api, ctx } = await harness(undefined, undefined, {
+      defaults: {
+        adaptiveModelSelection: () => ({ provider: 'test', model: 'local-model' }),
+        adaptiveModelFailover: () => ({
+          provider: 'cloud', model: 'api-model', residency: 'external' as const,
+        }),
+      },
+    })
+    const resolveCallConfig = vi.fn((selection: { provider: string; model: string }) => Promise.resolve(selection))
+    ctx.provide('llm', { resolveCallConfig } as never)
+    const sessionId = SessionId('external-failover-consent')
+    await api.sessions.create(request({ sessionId }))
+    const agent = ctx.agents.get(sessionId)
+    if (agent === undefined) throw new Error('unreachable')
+    agent.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'private customer context' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    let downstreamCalls = 0
+    const failure = {
+      turn: 1,
+      step: 0,
+      provider: 'test',
+      failure: { code: 'TRANSPORT' as const, message: 'local connection refused' },
+      retryPolicy: undefined,
+      signal: new AbortController().signal,
+    }
+
+    const denied = await agentEvents(ctx, agent).waterfall('agent/request-error', failure, () => {
+      downstreamCalls += 1
+      return Promise.resolve(undefined)
+    })
+
+    expect(denied).toBeUndefined()
+    expect(downstreamCalls).toBe(1)
+    expect(resolveCallConfig).not.toHaveBeenCalled()
+    expect(agent.session.events.some(event => event.type === 'llm/failover')).toBe(false)
+
+    const consented = await api.sessions.selectModel(request({
+      sessionId,
+      provider: 'test',
+      model: 'test-model',
+      automatic: true,
+      externalFailoverConsent: true,
+    }))
+    expect(consented).toMatchObject({ result: { ok: true, value: { externalFailoverConsent: true } } })
+    resolveCallConfig.mockClear()
+
+    const allowed = await agentEvents(ctx, agent).waterfall('agent/request-error', failure, () => {
+      downstreamCalls += 1
+      return Promise.resolve(undefined)
+    })
+    expect(allowed).toEqual({ kind: 'retry' })
+    expect(downstreamCalls).toBe(1)
+    expect(resolveCallConfig).toHaveBeenCalledWith({
+      provider: 'cloud', model: 'api-model', residency: 'external',
+    })
+    expect(agent.session.events.at(-1)).toMatchObject({
+      type: 'llm/failover',
+      data: { to: { provider: 'cloud', model: 'api-model' } },
+    })
+    await ctx.fiber.dispose()
+  })
+
   it('skips an unavailable intermediate adapter and continues through the next configured fallback', async () => {
     const attemptedProviders: string[] = []
     const { api, ctx } = await harness(undefined, undefined, {
@@ -500,8 +572,8 @@ describe('automatic model failover', () => {
         adaptiveModelSelection: () => ({ provider: 'test', model: 'local-model' }),
         adaptiveModelFailover: ({ provider }: { provider: string }) => {
           attemptedProviders.push(provider)
-          if (provider === 'test') return { provider: 'missing', model: 'missing-model' }
-          if (provider === 'missing') return { provider: 'cloud', model: 'api-model' }
+          if (provider === 'test') return { provider: 'missing', model: 'missing-model', residency: 'local' as const }
+          if (provider === 'missing') return { provider: 'cloud', model: 'api-model', residency: 'local' as const }
           return undefined
         },
       },
@@ -549,8 +621,8 @@ describe('automatic model failover', () => {
         adaptiveModelSelection: () => ({ provider: 'test', model: 'local-model' }),
         adaptiveModelFailover: ({ provider }: { provider: string }) =>
           provider === 'test'
-            ? { provider: 'cloud', model: 'api-model' }
-            : { provider: 'test', model: 'local-model' },
+            ? { provider: 'cloud', model: 'api-model', residency: 'local' as const }
+            : { provider: 'test', model: 'local-model', residency: 'local' as const },
       },
     })
     ctx.provide('llm', {
@@ -590,7 +662,7 @@ describe('automatic model failover', () => {
         adaptiveModelSelection: () => ({ provider: 'test', model: 'local-model' }),
         adaptiveModelFailover: ({ provider }: { provider: string }) => {
           attemptedProviders.push(provider)
-          return { provider: 'cloud', model: 'api-model' }
+          return { provider: 'cloud', model: 'api-model', residency: 'local' as const }
         },
       },
     })
@@ -629,7 +701,7 @@ describe('automatic model failover', () => {
     const { api, ctx } = await harness(undefined, undefined, {
       defaults: {
         adaptiveModelSelection: () => ({ provider: 'test', model: 'local-model' }),
-        adaptiveModelFailover: () => ({ provider: 'cloud', model: 'api-model' }),
+        adaptiveModelFailover: () => ({ provider: 'cloud', model: 'api-model', residency: 'external' }),
       },
     })
     ctx.provide('llm', {

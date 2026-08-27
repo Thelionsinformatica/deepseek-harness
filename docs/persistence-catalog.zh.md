@@ -426,6 +426,17 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 来源：[`packages/goal/goal/src/domain.ts:66`](../packages/goal/goal/src/domain.ts)
 
+<a id="goalcompletion-audit--log-only"></a>
+
+#### `goal/completion-audit` — log-only
+
+```ts persistence-catalog
+/** Content-free receipt proving that an exact goal revision passed independent review. */
+'goal/completion-audit': GoalCompletionAuditMeta
+```
+
+来源：[`packages/goal/tool-goal/src/completion-evidence.ts:45`](../packages/goal/tool-goal/src/completion-evidence.ts)
+
 ### `hook/*`
 
 <a id="hookinvoked--log-only"></a>

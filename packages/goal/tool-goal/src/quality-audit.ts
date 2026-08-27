@@ -7,6 +7,12 @@ import { HarnessError } from '@deepseek-ai/dsh-llm'
 import type { TodoItem } from '@deepseek-ai/dsh-session'
 import type { SubagentResult, SubagentRun } from '@deepseek-ai/dsh-subagent'
 import type { ObjectJsonSchema } from '@deepseek-ai/dsh-tools'
+import {
+  captureCompletionEvidence,
+  completionAuditReceipt,
+  completionVerdictDigest,
+  type GoalCompletionAuditMeta,
+} from './completion-evidence.ts'
 
 /** Fully resolved deployment policy for one independent completion auditor. */
 export interface CompletionAuditorConfig {
@@ -222,6 +228,7 @@ function rejectionMessage(verdict: AuditVerdict, maximum: number): string {
  * @param todos - latest task list associated with the current goal.
  * @param config - resolved auditor provider, model route, and resource bounds.
  * @param signal - caller cancellation forwarded through child startup and execution.
+ * @returns durable metadata for the independently audited goal revision.
  */
 export async function requireCompletionAudit(
   ctx: Context,
@@ -230,7 +237,8 @@ export async function requireCompletionAudit(
   todos: readonly TodoItem[] | undefined,
   config: CompletionAuditorConfig,
   signal: AbortSignal,
-): Promise<void> {
+): Promise<GoalCompletionAuditMeta> {
+  const baseline = captureCompletionEvidence(agent.session, goal)
   const subagents = ctx.get('subagents')
   if (subagents === undefined) {
     throw new HarnessError(
@@ -246,6 +254,7 @@ export async function requireCompletionAudit(
   }
 
   let result: SubagentResult
+  let auditorSessionId: string
   try {
     const run = await subagents.start(config.provider, {
       label: 'Leon quality review',
@@ -262,6 +271,7 @@ export async function requireCompletionAudit(
       persona: AUDITOR_PERSONA,
       toolFilter: { deny: auditorDeniedTools(ctx, agent) },
     })
+    auditorSessionId = run.id
     result = await settle(run)
   } catch {
     ctx.logger.warn('completion auditor infrastructure failed; details omitted from logs')
@@ -296,4 +306,17 @@ export async function requireCompletionAudit(
       'GOAL_QUALITY_AUDIT_INVALID_VERDICT',
     )
   }
+  if (agent.session.seq !== baseline.throughSeq + 1) {
+    throw new HarnessError(
+      'the parent session changed while completion was audited; the goal remains active and requires a fresh audit',
+      'GOAL_QUALITY_AUDIT_STALE',
+    )
+  }
+  return completionAuditReceipt(
+    baseline,
+    config,
+    todos?.filter(todo => todo.status === 'completed').length ?? 0,
+    auditorSessionId,
+    completionVerdictDigest(verdict),
+  )
 }

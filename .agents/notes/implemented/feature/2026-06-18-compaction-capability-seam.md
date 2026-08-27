@@ -76,7 +76,7 @@ Because `SurfaceEventType` is closed, the summary cannot ride on a `compaction/*
 ```
 compaction/start    → log-only. Acquires the lock.
 [summarize older range via the backend]
-compaction/summary  → log-only. Records the raw summary, local-call marker, range, shadowed seqs, and token count.
+compaction/summary  → log-only. Records the checkpoint summary, original output, local-call marker, range, shadowed seqs, and token count.
 user/message     → canonical checkpoint source + surfaceOp { op:'replace', start, end }.
                    THE surface mutation (framed summary).
                    deriveMessages() renders it as a user-role message.
@@ -87,7 +87,7 @@ compaction/end      → log-only. Releases the lock (carries `error` on a recove
 
 ### Checkpoint framing + incremental merge (backend-private)
 
-The basic backend wraps the summary as established checkpoint context and tags it for incremental merging on the next cycle. The raw summary remains on `compaction/summary`. Framing is backend policy; the seam promises that one replacement user message carries the possibly framed summary and uses the canonical checkpoint source.
+The basic backend wraps the summary as established checkpoint context and tags it for incremental merging on the next cycle. Before framing, it deterministically recovers bounded HTTP(S) references, Windows paths, and selected tool-result status lines from the replaced messages, removes credentials and URL query data, and appends them with source labels. This operational appendix does not promote assistant claims to tool evidence. The complete checkpoint summary remains on `compaction/summary`, while the unmodified model response remains in `rawOutput`. Framing and continuity extraction are backend policy; the seam promises that one replacement user message carries the possibly framed summary and uses the canonical checkpoint source.
 
 ### Blocking via a log-recorded lock, plus a crash/recoverable failure taxonomy
 
@@ -127,7 +127,7 @@ The lifecycle boundary makes crash state unambiguous:
 
 ## Testing
 
-- **Unit:** Real Loader and invariant plugins cover whole-unit retention, pruning configuration and replay, rich-block ordering, metadata preservation, convergence, both `compaction/end` outcomes, open-tail refusal, pruning-only and summarized overflow recovery, generation proof, caps, and original-error preservation.
+- **Unit:** Real Loader and invariant plugins cover whole-unit retention, pruning configuration and replay, rich-block ordering, metadata preservation, deterministic operational continuity and secret removal, convergence, both `compaction/end` outcomes, open-tail refusal, pruning-only and summarized overflow recovery, generation proof, caps, and original-error preservation.
 - **Loop:** Tests pin pre-step after the preceding `step/end` and before the next `step/start`, actual `agent/request` routing, closed failed steps, fresh retry numbering, and complete thrown/in-band overflow → compaction → reconstructed retry composition.
 - **Manual:** Maintenance serialization, marker ordering, injection retention, live/stale orphan classification, cancellation, close/flush failures, command mapping, and the queued TUI journey are pinned without a model key.
 - **With-key e2e:** A real model and bash session with lowered limits triggers compaction, records a complete `compaction/start…end` pair, shrinks the surface, and finishes the task.

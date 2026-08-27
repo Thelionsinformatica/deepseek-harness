@@ -622,8 +622,14 @@ function normalize(value: string): string {
   return value.normalize('NFKD').replace(/\p{M}/gu, '').toLocaleLowerCase('pt-BR')
 }
 
+const LEXICAL_STOP_WORDS = new Set([
+  'a', 'as', 'da', 'das', 'de', 'do', 'dos', 'e', 'em', 'era', 'foi', 'na', 'nas',
+  'no', 'nos', 'o', 'os', 'para', 'por', 'qual', 'que', 'sobre', 'um', 'uma',
+])
+
 function uniqueTokens(value: string): string[] {
   return [...new Set(value.match(/[\p{L}\p{N}]+/gu) ?? [])]
+    .filter(token => !LEXICAL_STOP_WORDS.has(token))
 }
 
 /** Hide cross-workspace existence behind the same miss used for an unknown id. */

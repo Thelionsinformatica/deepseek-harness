@@ -42,6 +42,7 @@ export function providerCostUsdNanos(headers: Readonly<Record<string, string>>):
 /**
  * Map pi-ai usage (reasoning folded into output by pi-ai).
  * @param usage - cumulative usage from the terminal pi-ai event.
+ * @param metadata - optional provider-reported cost metadata for the response.
  * @returns harness counts; cache fields appear only when non-zero (pi-ai reports zeros, not absence).
  */
 export function mapUsage(usage: PiUsage, metadata: ProviderUsageMetadata = {}): TokenUsage {

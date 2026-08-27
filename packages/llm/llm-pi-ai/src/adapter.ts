@@ -366,7 +366,9 @@ export class PiAiAdapter extends LlmAdapter {
           maxBytes: profile.requestImageMaxBytes,
         })
       let reportedCostUsdNanos: number | undefined
+      const capturesOmniRouteCost = options.provider === 'omniroute'
       const captureReportedCost = (headers: Readonly<Record<string, string>>): void => {
+        if (!capturesOmniRouteCost) return
         const cost = providerCostUsdNanos(headers)
         if (cost !== undefined) reportedCostUsdNanos = cost
       }
@@ -374,7 +376,7 @@ export class PiAiAdapter extends LlmAdapter {
       // header. Streaming responses cannot know it at handshake time and emit
       // the same field as a terminal SSE comment; pi-ai's provider SDK drops
       // comments, so the scoped observer captures that live path.
-      const responseTelemetry = responseTelemetryScope(options.provider === 'omniroute', captureReportedCost)
+      const responseTelemetry = responseTelemetryScope(capturesOmniRouteCost, captureReportedCost)
       try {
         const events = responseTelemetry.run(() => snapshot.models.streamSimple(model, context, {
           ...profileOptions(profile, reasoning, apiKey),

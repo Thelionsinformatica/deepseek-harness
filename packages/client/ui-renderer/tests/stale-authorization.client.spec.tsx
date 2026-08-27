@@ -69,10 +69,9 @@ const CHILD: DeclaredSpec = { kind: 'single', scope: 'root' }
 
 /**
  * Mount a root entry that leaks its binding to the test, then render. The
- * returned dispose unmounts the view FIRST: an empty 'root' makes the live
- * root outlet rethrow its boot-order failure (fail-loud, covered in the
- * scoped-slots suite); the retained-closure scenario under test here is a
- * dead entry whose binding outlives the tree.
+ * returned dispose unmounts the view first because the retained-closure
+ * scenario under test is a dead entry whose binding outlives both the tree
+ * and its registration; root-transition recovery is covered separately.
  */
 function mountCapturing(h: ReturnType<typeof makeHost>) {
   let captured: RenderSlotFn | undefined

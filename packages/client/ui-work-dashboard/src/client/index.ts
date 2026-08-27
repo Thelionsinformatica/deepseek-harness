@@ -1,6 +1,7 @@
 /** Registers the Leon Work dashboard into the blank-session Hero. */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import { remoteValue } from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-tool-memory/remote'
@@ -18,28 +19,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     /** Leon Work dashboard copy. */
     'work-dashboard': WorkDashboardKey
   }
-}
-
-interface RemoteTransportFailure {
-  readonly ok: false
-  readonly error: { readonly code: string; readonly message: string }
-}
-
-interface RemoteBusinessFailure {
-  readonly ok: false
-  readonly error: { readonly code: string }
-}
-
-type CarriedRemoteResult<T> = RemoteTransportFailure | {
-  readonly ok: true
-  readonly value: RemoteBusinessFailure | { readonly ok: true; readonly value: T }
-}
-
-/** Unwrap the transport and business envelopes shared by dashboard Remotes. */
-function remoteValue<T>(carried: CarriedRemoteResult<T>): T {
-  if (!carried.ok) throw new Error(`${carried.error.code}: ${carried.error.message}`)
-  if (!carried.value.ok) throw new Error(carried.value.error.code)
-  return carried.value.value
 }
 
 /** Services required by the dashboard plugin. */

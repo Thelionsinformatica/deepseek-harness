@@ -216,6 +216,20 @@ export class SessionPreparations<Source extends PreparedSource, CommitState> {
   }
 
   /**
+   * Reject deletion while an unpublished Session exclusively owns the id.
+   * Loading and ready entries are safe to invalidate once the serialized
+   * backend deletion commits; committing/reserved entries are capabilities
+   * whose owner must release them explicitly first.
+   * @param id - session identity to check.
+   */
+  assertDeletable(id: SessionId): void {
+    const phase = this.entries.get(id)?.phase
+    if (phase === 'committing' || phase === 'reserved') {
+      throw new Error(`cannot delete session "${id}" while its persisted preparation is reserved`)
+    }
+  }
+
+  /**
    * Remove a completed entry for an already-serialized append adoption.
    * @param id - adopted session identity.
    * @returns the prepared source, or undefined when no ready entry exists.

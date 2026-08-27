@@ -140,6 +140,19 @@ cachedSnapshot(meta: SessionHeader): ProjectionSnapshot | undefined
 async write(session: Session): Promise<void>
 
 /**
+ * Durably remove one session's complete projection-cache row.
+ *
+ * The purge synchronously fences new writes, invalidates writes and cold
+ * write-backs that began earlier, cancels armed timers, and then queues the
+ * idempotent row deletion behind already-admitted writes. A later
+ * `session/created` event for the same id opens a new lifecycle without
+ * allowing stale work from the purged lifecycle to cross the epoch barrier.
+ * @param id - permanently deleted session whose cache row must be absent.
+ * @returns resolution after the durable row deletion reaches its queue slot.
+ */
+purgeSession(id: SessionId): Promise<void>
+
+/**
  * Cold-read one persisted session's projections with zero full-log load:
  * cached rows + a persistence `readFrom` tail from the registry's restore
  * floor, refolded by the registry and written back (fail-soft) so the next

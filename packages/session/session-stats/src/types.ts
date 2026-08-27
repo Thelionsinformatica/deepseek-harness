@@ -36,12 +36,24 @@ export interface SessionStatsProjection {
   decodeMs: number
   /** Summed provider output tokens over the same decode-timed steps. */
   decodeTokens: number
-  /** Estimated API cost in integer billionths of one US dollar. */
+  /** Legacy accounted total (confirmed provider charges plus token estimates), in nanodollars. */
   estimatedApiCostUsdNanos: number
-  /** Model calls whose exact provider/model pair has a configured price. */
+  /** Legacy count of calls with either a confirmed charge or a configured token estimate. */
   pricedModelCalls: number
-  /** Model calls omitted from the estimate because their route has no configured price. */
+  /** Legacy alias for {@link unaccountedModelCalls}. */
   unpricedModelCalls: number
+  /** Provider- or gateway-confirmed charge in integer billionths of one US dollar. */
+  confirmedApiCostUsdNanos?: number
+  /** Token-price estimate in integer billionths of one US dollar. */
+  tokenEstimatedApiCostUsdNanos?: number
+  /** Calls whose provider or gateway supplied a confirmed charge, including an explicit zero. */
+  confirmedModelCalls?: number
+  /** Calls estimated from token usage and an exact configured provider/model price. */
+  estimatedModelCalls?: number
+  /** Completed calls that cannot be priced because usage or an exact route price is unavailable. */
+  unaccountedModelCalls?: number
+  /** Failed request attempts observed through durable retry/failover records without cost evidence. */
+  unaccountedModelAttempts?: number
 }
 
 /** One exact provider/model price used for durable cost estimation. */

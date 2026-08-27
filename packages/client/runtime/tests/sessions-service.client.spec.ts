@@ -614,6 +614,19 @@ describe('scope lifecycle rides the list mirror (entity parity: no client-side p
     await Promise.resolve()
     expect(b.svc.scope(sid('s-new'))).toBeUndefined()
   })
+
+  it('a permanent-deletion frame prunes the row and scope', async () => {
+    const b = bench()
+    await feedList(b, [{ id: 's-deleted' }])
+    expect(b.svc.scope(sid('s-deleted'))).toBeDefined()
+    b.svc.handleHostEnvelope({
+      rpcId: 'deleted' as never,
+      payload: { type: 'host/session-deleted', sessionId: sid('s-deleted') },
+    })
+    await Promise.resolve()
+    expect(b.svc.list.getSnapshot().ids).not.toContain('s-deleted')
+    expect(b.svc.scope(sid('s-deleted'))).toBeUndefined()
+  })
 })
 
 describe('blank mirror', () => {

@@ -213,6 +213,31 @@ insertBefore(id: WorkspaceId, beforeId?: WorkspaceId): Promise<readonly Workspac
 archiveSession(sessionId: SessionId): Promise<void>
 
 /**
+ * Remove one id from the durable archive set without changing its workspace
+ * position or persistence artifact. Idempotent when already unarchived.
+ * @param sessionId - session to restore to grouping surfaces.
+ */
+unarchiveSession(sessionId: SessionId): Promise<void>
+
+/**
+ * Whether durable registry state or the validated header index still names
+ * a session. Used by a deletion retry after the canonical log has already
+ * committed its removal but registry/sidecar cleanup has not yet finished.
+ * @param sessionId - session identity whose retained references are queried.
+ * @returns whether any durable or indexed workspace state still names it.
+ */
+hasSessionReference(sessionId: SessionId): boolean
+
+/**
+ * Remove one session from workspace accounting and the archive set. A
+ * durable marker makes the record/global multi-write recoverable; the
+ * canonical session log is owned and deleted separately by
+ * SessionPersistence. No cwd or user file is touched.
+ * @param sessionId - exact session identity whose registry references clear.
+ */
+deleteSession(sessionId: SessionId): Promise<void>
+
+/**
  * Resolve by canonical directory path without creating or mutating a
  * workspace. A missing path rejects during `realpath`; an existing unowned
  * directory returns `undefined`.

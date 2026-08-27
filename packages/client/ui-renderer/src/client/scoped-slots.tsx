@@ -850,7 +850,15 @@ function renderOutletContent(
   )
 }
 
-/** Root outlet: the shell's single ctx-level render entry — an unregistered 'root' is a boot-order failure, never a silent blank. */
+/**
+ * Root outlet: the shell's single ctx-level render entry.
+ *
+ * The runtime rejects an initial render while `root` has no registration.
+ * Once mounted, however, HMR replaces the layout registration by disposing
+ * the old entry before applying the new module. The outlet already subscribes
+ * to that ledger, so an empty snapshot here is a recoverable graph transition:
+ * keep the React root alive and let the next registration reassemble it.
+ */
 function RootOutlet({ ownerProps }: { ownerProps: object }) {
   const host = useHost()
   useSyncExternalStore(
@@ -862,9 +870,9 @@ function RootOutlet({ ownerProps }: { ownerProps: object }) {
   if (!entry) {
     // Registrations exist but every one abdicated: the shadowing collapse ran
     // dry, so the crash face replaces the tree (registered-but-broken is a
-    // crash, not the boot-order assembly failure below).
+    // crash, not the empty-ledger transition below).
     if (host.entriesOf('root').length > 0) return <div data-slot-error="root" />
-    throw new SlotAssemblyError("renderSlot('root') before any 'root' registration (boot order)")
+    return <div data-slot-pending="root" aria-busy="true" />
   }
   // Same anchor contract as SlotOutlet: 'root' is a slot like any other, and
   // display:contents keeps the wrapper out of the shell's layout.

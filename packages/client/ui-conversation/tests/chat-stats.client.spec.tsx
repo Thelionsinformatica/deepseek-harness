@@ -187,6 +187,9 @@ describe('StatsLine', () => {
     return {
       turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0,
       estimatedApiCostUsdNanos: 0, pricedModelCalls: 0, unpricedModelCalls: 0,
+      confirmedApiCostUsdNanos: 0, tokenEstimatedApiCostUsdNanos: 0,
+      confirmedModelCalls: 0, estimatedModelCalls: 0,
+      unaccountedModelCalls: 0, unaccountedModelAttempts: 0,
       ...overrides,
     }
   }
@@ -343,25 +346,58 @@ describe('StatsLine', () => {
       .toBe('10 turns · 89 steps| Cache hit 90%| Input 100 tok · Output 5 tok')
   })
 
-  it('shows the configured API estimate and warns when part of the usage has no price', () => {
+  it('shows token-estimated cost separately from calls without cost evidence', () => {
     const { source } = makeSource({ nodes: [assistant(1, 1)] })
     const view = render(<StatsLine {...props(source, {
       tokenUsage: USAGE,
       sessionStats: sessionStats({
         turns: 1, steps: 1, estimatedApiCostUsdNanos: 1_140_000,
         pricedModelCalls: 1, unpricedModelCalls: 2,
+        tokenEstimatedApiCostUsdNanos: 1_140_000, estimatedModelCalls: 1,
+        unaccountedModelCalls: 2,
       }),
     })} />)
-    expect(view.container.textContent).toContain('API est. US$0.0011 · 2 unpriced call(s)')
+    expect(view.container.textContent).toContain('API token est. US$0.0011 · 2 unaccounted call(s)')
+  })
+
+  it('distinguishes confirmed, estimated, and unaccounted billing facts', () => {
+    const { source } = makeSource({ nodes: [assistant(1, 1)] })
+    const view = render(<StatsLine {...props(source, {
+      tokenUsage: USAGE,
+      sessionStats: sessionStats({
+        turns: 1, steps: 1,
+        estimatedApiCostUsdNanos: 1_182_000, pricedModelCalls: 2, unpricedModelCalls: 2,
+        confirmedApiCostUsdNanos: 42_000, confirmedModelCalls: 1,
+        tokenEstimatedApiCostUsdNanos: 1_140_000, estimatedModelCalls: 1,
+        unaccountedModelCalls: 2, unaccountedModelAttempts: 3,
+      }),
+    })} />)
+    expect(view.container.textContent).toContain(
+      'API confirmed <US$0.0001 · API token est. US$0.0011 · 2 unaccounted call(s) · 3 unaccounted attempt(s)',
+    )
   })
 
   it('shows zero API cost for a priced local-only call', () => {
     const { source } = makeSource({ nodes: [assistant(1, 1)] })
     const view = render(<StatsLine {...props(source, {
       tokenUsage: USAGE,
-      sessionStats: sessionStats({ turns: 1, steps: 1, pricedModelCalls: 1 }),
+      sessionStats: sessionStats({
+        turns: 1, steps: 1, pricedModelCalls: 1, estimatedModelCalls: 1,
+      }),
     })} />)
-    expect(view.container.textContent).toContain('API est. US$0.00')
+    expect(view.container.textContent).toContain('API token est. US$0.00')
+  })
+
+  it('keeps the legacy aggregate display for projections created before separated accounting', () => {
+    const { source } = makeSource({ nodes: [assistant(1, 1)] })
+    const view = render(<StatsLine {...props(source, {
+      tokenUsage: USAGE,
+      sessionStats: {
+        turns: 1, steps: 1, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0,
+        estimatedApiCostUsdNanos: 1_140_000, pricedModelCalls: 1, unpricedModelCalls: 2,
+      },
+    })} />)
+    expect(view.container.textContent).toContain('API est. US$0.0011 · 2 unpriced call(s)')
   })
 
   it('treats a defined zero-count projection as empty, not as fallback', () => {

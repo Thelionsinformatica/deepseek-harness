@@ -5,15 +5,17 @@ import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentFactory } from '@deepseek-ai/dsh-agent'
+import { MessageId } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
+import ApprovalService from '@deepseek-ai/dsh-user-approval'
 import { DirectoryPickerError } from '@deepseek-ai/dsh-host-directory-picker'
 import type { DirectoryPickerCapability } from '@deepseek-ai/dsh-host-directory-picker'
 import WorkspaceRegistry from '@deepseek-ai/dsh-workspace'
-import type { HostFrame, WorkspaceId } from '@deepseek-ai/dsh-host-apiproxy/api'
+import type { HostFrame, MuxFrame, WorkspaceId } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { RpcRequest, RpcResponse } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
 import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
 import { createApiProxy } from '@deepseek-ai/dsh-host-apiproxy'
@@ -64,33 +66,40 @@ async function harness(
   extras: {
     openPath?: (path: string, signal: AbortSignal) => Promise<void>
     canOpenPath?: () => boolean
+    persistenceDelete?: (id: SessionId) => Promise<void>
   } = {},
 ) {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(UserQuestionService)
+  await ctx.plugin(ApprovalService)
   await ctx.plugin(Storage)
   ctx.storage.backend.register('memory', new MemoryStorageBackend())
   const storageDomain = new DomainFacility(ctx, { backend: 'memory', routes: {} })
   ctx.storage.mount('domain', storageDomain)
   ctx.provide('storageDomain', storageDomain)
-  ctx.provide('sessionPersistence', { list: () => Promise.resolve([]) } as never)
+  ctx.provide('sessionPersistence', {
+    list: () => Promise.resolve([]),
+    delete: extras.persistenceDelete ?? (() => Promise.resolve()),
+  } as never)
   await ctx.plugin(WorkspaceRegistry)
 
   const factory: AgentFactory = {
     async createAgent(_ownerCtx, options) {
-      const session = ctx.sessions.create(
+      const session = ctx.sessions.prepare(
         options.sessionId,
         options.meta === undefined ? {} : { meta: options.meta },
       )
+      const detach = ctx.sessions.enter(session)
+      ctx.sessions.announce(session)
       const agent = stubAgent(session)
       const unregister = ctx.agents.register(agent)
       return {
         agent,
-        dispose: () => {
+        dispose: async () => {
           unregister()
-          return Promise.resolve()
+          detach()
         },
       }
     },
@@ -567,5 +576,468 @@ describe('Host Workspace increments', () => {
       error: { code: 'session-not-found', details: { sessionId: 'session-ghost' } },
     })
     abort.abort()
+  })
+
+  it('unarchives a session and streams the committed archive snapshot', async () => {
+    const { api, root } = await harness()
+    const workspace = expectOk(await api.workspace.create(request({ path: stageDir(root, 'restore-home') }))).workspace
+    const sessionId = SessionId('session-to-restore')
+    expectOk(await api.sessions.create(request({ workspaceId: workspace.workspaceId, sessionId })))
+    expectOk(await api.workspace.archiveSession(request({ sessionId })))
+
+    const abort = new AbortController()
+    const stream = api.events.host(request({}), abort.signal)[Symbol.asyncIterator]()
+    const changed = nextHostFrame(stream)
+    expect(expectOk(await api.workspace.unarchiveSession(request({ sessionId }))).archivedSessionIds)
+      .toEqual([])
+    expect(await changed).toMatchObject({
+      payload: { type: 'host/archived-sessions-changed', archivedSessionIds: [] },
+    })
+    expect(expectOk(await api.workspace.list(request({}))).items[0]?.sessionIds).toEqual([sessionId])
+    abort.abort()
+  })
+
+  it('quiesces an owned live Agent, deletes only Leon records, then publishes permanent removal', async () => {
+    const { api, ctx, root } = await harness()
+    const workspace = expectOk(await api.workspace.create(request({ path: stageDir(root, 'permanent-home') }))).workspace
+    const sessionId = SessionId('session-delete-permanent')
+    expectOk(await api.sessions.create(request({ workspaceId: workspace.workspaceId, sessionId })))
+    expectOk(await api.workspace.archiveSession(request({ sessionId })))
+
+    const abort = new AbortController()
+    const stream = api.events.host(request({}), abort.signal)[Symbol.asyncIterator]()
+    const firstFrame = nextHostFrame(stream)
+    const response = await api.workspace.deleteSession(request({ sessionId }))
+    expect(expectOk(response)).toEqual({ deleted: true, archivedSessionIds: [] })
+
+    const observed: HostFrame[] = [(await firstFrame).payload]
+    while (!observed.some(frame => frame.type === 'host/session-deleted')) {
+      observed.push((await nextHostFrame(stream)).payload)
+    }
+    expect(observed.some(frame => frame.type === 'host/session-removed')).toBe(false)
+    expect(ctx.agents.get(sessionId)).toBeUndefined()
+    expect(ctx.sessions.get(sessionId)).toBeUndefined()
+    expect(expectOk(await api.workspace.list(request({}))).items[0]?.sessionIds).toEqual([])
+    expect(existsSync(workspace.path)).toBe(true)
+
+    // Completed retries are idempotent and do not recreate/publish the identity.
+    expectOk(await api.workspace.deleteSession(request({ sessionId })))
+    abort.abort()
+  })
+
+  it('rejects prompts and explicit-id recreation while permanent deletion is pending', async () => {
+    let enterDelete!: () => void
+    let releaseDelete!: () => void
+    let persistenceDeletes = 0
+    const deleteEntered = new Promise<void>((resolve) => { enterDelete = resolve })
+    const deleteReleased = new Promise<void>((resolve) => { releaseDelete = resolve })
+    const { api, ctx, root } = await harness(undefined, undefined, {
+      persistenceDelete: async () => {
+        persistenceDeletes++
+        enterDelete()
+        await deleteReleased
+      },
+    })
+    const workspace = expectOk(await api.workspace.create(request({
+      path: stageDir(root, 'pending-delete-home'),
+    }))).workspace
+    const sessionId = SessionId('session-delete-pending')
+    expectOk(await api.sessions.create(request({ workspaceId: workspace.workspaceId, sessionId })))
+    const agent = ctx.agents.get(sessionId)
+    if (agent === undefined) throw new Error('created Agent is absent')
+    const followup = vi.spyOn(agent, 'followup')
+
+    const deletion = api.workspace.deleteSession(request({ sessionId }))
+    await deleteEntered
+    const concurrentDeletion = api.workspace.deleteSession(request({ sessionId }))
+
+    const prompt = await api.sessions.prompt(request({
+      sessionId,
+      mode: 'queue',
+      content: [{ type: 'text', text: 'must not be accepted' }],
+    }))
+    expect(prompt.result).toMatchObject({
+      ok: false,
+      error: { code: 'session-not-found', details: { sessionId } },
+    })
+    const recreation = await api.sessions.create(request({ sessionId, cwd: workspace.path }))
+    expect(recreation.result).toMatchObject({
+      ok: false,
+      error: { code: 'session-not-found', details: { sessionId } },
+    })
+    expect((await api.sessions.rename(request({ sessionId, title: 'must not rename' }))).result)
+      .toMatchObject({ ok: false, error: { code: 'session-not-found', details: { sessionId } } })
+    expect((await api.sessions.fork(request({ sessionId }))).result)
+      .toMatchObject({ ok: false, error: { code: 'session-not-found', details: { sessionId } } })
+    expect((await api.workspace.archiveSession(request({ sessionId }))).result)
+      .toMatchObject({ ok: false, error: { code: 'session-not-found', details: { sessionId } } })
+    expect((await api.workspace.unarchiveSession(request({ sessionId }))).result)
+      .toMatchObject({ ok: false, error: { code: 'session-not-found', details: { sessionId } } })
+    expect((await api.workspace.insertSessionBefore(request({
+      workspaceId: workspace.workspaceId,
+      sessionId,
+    }))).result).toMatchObject({
+      ok: false,
+      error: { code: 'session-not-found', details: { sessionId } },
+    })
+    expect((await api.sessions.updateQueue(request({
+      sessionId,
+      itemId: MessageId('pending-delete-item'),
+      action: { kind: 'remove' as const },
+    }))).result).toMatchObject({
+      ok: false,
+      error: { code: 'session-not-found', details: { sessionId } },
+    })
+    expect(followup).not.toHaveBeenCalled()
+
+    releaseDelete()
+    expectOk(await deletion)
+    expectOk(await concurrentDeletion)
+    expect(persistenceDeletes).toBe(1)
+  })
+
+  it('waits for a create Workspace attachment and prevents its late resurrection', async () => {
+    let enterAttach!: () => void
+    let releaseAttach!: () => void
+    const attachEntered = new Promise<void>((resolve) => { enterAttach = resolve })
+    const attachReleased = new Promise<void>((resolve) => { releaseAttach = resolve })
+    const { api, ctx, root } = await harness()
+    const workspace = expectOk(await api.workspace.create(request({
+      path: stageDir(root, 'create-delete-race-home'),
+    }))).workspace
+    const entity = ctx.workspaceRegistry.get(workspace.workspaceId)
+    if (entity === undefined) throw new Error('created Workspace entity is absent')
+    const attach = entity.attachSession.bind(entity)
+    vi.spyOn(entity, 'attachSession').mockImplementation(async (sessionId) => {
+      enterAttach()
+      await attachReleased
+      await attach(sessionId)
+    })
+    const sessionId = SessionId('session-create-delete-race')
+
+    const creation = api.sessions.create(request({ workspaceId: workspace.workspaceId, sessionId }))
+    await attachEntered
+    const deletion = api.workspace.deleteSession(request({ sessionId }))
+    releaseAttach()
+
+    expect((await creation).result).toMatchObject({
+      ok: false,
+      error: { code: 'session-not-found', details: { sessionId } },
+    })
+    expectOk(await deletion)
+    expect(expectOk(await api.workspace.list(request({}))).items[0]?.sessionIds).toEqual([])
+    expect(ctx.agents.get(sessionId)).toBeUndefined()
+    expect(ctx.sessions.get(sessionId)).toBeUndefined()
+  })
+
+  it('retains the teardown handle for a live fork so it can be permanently deleted', async () => {
+    const { api, ctx, root } = await harness()
+    const workspace = expectOk(await api.workspace.create(request({
+      path: stageDir(root, 'fork-delete-home'),
+    }))).workspace
+    const sourceId = SessionId('session-fork-delete-source')
+    expectOk(await api.sessions.create(request({ workspaceId: workspace.workspaceId, sessionId: sourceId })))
+    const source = ctx.sessions.get(sourceId)
+    if (source === undefined) throw new Error('created source Session is absent')
+    source.append('turn/start', { turn: 1 })
+    source.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+
+    const childId = expectOk(await api.sessions.fork(request({ sessionId: sourceId }))).sessionId
+    expect(ctx.agents.get(childId)).toBeDefined()
+    expectOk(await api.workspace.deleteSession(request({ sessionId: childId })))
+    expect(ctx.agents.get(childId)).toBeUndefined()
+    expect(ctx.sessions.get(childId)).toBeUndefined()
+  })
+
+  it('serializes a fork through its Workspace attachment so deletion cannot be undone by a late attach', async () => {
+    let childId: SessionId | undefined
+    let enterAttach!: () => void
+    let releaseAttach!: () => void
+    const attachEntered = new Promise<void>((resolve) => { enterAttach = resolve })
+    const attachReleased = new Promise<void>((resolve) => { releaseAttach = resolve })
+    const { api, ctx, root } = await harness()
+    const workspace = expectOk(await api.workspace.create(request({
+      path: stageDir(root, 'fork-delete-race-home'),
+    }))).workspace
+    const sourceId = SessionId('session-fork-delete-race-source')
+    expectOk(await api.sessions.create(request({ workspaceId: workspace.workspaceId, sessionId: sourceId })))
+    const source = ctx.sessions.get(sourceId)
+    const entity = ctx.workspaceRegistry.get(workspace.workspaceId)
+    if (source === undefined || entity === undefined) throw new Error('source fixtures are absent')
+    source.append('turn/start', { turn: 1 })
+    source.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    const attach = entity.attachSession.bind(entity)
+    vi.spyOn(entity, 'attachSession').mockImplementation(async (sessionId) => {
+      childId = sessionId
+      enterAttach()
+      await attachReleased
+      await attach(sessionId)
+    })
+
+    const fork = api.sessions.fork(request({ sessionId: sourceId }))
+    await attachEntered
+    if (childId === undefined) throw new Error('fork child identity was not observed')
+    const deletion = api.workspace.deleteSession(request({ sessionId: childId }))
+    releaseAttach()
+
+    expect((await fork).result).toMatchObject({
+      ok: false,
+      error: { code: 'session-not-found', details: { sessionId: childId } },
+    })
+    expectOk(await deletion)
+    expect(expectOk(await api.workspace.list(request({}))).items[0]?.sessionIds).toEqual([sourceId])
+    expect(ctx.sessions.get(childId)).toBeUndefined()
+  })
+
+  it('waits for a pending preset switch and prevents a late durable selection after deletion begins', async () => {
+    let enterRecompose!: () => void
+    let releaseRecompose!: () => void
+    const recomposeEntered = new Promise<void>((resolve) => { enterRecompose = resolve })
+    const recomposeReleased = new Promise<void>((resolve) => { releaseRecompose = resolve })
+    const { api, ctx, root } = await harness()
+    const workspace = expectOk(await api.workspace.create(request({
+      path: stageDir(root, 'preset-delete-race-home'),
+    }))).workspace
+    const sessionId = SessionId('session-preset-delete-race')
+    expectOk(await api.sessions.create(request({ workspaceId: workspace.workspaceId, sessionId })))
+    ctx.provide('agentPresets', {
+      recompose: async (_agentCtx: Context, agentPreset: string) => {
+        enterRecompose()
+        await recomposeReleased
+        return { id: agentPreset, trust: 'user', path: '/test/agent.cordis.yml' }
+      },
+    } as never)
+    const session = ctx.sessions.get(sessionId)
+    if (session === undefined) throw new Error('created Session is absent')
+
+    const selection = api.agentPresets.select(request({ sessionId, agentPreset: 'alternate' }))
+    await recomposeEntered
+    const deletion = api.workspace.deleteSession(request({ sessionId }))
+    releaseRecompose()
+
+    expect((await selection).result).toMatchObject({
+      ok: false,
+      error: { code: 'session-not-found', details: { sessionId } },
+    })
+    expect(session.events.some(event => event.type === 'agent-preset/selected')).toBe(false)
+    expectOk(await deletion)
+  })
+
+  it('cancels a pending user question before deletion awaits and rejects its late response', async () => {
+    const { api, ctx, root } = await harness()
+    const workspace = expectOk(await api.workspace.create(request({
+      path: stageDir(root, 'question-delete-home'),
+    }))).workspace
+    const sessionId = SessionId('session-question-delete')
+    expectOk(await api.sessions.create(request({ workspaceId: workspace.workspaceId, sessionId })))
+    const agent = ctx.agents.get(sessionId)
+    if (agent === undefined) throw new Error('created Agent is absent')
+    const abort = new AbortController()
+    const stream = api.events.mux(request({}), abort.signal)[Symbol.asyncIterator]()
+    const asked = ctx.userQuestions.ask({
+      agent,
+      questions: [{
+        id: 'confirmation',
+        question: 'Continue?',
+        options: [{ label: 'Yes' }, { label: 'No' }],
+      }],
+    })
+    const rejected = asked.then(
+      () => { throw new Error('deletion unexpectedly answered the pending question') },
+      (error: unknown) => { expect(error).toMatchObject({ code: 'ASK_ABORTED' }) },
+    )
+    let envelope: RpcRequest<Extract<MuxFrame, { type: 'question/requested' }>> | undefined
+    for (let index = 0; index < 10 && envelope === undefined; index++) {
+      const next = await stream.next()
+      if (next.done === true) break
+      if (next.value.payload.type === 'question/requested') {
+        envelope = next.value as RpcRequest<Extract<MuxFrame, { type: 'question/requested' }>>
+      }
+    }
+    if (envelope === undefined) throw new Error('question request was not published')
+
+    const deletion = api.workspace.deleteSession(request({ sessionId }))
+    expect(await api.respond({
+      type: 'client-response',
+      rpcId: envelope.rpcId,
+      result: {
+        ok: true,
+        value: {
+          sessionId,
+          answer: { answers: [{ id: 'confirmation', selected: ['Yes'] }] },
+        },
+      },
+    })).toEqual({ accepted: false, reason: 'not-pending' })
+    await rejected
+    expectOk(await deletion)
+    abort.abort()
+  })
+
+  it('refuses new user-question and approval waits after the deletion fence closes', async () => {
+    let enterAttach!: () => void
+    let releaseAttach!: () => void
+    const attachEntered = new Promise<void>((resolve) => { enterAttach = resolve })
+    const attachReleased = new Promise<void>((resolve) => { releaseAttach = resolve })
+    const { api, ctx, root } = await harness()
+    const workspace = expectOk(await api.workspace.create(request({
+      path: stageDir(root, 'interaction-delete-race-home'),
+    }))).workspace
+    const entity = ctx.workspaceRegistry.get(workspace.workspaceId)
+    if (entity === undefined) throw new Error('created Workspace entity is absent')
+    const attach = entity.attachSession.bind(entity)
+    vi.spyOn(entity, 'attachSession').mockImplementation(async (sessionId) => {
+      enterAttach()
+      await attachReleased
+      await attach(sessionId)
+    })
+    const sessionId = SessionId('session-interaction-delete-race')
+    const creation = api.sessions.create(request({ workspaceId: workspace.workspaceId, sessionId }))
+    await attachEntered
+    const agent = ctx.agents.get(sessionId)
+    if (agent === undefined) throw new Error('created Agent is absent')
+    agent.session.append('turn/start', { turn: 1 })
+
+    const abort = new AbortController()
+    const observed: MuxFrame[] = []
+    void (async () => {
+      for await (const envelope of api.events.mux(request({}), abort.signal)) observed.push(envelope.payload)
+    })()
+    const deletion = api.workspace.deleteSession(request({ sessionId }))
+
+    await expect(ctx.userQuestions.ask({
+      agent,
+      questions: [{ id: 'late-question', question: 'Must not be published?' }],
+    })).rejects.toMatchObject({ code: 'ASK_ABORTED' })
+    await expect(ctx.approval.request({ agent, toolName: 'late-tool' })).resolves.toBe('cancelled')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(observed.filter(frame =>
+      frame.type === 'question/requested' || frame.type === 'approval/requested')).toEqual([])
+
+    releaseAttach()
+    expect((await creation).result).toMatchObject({
+      ok: false,
+      error: { code: 'session-not-found', details: { sessionId } },
+    })
+    expectOk(await deletion)
+    abort.abort()
+  })
+
+  it('cancels a pending approval before deletion awaits and rejects its late response', async () => {
+    let enterDelete!: () => void
+    let releaseDelete!: () => void
+    const deleteEntered = new Promise<void>((resolve) => { enterDelete = resolve })
+    const deleteReleased = new Promise<void>((resolve) => { releaseDelete = resolve })
+    const { api, ctx, root } = await harness(undefined, undefined, {
+      persistenceDelete: async () => {
+        enterDelete()
+        await deleteReleased
+      },
+    })
+    const workspace = expectOk(await api.workspace.create(request({
+      path: stageDir(root, 'approval-delete-home'),
+    }))).workspace
+    const sessionId = SessionId('session-approval-delete')
+    expectOk(await api.sessions.create(request({ workspaceId: workspace.workspaceId, sessionId })))
+    const agent = ctx.agents.get(sessionId)
+    if (agent === undefined) throw new Error('created Agent is absent')
+    agent.session.append('turn/start', { turn: 1 })
+    const abort = new AbortController()
+    const stream = api.events.mux(request({}), abort.signal)[Symbol.asyncIterator]()
+    const asked = ctx.approval.request({ agent, toolName: 'bash' })
+    let envelope: RpcRequest<Extract<MuxFrame, { type: 'approval/requested' }>> | undefined
+    for (let index = 0; index < 10 && envelope === undefined; index++) {
+      const next = await stream.next()
+      if (next.done === true) break
+      if (next.value.payload.type === 'approval/requested') {
+        envelope = next.value as RpcRequest<Extract<MuxFrame, { type: 'approval/requested' }>>
+      }
+    }
+    if (envelope === undefined) throw new Error('approval request was not published')
+
+    const deletion = api.workspace.deleteSession(request({ sessionId }))
+    await deleteEntered
+    expect(await api.respond({
+      type: 'client-response',
+      rpcId: envelope.rpcId,
+      result: {
+        ok: true,
+        value: {
+          sessionId,
+          approvalId: envelope.payload.approvalId,
+          outcome: 'allowed-once',
+        },
+      },
+    })).toEqual({ accepted: false, reason: 'not-pending' })
+    await expect(asked).resolves.toBe('cancelled')
+
+    releaseDelete()
+    expectOk(await deletion)
+    abort.abort()
+  })
+
+  it('reopens admission after the canonical persistence delete fails', async () => {
+    let attempts = 0
+    const { api, root } = await harness(undefined, undefined, {
+      persistenceDelete: () => {
+        attempts++
+        if (attempts === 1) return Promise.reject(new Error('storage unavailable'))
+        return Promise.resolve()
+      },
+    })
+    const workspace = expectOk(await api.workspace.create(request({
+      path: stageDir(root, 'failed-delete-home'),
+    }))).workspace
+    const sessionId = SessionId('session-delete-retry')
+    expectOk(await api.sessions.create(request({ workspaceId: workspace.workspaceId, sessionId })))
+    const abort = new AbortController()
+    const stream = api.events.host(request({}), abort.signal)[Symbol.asyncIterator]()
+    const removal = nextHostFrame(stream)
+
+    await expect(api.workspace.deleteSession(request({ sessionId }))).rejects.toThrow('storage unavailable')
+    expect(await removal).toMatchObject({
+      payload: { type: 'host/session-removed', sessionId },
+    })
+
+    // The failed attempt disposed the old Agent but must not leave a permanent
+    // in-process fence. Explicit adoption can resume/recreate the still-owned
+    // identity, after which a retry completes normally.
+    expectOk(await api.sessions.create(request({
+      workspaceId: workspace.workspaceId,
+      sessionId,
+    })))
+    expectOk(await api.workspace.deleteSession(request({ sessionId })))
+    expect(attempts).toBe(2)
+    abort.abort()
+  })
+
+  it('maps an unknown permanent-delete target and releases its temporary admission fence', async () => {
+    const { api, root } = await harness()
+    const sessionId = SessionId('session-delete-unknown')
+
+    expect((await api.workspace.deleteSession(request({ sessionId }))).result).toMatchObject({
+      ok: false,
+      error: { code: 'session-not-found', details: { sessionId } },
+    })
+    expectOk(await api.sessions.create(request({ sessionId, cwd: stageDir(root, 'unknown-reused') })))
+  })
+
+  it('refuses a live Agent owned outside the proxy when no teardown handle was transferred', async () => {
+    const { api, ctx } = await harness()
+    const sessionId = SessionId('session-external-owner')
+    const session = ctx.sessions.create(sessionId)
+    const unregister = ctx.agents.register(stubAgent(session))
+    try {
+      const response = await api.workspace.deleteSession(request({ sessionId }))
+      expect(response.result).toMatchObject({
+        ok: false,
+        error: {
+          code: 'agent-busy',
+          details: { reason: 'session-live-under-external-owner' },
+        },
+      })
+      expect(ctx.sessions.get(sessionId)).toBe(session)
+    } finally {
+      unregister()
+    }
   })
 })

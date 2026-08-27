@@ -1190,6 +1190,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'request', description: 'Session, message, and observed item version.' }],
         returns: 'the stable absent postcondition, or an explicit failure.',
       },
+      {
+        signature: 'purgeSession(sessionId: SessionId): Promise<void>',
+        description: 'Durably remove the complete feedback sidecar row for one permanently deleted session. The operation does not inspect the now-deleted canonical log, is serialized with item puts/deletes for the same Session id, and is idempotent when the row is already absent.\n\nThis Host-internal lifecycle method is intentionally not a Gateway Remote: end users delete a session through the session orchestrator, which owns canonical-log deletion and all sidecar purges as one workflow.',
+        parameters: [{ name: 'sessionId', description: 'permanently deleted session whose feedback row must be absent.' }],
+        returns: 'resolution after the durable row deletion reaches its queue slot.',
+      },
     ],
   },
   {
@@ -1304,6 +1310,49 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'procedureLearning',
+    summary: 'Durable service that promotes only verified trajectories after explicit host review.',
+    description: 'Durable service that promotes only verified trajectories after explicit host review.',
+    methods: [
+      {
+        signature: 'async propose(request: ProcedureProposalRequest): Promise<ProcedureLearningResult>',
+        description: 'Persist a review candidate derived only from successful host-observed tool calls. Failed observations, credential-like arguments, duplicate call ids, and invalid validity windows are rejected before durable state changes.',
+        parameters: [{ name: 'request', description: 'Complete successful trajectory plus independent verification.' }],
+        returns: 'The candidate record or a stable validation failure.',
+      },
+      {
+        signature: 'inspect(request: ProcedureInspectRequest): ProcedureLearningResult',
+        description: 'Return one exact same-workspace record for operator inspection in any lifecycle state. Cross-workspace and missing ids share the same not-found result.',
+        parameters: [{ name: 'request', description: 'Workspace boundary and opaque procedure id.' }],
+        returns: 'A detached record or the stable not-found branch.',
+      },
+      {
+        signature: 'review(request: ProcedureReviewRequest): Promise<ProcedureLearningResult>',
+        description: 'Promote or reject one exact candidate revision after explicit operator review. Acceptance fails once revalidation is due or the validity window has expired.',
+        parameters: [{ name: 'request', description: 'Workspace, exact revision, and immutable review decision.' }],
+        returns: 'The committed next revision or a stable business failure.',
+      },
+      {
+        signature: 'findReusable(request: ProcedureReuseRequest): ProcedureReuseResult',
+        description: 'Return relevant validated procedures only when their exact preconditions and validity windows admit reuse. Candidate, rejected, and revoked rows stay hidden.',
+        parameters: [{ name: 'request', description: 'Workspace query, current environment facts, and result bound.' }],
+        returns: 'Reusable rows plus relevant rows withheld for an actionable reason.',
+      },
+      {
+        signature: 'revalidate(request: ProcedureRevalidationRequest): Promise<ProcedureLearningResult>',
+        description: 'Commit one verifier outcome for an exact validated or stale revision. A failed verifier marks the procedure stale; a successful verifier requires a fresh validity window and can reactivate a stale procedure.',
+        parameters: [{ name: 'request', description: 'Exact revision, current preconditions, verifier observation, and optional new validity.' }],
+        returns: 'The committed next revision or a stable business failure.',
+      },
+      {
+        signature: 'revoke(request: ProcedureRevokeRequest): Promise<ProcedureLearningResult>',
+        description: 'Revoke one exact candidate, validated, or stale revision. Rejected and already revoked rows are immutable terminal states.',
+        parameters: [{ name: 'request', description: 'Workspace and exact procedure revision.' }],
+        returns: 'The committed revoked revision or a stable business failure.',
+      },
+    ],
+  },
+  {
     key: 'sandbox',
     summary: 'Abstract process-sandbox service.',
     description: 'Abstract process-sandbox service. confine must return enforcing argv or fail closed at wrap or runner-execution time; silent unconfined passthrough is forbidden. Functional probes arbitrate multi-runner chains and may be skipped for a sole candidate, whose own refusal remains the fail-closed end.',
@@ -1379,6 +1428,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'id', description: 'the session the batch belongs to.' }, { name: 'events', description: 'the contiguous batch to persist, in seq order.' }],
       },
       {
+        signature: 'delete(id: SessionId): Promise<void>',
+        description: 'Permanently remove one session\'s backend-owned log. Implementations are idempotent for an already-absent id and serialize deletion with every append, preparation, and load for the same identity. A successful delete closes admission for that id for the lifetime of this service instance, preventing a queued writer from recreating the artifact.\n\nThis operation owns only the session persistence artifact. It must never remove the session cwd or any file contained by that user directory.',
+        parameters: [{ name: 'id', description: 'exact session identity to remove.' }],
+        returns: 'resolution after the durable deletion commit.',
+      },
+      {
         signature: 'async prepare(id: SessionId, signal?: AbortSignal): Promise<SessionPreparation>',
         description: 'Prepare the exact unpublished Session used by resume. Implementations may reuse object graphs retained by an earlier inspect after confirming their durable revision is still current; disposal releases an unpublished reservation. Revision retries require the durable log to remain unchanged for one read/check round trip; continuous external writers may delay completion.',
         parameters: [{ name: 'id', description: 'persisted session to prepare.' }, { name: 'signal', description: 'optional cancellation for preparation work.' }],
@@ -1432,6 +1487,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Durably checkpoint one live session NOW (both mandatory points call this; tests and carriers may too). The registry cut is snapshotted at this boundary (states are live references), then the whole record is replaced. NOT fail-soft — callers on the fail-soft paths contain it.',
         parameters: [{ name: 'session', description: 'the live session to checkpoint.' }],
         returns: 'resolution after durability and event emission.',
+      },
+      {
+        signature: 'purgeSession(id: SessionId): Promise<void>',
+        description: 'Durably remove one session\'s complete projection-cache row.\n\nThe purge synchronously fences new writes, invalidates writes and cold write-backs that began earlier, cancels armed timers, and then queues the idempotent row deletion behind already-admitted writes. A later `session/created` event for the same id opens a new lifecycle without allowing stale work from the purged lifecycle to cross the epoch barrier.',
+        parameters: [{ name: 'id', description: 'permanently deleted session whose cache row must be absent.' }],
+        returns: 'resolution after the durable row deletion reaches its queue slot.',
       },
       {
         signature: 'async coldSnapshot(id: SessionId, signal?: AbortSignal): Promise<ProjectionSnapshot>',
@@ -1518,6 +1579,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Search events within one live-preferred logical session.',
         parameters: [{ name: 'request', description: 'target session, query text, filters, page size, and cursor.' }, { name: 'exec', description: 'optional cancellation control.' }],
         returns: 'matching event hits and their target header from one indexed generation.',
+      },
+      {
+        signature: 'purgeSession(_sessionId: SessionId): Promise<void>',
+        description: 'Purge backend-owned derived data for one permanently deleted session.\n\nThe provider-independent engine owns no derived storage, so its default implementation is an idempotent no-op. Backends that materialize an index override this method and serialize the purge with their reads and reconciliation work. The authoritative live owner and persisted log must already be quiescent or absent before the caller publishes deletion.',
+        parameters: [{ name: '_sessionId', description: 'logical session whose derived rows must be absent.' }],
+        returns: 'resolution after the backend reaches the absent postcondition.',
       },
       {
         signature: 'listSessions(signal?: AbortSignal): Promise<SessionRecord[]>',
@@ -2529,6 +2596,22 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'resolution after durability.',
       },
       {
+        signature: 'unarchiveSession(sessionId: SessionId): Promise<void>',
+        description: 'Remove one id from the durable archive set without changing its workspace position or persistence artifact. Idempotent when already unarchived.',
+        parameters: [{ name: 'sessionId', description: 'session to restore to grouping surfaces.' }],
+      },
+      {
+        signature: 'hasSessionReference(sessionId: SessionId): boolean',
+        description: 'Whether durable registry state or the validated header index still names a session. Used by a deletion retry after the canonical log has already committed its removal but registry/sidecar cleanup has not yet finished.',
+        parameters: [{ name: 'sessionId', description: 'session identity whose retained references are queried.' }],
+        returns: 'whether any durable or indexed workspace state still names it.',
+      },
+      {
+        signature: 'deleteSession(sessionId: SessionId): Promise<void>',
+        description: 'Remove one session from workspace accounting and the archive set. A durable marker makes the record/global multi-write recoverable; the canonical session log is owned and deleted separately by SessionPersistence. No cwd or user file is touched.',
+        parameters: [{ name: 'sessionId', description: 'exact session identity whose registry references clear.' }],
+      },
+      {
         signature: 'async resolveByPath(path: string): Promise<Workspace | undefined>',
         description: 'Resolve by canonical directory path without creating or mutating a workspace. A missing path rejects during `realpath`; an existing unowned directory returns `undefined`.',
         parameters: [{ name: 'path', description: 'Existing directory path in any spelling.' }],
@@ -3235,6 +3318,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'BashEnvVariableInfo',
     declaration: 'export interface BashEnvVariableInfo extends BashEnvVariable {\n    contributor: string;\n    key: DshEnvironmentKey;\n}',
+  },
+  {
+    name: 'BlockedProcedureReuse',
+    declaration: 'export interface BlockedProcedureReuse {\n    readonly id: ProcedureId;\n    readonly revision: number;\n    readonly reason: ProcedureReuseBlockReason;\n    readonly verifier: ProcedureVerifier;\n}',
   },
   {
     name: 'Branded',
@@ -4431,6 +4518,82 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PreToolDecision',
     declaration: 'export type PreToolDecision = {\n    kind: \'allow\';\n} | {\n    kind: \'deny\';\n    reason: string;\n} | {\n    kind: \'ask\';\n    reason?: string;\n};',
+  },
+  {
+    name: 'ProcedureEvidence',
+    declaration: 'export interface ProcedureEvidence {\n    readonly kind: \'initial-validation\' | \'revalidation\';\n    readonly sessionId: SessionId;\n    readonly executionCallIds: readonly CallId[];\n    readonly verificationCallId: CallId;\n    readonly resultDigests: readonly string[];\n    readonly succeeded: boolean;\n    readonly recordedAt: string;\n}',
+  },
+  {
+    name: 'ProcedureId',
+    declaration: 'export type ProcedureId = Branded<\'ProcedureId\'>;',
+  },
+  {
+    name: 'ProcedureInspectRequest',
+    declaration: 'export interface ProcedureInspectRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly id: ProcedureId;\n}',
+  },
+  {
+    name: 'ProcedureLearningFailure',
+    declaration: 'export type ProcedureLearningFailure = {\n    readonly code: \'procedure-invalid-proposal\';\n    readonly reason: string;\n} | {\n    readonly code: \'procedure-sensitive-content\';\n} | {\n    readonly code: \'procedure-not-found\';\n    readonly id: ProcedureId;\n} | {\n    readonly code: \'procedure-revision-conflict\';\n    readonly id: ProcedureId;\n    readonly currentRevision: number;\n} | {\n    readonly code: \'procedure-invalid-state\';\n    readonly id: ProcedureId;\n    readonly status: ProcedureStatus;\n} | {\n    readonly code: \'procedure-validity-expired\';\n    readonly id: ProcedureId;\n} | {\n    readonly code: \'procedure-precondition-mismatch\';\n    readonly id: ProcedureId;\n};',
+  },
+  {
+    name: 'ProcedureLearningResult',
+    declaration: 'export type ProcedureLearningResult = {\n    readonly ok: true;\n    readonly value: ProcedureRecord;\n} | {\n    readonly ok: false;\n    readonly error: ProcedureLearningFailure;\n};',
+  },
+  {
+    name: 'ProcedurePrecondition',
+    declaration: 'export interface ProcedurePrecondition {\n    readonly key: string;\n    readonly expected: string;\n}',
+  },
+  {
+    name: 'ProcedureProposalRequest',
+    declaration: 'export interface ProcedureProposalRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly title: string;\n    readonly trigger: string;\n    readonly preconditions: readonly ProcedurePrecondition[];\n    readonly executions: readonly ProcedureToolObservation[];\n    readonly verification: ProcedureToolObservation;\n    readonly validity: ProcedureValidity;\n}',
+  },
+  {
+    name: 'ProcedureRecord',
+    declaration: 'export interface ProcedureRecord {\n    readonly id: ProcedureId;\n    readonly workspaceId: WorkspaceId;\n    readonly revision: number;\n    readonly title: string;\n    readonly trigger: string;\n    readonly preconditions: readonly ProcedurePrecondition[];\n    readonly steps: readonly ProcedureStep[];\n    readonly verifier: ProcedureVerifier;\n    readonly validity: ProcedureValidity;\n    readonly status: ProcedureStatus;\n    readonly evidence: readonly ProcedureEvidence[];\n    readonly proposedAt: string;\n    readonly updatedAt: string;\n    readonly reviewedAt?: string;\n    readonly reviewedBy?: string;\n    readonly lastValidatedAt?: string;\n    readonly staleAt?: string;\n    readonly revokedAt?: string;\n    readonly schemaVersion: 1;\n}',
+  },
+  {
+    name: 'ProcedureReuseBlockReason',
+    declaration: 'export type ProcedureReuseBlockReason = \'expired\' | \'precondition-mismatch\' | \'revalidation-required\' | \'stale\';',
+  },
+  {
+    name: 'ProcedureReuseRequest',
+    declaration: 'export interface ProcedureReuseRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly query: string;\n    readonly preconditions: Readonly<Record<string, string>>;\n    readonly limit?: number;\n}',
+  },
+  {
+    name: 'ProcedureReuseResult',
+    declaration: 'export interface ProcedureReuseResult {\n    readonly items: readonly ProcedureRecord[];\n    readonly blocked: readonly BlockedProcedureReuse[];\n}',
+  },
+  {
+    name: 'ProcedureRevalidationRequest',
+    declaration: 'export interface ProcedureRevalidationRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly id: ProcedureId;\n    readonly expectedRevision: number;\n    readonly preconditions: Readonly<Record<string, string>>;\n    readonly verification: ProcedureToolObservation;\n    readonly validity?: ProcedureValidity;\n}',
+  },
+  {
+    name: 'ProcedureReviewRequest',
+    declaration: 'export interface ProcedureReviewRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly id: ProcedureId;\n    readonly expectedRevision: number;\n    readonly decision: \'accept\' | \'reject\';\n}',
+  },
+  {
+    name: 'ProcedureRevokeRequest',
+    declaration: 'export interface ProcedureRevokeRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly id: ProcedureId;\n    readonly expectedRevision: number;\n}',
+  },
+  {
+    name: 'ProcedureStatus',
+    declaration: 'export type ProcedureStatus = \'candidate\' | \'validated\' | \'rejected\' | \'stale\' | \'revoked\';',
+  },
+  {
+    name: 'ProcedureStep',
+    declaration: 'export interface ProcedureStep {\n    readonly tool: string;\n    readonly arguments: JsonValue;\n}',
+  },
+  {
+    name: 'ProcedureToolObservation',
+    declaration: 'export interface ProcedureToolObservation {\n    readonly sessionId: SessionId;\n    readonly callId: CallId;\n    readonly tool: string;\n    readonly arguments: JsonValue;\n    readonly succeeded: boolean;\n    readonly resultDigest: string;\n    readonly observedAt: string;\n}',
+  },
+  {
+    name: 'ProcedureValidity',
+    declaration: 'export interface ProcedureValidity {\n    readonly revalidateAfter: string;\n    readonly validUntil: string;\n}',
+  },
+  {
+    name: 'ProcedureVerifier',
+    declaration: 'export interface ProcedureVerifier {\n    readonly tool: string;\n    readonly arguments: JsonValue;\n}',
   },
   {
     name: 'ProjectionChangeListener',

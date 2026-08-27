@@ -50,7 +50,7 @@ function failoverFixture(): string {
     turn: 1,
     step: 1,
     from: { provider: 'ollama', model: 'qwen3.5:9b' },
-    to: { provider: 'google', model: 'gemini-3.6-flash' },
+    to: { provider: 'google', model: 'gemini-3.1-pro-preview-customtools' },
     failure: { code: 'TRANSPORT', message: 'connection refused' },
     reason: 'provider-unavailable',
   })
@@ -60,7 +60,7 @@ function failoverFixture(): string {
     message: createMessage({
       role: 'assistant',
       content: [{ type: 'text', text: DONE }],
-      source: { kind: 'model', provider: 'google', model: 'gemini-3.6-flash' },
+      source: { kind: 'model', provider: 'google', model: 'gemini-3.1-pro-preview-customtools' },
     }),
   }, { surfaceOp: 'append' })
   session.append('step/end', { turn: 1, step: 1 })
@@ -115,7 +115,7 @@ describe('web e2e: automatic model failover notice', () => {
     await page.getByText(DONE, { exact: true }).waitFor({ timeout: 15_000 })
     const notice = page.getByRole('status').filter({ hasText: 'ollama unavailable' })
     await notice.waitFor({ timeout: 10_000 })
-    expect(await notice.textContent()).toContain('gemini-3.6-flash')
+    expect(await notice.textContent()).toContain('gemini-3.1-pro-preview-customtools')
     expect(await notice.textContent()).toContain('qwen3.5:9b')
     expect(await page.locator('body').textContent()).not.toContain('connection refused')
 

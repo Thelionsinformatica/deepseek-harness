@@ -1,6 +1,7 @@
 /** Shadow durable schema for extracted memory candidates. @module @deepseek-ai/dsh-tool-memory/spec */
 
 import { z } from 'zod'
+import { CallId } from '@deepseek-ai/dsh-llm'
 import { SessionId, type SessionId as SessionIdentity } from '@deepseek-ai/dsh-session'
 import { WorkspaceId, type WorkspaceId as WorkspaceIdentity } from '@deepseek-ai/dsh-workspace'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
@@ -21,6 +22,15 @@ import {
   type MemoryCandidateReviewDecision,
   type MemoryCandidateSensitivity,
 } from './types.ts'
+import {
+  ProcedureId,
+  type ProcedureEvidence,
+  type ProcedurePrecondition,
+  type ProcedureRecord,
+  type ProcedureStep,
+  type ProcedureValidity,
+  type ProcedureVerifier,
+} from './procedure-contracts.ts'
 
 export type {
   MemoryCandidateCategory,
@@ -212,5 +222,67 @@ export const personalMemoryAdminDomainSpec = defineDomain({
     actions: domainTable<ReturnType<typeof MemoryAdminActionId>, PersonalMemoryAdminActionRecord>(
       personalMemoryAdminActionRecord,
     ),
+  },
+})
+
+const procedurePrecondition = z.object({
+  key: z.string(),
+  expected: z.string(),
+}) as unknown as z.ZodType<ProcedurePrecondition>
+
+const procedureStep = z.object({
+  tool: z.string(),
+  arguments: z.json(),
+}) as unknown as z.ZodType<ProcedureStep>
+
+const procedureVerifier = z.object({
+  tool: z.string(),
+  arguments: z.json(),
+}) as unknown as z.ZodType<ProcedureVerifier>
+
+const procedureEvidence = z.object({
+  kind: z.enum(['initial-validation', 'revalidation']),
+  sessionId: z.string().transform(SessionId),
+  executionCallIds: z.array(z.string().transform(CallId)),
+  verificationCallId: z.string().transform(CallId),
+  resultDigests: z.array(z.string()),
+  succeeded: z.boolean(),
+  recordedAt: z.string(),
+}) as unknown as z.ZodType<ProcedureEvidence>
+
+const procedureValidity = z.object({
+  revalidateAfter: z.string(),
+  validUntil: z.string(),
+}) as unknown as z.ZodType<ProcedureValidity>
+
+/** Boundary schema for one structured learned procedure. */
+export const procedureRecord = z.object({
+  id: z.string().transform(ProcedureId),
+  workspaceId: z.string().transform(WorkspaceId),
+  revision: z.number().int().positive(),
+  title: z.string(),
+  trigger: z.string(),
+  preconditions: z.array(procedurePrecondition),
+  steps: z.array(procedureStep),
+  verifier: procedureVerifier,
+  validity: procedureValidity,
+  status: z.enum(['candidate', 'validated', 'rejected', 'stale', 'revoked']),
+  evidence: z.array(procedureEvidence),
+  proposedAt: z.string(),
+  updatedAt: z.string(),
+  reviewedAt: z.string().optional(),
+  reviewedBy: z.string().optional(),
+  lastValidatedAt: z.string().optional(),
+  staleAt: z.string().optional(),
+  revokedAt: z.string().optional(),
+  schemaVersion: z.literal(1),
+}) as unknown as z.ZodType<ProcedureRecord>
+
+/** Durable workspace-partitioned store for reviewed procedure learning. */
+export const procedureLearningDomainSpec = defineDomain({
+  name: 'procedure_learning',
+  version: 1,
+  tables: {
+    procedures: domainTable<ReturnType<typeof ProcedureId>, ProcedureRecord>(procedureRecord),
   },
 })

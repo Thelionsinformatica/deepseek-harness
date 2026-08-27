@@ -928,7 +928,7 @@ export interface AdaptiveFailoverConfig {
   /** Provider-owned reasoning effort for the replacement request. */
   reasoningEffort?: string
   /** Local execution or a route that may transmit request content externally. */
-  residency?: 'local' | 'external'
+  residency: 'local' | 'external'
   /** Provider-neutral failure codes that prove the active route is unavailable. */
   failureCodes: string[]
 }
@@ -2073,8 +2073,10 @@ export interface Config extends SessionQueryConfig {
    * Open the SQLite module and handle at service activation or the first
    * search, or `never` to disable full-text search: the inherited exact
    * reads, filters, and traces stay available, while `searchSessions` and
-   * `searchEvents` fail with `SESSION_QUERY_SEARCH_DISABLED` and SQLite is
-   * never imported or opened. Defaults to `startup`.
+   * `searchEvents` fail with `SESSION_QUERY_SEARCH_DISABLED`. An explicit
+   * {@link SqliteSessionQueryEngine.purgeSession} maintenance call may still
+   * open the derived index so permanent deletion can remove its rows.
+   * Defaults to `startup`.
    */
   openAt?: OpenAt
   /** SQLite journal mode. Defaults to `wal`. */
@@ -2922,7 +2924,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/goal/tool-goal/src/index.ts:33`](../packages/goal/tool-goal/src/index.ts)
+Source: [`packages/goal/tool-goal/src/index.ts:34`](../packages/goal/tool-goal/src/index.ts)
 
 <a id="deepseek-aidsh-tool-jobs"></a>
 
@@ -3022,7 +3024,7 @@ export interface MemoryRankingConfig {
 }
 ```
 
-Source: [`packages/memory/tool-memory/src/index.ts:67`](../packages/memory/tool-memory/src/index.ts)
+Source: [`packages/memory/tool-memory/src/index.ts:93`](../packages/memory/tool-memory/src/index.ts)
 
 <a id="deepseek-aidsh-tool-pwsh"></a>
 
@@ -3644,6 +3646,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-settings` ([`packages/client/ui-settings/src/index.ts`](../packages/client/ui-settings/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-general` ([`packages/client/ui-settings-general/src/index.ts`](../packages/client/ui-settings-general/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-models` ([`packages/client/ui-settings-models/src/index.ts`](../packages/client/ui-settings-models/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-settings-personalization` ([`packages/client/ui-settings-personalization/src/index.ts`](../packages/client/ui-settings-personalization/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-plugin-inventory` ([`packages/client/ui-settings-plugin-inventory/src/index.ts`](../packages/client/ui-settings-plugin-inventory/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-plugins` ([`packages/client/ui-settings-plugins/src/index.ts`](../packages/client/ui-settings-plugins/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-sidebar` ([`packages/client/ui-sidebar/src/index.ts`](../packages/client/ui-sidebar/src/index.ts))

@@ -546,6 +546,7 @@ describe('Web session model selection', () => {
       sessionId, provider: 'deepseek-official', model: 'deepseek-chat',
     })))
     expect(manual.automatic).toBe(false)
+    expect(manual.externalFailoverConsent).toBe(false)
     expect(saveDefaultModelSelection).toHaveBeenCalledOnce()
     const decisionsBeforeManualPrompt = choose.mock.calls.length
     expectValue(await api.sessions.prompt(request({
@@ -560,9 +561,15 @@ describe('Web session model selection', () => {
     })
 
     const enabled = expectValue(await api.sessions.selectModel(request({
-      sessionId, provider: 'deepseek-official', model: 'deepseek-chat', automatic: true,
+      sessionId,
+      provider: 'deepseek-official',
+      model: 'deepseek-chat',
+      automatic: true,
+      externalFailoverConsent: true,
     })))
     expect(enabled.automatic).toBe(true)
+    expect(enabled.externalFailoverConsent).toBe(true)
+    expect(expectValue(await api.sessions.models(request({ sessionId }))).externalFailoverConsent).toBe(true)
     expect(saveDefaultModelSelection).toHaveBeenCalledOnce()
     expect(followup).toHaveBeenCalledTimes(3)
     await ctx.fiber.dispose()

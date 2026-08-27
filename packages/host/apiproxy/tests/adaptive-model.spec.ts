@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { chooseAdaptiveFailover, chooseAdaptiveModel, type AdaptiveRoutingConfig } from '../src/adaptive-model.ts'
+import {
+  chooseAdaptiveFailover,
+  chooseAdaptiveModel,
+  type AdaptiveFailoverConfig,
+  type AdaptiveRoutingConfig,
+} from '../src/adaptive-model.ts'
 import {
   evaluateAdaptiveRoutingShadow,
   validateAdaptiveRoutingShadowConfig,
@@ -30,12 +35,14 @@ const config: AdaptiveRoutingConfig = {
       fromProviders: ['ollama'],
       provider: 'omniroute',
       model: 'auto',
+      residency: 'external',
       failureCodes: ['TRANSPORT', 'TIMEOUT', 'SERVER', 'UNKNOWN_MODEL', 'NO_ADAPTER'],
     },
     {
       fromProviders: ['omniroute'],
       provider: 'google',
-      model: 'gemini-3.6-flash',
+      model: 'gemini-3.1-pro-preview-customtools',
+      residency: 'external',
       failureCodes: [
         'TRANSPORT', 'TIMEOUT', 'SERVER', 'RATE_LIMIT', 'QUOTA', 'EMPTY_RESPONSE',
         'AUTH', 'INVALID_CREDENTIAL', 'MISSING_CREDENTIAL', 'UNKNOWN_MODEL',
@@ -44,8 +51,9 @@ const config: AdaptiveRoutingConfig = {
     {
       fromProviders: ['google'],
       provider: 'openai',
-      model: 'gpt-5.6-terra',
-      reasoningEffort: 'high',
+      model: 'gpt-5.6-luna',
+      reasoningEffort: 'low',
+      residency: 'external',
       failureCodes: [
         'TRANSPORT', 'TIMEOUT', 'SERVER', 'RATE_LIMIT', 'QUOTA', 'EMPTY_RESPONSE',
         'AUTH', 'INVALID_CREDENTIAL', 'MISSING_CREDENTIAL', 'UNKNOWN_MODEL',
@@ -187,16 +195,17 @@ describe('chooseAdaptiveFailover()', () => {
     expect(chooseAdaptiveFailover(config, { provider: 'ollama', failureCode })).toEqual({
       provider: 'omniroute',
       model: 'auto',
+      residency: 'external',
       tier: 'failover',
     })
   })
 
   it('bypasses a failed OmniRoute through Gemini, then a failed Gemini through OpenAI', () => {
     expect(chooseAdaptiveFailover(config, { provider: 'omniroute', failureCode: 'RATE_LIMIT' })).toEqual({
-      provider: 'google', model: 'gemini-3.6-flash', tier: 'failover',
+      provider: 'google', model: 'gemini-3.1-pro-preview-customtools', residency: 'external', tier: 'failover',
     })
     expect(chooseAdaptiveFailover(config, { provider: 'google', failureCode: 'SERVER' })).toEqual({
-      provider: 'openai', model: 'gpt-5.6-terra', reasoningEffort: 'high', tier: 'failover',
+      provider: 'openai', model: 'gpt-5.6-luna', reasoningEffort: 'low', residency: 'external', tier: 'failover',
     })
   })
 
@@ -219,7 +228,7 @@ describe('chooseAdaptiveFailover()', () => {
     expect(chooseAdaptiveFailover(withResidency, {
       provider: 'ollama', failureCode: 'TRANSPORT', hasImage: false,
     })).toEqual({
-      provider: 'omniroute', model: 'auto', tier: 'failover',
+      provider: 'omniroute', model: 'auto', residency: 'external', tier: 'failover',
     })
   })
 
@@ -240,15 +249,16 @@ describe('chooseAdaptiveFailover()', () => {
         provider: 'google',
         model: 'gemini-pro',
         reasoningEffort: 'high',
+        residency: 'external',
         failureCodes: ['TRANSPORT'],
       }],
     }, { provider: 'ollama', failureCode: 'TRANSPORT' })).toEqual({
-      provider: 'google', model: 'gemini-pro', reasoningEffort: 'high', tier: 'failover',
+      provider: 'google', model: 'gemini-pro', reasoningEffort: 'high', residency: 'external', tier: 'failover',
     })
     expect(chooseAdaptiveFailover({
       ...config,
       failovers: [{
-        fromProviders: ['ollama'], provider: 'ollama', model: 'other', failureCodes: ['TRANSPORT'],
+        fromProviders: ['ollama'], provider: 'ollama', model: 'other', residency: 'local', failureCodes: ['TRANSPORT'],
       }],
     }, { provider: 'ollama', failureCode: 'TRANSPORT' })).toBeUndefined()
   })
@@ -269,6 +279,14 @@ describe('adaptive routing configuration', () => {
       adaptiveRouting: {
         ...config,
         failovers: [{ ...failover, failureCodes: [] }],
+      },
+    })).toThrow()
+    const { residency: _residency, ...unclassifiedFailover } = failover
+    expect(() => ApiProxyService.Config({
+      adaptiveRouting: {
+        ...config,
+        // Deliberately bypass the compile-time contract to exercise the runtime schema.
+        failovers: [unclassifiedFailover as AdaptiveFailoverConfig],
       },
     })).toThrow()
   })

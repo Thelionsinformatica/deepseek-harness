@@ -302,6 +302,11 @@ describe('LocaleRuntime', () => {
       failoverDetail: 'Leon automatically switched from {fromModel} to {model} through the configured fallback.',
       quotaTitle: '{provider} has no available credits',
       quotaDetail: 'The provider reported exhausted quota or credits; Leon automatically switched from {fromModel} to {model}.',
+      archived: 'Archived conversations',
+      archivedCount: 'Archived conversations: {n}',
+      deleteConversation: 'Delete conversation',
+      deleteDescription: 'Permanently delete “{name}” and its conversation history? This cannot be undone. Files in its workspace are not deleted, and personal memory is kept separately.',
+      fork: 'Fork session',
     })
     const t = svc.bind('feature')
     expect(t('settings')).toBe('Configurações')
@@ -323,11 +328,17 @@ describe('LocaleRuntime', () => {
     expect(t('retryingCloud')).toBe('Tentando novamente com o modelo')
     expect(t('retryDelay')).toBe('Espera para nova tentativa: ')
     expect(t('failureReason')).toBe('Motivo da falha: ')
-    expect(t('failoverTitle', { provider: 'OmniRoute' })).toBe('OmniRoute indisponível')
+    expect(t('failoverTitle', { provider: 'FreeLLMAPI' })).toBe('FreeLLMAPI indisponível')
     expect(t('failoverDetail', { fromModel: 'auto', model: 'Gemini 3.6 Flash' }))
       .toBe('Leon mudou automaticamente de auto para Gemini 3.6 Flash pelo fallback configurado.')
     expect(t('quotaTitle', { provider: 'google' })).toBe('google está sem créditos disponíveis')
     expect(t('quotaDetail', { fromModel: 'Gemini 3.6 Flash', model: 'GPT-5.6 Terra' }))
       .toBe('O provedor informou cota ou créditos esgotados; Leon mudou automaticamente de Gemini 3.6 Flash para GPT-5.6 Terra.')
+    expect(t('archived')).toBe('Conversas arquivadas')
+    expect(t('archivedCount', { n: 2 })).toBe('Conversas arquivadas: 2')
+    expect(t('deleteConversation')).toBe('Excluir conversa')
+    expect(t('deleteDescription', { name: 'Plano' }))
+      .toContain('a memória pessoal será preservada separadamente')
+    expect(t('fork')).toBe('Ramificar sessão')
   })
 })

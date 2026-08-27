@@ -414,7 +414,19 @@ function Set-TargetValue {
   if (([System.Windows.Automation.ValuePattern]$pattern).Current.IsReadOnly) {
     Throw-UiaError 'CONTROL_READ_ONLY' 'O controle é somente leitura.'
   }
-  ([System.Windows.Automation.ValuePattern]$pattern).SetValue($Value)
+  $valuePattern = [System.Windows.Automation.ValuePattern]$pattern
+  $valuePattern.SetValue($Value)
+  $verified = $false
+  for ($attempt = 0; $attempt -lt 20; $attempt += 1) {
+    if ($valuePattern.Current.Value -ceq $Value) {
+      $verified = $true
+      break
+    }
+    Start-Sleep -Milliseconds 50
+  }
+  if (-not $verified) {
+    Throw-UiaError 'VALUE_VERIFICATION_FAILED' 'O controle não confirmou o valor solicitado; a ação não será declarada como concluída.'
+  }
   return 'ValuePattern'
 }
 

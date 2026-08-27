@@ -24,7 +24,7 @@ import type { ModelDirectoryState } from './directory.ts'
 import { ModelDirectoryResolver } from './service.ts'
 import type { ModelSelectInjected } from './slots.ts'
 import { ModelSelect } from './ModelSelect.tsx'
-import { en, zh, type ModelKey } from './locales.ts'
+import { en, pt, zh, type ModelKey } from './locales.ts'
 
 export { ModelDirectory } from './directory.ts'
 export type { ModelDirectoryState } from './directory.ts'
@@ -106,7 +106,7 @@ export const inject = ['commandUi', 'connection', 'locale', 'sessions', 'slots',
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-model-selection: dictionaries')
+  ctx.effect(() => ctx.locale.register(NS, { pt, zh, en }), 'ui-model-selection: dictionaries')
 
   // Non-slot faces (the command description, the popup option builder) read
   // through the bound translate; the seat component reads the standard seat.
@@ -169,10 +169,10 @@ export function apply(ctx: ClientContext): void {
           select: (selection: ModelSelection) => available
             ? directory.select(selection).then(() => true, () => false)
             : Promise.resolve(false),
-          selectAutomatic: () => {
+          selectAutomatic: (externalFailoverConsent: boolean) => {
             const current = directory.store.getSnapshot().current
             if (!available || current === null) return Promise.resolve(false)
-            return directory.select(current, true).then(() => true, () => false)
+            return directory.select(current, true, externalFailoverConsent).then(() => true, () => false)
           },
         }
       },

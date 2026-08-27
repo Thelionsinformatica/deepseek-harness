@@ -99,6 +99,14 @@
         # Stable local partition for personal preferences shared across projects.
         personalOwnerId: leon-local-owner
 
+    # Reviewed, workspace-scoped executable procedures. The model can nominate
+      # only durable successful call ids; an exact direct-human review command
+      # must accept the candidate before later sessions can retrieve its steps.
+    - id: procedure-learning
+      name: '@deepseek-ai/dsh-tool-memory/procedure-learning'
+      config:
+        reviewedBy: leon-local-operator
+
     - id: message-feedback
       name: '@deepseek-ai/dsh-message-feedback'
       config:
@@ -112,7 +120,7 @@
       name: '@deepseek-ai/dsh-web-search-google'
       config:
         apiKeyEnv: GOOGLE_API_KEY
-        model: gemini-3.6-flash
+        model: gemini-3.1-pro-preview-customtools
 
     - id: web-fetch-http
       name: '@deepseek-ai/dsh-web-fetch-http'
@@ -162,10 +170,11 @@
               .cjs: javascript
 
     # Whole-log turn/step counts and configured API cost estimate for the chat
-    # stats strip and Work dashboard. Both Ollama models are deliberately $0.
-    # Gemini prices are an editable deployment snapshot through 2026-12-31;
-    # OpenAI is the 2026-08-24 public snapshot. OmniRoute owns the actual price
-    # of its chosen upstream and exposes that separately in its usage ledger.
+    # stats strip and Work dashboard. Local Ollama routes are deliberately $0.
+    # Gemini and OpenAI are the 2026-08-26 public Standard snapshots. Gemini's
+    # flat estimate covers prompts up to 200k tokens; longer prompts use the
+    # provider's higher tier. The configured NVIDIA prototype is a free hosted
+    # endpoint. FreeLLMAPI has no fixed estimate because its upstream varies.
     - id: session-stats
       name: '@deepseek-ai/dsh-session-stats'
       config:
@@ -178,36 +187,24 @@
             model: ornith-1.5:9b
             inputUsdPerMillion: 0
             outputUsdPerMillion: 0
+          - provider: ollama
+            model: qwen3.8-9b-distill-uncensored-heretic:latest
+            inputUsdPerMillion: 0
+            outputUsdPerMillion: 0
           - provider: google
-            model: gemini-3.7-flash
-            inputUsdPerMillion: 0.75
-            outputUsdPerMillion: 3.75
-            cacheReadUsdPerMillion: 0.075
-          - provider: google
-            model: gemini-3.6-flash
-            inputUsdPerMillion: 0.75
-            outputUsdPerMillion: 3.75
-            cacheReadUsdPerMillion: 0.075
-          - provider: google
-            model: gemini-3.5-flash
-            inputUsdPerMillion: 1.50
-            outputUsdPerMillion: 9.00
-            cacheReadUsdPerMillion: 0.15
-          - provider: google
-            model: gemini-3.5-flash-lite
-            inputUsdPerMillion: 0.30
-            outputUsdPerMillion: 2.50
-            cacheReadUsdPerMillion: 0.03
-          - provider: google
-            model: gemini-3.1-flash-lite
-            inputUsdPerMillion: 0.25
-            outputUsdPerMillion: 1.50
-            cacheReadUsdPerMillion: 0.025
-          - provider: openai
-            model: gpt-5.6-terra
+            model: gemini-3.1-pro-preview-customtools
             inputUsdPerMillion: 2.00
             outputUsdPerMillion: 12.00
             cacheReadUsdPerMillion: 0.20
+          - provider: openai
+            model: gpt-5.6-luna
+            inputUsdPerMillion: 0.20
+            outputUsdPerMillion: 1.20
+            cacheReadUsdPerMillion: 0.02
+          - provider: nvidia
+            model: deepseek-ai/deepseek-v4-flash-0731
+            inputUsdPerMillion: 0
+            outputUsdPerMillion: 0
 
     # Browser-zone time context lets Leon interpret natural-language dates;
     # Schedule adds durable one-shot and fixed-rate reminders to every future
@@ -235,7 +232,7 @@
       config:
         # Leon Automatic keeps ordinary work on Qwen, promotes complex work and
         # autonomous goal rounds to the local Ornith specialist, then escalates
-        # only on provider failure: OmniRoute -> direct Gemini -> direct OpenAI.
+        # only on provider failure: FreeLLMAPI -> direct Gemini -> direct OpenAI.
         # Each transition is persisted as llm/failover and shown in the chat.
         adaptiveRouting:
           provider: ollama
@@ -258,8 +255,9 @@
           failovers:
             - fromProviders:
                 - ollama
-              provider: omniroute
+              provider: freellmapi
               model: auto
+              residency: external
               failureCodes:
                 - TRANSPORT
                 - TIMEOUT
@@ -267,9 +265,10 @@
                 - UNKNOWN_MODEL
                 - NO_ADAPTER
             - fromProviders:
-                - omniroute
+                - freellmapi
               provider: google
-              model: gemini-3.6-flash
+              model: gemini-3.1-pro-preview-customtools
+              residency: external
               failureCodes:
                 - TRANSPORT
                 - TIMEOUT
@@ -284,8 +283,9 @@
             - fromProviders:
                 - google
               provider: openai
-              model: gpt-5.6-terra
-              reasoningEffort: high
+              model: gpt-5.6-luna
+              reasoningEffort: low
+              residency: external
               failureCodes:
                 - TRANSPORT
                 - TIMEOUT
@@ -331,28 +331,29 @@
                 coldStartTtftMs: 12000
                 inputUsdPerMillion: 0
                 outputUsdPerMillion: 0
-              - provider: omniroute
+              - provider: freellmapi
                 model: auto
                 residency: external
                 quality: 3
                 priority: 30
                 coldStartTtftMs: 15000
               - provider: google
-                model: gemini-3.6-flash
-                residency: external
-                quality: 3
-                priority: 40
-                coldStartTtftMs: 13000
-                inputUsdPerMillion: 0.75
-                outputUsdPerMillion: 3.75
-              - provider: openai
-                model: gpt-5.6-terra
+                model: gemini-3.1-pro-preview-customtools
                 residency: external
                 quality: 4
-                priority: 50
-                coldStartTtftMs: 10000
+                priority: 40
+                coldStartTtftMs: 13000
                 inputUsdPerMillion: 2
                 outputUsdPerMillion: 12
+              - provider: openai
+                model: gpt-5.6-luna
+                residency: external
+                quality: 3
+                priority: 50
+                coldStartTtftMs: 10000
+                inputUsdPerMillion: 0.2
+                outputUsdPerMillion: 1.2
+
 
     - id: cordis-host-runner
       name: '@deepseek-ai/dsh-cordis-host-runner'
@@ -457,6 +458,9 @@
 
     - id: ui-settings-models
       name: '@deepseek-ai/dsh-client-ui-settings-models'
+
+    - id: ui-settings-personalization
+      name: '@deepseek-ai/dsh-client-ui-settings-personalization'
 
     - id: ui-settings-plugin-inventory
       name: '@deepseek-ai/dsh-client-ui-settings-plugin-inventory'

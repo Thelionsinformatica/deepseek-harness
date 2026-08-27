@@ -266,12 +266,38 @@ export const StatsLine = memo(function StatsLine({ useSession, useProjection, t 
       output: formatTokens(usage.outputTokens),
     }))
   }
-  if (projected !== undefined
-    && (projected.pricedModelCalls > 0 || projected.unpricedModelCalls > 0)) {
-    const cost = t('stats.apiCost', { cost: formatApiCostUsd(projected.estimatedApiCostUsdNanos) })
-    groups.push(projected.unpricedModelCalls > 0
-      ? `${cost} · ${t('stats.apiCostUnpriced', { count: projected.unpricedModelCalls })}`
-      : cost)
+  if (projected !== undefined) {
+    const hasSeparatedAccounting = projected.confirmedApiCostUsdNanos !== undefined
+      || projected.tokenEstimatedApiCostUsdNanos !== undefined
+      || projected.confirmedModelCalls !== undefined
+      || projected.estimatedModelCalls !== undefined
+      || projected.unaccountedModelCalls !== undefined
+      || projected.unaccountedModelAttempts !== undefined
+    if (hasSeparatedAccounting) {
+      const billing: string[] = []
+      if ((projected.confirmedModelCalls ?? 0) > 0) {
+        billing.push(t('stats.apiCostConfirmed', {
+          cost: formatApiCostUsd(projected.confirmedApiCostUsdNanos ?? 0),
+        }))
+      }
+      if ((projected.estimatedModelCalls ?? 0) > 0) {
+        billing.push(t('stats.apiCostEstimated', {
+          cost: formatApiCostUsd(projected.tokenEstimatedApiCostUsdNanos ?? 0),
+        }))
+      }
+      if ((projected.unaccountedModelCalls ?? 0) > 0) {
+        billing.push(t('stats.apiCostUnaccounted', { count: projected.unaccountedModelCalls }))
+      }
+      if ((projected.unaccountedModelAttempts ?? 0) > 0) {
+        billing.push(t('stats.apiAttemptUnaccounted', { count: projected.unaccountedModelAttempts }))
+      }
+      if (billing.length > 0) groups.push(billing.join(' · '))
+    } else if (projected.pricedModelCalls > 0 || projected.unpricedModelCalls > 0) {
+      const cost = t('stats.apiCost', { cost: formatApiCostUsd(projected.estimatedApiCostUsdNanos) })
+      groups.push(projected.unpricedModelCalls > 0
+        ? `${cost} · ${t('stats.apiCostUnpriced', { count: projected.unpricedModelCalls })}`
+        : cost)
+    }
   }
   const line = groups.join(' | ')
   // The row elides with ellipsis when overlong; a delayed hover tooltip carries

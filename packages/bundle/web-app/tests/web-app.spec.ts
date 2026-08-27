@@ -98,7 +98,7 @@ interface BashContribution {
 }
 
 describe('web-app runtime glue', () => {
-  it('pins Leon Automatic to Qwen/Ornith locally with OmniRoute, Gemini, and OpenAI fallbacks', () => {
+  it('pins Leon Automatic to Qwen/Ornith locally with FreeLLMAPI, Gemini, and OpenAI fallbacks', () => {
     const patch = readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
     const start = patch.indexOf('    - id: api-gateway')
     const end = patch.indexOf('\n    - id:', start + 1)
@@ -116,9 +116,14 @@ describe('web-app runtime glue', () => {
     expect(gateway).toContain('model: ornith-1.5:9b')
     expect(gateway).toContain('fromProviders:')
     expect(gateway).toContain('- ollama')
-    expect(gateway).toContain('provider: omniroute')
+    expect(gateway).toContain('provider: freellmapi')
     expect(gateway).toContain('provider: google')
     expect(gateway).toContain('provider: openai')
+    expect(gateway).toContain('model: gemini-3.1-pro-preview-customtools')
+    expect(gateway).toContain('model: gpt-5.6-luna')
+    expect(gateway).toContain('reasoningEffort: low')
+    expect(gateway).not.toContain('qwen3.8-9b-distill-uncensored-heretic:latest')
+    expect(gateway).not.toContain('deepseek-ai/deepseek-v4-flash-0731')
     expect(gateway).toContain('- TRANSPORT')
     expect(gateway).toContain('policyVersion: leon-shadow-v1')
     expect(gateway).toContain('externalPolicy: fallback-only')
@@ -144,20 +149,23 @@ describe('web-app runtime glue', () => {
         failovers: [
           {
             fromProviders: ['ollama'],
-            provider: 'omniroute',
+            provider: 'freellmapi',
             model: 'auto',
+            residency: 'external',
             failureCodes: ['TRANSPORT', 'TIMEOUT', 'SERVER', 'UNKNOWN_MODEL', 'NO_ADAPTER'],
           },
           {
-            fromProviders: ['omniroute'],
+            fromProviders: ['freellmapi'],
             provider: 'google',
-            model: 'gemini-3.6-flash',
+            model: 'gemini-3.1-pro-preview-customtools',
+            residency: 'external',
           },
           {
             fromProviders: ['google'],
             provider: 'openai',
-            model: 'gpt-5.6-terra',
-            reasoningEffort: 'high',
+            model: 'gpt-5.6-luna',
+            reasoningEffort: 'low',
+            residency: 'external',
           },
         ],
       },
@@ -178,9 +186,13 @@ describe('web-app runtime glue', () => {
     expect(shadow?.routes).toEqual(expect.arrayContaining([
       expect.objectContaining({ provider: 'ollama', model: 'qwen3.5:9b', residency: 'local' }),
       expect.objectContaining({ provider: 'ollama', model: 'ornith-1.5:9b', residency: 'local' }),
-      expect.objectContaining({ provider: 'omniroute', model: 'auto', residency: 'external' }),
-      expect.objectContaining({ provider: 'google', model: 'gemini-3.6-flash', residency: 'external' }),
-      expect.objectContaining({ provider: 'openai', model: 'gpt-5.6-terra', residency: 'external' }),
+      expect.objectContaining({ provider: 'freellmapi', model: 'auto', residency: 'external' }),
+      expect.objectContaining({ provider: 'google', model: 'gemini-3.1-pro-preview-customtools', residency: 'external' }),
+      expect.objectContaining({ provider: 'openai', model: 'gpt-5.6-luna', residency: 'external' }),
+    ]))
+    expect(shadow?.routes).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ model: 'qwen3.8-9b-distill-uncensored-heretic:latest' }),
+      expect.objectContaining({ provider: 'nvidia' }),
     ]))
     const prices = rows.find(row => row.id === 'session-stats')?.config?.prices as unknown[]
     expect(prices).toContainEqual({
@@ -192,14 +204,23 @@ describe('web-app runtime glue', () => {
       inputUsdPerMillion: 0, outputUsdPerMillion: 0,
     })
     expect(prices).toContainEqual({
-      provider: 'google', model: 'gemini-3.6-flash',
-      inputUsdPerMillion: 0.75, outputUsdPerMillion: 3.75,
-      cacheReadUsdPerMillion: 0.075,
+      provider: 'ollama', model: 'qwen3.8-9b-distill-uncensored-heretic:latest',
+      inputUsdPerMillion: 0, outputUsdPerMillion: 0,
     })
     expect(prices).toContainEqual({
-      provider: 'openai', model: 'gpt-5.6-terra',
+      provider: 'google', model: 'gemini-3.1-pro-preview-customtools',
       inputUsdPerMillion: 2, outputUsdPerMillion: 12,
       cacheReadUsdPerMillion: 0.2,
+    })
+    expect(prices).not.toContainEqual(expect.objectContaining({ provider: 'freellmapi' }))
+    expect(prices).toContainEqual({
+      provider: 'openai', model: 'gpt-5.6-luna',
+      inputUsdPerMillion: 0.2, outputUsdPerMillion: 1.2,
+      cacheReadUsdPerMillion: 0.02,
+    })
+    expect(prices).toContainEqual({
+      provider: 'nvidia', model: 'deepseek-ai/deepseek-v4-flash-0731',
+      inputUsdPerMillion: 0, outputUsdPerMillion: 0,
     })
   })
 

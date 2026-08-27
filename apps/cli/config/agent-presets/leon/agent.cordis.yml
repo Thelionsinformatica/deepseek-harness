@@ -163,10 +163,10 @@
     # A terminal claim must agree with the durable task panel for this goal.
     completionRequiresCompletedTodos: true
     # Completion is committed only after a fresh independent auditor checks the
-    # workspace. Rejections return actionable findings to the active goal.
+    # workspace. The auditor inherits Leon Automatic's current route instead
+    # of forcing a paid cloud model; ordinary local-first escalation and its
+    # consent/cost policy remain the single routing authority.
     completionAuditorProvider: spawn
-    completionAuditorModelProvider: google
-    completionAuditorModel: gemini-3.6-flash
     completionAuditorMaxTokens: 4096
     completionAuditorMaxAttemptsPerTurn: 2
     completionAuditorReportMaxCharacters: 6000

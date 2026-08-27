@@ -1,0 +1,15 @@
+- dialog "Archived conversations":
+  - heading "Archived conversations" [level=2]
+  - button "Close":
+    - img
+  - paragraph: Archived conversations stay on this computer until you restore or permanently delete them.
+  - list:
+    - listitem:
+      - text: Use the read tool twice Lifecycle workspace
+      - button "Restore Use the read tool twice":
+        - img
+        - text: Restore
+      - button "Permanently delete Use the read tool twice":
+        - img
+        - text: Delete permanently
+  - button "Close"

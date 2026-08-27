@@ -46,10 +46,16 @@ flowchart LR
   cfg --> plugin_dsh_base_qwen3_5_9b
   plugin_dsh_base_ornith_1_5_9b["ornith-1.5:9b<br/>Ornith 1.5 9B (Local Specialist)"]
   cfg --> plugin_dsh_base_ornith_1_5_9b
-  plugin_dsh_base_auto["auto<br/>OmniRoute Automatic"]
+  plugin_dsh_base_qwen3_8_9b_distill_uncensored_heretic_latest["qwen3.8-9b-distill-uncensored-heretic:latest<br/>Qwen 3.8 9B Heretic (Local Manual)"]
+  cfg --> plugin_dsh_base_qwen3_8_9b_distill_uncensored_heretic_latest
+  plugin_dsh_base_auto["auto<br/>FreeLLMAPI Automatic"]
   cfg --> plugin_dsh_base_auto
-  plugin_dsh_base_gpt_5_6_terra["gpt-5.6-terra<br/>GPT-5.6 Terra"]
-  cfg --> plugin_dsh_base_gpt_5_6_terra
+  plugin_dsh_base_gemini_3_1_pro_preview_customtools["gemini-3.1-pro-preview-customtools<br/>Gemini 3.1 Pro Preview Custom Tools"]
+  cfg --> plugin_dsh_base_gemini_3_1_pro_preview_customtools
+  plugin_dsh_base_gpt_5_6_luna["gpt-5.6-luna<br/>GPT-5.6 Luna (Low)"]
+  cfg --> plugin_dsh_base_gpt_5_6_luna
+  plugin_dsh_base_deepseek_ai_deepseek_v4_flash_0731["deepseek-ai/deepseek-v4-flash-0731<br/>DeepSeek V4 Flash 0731 (NVIDIA NIM Manual)"]
+  cfg --> plugin_dsh_base_deepseek_ai_deepseek_v4_flash_0731
   plugin_dsh_base_session_persistence_jsonl["session-persistence-jsonl<br/>@deepseek-ai/dsh-session-persistence-jsonl"]
   cfg --> plugin_dsh_base_session_persistence_jsonl
   plugin_dsh_base_storage["storage<br/>@deepseek-ai/dsh-storage"]
@@ -203,8 +209,11 @@ flowchart LR
 | `llm-pi-ai` | `@deepseek-ai/dsh-llm-pi-ai` |
 | `qwen3.5:9b` | `Qwen 3.5 9B (Local)` |
 | `ornith-1.5:9b` | `Ornith 1.5 9B (Local Specialist)` |
-| `auto` | `OmniRoute Automatic` |
-| `gpt-5.6-terra` | `GPT-5.6 Terra` |
+| `qwen3.8-9b-distill-uncensored-heretic:latest` | `Qwen 3.8 9B Heretic (Local Manual)` |
+| `auto` | `FreeLLMAPI Automatic` |
+| `gemini-3.1-pro-preview-customtools` | `Gemini 3.1 Pro Preview Custom Tools` |
+| `gpt-5.6-luna` | `GPT-5.6 Luna (Low)` |
+| `deepseek-ai/deepseek-v4-flash-0731` | `DeepSeek V4 Flash 0731 (NVIDIA NIM Manual)` |
 | `session-persistence-jsonl` | `@deepseek-ai/dsh-session-persistence-jsonl` |
 | `storage` | `@deepseek-ai/dsh-storage` |
 | `storage-json` | `@deepseek-ai/dsh-storage-json` |

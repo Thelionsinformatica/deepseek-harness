@@ -53,6 +53,32 @@ import {
   MEMORY_CANDIDATE_SCHEMA_VERSION,
   memoryCandidateDomainSpec,
 } from './spec.ts'
+import { registerProcedureTools } from './procedure-tools.ts'
+
+export { ProcedureLearningService } from './procedure-learning.ts'
+export type { ProcedureLearningConfig } from './procedure-learning.ts'
+export {
+  ProcedureId,
+  type BlockedProcedureReuse,
+  type ProcedureEvidence,
+  type ProcedureLearningFailure,
+  type ProcedureLearningResult,
+  type ProcedureInspectRequest,
+  type ProcedurePrecondition,
+  type ProcedureProposalRequest,
+  type ProcedureRecord,
+  type ProcedureRevalidationRequest,
+  type ProcedureReuseBlockReason,
+  type ProcedureReuseRequest,
+  type ProcedureReuseResult,
+  type ProcedureReviewRequest,
+  type ProcedureRevokeRequest,
+  type ProcedureStatus,
+  type ProcedureStep,
+  type ProcedureToolObservation,
+  type ProcedureValidity,
+  type ProcedureVerifier,
+} from './procedure-contracts.ts'
 
 export const name = 'tool-memory'
 export const inject = ['tools', 'systemPrompt']
@@ -339,6 +365,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       }
     })
   }
+  ctx.inject(['procedureLearning', 'workspaceRegistry', 'agents'], registerProcedureTools)
 }
 
 function registerPersonalMemoryTools(

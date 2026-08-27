@@ -75,6 +75,7 @@ flowchart LR
   svc_personalMemory["ctx.personalMemory<br/>Durable personal memory seam"]
   pkg_personal_memory_local["personal-memory-local"]
   svc_memoryCandidateReview["ctx.memoryCandidateReview<br/>Workspace-isolated memory candidate review"]
+  svc_procedureLearning["ctx.procedureLearning<br/>Evidence-gated procedure learning"]
   svc_sessionQuery["ctx.sessionQuery<br/>Session reads, traces, filters, and search"]
   pkg_session_reference["session-reference"]
   pkg_tool_session_query["tool-session-query"]
@@ -310,6 +311,7 @@ flowchart LR
   pkg_terminal_bash --> svc_terminals
   pkg_token_meter --> svc_tokenMeter
   pkg_tool_memory --> svc_memoryCandidateReview
+  pkg_tool_memory --> svc_procedureLearning
   pkg_tools --> svc_tools
   pkg_typert_registry --> svc_typert
   pkg_user_questions --> svc_userQuestions
@@ -361,6 +363,7 @@ flowchart LR
   svc_lsp --> pkg_tool_lsp
   svc_memory --> pkg_tool_memory
   svc_personalMemory --> pkg_tool_memory
+  svc_procedureLearning --> pkg_tool_memory
   svc_sandbox --> pkg_bash_sandbox
   svc_sandbox --> pkg_terminal_bash
   svc_sandboxPolicy --> pkg_bash_sandbox
@@ -464,6 +467,7 @@ flowchart LR
 | `ctx.memory` | `seam` | [`memory`](../packages/memory/memory) | [`memory-local`](../packages/memory/memory-local) | [`tool-memory`](../packages/memory/tool-memory) | - | 提供方中立的创建、搜索、纠正与遗忘操作始终限定于 WorkspaceId；本地后端通过 storage-domain 持久化，tool-memory 则负责模型策略。 |
 | `ctx.personalMemory` | `seam` | [`personal-memory`](../packages/memory/personal-memory) | [`personal-memory-local`](../packages/memory/personal-memory-local) | [`tool-memory`](../packages/memory/tool-memory) | - | 独立的所有者作用域提供方注册表和存储域可跨工作区保留明确、非敏感的个人事实，且不使用遥测身份。 |
 | `ctx.memoryCandidateReview` | `core` | [`tool-memory`](../packages/memory/tool-memory) | - | - | - | 拥有本地影子队列，从活动或已持久化的会话推导 workspace 权限，并通过投影 Remote 记录不可变的人工决定，而不写入最终记忆。 |
+| `ctx.procedureLearning` | `core` | [`tool-memory`](../packages/memory/tool-memory) | - | [`tool-memory`](../packages/memory/tool-memory) | - | 将唯一且成功的持久工具轨迹与独立验证者证据转化为可审查、可重新验证且可撤销的工作区流程，同时不保留凭据或原始工具结果。 |
 | `ctx.sessionQuery` | `seam` | [`session-query`](../packages/session-query/session-query) | [`session-query-sqlite`](../packages/session-query/session-query-sqlite) | [`session-reference`](../packages/context/session-reference), [`tool-session-query`](../packages/session-query/tool-session-query) | - | 该接口提供精确读取、过滤和追踪；具体后端还提供全文协调、排序、摘要片段和游标世代，而模型消费方负责工作区权限与不含游标的渲染。 |
 | `ctx.fileReferences` | `seam` | [`file-reference`](../packages/context/file-reference) | [`file-reference-local`](../packages/context/file-reference-local) | - | - | 该接口通过其一元 Remote 契约返回指定 Agent cwd 内仅含路径的补全候选；提供方负责命名空间访问和排序，但不会读取文件内容。 |
 | `ctx.sessionReferenceResolver` | `core` | [`session-reference`](../packages/context/session-reference) | - | - | - | 将当前表层中有界的对话快照投影为持久但不可信的消息上下文；Host 适配器负责提及语法。 |

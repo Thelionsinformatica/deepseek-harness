@@ -13,7 +13,7 @@
 - text: Continue even if the local model is unavailable. {{clock}}
 - button "Copy":
   - img
-- status: ollama unavailableLeon automatically switched from qwen3.5:9b to gemini-3.6-flash through the configured fallback.
+- status: ollama unavailableLeon automatically switched from qwen3.5:9b to gemini-3.1-pro-preview-customtools through the configured fallback.
 - paragraph: Automatic failover completed.
 - button "Copy":
   - img
@@ -33,4 +33,4 @@
   - text: Leon Automatic Qwen 3.5 9B (Local) · Off
   - img
 - button "Send message" [disabled]
-- text: 1 turns · 1 steps LLM {{duration}}
+- text: 1 turns · 1 steps LLM {{duration}} 1 unaccounted call(s) · 1 unaccounted attempt(s)

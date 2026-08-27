@@ -96,7 +96,11 @@ export function rankMemoryHits(
   const totalWeight = config.relevanceWeight + config.recencyWeight
     + config.importanceWeight + config.validationWeight
   const ranked = candidates.map((hit): MemorySearchHit => {
-    const relevance = maxRelevance === 0 ? 0 : Math.max(0, hit.score) / maxRelevance
+    const normalizedRelevance = maxRelevance === 0 ? 0 : Math.max(0, hit.score) / maxRelevance
+    // Preserve a strong exact-match advantage over merely recent near-matches.
+    // Without this calibration, recency can erase one missing query concept
+    // from a months-old decision even when its provider score is the maximum.
+    const relevance = normalizedRelevance ** 2
     const ageDays = Math.max(0, nowMs - Date.parse(hit.record.updatedAt)) / 86_400_000
     const recency = 2 ** (-ageDays / config.halfLifeDays)
     const importance = hit.record.importance ?? 0.5

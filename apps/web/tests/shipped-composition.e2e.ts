@@ -80,13 +80,16 @@ afterEach(async () => {
 it('assembles the shipped Web catalog without DeepSeek, plus its retry, guidance, and access defaults', async () => {
   scaffold = await launchWebScaffold({})
   const ctx = scaffold.ctx
-  expect(ctx.llm.listProviders().map(provider => provider.id)).toContain('ollama')
-  expect(ctx.llm.listProviders().map(provider => provider.id)).not.toContain('deepseek-official')
+  const providers = ctx.llm.listProviders().map(provider => provider.id)
+  expect(providers).toContain('ollama')
+  expect(providers).toContain('freellmapi')
+  expect(providers).not.toContain('deepseek-official')
+  expect(providers).not.toContain('omniroute')
   expect(ctx.llm.providerRetryPolicy('ollama')).toMatchObject({
     mode: 'normal',
     maxRetries: 1,
   })
-  expect(ctx.llm.providerRetryPolicy('omniroute')).toMatchObject({
+  expect(ctx.llm.providerRetryPolicy('freellmapi')).toMatchObject({
     mode: 'normal',
     maxRetries: 1,
   })

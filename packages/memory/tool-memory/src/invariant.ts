@@ -8,7 +8,10 @@ const PACKAGE_NAME = '@deepseek-ai/dsh-tool-memory'
 export const name = 'tool-memory-invariant'
 export const inject = ['invariants']
 
-/** No runtime invariant: tool outputs are validated by their canonical JSON schemas before logging. */
+/**
+ * No runtime invariant: tool outputs have canonical schema validation, while
+ * procedure transitions are atomic domain mutations with no companion event stream.
+ */
 const install: InvariantInstaller = () => {}
 
 /** Register the package companion. */

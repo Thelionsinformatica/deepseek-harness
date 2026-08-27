@@ -1,7 +1,7 @@
 /** Host BFF policy for resolving Remote Agent and Session identities. */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent, AgentOptions, AgentSetup } from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentHandle, AgentOptions, AgentSetup } from '@deepseek-ai/dsh-agent'
 import type { Session, SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import { TypertLookupFailure } from '@deepseek-ai/dsh-typert-protocol'
@@ -36,6 +36,26 @@ export interface ApiRemoteAgentOptions {
   readonly setup?: (
     session: { meta: SessionHeader; events: readonly SessionEvent[] },
   ) => AgentSetup | Promise<AgentSetup>
+  /**
+   * Transfer the teardown capability for every cold Agent this resolver
+   * resumes. A callback failure disposes the new handle before surfacing, so
+   * the resolver never publishes an unowned lifecycle.
+   */
+  readonly onHandle?: (handle: AgentHandle) => void | Promise<void>
+  /** Refuse an identity before and after any asynchronous cold-resume work. */
+  readonly guard?: (sessionId: SessionId) => ApiRemoteLookupError | undefined
+  /** Observe every lookup until it settles so a Host can quiesce lifecycle work. */
+  readonly onResolution?: (
+    sessionId: SessionId,
+    operation: Promise<ApiRemoteAgentResult>,
+  ) => void
+}
+
+/** Internal transport for a caller-supplied lifecycle refusal across resume awaits. */
+class ApiRemoteLookupRefused extends Error {
+  constructor(readonly failure: ApiRemoteLookupError) {
+    super(failure.message)
+  }
 }
 
 /** Cold identity absent from the durable session store. */
@@ -133,7 +153,9 @@ export function createApiRemoteAgentResolver(
     return { agent: live }
   }
 
-  const agentFor = async (sessionId: SessionId): Promise<ApiRemoteAgentResult> => {
+  const resolveAgent = async (sessionId: SessionId): Promise<ApiRemoteAgentResult> => {
+    const initialRefusal = options.guard?.(sessionId)
+    if (initialRefusal !== undefined) return { error: initialRefusal }
     const fenced = fencedLiveAgent(sessionId)
     if (fenced !== undefined) return fenced
     const attached = ctx.sessions.get(sessionId)
@@ -153,6 +175,8 @@ export function createApiRemoteAgentResolver(
           // awaits (composing a preset, say) does not widen the collision
           // window.
           const setup = options.setup === undefined ? undefined : await options.setup(inspected)
+          const resumeRefusal = options.guard?.(sessionId)
+          if (resumeRefusal !== undefined) throw new ApiRemoteLookupRefused(resumeRefusal)
           const publishedSession = ctx.sessions.get(sessionId)
           const publishedAgent = ctx.agents.get(sessionId)
           if (publishedSession !== undefined
@@ -164,6 +188,17 @@ export function createApiRemoteAgentResolver(
             ...options.agentOptions === undefined ? {} : { agentOptions: options.agentOptions() },
             ...setup === undefined ? {} : { setup },
           })
+          try {
+            await options.onHandle?.(handle)
+          } catch (error: unknown) {
+            await handle.dispose()
+            throw error
+          }
+          const publishedRefusal = options.guard?.(sessionId)
+          if (publishedRefusal !== undefined) {
+            await handle.dispose()
+            throw new ApiRemoteLookupRefused(publishedRefusal)
+          }
           return handle.agent
         } finally {
           resumes.delete(sessionId)
@@ -174,6 +209,7 @@ export function createApiRemoteAgentResolver(
     try {
       return { agent: await resume }
     } catch (error: unknown) {
+      if (error instanceof ApiRemoteLookupRefused) return { error: error.failure }
       if (error instanceof ApiRemoteSessionNotFound) {
         return { error: { code: 'session-not-found', message: error.message, details: { sessionId } } }
       }
@@ -194,6 +230,12 @@ export function createApiRemoteAgentResolver(
         },
       }
     }
+  }
+
+  const agentFor = (sessionId: SessionId): Promise<ApiRemoteAgentResult> => {
+    const operation = resolveAgent(sessionId)
+    options.onResolution?.(sessionId, operation)
+    return operation
   }
 
   ctx.inject(['typert'], (typeCtx) => {

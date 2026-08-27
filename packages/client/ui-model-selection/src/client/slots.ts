@@ -22,6 +22,10 @@ export interface ModelSelectInjected {
    * @returns whether the host accepted the selection.
    */
   select: (selection: ModelSelection) => Promise<boolean>
-  /** Re-enable Leon's configured local adaptive policy for this session. */
-  selectAutomatic: () => Promise<boolean>
+  /**
+   * Re-enable Leon's configured local adaptive policy for this session.
+   * @param externalFailoverConsent - whether retries may send context to an external provider.
+   * @returns whether the host accepted the selection and consent choice.
+   */
+  selectAutomatic: (externalFailoverConsent: boolean) => Promise<boolean>
 }

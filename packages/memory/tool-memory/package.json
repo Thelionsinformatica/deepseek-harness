@@ -15,13 +15,14 @@
     ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
     "./invariant": { "types": "./lib/types/invariant.d.ts", "default": "./lib/invariant.js" },
     "./review": { "types": "./lib/types/review.d.ts", "default": "./lib/review.js" },
+    "./procedure-learning": { "types": "./lib/types/procedure-learning.d.ts", "default": "./lib/procedure-learning.js" },
     "./types": { "types": "./lib/types/types.d.ts", "default": "./lib/types/types.js" },
     "./typert": { "types": "./lib/typert.host.d.ts", "default": "./lib/typert.host.js" },
     "./remote": { "types": "./lib/typert.remote-client.d.ts", "default": "./lib/typert.remote-client.js" },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
-  "files": ["lib/index.js", "lib/invariant.js", "lib/review.js", "lib/spec-*.js", "lib/types/**/*.js", "lib/types/**/*.d.ts", "lib/typert.host.js", "lib/typert.host.d.ts", "lib/typert.remote-client.js", "lib/typert.remote-client.d.ts"],
+  "files": ["lib/index.js", "lib/invariant.js", "lib/review.js", "lib/procedure-learning.js", "lib/spec-*.js", "lib/types/**/*.js", "lib/types/**/*.d.ts", "lib/typert.host.js", "lib/typert.host.d.ts", "lib/typert.remote-client.js", "lib/typert.remote-client.d.ts"],
   "license": "MIT",
   "dependencies": {
     "@deepseek-ai/schemastery": "workspace:^",

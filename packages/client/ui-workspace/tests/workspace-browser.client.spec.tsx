@@ -76,6 +76,8 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     renameWorkspace: vi.fn(async () => {}),
     deleteWorkspace: vi.fn(async () => {}),
     archiveSession: vi.fn(async () => {}),
+    unarchiveSession: vi.fn(async () => {}),
+    deleteSession: vi.fn(async () => {}),
     insertWorkspaceBefore: vi.fn(async () => {}),
     insertSessionBefore: vi.fn(async () => {}),
     createWorkspace: vi.fn(async () => workspace('created', [])),
@@ -377,6 +379,63 @@ describe('WorkspaceBrowser', () => {
     } finally {
       warn.mockRestore()
     }
+  })
+
+  it('keeps archived conversations discoverable at zero and exposes the live count', () => {
+    const b = mount()
+    fireEvent.click(screen.getByRole('button', { name: '已归档会话：0' }))
+    expect(screen.getByText('暂无已归档会话')).toBeTruthy()
+    fireEvent.click(screen.getAllByRole('button', { name: '关闭' }).at(-1)!)
+
+    rerender(b, {
+      useSessions: hook(sessionState([summary('archived', 1)])),
+      useWorkspaces: hook(workspaceState([], [sid('archived')])),
+    })
+    const archiveButton = screen.getByRole('button', { name: '已归档会话：1' })
+    expect(archiveButton.textContent).toContain('1')
+    fireEvent.click(archiveButton)
+    expect(screen.getByText('archived')).toBeTruthy()
+  })
+
+  it('confirms a row-menu deletion and stays open with the item when it fails', async () => {
+    const deleteSession = vi.fn(async () => { throw new Error('delete rejected') })
+    mount({
+      useSessions: hook(sessionState([summary('keep-me', 1)])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['keep-me'])])),
+      deleteSession,
+    })
+    fireEvent.click(screen.getByText('alpha'))
+    fireEvent.click(screen.getByRole('button', { name: '会话“keep-me”的操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '删除会话' }))
+    const confirmation = screen.getByRole('dialog', { name: '删除会话' })
+    expect(confirmation.textContent).toContain('不会删除其工作区中的文件')
+    expect(confirmation.textContent).toContain('个人记忆')
+    fireEvent.click(screen.getByRole('button', { name: '删除会话' }))
+    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('delete rejected') })
+    expect(screen.getByRole('dialog', { name: '删除会话' })).toBeTruthy()
+    expect(screen.getByText('keep-me')).toBeTruthy()
+    expect(deleteSession).toHaveBeenCalledWith(sid('keep-me'))
+  })
+
+  it('keeps a successful row-menu deletion pending until the callback resolves', async () => {
+    let resolveDelete!: () => void
+    const deleteSession = vi.fn(() => new Promise<void>((resolve) => { resolveDelete = resolve }))
+    mount({
+      useSessions: hook(sessionState([summary('delete-me', 1)])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['delete-me'])])),
+      deleteSession,
+    })
+    fireEvent.click(screen.getByText('alpha'))
+    fireEvent.click(screen.getByRole('button', { name: '会话“delete-me”的操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '删除会话' }))
+    fireEvent.click(screen.getByRole('button', { name: '删除会话' }))
+    expect(screen.getByText('正在删除会话…')).toBeTruthy()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.getByRole('dialog', { name: '删除会话' })).toBeTruthy()
+    resolveDelete()
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: '删除会话' })).toBeNull()
+    })
   })
 
   it('renders a fork child as a top-level row without a session twist', () => {

@@ -180,4 +180,67 @@ windowsDescribe('Leon Windows UI Automation connector', () => {
       await fixture.catch(() => undefined)
     }
   }, 30_000)
+
+  it('changes only the exact inspected window when two accessible windows look identical', async () => {
+    const dshHome = await home()
+    const title = `Leon UIA Duplicate ${Date.now()}`
+    const targetMarker = join(dshHome, 'target-invoked.txt')
+    const otherMarker = join(dshHome, 'other-invoked.txt')
+    const targetReady = join(dshHome, 'target-ready.txt')
+    const otherReady = join(dshHome, 'other-ready.txt')
+    const targetFixture = execa('pwsh', [
+      '-NoLogo', '-NoProfile', '-STA', '-File', testWindow,
+      '-MarkerPath', targetMarker,
+      '-ReadyPath', targetReady,
+      '-Title', title,
+    ], { reject: false, windowsHide: true })
+    const otherFixture = execa('pwsh', [
+      '-NoLogo', '-NoProfile', '-STA', '-File', testWindow,
+      '-MarkerPath', otherMarker,
+      '-ReadyPath', otherReady,
+      '-Title', title,
+    ], { reject: false, windowsHide: true })
+
+    try {
+      await Promise.all([waitForFile(targetReady), waitForFile(otherReady)])
+      const targetProcessId = Number.parseInt(await readFile(targetReady, 'utf8'), 10)
+      const listed = await run(dshHome, ['windows', '-MaxWindows', '200'])
+      const duplicates = (listed.body.windows as Array<Record<string, unknown>>)
+        .filter(candidate => candidate.name === title)
+      expect(duplicates).toHaveLength(2)
+      const targetWindow = duplicates.find(candidate => candidate.processId === targetProcessId)
+      expect(targetWindow).toBeDefined()
+      const windowId = String(targetWindow?.windowId)
+      const processName = String(targetWindow?.processName)
+
+      const filled = await run(dshHome, [
+        'set-value',
+        '-WindowId', windowId,
+        '-AllowWindowId', windowId,
+        '-AllowProcess', processName,
+        '-AutomationId', 'LeonEditor',
+        '-Value', 'somente janela autorizada',
+      ])
+      expect(filled).toMatchObject({ exitCode: 0, body: { ok: true, auditRecorded: true } })
+      const invoked = await run(dshHome, [
+        'invoke',
+        '-WindowId', windowId,
+        '-AllowWindowId', windowId,
+        '-AllowProcess', processName,
+        '-AutomationId', 'LeonActionButton',
+      ])
+      expect(invoked).toMatchObject({ exitCode: 0, body: { ok: true, auditRecorded: true } })
+      await waitForFile(targetMarker)
+      expect(await readFile(targetMarker, 'utf8')).toBe('somente janela autorizada')
+      await expect(access(otherMarker)).rejects.toBeDefined()
+    }
+    finally {
+      targetFixture.kill('SIGTERM')
+      otherFixture.kill('SIGTERM')
+      await Promise.all([
+        targetFixture.catch(() => undefined),
+        otherFixture.catch(() => undefined),
+      ])
+    }
+  }, 30_000)
 })

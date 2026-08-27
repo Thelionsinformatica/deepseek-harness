@@ -27,7 +27,7 @@ import type { ModelSelectInjected } from './slots.ts'
 import css from './ModelSelect.module.css'
 
 /** Which pane the dropdown shows: the two-row root or one drilled-in list. */
-type Pane = 'root' | 'model' | 'effort'
+type Pane = 'root' | 'model' | 'effort' | 'automatic'
 
 /** One dynamic effort row; undefined means preserve the provider default. */
 interface EffortChoice {
@@ -53,6 +53,7 @@ export function ModelSelect(
   )
   const [open, setOpen] = useState(false)
   const [pane, setPane] = useState<Pane>('root')
+  const [externalFailoverConsent, setExternalFailoverConsent] = useState(false)
   // The in-menu error strip serves catalog loads (its Retry re-runs the
   // load); a rejected SELECTION announces through the transient toast
   // instead, so the strip renders only while the latest failure-capable
@@ -206,7 +207,7 @@ export function ModelSelect(
   }
 
   const choose = (selection: ModelSelection): void => {
-    if (state.current?.provider === selection.provider && state.current.model === selection.model) {
+    if (!state.automatic && state.current?.provider === selection.provider && state.current.model === selection.model) {
       close(true)
       return
     }
@@ -216,7 +217,7 @@ export function ModelSelect(
 
   const chooseEffort = (effort: string | undefined): void => {
     if (state.current === null) return
-    if (effectiveEffort === effort) {
+    if (!state.automatic && effectiveEffort === effort) {
       close(true)
       return
     }
@@ -229,13 +230,14 @@ export function ModelSelect(
     void select(selection).then(settleSelection)
   }
 
+  const configureAutomatic = (): void => {
+    setExternalFailoverConsent(state.externalFailoverConsent)
+    setPane('automatic')
+  }
+
   const chooseAutomatic = (): void => {
-    if (state.automatic) {
-      close(true)
-      return
-    }
     lastActionRef.current = 'select'
-    void selectAutomatic().then(settleSelection)
+    void selectAutomatic(externalFailoverConsent).then(settleSelection)
   }
 
   const modelLabel = currentChoice?.model.name ?? t('trigger.fallback')
@@ -323,7 +325,7 @@ export function ModelSelect(
                   aria-checked={state.automatic}
                   className={clsx(css.option, state.automatic && css.selected)}
                   disabled={busy}
-                  onClick={chooseAutomatic}
+                  onClick={configureAutomatic}
                 >
                   <span className={css.optionCopy}>
                     <span className={css.modelName}>{t('automatic.name')}</span>
@@ -385,6 +387,48 @@ export function ModelSelect(
               {state.status === 'ready' && choices.length === 0 && (
                 <div className={css.empty}>{t('empty.models')}</div>
               )}
+            </>
+          )}
+
+          {pane === 'automatic' && (
+            <>
+              <div className={css.automaticSummary}>
+                <span className={css.modelName}>{t('automatic.name')}</span>
+                <span className={clsx(css.description, css.wrappingDescription)}>
+                  {t('automatic.description')}
+                </span>
+              </div>
+              <button
+                ref={itemRef()}
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={externalFailoverConsent}
+                className={clsx(css.option, externalFailoverConsent && css.selected)}
+                disabled={busy}
+                onClick={() => { setExternalFailoverConsent(value => !value) }}
+              >
+                <span className={css.optionCopy}>
+                  <span className={css.modelName}>{t('automatic.externalConsent.name')}</span>
+                  <span className={clsx(css.description, css.wrappingDescription)}>
+                    {t('automatic.externalConsent.description')}
+                  </span>
+                </span>
+                <span className={css.check}>
+                  {externalFailoverConsent ? <IconCheckOutline16 /> : null}
+                </span>
+              </button>
+              <button
+                ref={itemRef()}
+                type="button"
+                role="menuitem"
+                className={clsx(css.option, css.automaticAction)}
+                disabled={busy}
+                onClick={chooseAutomatic}
+              >
+                <span className={css.modelName}>
+                  {state.automatic ? t('automatic.action.save') : t('automatic.action.enable')}
+                </span>
+              </button>
             </>
           )}
 

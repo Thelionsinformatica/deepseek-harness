@@ -73,6 +73,7 @@ flowchart LR
   svc_personalMemory["ctx.personalMemory<br/>Durable personal memory seam"]
   pkg_personal_memory_local["personal-memory-local"]
   svc_memoryCandidateReview["ctx.memoryCandidateReview<br/>Workspace-isolated memory candidate review"]
+  svc_procedureLearning["ctx.procedureLearning<br/>Evidence-gated procedure learning"]
   svc_sessionQuery["ctx.sessionQuery<br/>Session reads, traces, filters, and search"]
   pkg_session_reference["session-reference"]
   pkg_tool_session_query["tool-session-query"]
@@ -308,6 +309,7 @@ flowchart LR
   pkg_terminal_bash --> svc_terminals
   pkg_token_meter --> svc_tokenMeter
   pkg_tool_memory --> svc_memoryCandidateReview
+  pkg_tool_memory --> svc_procedureLearning
   pkg_tools --> svc_tools
   pkg_typert_registry --> svc_typert
   pkg_user_questions --> svc_userQuestions
@@ -359,6 +361,7 @@ flowchart LR
   svc_lsp --> pkg_tool_lsp
   svc_memory --> pkg_tool_memory
   svc_personalMemory --> pkg_tool_memory
+  svc_procedureLearning --> pkg_tool_memory
   svc_sandbox --> pkg_bash_sandbox
   svc_sandbox --> pkg_terminal_bash
   svc_sandboxPolicy --> pkg_bash_sandbox
@@ -462,6 +465,7 @@ flowchart LR
 | `ctx.memory` | `seam` | [`memory`](../packages/memory/memory) | [`memory-local`](../packages/memory/memory-local) | [`tool-memory`](../packages/memory/tool-memory) | - | Provider-neutral create, search, correct, and forget operations stay scoped by WorkspaceId; the local backend persists through storage-domain while tool-memory owns the model policy. |
 | `ctx.personalMemory` | `seam` | [`personal-memory`](../packages/memory/personal-memory) | [`personal-memory-local`](../packages/memory/personal-memory-local) | [`tool-memory`](../packages/memory/tool-memory) | - | A separate owner-scoped provider registry and storage domain retain explicit non-sensitive personal facts across workspaces without using telemetry identity. |
 | `ctx.memoryCandidateReview` | `core` | [`tool-memory`](../packages/memory/tool-memory) | - | - | - | Owns the local shadow queue, derives workspace authority from a live or persisted Session, and records immutable human decisions through a projected Remote without writing final memory. |
+| `ctx.procedureLearning` | `core` | [`tool-memory`](../packages/memory/tool-memory) | - | [`tool-memory`](../packages/memory/tool-memory) | - | Turns unique successful durable tool trajectories plus independent verifier evidence into reviewable, revalidatable, and revocable workspace procedures without retaining credentials or raw tool results. |
 | `ctx.sessionQuery` | `seam` | [`session-query`](../packages/session-query/session-query) | [`session-query-sqlite`](../packages/session-query/session-query-sqlite) | [`session-reference`](../packages/context/session-reference), [`tool-session-query`](../packages/session-query/tool-session-query) | - | The interface supplies exact reads, filters, and traces; its concrete backend adds full-text reconciliation, ranking, snippets, and cursor generations, while the model consumer owns workspace authority and cursor-free rendering. |
 | `ctx.fileReferences` | `seam` | [`file-reference`](../packages/context/file-reference) | [`file-reference-local`](../packages/context/file-reference-local) | - | - | The interface returns path-only completion candidates within the addressed Agent cwd through its unary Remote contract; providers own namespace access and ranking without reading file contents. |
 | `ctx.sessionReferenceResolver` | `core` | [`session-reference`](../packages/context/session-reference) | - | - | - | Projects bounded current-surface conversation snapshots into durable untrusted message context; host adapters own mention syntax. |

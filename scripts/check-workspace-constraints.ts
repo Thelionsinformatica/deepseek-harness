@@ -168,7 +168,10 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   // Candidate review is a Loader-addressable Host entry. tsdown shares the
   // durable domain schema between it and the ordinary tool entry through one
   // hashed chunk, so both runtime artifacts must ship together.
-  '@deepseek-ai/dsh-tool-memory': ['lib/review.js', 'lib/spec-*.js'],
+  '@deepseek-ai/dsh-tool-memory': ['lib/review.js', 'lib/procedure-learning.js', 'lib/spec-*.js'],
+  // The goal entry and invariant share the generated completion-evidence
+  // implementation, so its hashed runtime chunk is part of the package closure.
+  '@deepseek-ai/dsh-tool-goal': ['lib/completion-evidence-*.js'],
   '@deepseek-ai/dsh-skill-badge': ['assets'],
   '@deepseek-ai/dsh-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
   '@deepseek-ai/dsh-web-app': ['runtime/transcribe-local.py'],

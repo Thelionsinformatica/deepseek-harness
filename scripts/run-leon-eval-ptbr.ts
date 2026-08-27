@@ -1,8 +1,8 @@
 /** Execute repeated, keyless LEON-EVAL-PTBR baselines and write a sanitized report. */
 
-import { mkdtemp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, isAbsolute, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { execa } from 'execa'
 import {
   aggregateLeonEvalRuns,
@@ -11,6 +11,7 @@ import {
   type LeonEvalAggregateReport,
   type LeonEvalRawRun,
 } from './leon-eval-ptbr-model.ts'
+import { parseLeonEvalRunnerArgs, resolveLeonReportPath, writeLeonReport } from './leon-eval-runner.ts'
 import { pnpmInvocation } from './pnpm-invocation.ts'
 
 const root = resolve(import.meta.dirname, '..')
@@ -18,15 +19,14 @@ const REPORT_PATH_ENV = 'LEON_EVAL_REPORT_PATH'
 const DEFAULT_OUTPUT = '.artifacts/leon-eval-ptbr/latest.json'
 const REQUIRED_BASELINE_RUNS = 3
 
-interface Options {
-  readonly runs: number
-  readonly outputPath: string
-}
-
 if (import.meta.main) process.exitCode = await main(process.argv.slice(2))
 
 async function main(args: readonly string[]): Promise<number> {
-  const options = parseArgs(args)
+  const options = parseLeonEvalRunnerArgs(args, {
+    minimumRuns: REQUIRED_BASELINE_RUNS,
+    defaultOutputPath: DEFAULT_OUTPUT,
+    commandName: 'LEON-EVAL-PTBR',
+  })
   const temporaryRoot = await mkdtemp(join(tmpdir(), 'leon-eval-ptbr-'))
   const runs: LeonEvalRawRun[] = []
   let childFailed = false
@@ -49,8 +49,8 @@ async function main(args: readonly string[]): Promise<number> {
   }
 
   const report = aggregateLeonEvalRuns(runs, undefined, { minimumRuns: REQUIRED_BASELINE_RUNS })
-  const outputPath = isAbsolute(options.outputPath) ? options.outputPath : resolve(root, options.outputPath)
-  await writeReport(outputPath, report)
+  const outputPath = resolveLeonReportPath(root, options.outputPath)
+  await writeLeonReport(outputPath, report)
   printSummary(report, outputPath)
   return childFailed || report.status === 'failed' ? 1 : 0
 }
@@ -74,48 +74,6 @@ async function executeBaseline(reportPath: string): Promise<{ exitCode: number }
     stderr: 'ignore',
   })
   return { exitCode: result.exitCode ?? 1 }
-}
-
-function parseArgs(args: readonly string[]): Options {
-  let runs = REQUIRED_BASELINE_RUNS
-  let outputPath = DEFAULT_OUTPUT
-  for (let index = 0; index < args.length; index += 1) {
-    const argument = args[index]
-    if (argument === '--runs') {
-      const raw = args[index + 1]
-      const parsed = raw === undefined ? Number.NaN : Number.parseInt(raw, 10)
-      if (!Number.isSafeInteger(parsed) || parsed < REQUIRED_BASELINE_RUNS || raw !== String(parsed)) {
-        throw new Error(`--runs must be an integer >= ${REQUIRED_BASELINE_RUNS}`)
-      }
-      runs = parsed
-      index += 1
-      continue
-    }
-    if (argument === '--output') {
-      const raw = args[index + 1]
-      if (raw === undefined || raw.trim() === '') throw new Error('--output requires a file path')
-      outputPath = raw
-      index += 1
-      continue
-    }
-    throw new Error(`unknown LEON-EVAL-PTBR argument: ${JSON.stringify(argument)}`)
-  }
-  return { runs, outputPath }
-}
-
-async function writeReport(path: string, report: LeonEvalAggregateReport): Promise<void> {
-  await mkdir(dirname(path), { recursive: true })
-  const temporaryPath = `${path}.${process.pid}.tmp`
-  const artifact = {
-    generatedAt: new Date().toISOString(),
-    node: process.version,
-    platform: process.platform,
-    architecture: process.arch,
-    ...report,
-  }
-  await writeFile(temporaryPath, `${JSON.stringify(artifact, null, 2)}\n`, 'utf8')
-  await rm(path, { force: true })
-  await rename(temporaryPath, path)
 }
 
 function printSummary(report: LeonEvalAggregateReport, outputPath: string): void {

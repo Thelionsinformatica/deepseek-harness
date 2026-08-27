@@ -219,6 +219,23 @@
   white-space: nowrap;
 }
 
+.wrappingDescription {
+  white-space: normal;
+}
+
+.automaticSummary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+}
+
+.automaticAction {
+  justify-content: center;
+  margin-top: 4px;
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
 .check {
   display: grid;
   place-items: center;

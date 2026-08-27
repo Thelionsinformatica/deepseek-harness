@@ -274,6 +274,66 @@ async forget(request: PersonalMemoryForgetRequest, signal?: AbortSignal): Promis
 
 Source: [`packages/memory/personal-memory/src/index.ts`](../../packages/memory/personal-memory/src/index.ts)
 
+<a id="ctxprocedurelearning--procedurelearningservice"></a>
+
+### `ctx.procedureLearning` — `ProcedureLearningService`
+
+Durable service that promotes only verified trajectories after explicit host review.
+
+```ts cordis-catalog
+/**
+ * Persist a review candidate derived only from successful host-observed tool calls.
+ * Failed observations, credential-like arguments, duplicate call ids, and invalid
+ * validity windows are rejected before durable state changes.
+ * @param request - Complete successful trajectory plus independent verification.
+ * @returns The candidate record or a stable validation failure.
+ */
+async propose(request: ProcedureProposalRequest): Promise<ProcedureLearningResult>
+
+/**
+ * Return one exact same-workspace record for operator inspection in any lifecycle state.
+ * Cross-workspace and missing ids share the same not-found result.
+ * @param request - Workspace boundary and opaque procedure id.
+ * @returns A detached record or the stable not-found branch.
+ */
+inspect(request: ProcedureInspectRequest): ProcedureLearningResult
+
+/**
+ * Promote or reject one exact candidate revision after explicit operator review.
+ * Acceptance fails once revalidation is due or the validity window has expired.
+ * @param request - Workspace, exact revision, and immutable review decision.
+ * @returns The committed next revision or a stable business failure.
+ */
+review(request: ProcedureReviewRequest): Promise<ProcedureLearningResult>
+
+/**
+ * Return relevant validated procedures only when their exact preconditions and
+ * validity windows admit reuse. Candidate, rejected, and revoked rows stay hidden.
+ * @param request - Workspace query, current environment facts, and result bound.
+ * @returns Reusable rows plus relevant rows withheld for an actionable reason.
+ */
+findReusable(request: ProcedureReuseRequest): ProcedureReuseResult
+
+/**
+ * Commit one verifier outcome for an exact validated or stale revision. A failed
+ * verifier marks the procedure stale; a successful verifier requires a fresh
+ * validity window and can reactivate a stale procedure.
+ * @param request - Exact revision, current preconditions, verifier observation, and optional new validity.
+ * @returns The committed next revision or a stable business failure.
+ */
+revalidate(request: ProcedureRevalidationRequest): Promise<ProcedureLearningResult>
+
+/**
+ * Revoke one exact candidate, validated, or stale revision. Rejected and already
+ * revoked rows are immutable terminal states.
+ * @param request - Workspace and exact procedure revision.
+ * @returns The committed revoked revision or a stable business failure.
+ */
+revoke(request: ProcedureRevokeRequest): Promise<ProcedureLearningResult>
+```
+
+Source: [`packages/memory/tool-memory/src/procedure-learning.ts`](../../packages/memory/tool-memory/src/procedure-learning.ts)
+
 <a id="memory-events"></a>
 
 ### `memory/*` events

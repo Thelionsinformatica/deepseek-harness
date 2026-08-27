@@ -81,21 +81,40 @@ describe('dsh-base bundle', () => {
           models: [
             { id: 'qwen3.5:9b' },
             { id: 'ornith-1.5:9b' },
+            { id: 'qwen3.8-9b-distill-uncensored-heretic:latest' },
           ],
         },
-        omniroute: {
+        freellmapi: {
           api: 'openai-completions',
-          baseURL: 'http://127.0.0.1:20128/v1',
+          baseURL: 'http://127.0.0.1:31415/v1',
+          apiKeyEnv: 'FREELLMAPI_API_KEY',
           retryPolicy: { mode: 'normal', maxRetries: 1 },
-          headers: { Authorization: 'Bearer omniroute-local' },
           models: [{ id: 'auto' }],
+        },
+        google: {
+          apiKeyEnv: 'GOOGLE_API_KEY',
+          models: [{ id: 'gemini-3.1-pro-preview-customtools' }],
         },
         openai: {
           apiKeyEnv: 'OPENAI_API_KEY',
-          models: [{ id: 'gpt-5.6-terra' }],
+          reasoning: 'low',
+          models: [{ id: 'gpt-5.6-luna', reasoningEfforts: { low: 'low' } }],
+        },
+        nvidia: {
+          apiKeyEnv: 'NVIDIA_API_KEY',
+          api: 'openai-completions',
+          baseURL: 'https://integrate.api.nvidia.com/v1',
+          models: [{ id: 'deepseek-ai/deepseek-v4-flash-0731' }],
         },
       },
     })
+    const providers = (rows.find(row => row.id === 'llm-pi-ai')?.config as {
+      providers?: Record<string, { models?: Array<{ id?: string }> }>
+    } | undefined)?.providers
+    expect(providers?.google?.models?.map(model => model.id)).toEqual([
+      'gemini-3.1-pro-preview-customtools',
+    ])
+    expect(providers?.openai?.models?.map(model => model.id)).toEqual(['gpt-5.6-luna'])
     expect(rows.find(row => row.id === 'web')?.config).toBeUndefined()
     expect(rows.find(row => row.id === 'llm-deepseek')).toBeUndefined()
     expect(rows.find(row => row.id === 'web-search-deepseek')).toBeUndefined()

@@ -47,12 +47,24 @@ interface SessionStatsTotals {
   decodeMs: number
   /** Summed provider output tokens over the same steps. */
   decodeTokens: number
-  /** Configured-price estimate in integer billionths of one US dollar. */
+  /** Legacy accounted total: confirmed charges plus token estimates, in nanodollars. */
   estimatedApiCostUsdNanos: number
-  /** Calls carrying usage for an exactly priced provider/model route. */
+  /** Legacy count of calls carrying either a confirmed charge or token estimate. */
   pricedModelCalls: number
-  /** Calls carrying usage for a route absent from the configured table. */
+  /** Legacy alias for `unaccountedModelCalls`. */
   unpricedModelCalls: number
+  /** Provider- or gateway-confirmed charge in nanodollars. */
+  confirmedApiCostUsdNanos: number
+  /** Estimate derived from usage and the configured token-price table, in nanodollars. */
+  tokenEstimatedApiCostUsdNanos: number
+  /** Calls whose usage carried a provider- or gateway-confirmed charge. */
+  confirmedModelCalls: number
+  /** Calls estimated from usage and an exact configured provider/model price. */
+  estimatedModelCalls: number
+  /** Completed calls lacking usage or an exact configured route price. */
+  unaccountedModelCalls: number
+  /** Failed request attempts lacking charge or token evidence. */
+  unaccountedModelAttempts: number
 }
 
 /**
@@ -75,7 +87,7 @@ interface SessionStatsState extends SessionStatsTotals {
     turn: number
     step: number
     costUsdNanos: number
-    priced: boolean
+    accounting: 'confirmed' | 'estimated' | 'unaccounted'
   } | null
 }
 
@@ -103,6 +115,12 @@ const sessionStatsSchema = z.object({
   estimatedApiCostUsdNanos: z.number().int().nonnegative(),
   pricedModelCalls: z.number().int().nonnegative(),
   unpricedModelCalls: z.number().int().nonnegative(),
+  confirmedApiCostUsdNanos: z.number().int().nonnegative(),
+  tokenEstimatedApiCostUsdNanos: z.number().int().nonnegative(),
+  confirmedModelCalls: z.number().int().nonnegative(),
+  estimatedModelCalls: z.number().int().nonnegative(),
+  unaccountedModelCalls: z.number().int().nonnegative(),
+  unaccountedModelAttempts: z.number().int().nonnegative(),
 }).strict()
 
 /**
@@ -125,7 +143,7 @@ const sessionStatsStateSchema = sessionStatsSchema.extend({
     turn: z.number().int().nonnegative(),
     step: z.number().int().nonnegative(),
     costUsdNanos: z.number().int().nonnegative(),
-    priced: z.boolean(),
+    accounting: z.enum(['confirmed', 'estimated', 'unaccounted']),
   }).nullable(),
 })
 
@@ -175,7 +193,50 @@ function reportedUsageCost(usage: TokenUsage): number | undefined {
   return value !== undefined && Number.isSafeInteger(value) && value >= 0 ? value : undefined
 }
 
-/** Replace the previous sample for one step instead of counting stream and final usage twice. */
+type UsageAccounting = 'confirmed' | 'estimated' | 'unaccounted'
+
+/** Replace the previous sample for one request attempt instead of counting stream and final usage twice. */
+function applyUsageSample(
+  state: SessionStatsState,
+  turn: number,
+  step: number,
+  costUsdNanos: number,
+  accounting: UsageAccounting,
+): SessionStatsState {
+  const nextSample = { turn, step, costUsdNanos, accounting }
+  const previous = state.lastUsage?.turn === turn && state.lastUsage.step === step
+    ? state.lastUsage
+    : undefined
+  if (previous !== undefined
+    && previous.costUsdNanos === nextSample.costUsdNanos
+    && previous.accounting === nextSample.accounting) return state
+  const confirmedApiCostUsdNanos = state.confirmedApiCostUsdNanos
+    - (previous?.accounting === 'confirmed' ? previous.costUsdNanos : 0)
+    + (accounting === 'confirmed' ? costUsdNanos : 0)
+  const tokenEstimatedApiCostUsdNanos = state.tokenEstimatedApiCostUsdNanos
+    - (previous?.accounting === 'estimated' ? previous.costUsdNanos : 0)
+    + (accounting === 'estimated' ? costUsdNanos : 0)
+  const confirmedModelCalls = state.confirmedModelCalls
+    - (previous?.accounting === 'confirmed' ? 1 : 0) + (accounting === 'confirmed' ? 1 : 0)
+  const estimatedModelCalls = state.estimatedModelCalls
+    - (previous?.accounting === 'estimated' ? 1 : 0) + (accounting === 'estimated' ? 1 : 0)
+  const unaccountedModelCalls = state.unaccountedModelCalls
+    - (previous?.accounting === 'unaccounted' ? 1 : 0) + (accounting === 'unaccounted' ? 1 : 0)
+  return {
+    ...state,
+    estimatedApiCostUsdNanos: confirmedApiCostUsdNanos + tokenEstimatedApiCostUsdNanos,
+    pricedModelCalls: confirmedModelCalls + estimatedModelCalls,
+    unpricedModelCalls: unaccountedModelCalls,
+    confirmedApiCostUsdNanos,
+    tokenEstimatedApiCostUsdNanos,
+    confirmedModelCalls,
+    estimatedModelCalls,
+    unaccountedModelCalls,
+    lastUsage: nextSample,
+  }
+}
+
+/** Classify one usage sample by the strongest cost evidence it carries. */
 function applyUsage(
   state: SessionStatsState,
   turn: number,
@@ -185,28 +246,27 @@ function applyUsage(
   prices: ReadonlyMap<string, ModelTokenPrice>,
 ): SessionStatsState {
   const reportedCost = reportedUsageCost(usage)
-  if (prices.size === 0 && reportedCost === undefined) return state
-  const price = route === null ? undefined : prices.get(priceKey(route.provider, route.model))
-  const nextSample = {
-    turn,
-    step,
-    costUsdNanos: reportedCost ?? (price === undefined ? 0 : estimateUsageCost(usage, price)),
-    priced: reportedCost !== undefined || price !== undefined,
+  if (reportedCost !== undefined) {
+    return applyUsageSample(state, turn, step, reportedCost, 'confirmed')
   }
-  const previous = state.lastUsage?.turn === turn && state.lastUsage.step === step
+  const price = route === null ? undefined : prices.get(priceKey(route.provider, route.model))
+  if (price !== undefined) {
+    return applyUsageSample(state, turn, step, estimateUsageCost(usage, price), 'estimated')
+  }
+  return applyUsageSample(state, turn, step, 0, 'unaccounted')
+}
+
+/** Close one failed attempt before a retry/failover starts the next attempt in the same step. */
+function applyUnaccountedAttempt(
+  state: SessionStatsState,
+  event: { data: { turn: number; step: number } },
+): SessionStatsState {
+  const previous = state.lastUsage?.turn === event.data.turn && state.lastUsage.step === event.data.step
     ? state.lastUsage
     : undefined
-  if (previous !== undefined
-    && previous.costUsdNanos === nextSample.costUsdNanos
-    && previous.priced === nextSample.priced) return state
-  return {
-    ...state,
-    estimatedApiCostUsdNanos: state.estimatedApiCostUsdNanos
-      - (previous?.costUsdNanos ?? 0) + nextSample.costUsdNanos,
-    pricedModelCalls: state.pricedModelCalls - (previous?.priced === true ? 1 : 0) + (nextSample.priced ? 1 : 0),
-    unpricedModelCalls: state.unpricedModelCalls - (previous?.priced === false ? 1 : 0) + (nextSample.priced ? 0 : 1),
-    lastUsage: nextSample,
-  }
+  return previous === undefined
+    ? { ...state, unaccountedModelAttempts: state.unaccountedModelAttempts + 1 }
+    : { ...state, lastUsage: null }
 }
 
 /**
@@ -220,7 +280,7 @@ export function createSessionStatsProjectionDefinition(
   const priceByRoute = pricingIndex(prices)
   const definition = {
     key: 'sessionStats',
-    stateVersion: 2,
+    stateVersion: 3,
     stateSchema: sessionStatsStateSchema,
     init: () => ({
       turns: 0,
@@ -234,6 +294,12 @@ export function createSessionStatsProjectionDefinition(
       estimatedApiCostUsdNanos: 0,
       pricedModelCalls: 0,
       unpricedModelCalls: 0,
+      confirmedApiCostUsdNanos: 0,
+      tokenEstimatedApiCostUsdNanos: 0,
+      confirmedModelCalls: 0,
+      estimatedModelCalls: 0,
+      unaccountedModelCalls: 0,
+      unaccountedModelAttempts: 0,
       lastTurn: null,
       openStep: null,
       pendingCalls: {},
@@ -242,6 +308,13 @@ export function createSessionStatsProjectionDefinition(
     }),
     apply: (state, event) => {
       // Every uninteresting event returns the same reference (Object.is gates the change feed).
+      const eventType: string = event.type
+      if (eventType === 'llm/retry' || eventType === 'llm/failover') {
+        return applyUnaccountedAttempt(
+          state,
+          event as unknown as { data: { turn: number; step: number } },
+        )
+      }
       switch (event.type) {
         case 'request/header':
           return {
@@ -290,6 +363,8 @@ export function createSessionStatsProjectionDefinition(
             const source = event.data.message.source
             const route = { provider: source.provider, model: source.model }
             next = applyUsage(next, event.data.turn, event.data.step, event.data.usage, route, priceByRoute)
+          } else if (next.lastUsage?.turn !== event.data.turn || next.lastUsage.step !== event.data.step) {
+            next = applyUsageSample(next, event.data.turn, event.data.step, 0, 'unaccounted')
           }
           return next
         }
@@ -339,6 +414,12 @@ export function createSessionStatsProjectionDefinition(
         estimatedApiCostUsdNanos: state.estimatedApiCostUsdNanos,
         pricedModelCalls: state.pricedModelCalls,
         unpricedModelCalls: state.unpricedModelCalls,
+        confirmedApiCostUsdNanos: state.confirmedApiCostUsdNanos,
+        tokenEstimatedApiCostUsdNanos: state.tokenEstimatedApiCostUsdNanos,
+        confirmedModelCalls: state.confirmedModelCalls,
+        estimatedModelCalls: state.estimatedModelCalls,
+        unaccountedModelCalls: state.unaccountedModelCalls,
+        unaccountedModelAttempts: state.unaccountedModelAttempts,
       }),
     },
   } satisfies ProjectionDefinition<'sessionStats', SessionStatsState>

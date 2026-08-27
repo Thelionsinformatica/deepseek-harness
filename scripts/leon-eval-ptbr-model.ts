@@ -4,7 +4,7 @@
 export const LEON_EVAL_SCHEMA_VERSION = 1 as const
 
 /** One observable behavior class measured by the evaluation. */
-export type LeonEvalCategory =
+type LeonEvalCategory =
   | 'continuity'
   | 'explicit-memory'
   | 'automatic-memory'
@@ -19,7 +19,7 @@ export type LeonEvalCategory =
   | 'routing'
 
 /** Metric families derived from scenario outcomes. */
-export type LeonEvalMetricTag =
+type LeonEvalMetricTag =
   | 'oracle'
   | 'recall'
   | 'false-positive'
@@ -32,7 +32,7 @@ export type LeonEvalMetricTag =
   | 'prompt-injection'
 
 /** Exact keyless test that proves one part of a scenario. */
-export interface LeonEvalEvidence {
+interface LeonEvalEvidence {
   readonly file: string
   readonly testName: string
 }
@@ -65,7 +65,7 @@ export interface LeonEvalRawRun {
 }
 
 /** One scenario outcome across all baseline repetitions. */
-export interface LeonEvalScenarioResult {
+interface LeonEvalScenarioResult {
   readonly id: string
   readonly titlePtBr: string
   readonly category: LeonEvalCategory

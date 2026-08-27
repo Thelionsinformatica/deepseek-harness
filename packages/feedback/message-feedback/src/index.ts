@@ -295,6 +295,24 @@ export class MessageFeedbackService extends TypertRemoteService {
   }
 
   /**
+   * Durably remove the complete feedback sidecar row for one permanently
+   * deleted session. The operation does not inspect the now-deleted canonical
+   * log, is serialized with item puts/deletes for the same Session id, and is
+   * idempotent when the row is already absent.
+   *
+   * This Host-internal lifecycle method is intentionally not a Gateway
+   * Remote: end users delete a session through the session orchestrator, which
+   * owns canonical-log deletion and all sidecar purges as one workflow.
+   * @param sessionId - permanently deleted session whose feedback row must be absent.
+   * @returns resolution after the durable row deletion reaches its queue slot.
+   */
+  purgeSession(sessionId: SessionId): Promise<void> {
+    return this.enqueue(sessionId, async () => {
+      await this.requireTable().delete(sessionId)
+    })
+  }
+
+  /**
    * Resolve a live owner directly; otherwise use the storage catalog as the
    * existence authority before inspecting the log. Inspection failures for a
    * catalogued Session remain infrastructure failures rather than being

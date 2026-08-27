@@ -295,6 +295,46 @@ describe('MessageFeedbackService public contract', () => {
 })
 
 describe('MessageFeedbackService item concurrency', () => {
+  it('queues whole-row purge behind an admitted mutation and makes retries no-ops', async () => {
+    const { ctx, persistence } = await harness()
+    const fixture = messageFixture('purge-feedback-row')
+    persistence.persist(fixture.session)
+    const started = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    persistence.onReadFrom = async () => {
+      persistence.onReadFrom = undefined
+      started.resolve(undefined)
+      await release.promise
+    }
+    const operations: string[] = []
+    ctx.on('domain/changed', (change) => {
+      if (change.domain === 'message_feedback' && change.key === fixture.session.id) {
+        operations.push(change.operation)
+      }
+    })
+
+    const putting = ctx.messageFeedback.put({
+      sessionId: fixture.session.id,
+      messageId: fixture.assistantMessageIds[0],
+      rating: 'positive',
+      ifVersion: null,
+    })
+    await started.promise
+    let purgeSettled = false
+    const purging = ctx.messageFeedback.purgeSession(fixture.session.id)
+      .then(() => { purgeSettled = true })
+    await Promise.resolve()
+    expect(purgeSettled).toBe(false)
+    release.resolve(undefined)
+
+    expectItem(await putting)
+    await purging
+    await ctx.messageFeedback.purgeSession(fixture.session.id)
+    await expect(ctx.messageFeedback.list({ sessionId: fixture.session.id }))
+      .resolves.toEqual({ ok: true, value: { items: [] } })
+    expect(operations).toEqual(['put', 'deleted'])
+  })
+
   it('serializes whole-row writes while keeping versions independent per message', async () => {
     const { ctx, persistence } = await harness()
     const fixture = messageFixture('concurrent-items')

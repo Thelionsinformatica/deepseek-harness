@@ -20,6 +20,16 @@ interface SummaryConfig {
 /** Tags wrapping the structured summary inside the landed checkpoint node. */
 const SUMMARY_OPEN_TAG = '<compacted-summary>'
 const SUMMARY_CLOSE_TAG = '</compacted-summary>'
+const CONTINUITY_HEADING = '## Operational Continuity (deterministic)'
+const MAX_CONTINUITY_REFERENCES = 16
+const MAX_CONTINUITY_EVIDENCE = 6
+const MAX_CONTINUITY_LINE_CHARS = 320
+
+interface ContinuityFragment {
+  readonly text: string
+  readonly source: string
+  readonly toolEvidence: boolean
+}
 
 /**
  * The summarization directive, delivered as the FINAL user message after the
@@ -82,6 +92,204 @@ export interface SummarizationInput {
   readonly tools?: readonly ToolSchema[]
   /** The shadowed region, in surface order, that precedes the compaction instruction. */
   readonly messages: readonly Message[]
+}
+
+/**
+ * Preserve exact operational references independently of the summarizer model.
+ * The bounded appendix carries only references and concise tool-result evidence;
+ * it never promotes assistant prose to verified state. Credentials are redacted
+ * and URL query strings or fragments are removed before retention.
+ *
+ * @param summary - text-only summary returned by the configured model.
+ * @param messages - exact compacted messages from which references are recovered.
+ * @returns summary blocks followed by a bounded deterministic appendix when facts exist.
+ */
+export function preserveOperationalContinuity(
+  summary: readonly ContentBlock[],
+  messages: readonly Message[],
+): ContentBlock[] {
+  const fragments = continuityFragments(messages)
+  const references = latestReferences(fragments, MAX_CONTINUITY_REFERENCES)
+  const evidence = latestUnique(fragments
+    .filter(fragment => fragment.toolEvidence)
+    .flatMap(fragment => evidenceLines(fragment)), MAX_CONTINUITY_EVIDENCE)
+  if (references.length === 0 && evidence.length === 0) return [...summary]
+
+  const lines = [
+    CONTINUITY_HEADING,
+    '- Machine-extracted recovery data. References are exact; live status is valid only when a tool-evidence line says so and must be revalidated after time or restart.',
+    ...references.map(reference => `- Reference: ${reference}`),
+    ...evidence.map(line => `- Tool evidence: ${line}`),
+  ]
+  return [...summary, { type: 'text', text: `\n\n${lines.join('\n')}` }]
+}
+
+/** Deduplicate references by exact value while retaining their latest source. */
+function latestReferences(fragments: readonly ContinuityFragment[], limit: number): string[] {
+  const latest = new Map<string, string>()
+  for (const fragment of fragments) {
+    for (const value of extractReferences(fragment)) {
+      latest.delete(value)
+      latest.set(value, `${value} (source: ${fragment.source})`)
+    }
+  }
+  return [...latest.values()].slice(-limit)
+}
+
+/** Flatten model-visible text while retaining whether it came from a tool result. */
+function continuityFragments(messages: readonly Message[]): ContinuityFragment[] {
+  const toolNames = new Map<string, string>()
+  for (const message of messages) {
+    collectToolNames(message.content, toolNames)
+  }
+  return messages.flatMap(message => collectContinuityFragments(
+    message.content,
+    sourceLabel(message),
+    message.source.kind === 'tool',
+    toolNames,
+  ))
+}
+
+/** Associate a durable tool call id with its model-visible name. */
+function collectToolNames(blocks: readonly ContentBlock[], names: Map<string, string>): void {
+  for (const block of blocks) {
+    if (block.type === 'tool-call') names.set(block.id, block.name)
+    if (block.type === 'tool-result') collectToolNames(block.content, names)
+  }
+}
+
+/** Convert a message producer into a terse appendix label. */
+function sourceLabel(message: Message): string {
+  switch (message.source.kind) {
+    case 'user': return 'user'
+    case 'model': return 'assistant'
+    case 'tool': return 'tool result'
+    case 'plugin': return message.source.plugin === 'dsh-compaction-basic'
+      ? 'prior checkpoint'
+      : `context ${message.source.plugin}`
+    default: return 'context'
+  }
+}
+
+/** Recursively collect text, tool arguments, and tool-result text without reasoning. */
+function collectContinuityFragments(
+  blocks: readonly ContentBlock[],
+  source: string,
+  toolEvidence: boolean,
+  toolNames: ReadonlyMap<string, string>,
+): ContinuityFragment[] {
+  const fragments: ContinuityFragment[] = []
+  for (const block of blocks) {
+    if (block.type === 'text') {
+      fragments.push({ text: redactSecrets(block.text), source, toolEvidence })
+    } else if (block.type === 'tool-call') {
+      fragments.push({
+        text: redactSecrets(block.arguments),
+        source: `tool call ${block.name}`,
+        toolEvidence: false,
+      })
+    } else if (block.type === 'tool-result') {
+      const name = toolNames.get(block.toolCallId)
+      fragments.push(...collectContinuityFragments(
+        block.content,
+        name === undefined ? 'tool result' : `tool result ${name}`,
+        true,
+        toolNames,
+      ))
+    }
+  }
+  return fragments
+}
+
+/** Remove common credential assignments and standalone provider-key forms. */
+function redactSecrets(text: string): string {
+  return text
+    .replace(/\b(api[_-]?key|authorization|password|secret|token)\s*[:=]\s*[^\s,;]+/giu, '$1=[REDACTED]')
+    .replace(/\b(?:Bearer\s+)?(?:AIza[\w-]{20,}|sk-[\w-]{16,}|nvapi-[\w-]{16,}|gh[opusr]_[\w-]{16,})\b/gu, '[REDACTED]')
+    .replace(/https?:\/\/[^\s<>{}\[\]"']+/giu, raw => safeUrl(raw) ?? '[REDACTED_URL]')
+}
+
+/** Extract safe URL and Windows-path references from one fragment. */
+function extractReferences(fragment: ContinuityFragment): string[] {
+  const values: string[] = []
+  const urlPattern = /https?:\/\/[^\s<>{}\[\]"']+/giu
+  const quotedWindowsPathPattern = /[`"']([a-z]:\\[^`"'\r\n]+)[`"']/giu
+  const bareWindowsPathPattern = /\b[a-z]:\\[^\s`"'<>|?*,;\])}]+/giu
+
+  for (const match of fragment.text.matchAll(urlPattern)) {
+    const safe = safeUrl(match[0])
+    if (safe !== undefined) values.push(safe)
+  }
+  for (const match of fragment.text.matchAll(quotedWindowsPathPattern)) {
+    const path = normalizeWindowsPath(match[1] ?? '')
+    if (path.length > 3) values.push(path)
+  }
+  for (const match of fragment.text.matchAll(bareWindowsPathPattern)) {
+    const path = normalizeWindowsPath(match[0])
+    if (path.length > 3) values.push(path)
+  }
+  return latestUnique(values, MAX_CONTINUITY_REFERENCES)
+}
+
+/** Strip credentials, query, and fragment from a parseable HTTP(S) reference. */
+function safeUrl(raw: string): string | undefined {
+  try {
+    const url = new URL(trimReference(raw))
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined
+    url.username = ''
+    url.password = ''
+    url.search = ''
+    url.hash = ''
+    return trimReference(url.toString())
+  } catch {
+    return undefined
+  }
+}
+
+/** Remove punctuation that belongs to surrounding prose instead of a reference. */
+function trimReference(value: string): string {
+  return value.replace(/[.,:;!?)\]}]+$/gu, '')
+}
+
+/** Decode JSON-escaped separators so a retained path is directly reusable. */
+function normalizeWindowsPath(value: string): string {
+  return trimReference(value).replace(/\\\\/gu, '\\')
+}
+
+/** Keep concise tool-result lines that carry observable process or endpoint state. */
+function evidenceLines(fragment: ContinuityFragment): string[] {
+  const statePattern = new RegExp([
+    'https?://',
+    '\\b[a-z]:\\\\',
+    '\\bHTTP\\s+\\d{3}\\b',
+    '\\bPID\\s*[:=]?\\s*\\d+\\b',
+    '\\bport(?:a)?\\s*[:=]?\\s*\\d+\\b',
+    '\\b(?:running|listening|started|active|executando|ouvindo|iniciado|aberto|ativo)\\b',
+  ].join('|'), 'iu')
+  return fragment.text.split(/\r?\n/u)
+    .map(line => line.replace(/\s+/gu, ' ').trim())
+    .filter(line => line.length > 0 && statePattern.test(line))
+    .map(line => `${fragment.source}: ${boundLine(line)}`)
+}
+
+/** Bound one retained evidence line without splitting its provenance label. */
+function boundLine(value: string): string {
+  return value.length <= MAX_CONTINUITY_LINE_CHARS
+    ? value
+    : `${value.slice(0, MAX_CONTINUITY_LINE_CHARS - 1)}…`
+}
+
+/** Deduplicate by value while preferring the latest occurrence. */
+function latestUnique(values: readonly string[], limit: number): string[] {
+  const seen = new Set<string>()
+  const reversed: string[] = []
+  for (let index = values.length - 1; index >= 0 && reversed.length < limit; index -= 1) {
+    const value = values[index]
+    if (value === undefined || seen.has(value)) continue
+    seen.add(value)
+    reversed.push(value)
+  }
+  return reversed.reverse()
 }
 
 /** Safe summary content plus the exact auxiliary call envelope recorded with it. */

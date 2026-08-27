@@ -141,6 +141,9 @@ function release(state: TelemetryFetchState): void {
  * non-secret correlation id for clients that defer their fetch until the
  * iterable is consumed. `close` is idempotent and must run after the stream
  * settles or is cancelled.
+ * @param enabled - whether response telemetry interception should be active.
+ * @param sink - callback that receives the captured provider telemetry.
+ * @returns correlation headers plus scoped stream creation and cleanup helpers.
  */
 export function responseTelemetryScope(enabled: boolean, sink: ResponseTelemetrySink): {
   headers: Readonly<Record<string, string>>

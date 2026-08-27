@@ -58,6 +58,6 @@ None; the cache never assembles or sends provider requests.
 
 ## Known Limitations and Deferred Work
 
-- **No eviction or retention surface** — records accumulate per session; pruning stored checkpoints is out-of-band maintenance, same stance as session persistence itself.
+- **No retention scheduler** — internal `purgeSession(id)` fences new writes, invalidates earlier write-backs by epoch, cancels pending timers, and idempotently removes the row for the permanent Session lifecycle. Age- or quota-based checkpoint eviction remains deployment policy.
 - **Interval throttle is per-session coarse** — the timer arms at the first dirty event after a clean write; a steady sub-threshold trickle writes once per interval, not a sliding window.
 - **`coldSnapshot` reads are not deduplicated** — two concurrent cold reads of one session each run the ladder; last write-back wins (rows are equivalent), acceptable for listing-scale call rates.

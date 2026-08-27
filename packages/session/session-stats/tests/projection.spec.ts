@@ -55,6 +55,9 @@ function totals(overrides: Partial<SessionStatsProjection> = {}): SessionStatsPr
   return {
     turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0,
     estimatedApiCostUsdNanos: 0, pricedModelCalls: 0, unpricedModelCalls: 0,
+    confirmedApiCostUsdNanos: 0, tokenEstimatedApiCostUsdNanos: 0,
+    confirmedModelCalls: 0, estimatedModelCalls: 0,
+    unaccountedModelCalls: 0, unaccountedModelAttempts: 0,
     ...overrides,
   }
 }
@@ -199,6 +202,12 @@ describe('sessionStats configured API cost estimate', () => {
       estimatedApiCostUsdNanos: 1_140_000,
       pricedModelCalls: 2,
       unpricedModelCalls: 0,
+      confirmedApiCostUsdNanos: 0,
+      tokenEstimatedApiCostUsdNanos: 1_140_000,
+      confirmedModelCalls: 0,
+      estimatedModelCalls: 2,
+      unaccountedModelCalls: 0,
+      unaccountedModelAttempts: 0,
     })
   })
 
@@ -218,6 +227,12 @@ describe('sessionStats configured API cost estimate', () => {
       estimatedApiCostUsdNanos: 0,
       pricedModelCalls: 0,
       unpricedModelCalls: 1,
+      confirmedApiCostUsdNanos: 0,
+      tokenEstimatedApiCostUsdNanos: 0,
+      confirmedModelCalls: 0,
+      estimatedModelCalls: 0,
+      unaccountedModelCalls: 1,
+      unaccountedModelAttempts: 0,
     })
   })
 
@@ -244,6 +259,117 @@ describe('sessionStats configured API cost estimate', () => {
       estimatedApiCostUsdNanos: 42_000,
       pricedModelCalls: 2,
       unpricedModelCalls: 0,
+      confirmedApiCostUsdNanos: 42_000,
+      tokenEstimatedApiCostUsdNanos: 0,
+      confirmedModelCalls: 2,
+      estimatedModelCalls: 0,
+      unaccountedModelCalls: 0,
+      unaccountedModelAttempts: 0,
+    })
+  })
+
+  it('separates calls without usage from failed attempts without cost evidence', () => {
+    const unknown = createMessage({
+      role: 'assistant', content: [{ type: 'text', text: 'no usage' }],
+      source: { kind: 'model', provider: 'google', model: 'future-model' },
+    })
+    expect(foldPriced([
+      at(100, 'step/start', { turn: 1, step: 1 }),
+      at(110, 'llm/retry', { turn: 1, step: 1 }),
+      at(120, 'llm/retry-started', { turn: 1, step: 1 }),
+      at(130, 'llm/retry', { turn: 1, step: 1 }),
+      at(140, 'llm/retry-started', { turn: 1, step: 1 }),
+      at(150, 'assistant/message', { turn: 1, step: 1, message: unknown }),
+      at(160, 'step/end', { turn: 1, step: 1 }),
+    ])).toMatchObject({
+      estimatedApiCostUsdNanos: 0,
+      pricedModelCalls: 0,
+      unpricedModelCalls: 1,
+      unaccountedModelCalls: 1,
+      unaccountedModelAttempts: 2,
+    })
+  })
+
+  it('keeps usage from a failed attempt separate from final usage in the same step', () => {
+    const cloud = createMessage({
+      role: 'assistant', content: [{ type: 'text', text: 'recovered' }],
+      source: { kind: 'model', provider: 'google', model: 'gemini-3.6-flash' },
+    })
+    const firstUsage = { inputTokens: 100, outputTokens: 10 }
+    const finalUsage = { inputTokens: 200, outputTokens: 20 }
+    expect(foldPriced([
+      at(100, 'request/header', { header: { config: { provider: 'google', model: 'gemini-3.6-flash' } } }),
+      at(110, 'step/start', { turn: 1, step: 1 }),
+      at(120, 'assistant/chunk', { turn: 1, step: 1, chunk: { type: 'usage', usage: firstUsage } }),
+      at(130, 'llm/retry', { turn: 1, step: 1 }),
+      at(140, 'assistant/message', { turn: 1, step: 1, message: cloud, usage: finalUsage }),
+    ])).toMatchObject({
+      tokenEstimatedApiCostUsdNanos: 337_500,
+      estimatedModelCalls: 2,
+      unaccountedModelAttempts: 0,
+    })
+  })
+
+  it('counts a no-usage failover attempt separately from its estimated replacement call', () => {
+    const cloud = createMessage({
+      role: 'assistant', content: [{ type: 'text', text: 'fallback' }],
+      source: { kind: 'model', provider: 'google', model: 'gemini-3.6-flash' },
+    })
+    expect(foldPriced([
+      at(100, 'request/header', { header: { config: { provider: 'omniroute', model: 'auto' } } }),
+      at(110, 'step/start', { turn: 1, step: 1 }),
+      at(120, 'llm/failover', {
+        turn: 1, step: 1,
+        from: { provider: 'omniroute', model: 'auto' },
+        to: { provider: 'google', model: 'gemini-3.6-flash' },
+      }),
+      at(130, 'request/header', { header: { config: { provider: 'google', model: 'gemini-3.6-flash' } } }),
+      at(140, 'assistant/message', {
+        turn: 1, step: 1, message: cloud, usage: { inputTokens: 200, outputTokens: 20 },
+      }),
+    ])).toMatchObject({
+      estimatedApiCostUsdNanos: 225_000,
+      confirmedApiCostUsdNanos: 0,
+      tokenEstimatedApiCostUsdNanos: 225_000,
+      confirmedModelCalls: 0,
+      estimatedModelCalls: 1,
+      unaccountedModelCalls: 0,
+      unaccountedModelAttempts: 1,
+    })
+  })
+
+  it('preserves a confirmed partial charge when failover replacement usage is estimated', () => {
+    const cloud = createMessage({
+      role: 'assistant', content: [{ type: 'text', text: 'fallback' }],
+      source: { kind: 'model', provider: 'google', model: 'gemini-3.6-flash' },
+    })
+    expect(foldPriced([
+      at(100, 'request/header', { header: { config: { provider: 'omniroute', model: 'auto' } } }),
+      at(110, 'step/start', { turn: 1, step: 1 }),
+      at(120, 'assistant/chunk', {
+        turn: 1, step: 1,
+        chunk: {
+          type: 'usage',
+          usage: { inputTokens: 100, outputTokens: 10, providerCostUsdNanos: 42_000 },
+        },
+      }),
+      at(130, 'llm/failover', {
+        turn: 1, step: 1,
+        from: { provider: 'omniroute', model: 'auto' },
+        to: { provider: 'google', model: 'gemini-3.6-flash' },
+      }),
+      at(140, 'request/header', { header: { config: { provider: 'google', model: 'gemini-3.6-flash' } } }),
+      at(150, 'assistant/message', {
+        turn: 1, step: 1, message: cloud, usage: { inputTokens: 200, outputTokens: 20 },
+      }),
+    ])).toMatchObject({
+      estimatedApiCostUsdNanos: 267_000,
+      confirmedApiCostUsdNanos: 42_000,
+      tokenEstimatedApiCostUsdNanos: 225_000,
+      confirmedModelCalls: 1,
+      estimatedModelCalls: 1,
+      unaccountedModelCalls: 0,
+      unaccountedModelAttempts: 0,
     })
   })
 
@@ -282,6 +408,7 @@ describe('sessionStats wall-time fold (controlled timestamps)', () => {
       at(4_900, 'step/end', { turn: 1, step: 1 }),
     ])).toEqual(totals({
       turns: 1, steps: 1, llmMs: 3_800, ttftMs: 800, ttftSteps: 1, decodeMs: 3_000, decodeTokens: 60,
+      unpricedModelCalls: 1, unaccountedModelCalls: 1,
     }))
   })
 
@@ -293,7 +420,10 @@ describe('sessionStats wall-time fold (controlled timestamps)', () => {
       at(3_000, 'assistant/chunk', { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'y' } }),
       at(5_000, 'assistant/message', { turn: 1, step: 1, message }),
       at(5_100, 'step/end', { turn: 1, step: 1 }),
-    ])).toEqual(totals({ turns: 1, steps: 1, llmMs: 4_000, ttftMs: 200, ttftSteps: 1 }))
+    ])).toEqual(totals({
+      turns: 1, steps: 1, llmMs: 4_000, ttftMs: 200, ttftSteps: 1,
+      unpricedModelCalls: 1, unaccountedModelCalls: 1, unaccountedModelAttempts: 1,
+    }))
   })
 
   it('ignores empty deltas, non-token chunks, and chunks outside the open step', () => {
@@ -307,7 +437,10 @@ describe('sessionStats wall-time fold (controlled timestamps)', () => {
       at(1_400, 'assistant/chunk', { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'first' } }),
       at(2_000, 'assistant/message', { turn: 1, step: 1, message }),
       at(2_100, 'step/end', { turn: 1, step: 1 }),
-    ])).toEqual(totals({ turns: 1, steps: 1, llmMs: 1_000, ttftMs: 400, ttftSteps: 1 }))
+    ])).toEqual(totals({
+      turns: 1, steps: 1, llmMs: 1_000, ttftMs: 400, ttftSteps: 1,
+      unpricedModelCalls: 1, unaccountedModelCalls: 1,
+    }))
   })
 
   it('leaves a cancelled step untimed: counted by step/end, no assembled message to accrue from', () => {
@@ -372,7 +505,10 @@ describe('sessionStats wall-time fold (controlled timestamps)', () => {
       at(2_000, 'assistant/message', { turn: 1, step: 1, message, usage: { inputTokens: 1, outputTokens: -5 } }),
     ]
     expect(fold([...events, at(2_100, 'step/end', { turn: 1, step: 1 })]))
-      .toEqual(totals({ turns: 1, steps: 1, llmMs: 1_000, ttftMs: 400, ttftSteps: 1 }))
+      .toEqual(totals({
+        turns: 1, steps: 1, llmMs: 1_000, ttftMs: 400, ttftSteps: 1,
+        unpricedModelCalls: 1, unaccountedModelCalls: 1,
+      }))
     // The first message closed the step boundary; a defensive duplicate finds
     // no open step and folds to the same reference.
     const state = events.reduce<Parameters<typeof sessionStatsProjectionDefinition.apply>[0]>(
@@ -393,6 +529,8 @@ describe('sessionStats wall-time fold (controlled timestamps)', () => {
       at(2_000, 'step/start', { turn: 1, step: 1 }),
       at(1_000, 'assistant/message', { turn: 1, step: 1, message }),
       at(2_100, 'step/end', { turn: 1, step: 1 }),
-    ])).toEqual(totals({ turns: 1, steps: 1 }))
+    ])).toEqual(totals({
+      turns: 1, steps: 1, unpricedModelCalls: 1, unaccountedModelCalls: 1,
+    }))
   })
 })

@@ -11,7 +11,7 @@ import { z as zod } from 'zod'
 import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import type {
-  Agent, AgentOptions, AgentStatus, ModelSelection, ModelSelectionRef, RequestErrorAction,
+  Agent, AgentHandle, AgentOptions, AgentStatus, ModelSelection, ModelSelectionRef, RequestErrorAction,
 } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-presets/types'
 import { AttachmentError, admitEncodedImages } from '@deepseek-ai/dsh-attachment'
@@ -580,6 +580,12 @@ function directoryError(error: unknown): RpcError {
   return { code: 'internal', message: error instanceof Error ? error.message : String(error), details: {} }
 }
 
+/** Adaptive failover route plus the data-residency fact enforced before dispatch. */
+export interface AdaptiveFailoverSelection extends ModelSelection {
+  /** Local execution or a route that may transmit request content externally. */
+  residency: 'local' | 'external'
+}
+
 /** Resolved Agent model and project-directory defaults consumed by the API implementation. */
 export interface ApiProxyDefaults {
   /**
@@ -604,7 +610,7 @@ export interface ApiProxyDefaults {
   /** Optional replacement policy consulted before ordinary retries in automatic mode. */
   adaptiveModelFailover?: (
     input: { provider: string; failure: LlmFailure; hasImage?: boolean },
-  ) => ModelSelection | undefined | Promise<ModelSelection | undefined>
+  ) => AdaptiveFailoverSelection | undefined | Promise<AdaptiveFailoverSelection | undefined>
   /** Passive provider-neutral preflight; records recommendations but never replaces the selected route. */
   adaptiveRoutingShadow?: AdaptiveRoutingShadowConfig
   /** Default project directory for new sessions whose create request carries no cwd. */
@@ -1013,6 +1019,31 @@ class SessionCwdConflict extends Error {
   }
 }
 
+/** A permanent-delete fence closed this identity to new work. */
+class SessionDeletionClosed extends Error {
+  constructor(readonly sessionId: SessionId) {
+    super(`session "${sessionId}" is being deleted or was permanently deleted`)
+  }
+}
+
+/** Permanent deletion was requested for an identity no owner can prove exists. */
+class SessionDeletionUnknown extends Error {
+  constructor(readonly sessionId: SessionId) {
+    super(`cannot delete unknown session "${sessionId}"`)
+  }
+}
+
+/** Workspace accounting rejected the final phase of an admitted create. */
+class SessionWorkspaceAttachFailure extends Error {
+  constructor(
+    readonly sessionId: SessionId,
+    readonly workspaceId: WorkspaceId,
+    cause: unknown,
+  ) {
+    super(`failed to attach session "${sessionId}" to workspace "${workspaceId}"`, { cause })
+  }
+}
+
 /** An explicit Host naming operation would duplicate another Workspace title. */
 class WorkspaceNameConflictError extends Error {
   constructor(readonly workspaceName: string) {
@@ -1076,6 +1107,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   /** Process-local mode choice; automatic is the configured default. */
   const automaticSelections = new WeakMap<Agent, boolean>()
   /**
+   * Process-local, deny-by-default permission for automatic external retries.
+   * Restarting the Host or replacing the Agent revokes it.
+   */
+  const externalFailoverConsents = new WeakMap<Agent, boolean>()
+  /**
    * Serializes `agentPreset.select` per session. Two concurrent selects both
    * pass the blank check, and the second `unmountPresetFor` then finds nothing
    * to unmount because the first already removed the record — leaving two
@@ -1085,11 +1121,26 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   const presetSwitches = new Map<SessionId, Promise<unknown>>()
   /** Client-chosen identity creation/resume, deduplicated across concurrent retries. */
   const sessionCreations = new Map<SessionId, Promise<Agent>>()
+  /** Covers create/resume through its final Workspace accounting commit. */
+  const sessionAdmissions = new Map<SessionId, Promise<void>>()
+  /** Every Host and Typert lookup that may cold-resume an Agent. */
+  const agentResolutions = new Map<SessionId, Set<Promise<void>>>()
+  /** Teardown capabilities for every Agent this gateway created or resumed. */
+  const ownedAgentHandles = new Map<SessionId, AgentHandle>()
+  /** One permanent-delete operation per identity, shared by concurrent RPCs. */
+  const sessionDeletions = new Map<SessionId, Promise<void>>()
+  /** Canonical deletion committed; retained for idempotent retries. */
+  const deletedSessions = new Set<SessionId>()
+  /** Full canonical + derived + workspace deletion completed and published. */
+  const completedSessionDeletions = new Set<SessionId>()
+  /** Suppresses ordinary detach frames until permanent deletion fully commits. */
+  const deletingSessions = new Set<SessionId>()
   /** Serializes path ownership and explicit title checks with Workspace mutations. */
   let workspaceCreationChain = Promise.resolve()
   const pendingQuestions = new Map<RpcId, PendingQuestion>()
   const pendingApprovals = new Map<RpcId, PendingApproval>()
   const muxQueues = new Set<FrameQueue<RpcRequest<MuxFrame>>>()
+  const hostQueues = new Set<FrameQueue<RpcRequest<HostFrame>>>()
   const imageAdmissionChains = new WeakMap<Agent, Promise<void>>()
   /**
    * Route decisions for ordinary messages admitted while another turn is
@@ -1172,6 +1223,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     return automaticSelections.get(agent) ?? defaults.adaptiveModelSelection !== undefined
   }
 
+  /** Whether this session explicitly permitted automatic external retries in this Host process. */
+  function externalFailoverConsented(agent: Agent): boolean {
+    return externalFailoverConsents.get(agent) ?? false
+  }
+
   /** Positive goal round admitted inside the currently open turn, if any. */
   function goalRoundInTurn(agent: Agent, turn: number): number | undefined {
     const start = agent.session.events.findLastIndex(
@@ -1247,7 +1303,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       const visitedProviders = new Set([provider])
       let failedProvider = provider
       for (let hop = 0; hop < 16; hop += 1) {
-        let proposed: ModelSelection | undefined
+        let proposed: AdaptiveFailoverSelection | undefined
         try {
           proposed = await select({ provider: failedProvider, failure, hasImage })
         } catch (error: unknown) {
@@ -1257,6 +1313,12 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           return await next()
         }
         if (proposed === undefined) return await next()
+        if (proposed.residency === 'external' && !externalFailoverConsented(agent)) {
+          ctx.logger.warn(
+            `api-proxy: automatic external failover to ${proposed.provider}/${proposed.model} denied; this session has no external failover consent`,
+          )
+          return await next()
+        }
         if (visitedProviders.has(proposed.provider)) {
           ctx.logger.warn(
             `api-proxy: automatic model failover rejected provider cycle at ${proposed.provider}; delegating to provider retry policy`,
@@ -1405,17 +1467,105 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   // composition, and the header is written once at creation. Reading the
   // header here would silently undo the switch on the next restart and
   // restore that history under the old tool set.
-  const agentFor = createApiRemoteAgentResolver(ctx, {
+  const resolveAgentFor = createApiRemoteAgentResolver(ctx, {
     agentOptions,
+    onHandle: (handle) => { retainAgentHandle(handle) },
+    guard: sessionId => deletingSessions.has(sessionId) || deletedSessions.has(sessionId)
+      ? sessionDeletionError(sessionId)
+      : undefined,
+    onResolution: (sessionId, operation) => {
+      const tracked = operation.then(() => undefined, () => undefined)
+      const pending = agentResolutions.get(sessionId) ?? new Set<Promise<void>>()
+      pending.add(tracked)
+      agentResolutions.set(sessionId, pending)
+      void tracked.then(() => {
+        pending.delete(tracked)
+        if (pending.size === 0 && agentResolutions.get(sessionId) === pending) {
+          agentResolutions.delete(sessionId)
+        }
+      })
+    },
     setup: async ({ meta, events }) =>
       (await composeAgent(resolveSessionPreset({ header: meta, events }))).setup,
   })
+
+  /** Stable caller-facing response while permanent deletion owns an identity. */
+  function sessionDeletionError(sessionId: SessionId) {
+    return {
+      code: 'session-not-found' as const,
+      message: `session "${sessionId}" is being deleted or was permanently deleted`,
+      details: { sessionId },
+    }
+  }
+
+  /** Map failures shared by public session-create and session-fork admission. */
+  function sessionAdmissionFailure(
+    request: RpcRequest<unknown>, error: unknown,
+  ): RpcResponse<never> | undefined {
+    if (error instanceof SessionDeletionClosed) {
+      return err(request, sessionDeletionError(error.sessionId))
+    }
+    if (error instanceof SessionWorkspaceAttachFailure) {
+      return err(request, {
+        code: 'workspace-attach-failed',
+        message: `${error.message}: ${String(error.cause)}`,
+        details: { sessionId: error.sessionId, workspaceId: error.workspaceId },
+      })
+    }
+    return undefined
+  }
+
+  /** Refuse every create/resume/prompt admission after deletion begins. */
+  function assertSessionDeletionOpen(sessionId: SessionId): void {
+    if (!deletingSessions.has(sessionId) && !deletedSessions.has(sessionId)) return
+    throw new SessionDeletionClosed(sessionId)
+  }
+
+  /** Serialize the complete public create transaction for one identity. */
+  function serializeSessionAdmission<T>(sessionId: SessionId, operation: () => Promise<T>): Promise<T> {
+    const previous = sessionAdmissions.get(sessionId) ?? Promise.resolve()
+    const result = previous.then(operation)
+    const tracked = result.then(() => undefined, () => undefined)
+    sessionAdmissions.set(sessionId, tracked)
+    void tracked.then(() => {
+      if (sessionAdmissions.get(sessionId) === tracked) sessionAdmissions.delete(sessionId)
+    })
+    return result
+  }
+
+  /** Host-scoped wrapper adds the deletion fence around the shared cold resolver. */
+  async function agentFor(sessionId: SessionId) {
+    if (deletingSessions.has(sessionId) || deletedSessions.has(sessionId)) {
+      return { error: sessionDeletionError(sessionId) } as const
+    }
+    const found = await resolveAgentFor(sessionId)
+    if ('agent' in found && (deletingSessions.has(sessionId) || deletedSessions.has(sessionId))) {
+      return { error: sessionDeletionError(sessionId) } as const
+    }
+    return found
+  }
 
   /** Send one transient frame to every connected mux consumer. */
   function broadcast(payload: MuxFrame): void {
     const envelope = frame(payload)
     for (const queue of muxQueues) queue.push(envelope)
   }
+
+  /** Send one committed host-domain frame to every connected consumer. */
+  function broadcastHost(payload: HostFrame): void {
+    const envelope = frame(payload)
+    for (const queue of hostQueues) queue.push(envelope)
+  }
+
+  /** Retain the exact teardown capability returned by the Agent registry. */
+  function retainAgentHandle(handle: AgentHandle): Agent {
+    ownedAgentHandles.set(handle.agent.id, handle)
+    return handle.agent
+  }
+
+  ctx.on('agent/disposed', ({ agent }: { agent: Agent }) => {
+    if (ownedAgentHandles.get(agent.id)?.agent === agent) ownedAgentHandles.delete(agent.id)
+  })
 
   // Projection change feed → session/projection push frames. The carrier
   // mints the wire frame (the Service Definition package holds no wire vocabulary); the
@@ -1507,12 +1657,29 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     })
   }
 
+  /** Fail closed every user-interaction wait owned by a deleting Session. */
+  function cancelPendingSessionInteractions(sessionId: SessionId): void {
+    for (const pending of [...pendingApprovals.values()]) {
+      if (pending.sessionId === sessionId) pending.resolve('cancelled')
+    }
+    for (const pending of [...pendingQuestions.values()]) {
+      if (pending.sessionId !== sessionId) continue
+      claimQuestion(pending, 'cancelled')
+      pending.reject(new UserQuestionError(
+        'the session was deleted before the user answered', 'ASK_ABORTED'))
+    }
+  }
+
   const disposeProvider = ctx.userQuestions.registerProvider({
     ask(request: AskUserQuestionRequest): Promise<AskUserQuestionAnswer> {
       const sessionId = request.agent?.id
       if (sessionId === undefined) {
         return Promise.reject(new UserQuestionError(
           'web user interaction requires an agent-owned session', 'ASK_MISSING_AGENT'))
+      }
+      if (deletingSessions.has(sessionId) || deletedSessions.has(sessionId)) {
+        return Promise.reject(new UserQuestionError(
+          'the session was deleted before the user answered', 'ASK_ABORTED'))
       }
       return new Promise<AskUserQuestionAnswer>((resolve, reject) => {
         const rpcId = RpcId(randomUUID())
@@ -1566,6 +1733,10 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       // the signal fired — never invoked, entry pending forever, zombie frame
       // on every mux replay. Settle synchronously instead of publishing.
       if (req.signal?.aborted === true) return Promise.resolve<ApprovalOutcome>('cancelled')
+      const sessionId = req.agent.session.id
+      if (deletingSessions.has(sessionId) || deletedSessions.has(sessionId)) {
+        return Promise.resolve<ApprovalOutcome>('cancelled')
+      }
       // The audit pair `approval/asked` is already appended by the service
       // before dispatch, but dispatch rides a microtask: parallel tool calls
       // can append several asked events before any answerer runs. THIS
@@ -1614,7 +1785,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const onAbort = (): void => { settle('cancelled') }
         const pending: PendingApproval = {
           rpcId: RpcId(randomUUID()),
-          sessionId: req.agent.session.id,
+          sessionId,
           approvalId: id,
           toolName: req.toolName,
           ...req.callId === undefined ? {} : { callId: req.callId },
@@ -1762,6 +1933,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     checkPersistedIdentity: boolean,
     presetId?: string,
   ): Promise<Agent> {
+    assertSessionDeletionOpen(sessionId)
     let creation = sessionCreations.get(sessionId)
     if (creation === undefined) {
       creation = (async () => {
@@ -1795,11 +1967,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           // session's history was produced under that composition, and
           // rebuilding it differently would replay tool calls the model can no
           // longer make.
-          return (await ctx.agents.resume({
+          return retainAgentHandle(await ctx.agents.resume({
             resumeSessionId: sessionId,
             agentOptions: agentOptions(),
             setup: (await composeAgent(storedPreset)).setup,
-          })).agent
+          }))
         }
 
         try {
@@ -1808,7 +1980,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           throw new Error(`failed to ensure project directory "${cwd}": ${String(error)}`, { cause: error })
         }
         const composition = await composeAgent(presetId)
-        return (await ctx.agents.create({
+        return retainAgentHandle(await ctx.agents.create({
           sessionId,
           agentOptions: agentOptions(),
           meta: {
@@ -1816,7 +1988,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             ...composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset },
           },
           setup: composition.setup,
-        })).agent
+        }))
       })().catch((error: unknown) => {
         // Another Host entry path may have published the same identity while
         // this operation crossed an asynchronous persistence/filesystem step.
@@ -1836,6 +2008,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       sessionCreations.set(sessionId, creation)
     }
     const agent = await creation
+    assertSessionDeletionOpen(sessionId)
     if (hasSubagentOwner(agent.session, agent)) throw new SubagentSessionOwnership(sessionId)
     // Beside the cwd check for the same reason, and after the await so it
     // covers every path that yields a live agent — freshly created, adopted
@@ -1845,6 +2018,110 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       throw new SessionCwdConflict(sessionId, cwd, agent.session.header.cwd)
     }
     return agent
+  }
+
+  /**
+   * Permanently remove one session in lifecycle order. Only gateway-owned
+   * live agents expose the required teardown capability; config/external
+   * owners fail explicitly rather than detaching a session behind their back.
+   */
+  function deleteSessionLifecycle(sessionId: SessionId): Promise<void> {
+    if (completedSessionDeletions.has(sessionId)) return Promise.resolve()
+    const existing = sessionDeletions.get(sessionId)
+    if (existing !== undefined) return existing
+    let suppressedAgentRemoval = false
+    const operation = (async () => {
+      // Close admission before awaiting an in-flight create/resume or Agent
+      // teardown. A concurrent prompt must never acknowledge work that this
+      // deletion will immediately discard.
+      deletingSessions.add(sessionId)
+      cancelPendingSessionInteractions(sessionId)
+      const pendingAdmission = sessionAdmissions.get(sessionId)
+      if (pendingAdmission !== undefined) await pendingAdmission
+      const pendingResolutions = agentResolutions.get(sessionId)
+      if (pendingResolutions !== undefined) await Promise.all([...pendingResolutions])
+      const pendingPresetSwitch = presetSwitches.get(sessionId)
+      if (pendingPresetSwitch !== undefined) await pendingPresetSwitch
+      const pendingCreation = sessionCreations.get(sessionId)
+      if (pendingCreation !== undefined) {
+        // The delete fence makes the public create response fail even when its
+        // internal Agent construction wins. Await that construction so this
+        // lifecycle can dispose whatever it published. A failed construction
+        // is not itself a deletion failure; the authoritative existence check
+        // below decides whether anything remains to delete.
+        try {
+          await pendingCreation
+        } catch {
+          // The state inspection below distinguishes a clean miss from any
+          // partially published identity left by the failed construction.
+        }
+      }
+      if (!await deletionTargetKnown(sessionId)) throw new SessionDeletionUnknown(sessionId)
+
+      const live = ctx.agents.get(sessionId)
+      if (live !== undefined) {
+        const handle = ownedAgentHandles.get(sessionId)
+        if (handle === undefined || handle.agent !== live) {
+          throw new Error(`session "${sessionId}" is live under an external owner without a deletion capability`)
+        }
+        live.cancel({ kind: 'disposed' })
+        await live.whenIdle()
+        suppressedAgentRemoval = true
+        await handle.dispose()
+      } else if (ctx.sessions.get(sessionId) !== undefined) {
+        throw new Error(`session "${sessionId}" is live without a gateway-owned Agent deletion capability`)
+      }
+
+      const persistence = ctx.get('sessionPersistence')
+      if (persistence === undefined) {
+        throw new Error('cannot delete a session because persistence is not configured')
+      }
+      await persistence.delete(sessionId)
+      deletedSessions.add(sessionId)
+
+      // Derived owners are optional deployments. Each purge is idempotent and
+      // follows the canonical log commit, preventing a later write-back from
+      // resurrecting a deleted row.
+      await ctx.get('sessionProjectionCache')?.purgeSession(sessionId)
+      await ctx.get('sessionQuery')?.purgeSession(sessionId)
+      const messageFeedback = (ctx.get as (name: string) => unknown)('messageFeedback') as
+        | { purgeSession(id: SessionId): Promise<void> }
+        | undefined
+      await messageFeedback?.purgeSession(sessionId)
+      await ctx.workspaceRegistry.deleteSession(sessionId)
+
+      ownedAgentHandles.delete(sessionId)
+      broadcastHost({ type: 'host/session-deleted', sessionId })
+      completedSessionDeletions.add(sessionId)
+    })()
+    const reported = operation.catch((error: unknown) => {
+      // The ordinary disposal frame was intentionally suppressed while the
+      // permanent workflow owned the identity. If that workflow fails after
+      // actually detaching the Agent, publish the truthful non-permanent
+      // removal so clients do not keep a phantom live Agent until refresh.
+      if (
+        suppressedAgentRemoval
+        && ctx.agents.get(sessionId) === undefined
+        && ctx.sessions.get(sessionId) === undefined
+      ) broadcastHost({ type: 'host/session-removed', sessionId })
+      throw error
+    })
+    const tracked = reported.finally(() => {
+      deletingSessions.delete(sessionId)
+      if (sessionDeletions.get(sessionId) === tracked) sessionDeletions.delete(sessionId)
+    })
+    sessionDeletions.set(sessionId, tracked)
+    return tracked
+  }
+
+  /** Definite identity check used before the destructive lifecycle begins. */
+  async function deletionTargetKnown(sessionId: SessionId): Promise<boolean> {
+    if (deletedSessions.has(sessionId)) return true
+    if (ctx.sessions.get(sessionId) !== undefined || ctx.agents.get(sessionId) !== undefined) return true
+    if (ctx.workspaceRegistry.hasSessionReference(sessionId)) return true
+    const persistence = ctx.get('sessionPersistence')
+    if (persistence === undefined) return false
+    return (await persistence.list()).some(header => header.id === sessionId)
   }
 
   /** Resolve or create one path while holding the Host's workspace-create chain. */
@@ -2264,8 +2541,22 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const cwd = workspace?.path ?? request.payload.cwd ?? defaults.cwd
         const requestedPreset = request.payload.agentPreset
         try {
-          await ensureSession(sessionId, cwd, request.payload.sessionId !== undefined, requestedPreset)
+          await serializeSessionAdmission(sessionId, async () => {
+            assertSessionDeletionOpen(sessionId)
+            await ensureSession(sessionId, cwd, request.payload.sessionId !== undefined, requestedPreset)
+            assertSessionDeletionOpen(sessionId)
+            if (workspace !== undefined) {
+              try {
+                await workspace.attachSession(sessionId)
+              } catch (error: unknown) {
+                throw new SessionWorkspaceAttachFailure(sessionId, workspace.id, error)
+              }
+            }
+            assertSessionDeletionOpen(sessionId)
+          })
         } catch (error: unknown) {
+          const admissionFailure = sessionAdmissionFailure(request, error)
+          if (admissionFailure !== undefined) return admissionFailure
           if (error instanceof AgentPresetConflict) {
             return err(request, {
               code: 'agent-preset-conflict',
@@ -2298,17 +2589,6 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             message: `failed to create session "${sessionId}": ${String(error)}`,
             details: {},
           })
-        }
-        if (workspace !== undefined) {
-          try {
-            await workspace.attachSession(sessionId)
-          } catch (error: unknown) {
-            return err(request, {
-              code: 'workspace-attach-failed',
-              message: `session "${sessionId}" was created but could not attach to workspace "${workspace.id}": ${String(error)}`,
-              details: { sessionId, workspaceId: workspace.id },
-            })
-          }
         }
         // Echo the composition the session RUNS so a client can label it
         // without waiting for the next list refresh — the create is the commit
@@ -2372,13 +2652,16 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           routable,
           automatic: automaticFor(found.agent),
           automaticAvailable: defaults.adaptiveModelSelection !== undefined,
+          externalFailoverConsent: externalFailoverConsented(found.agent),
           groups,
           failures,
         })
       },
 
       async selectModel(request) {
-        const { sessionId, provider, model, reasoningEffort, automatic = false } = request.payload
+        const {
+          sessionId, provider, model, reasoningEffort, automatic = false, externalFailoverConsent = false,
+        } = request.payload
         const found = await agentFor(sessionId)
         if ('error' in found) return err(request, found.error)
         return serializeImageAdmission(found.agent, async () => {
@@ -2402,6 +2685,8 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             }
             selectionFor(found.agent).current = selected
             automaticSelections.set(found.agent, automatic)
+            const effectiveExternalFailoverConsent = automatic && externalFailoverConsent
+            externalFailoverConsents.set(found.agent, effectiveExternalFailoverConsent)
             if (!automatic) {
               try {
                 await defaults.saveDefaultModelSelection?.(selected)
@@ -2411,7 +2696,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
                 )
               }
             }
-            return ok(request, { selected: { ...selected }, automatic })
+            return ok(request, {
+              selected: { ...selected },
+              automatic,
+              externalFailoverConsent: effectiveExternalFailoverConsent,
+            })
           } catch (error: unknown) {
             return err(request, {
               code: 'model-unavailable',
@@ -2454,6 +2743,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       async fork(request) {
         const { sessionId, atSeq } = request.payload
+        if (deletingSessions.has(sessionId) || deletedSessions.has(sessionId)) {
+          return err(request, sessionDeletionError(sessionId))
+        }
         let source: SessionReadState
         try {
           source = await readSessionState(sessionId)
@@ -2466,6 +2758,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             message: `fork source unavailable for session "${sessionId}": ${String(error)}`,
             details: {},
           })
+        }
+        if (deletingSessions.has(sessionId) || deletedSessions.has(sessionId)) {
+          return err(request, sessionDeletionError(sessionId))
         }
         const events = source.events
         // An in-log anchor belongs to the turn containing it and must never
@@ -2512,40 +2807,40 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         // plane, composing nothing would leave the child with no tools at all.
         const forkComposition = await composeAgent(resolveSessionPreset(source))
         try {
-          await ctx.agents.create({
-            sessionId: childId,
-            seed: events.slice(0, cut),
-            meta: {
-              ...source.header.cwd === undefined ? {} : { cwd: source.header.cwd },
-              parentSession: source.id,
-              seedLength: cut,
-              ...forkComposition.agentPreset === undefined
-                ? {}
-                : { agentPreset: forkComposition.agentPreset },
-            },
-            agentOptions: agentOptions(),
-            setup: forkComposition.setup,
+          await serializeSessionAdmission(childId, async () => {
+            assertSessionDeletionOpen(childId)
+            retainAgentHandle(await ctx.agents.create({
+              sessionId: childId,
+              seed: events.slice(0, cut),
+              meta: {
+                ...source.header.cwd === undefined ? {} : { cwd: source.header.cwd },
+                parentSession: source.id,
+                seedLength: cut,
+                ...forkComposition.agentPreset === undefined
+                  ? {}
+                  : { agentPreset: forkComposition.agentPreset },
+              },
+              agentOptions: agentOptions(),
+              setup: forkComposition.setup,
+            }))
+            assertSessionDeletionOpen(childId)
+            if (workspace !== undefined) {
+              try {
+                await workspace.attachSession(childId)
+              } catch (error: unknown) {
+                throw new SessionWorkspaceAttachFailure(childId, workspace.id, error)
+              }
+            }
+            assertSessionDeletionOpen(childId)
           })
         } catch (error: unknown) {
+          const admissionFailure = sessionAdmissionFailure(request, error)
+          if (admissionFailure !== undefined) return admissionFailure
           return err(request, {
             code: 'internal',
             message: `failed to fork session "${sessionId}": ${String(error)}`,
             details: {},
           })
-        }
-        // An ordinary source keeps its direct Workspace. A subagent source is
-        // not listed there, so its ordinary fork joins the nearest owning
-        // ancestor instead. The child is already published if attach fails.
-        if (workspace !== undefined) {
-          try {
-            await workspace.attachSession(childId)
-          } catch (error: unknown) {
-            return err(request, {
-              code: 'workspace-attach-failed',
-              message: `session "${childId}" was forked but could not attach to workspace "${workspace.id}": ${String(error)}`,
-              details: { sessionId: childId, workspaceId: workspace.id },
-            })
-          }
         }
         return ok(request, { sessionId: childId })
       },
@@ -2573,6 +2868,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         }
         const hasImage = content.some(part => part.type === 'image')
         const admit = async (): Promise<RpcResponse<{ accepted: true }>> => {
+          if (deletingSessions.has(sessionId) || deletedSessions.has(sessionId)) {
+            return err(request, sessionDeletionError(sessionId))
+          }
           let stagedMessageId: string | undefined
           try {
             // A queued follow-up may arrive during the previous turn's final
@@ -2610,6 +2908,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
               }
             }
             const durable = await durablePromptContent(ctx, content)
+            if (deletingSessions.has(sessionId) || deletedSessions.has(sessionId)) {
+              return err(request, sessionDeletionError(sessionId))
+            }
             const message: UserMessage = createUserMessage({ content: durable, source })
             if (adaptive !== undefined) {
               if (agent.status === 'running') {
@@ -2698,6 +2999,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       updateQueue(request) {
         const { sessionId, itemId, action } = request.payload
+        if (deletingSessions.has(sessionId) || deletedSessions.has(sessionId)) {
+          return Promise.resolve(err(request, sessionDeletionError(sessionId)))
+        }
         if (action.kind === 'edit' && action.content.some(block => block.type !== 'text')) {
           return Promise.resolve(err(request, {
             code: 'attachment-error',
@@ -3012,6 +3316,10 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       async insertSessionBefore(request) {
         const { payload } = request
+        const closedSessionId = [payload.sessionId, payload.beforeSessionId]
+          .find((id): id is SessionId => id !== undefined
+            && (deletingSessions.has(id) || deletedSessions.has(id)))
+        if (closedSessionId !== undefined) return err(request, sessionDeletionError(closedSessionId))
         const workspace = ctx.workspaceRegistry.get(brandWorkspaceId(payload.workspaceId))
         if (workspace === undefined) return workspaceNotFound(request, payload.workspaceId)
         try {
@@ -3035,6 +3343,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       async archiveSession(request) {
         const { sessionId } = request.payload
+        if (deletingSessions.has(sessionId) || deletedSessions.has(sessionId)) {
+          return err(request, sessionDeletionError(sessionId))
+        }
         try {
           await ctx.workspaceRegistry.archiveSession(sessionId)
         } catch (error: unknown) {
@@ -3048,6 +3359,43 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           })
         }
         return ok(request, { archivedSessionIds: [...ctx.workspaceRegistry.archivedSessionIds] })
+      },
+
+      async unarchiveSession(request) {
+        const { sessionId } = request.payload
+        if (deletingSessions.has(sessionId) || deletedSessions.has(sessionId)) {
+          return err(request, sessionDeletionError(sessionId))
+        }
+        await ctx.workspaceRegistry.unarchiveSession(sessionId)
+        return ok(request, { archivedSessionIds: [...ctx.workspaceRegistry.archivedSessionIds] })
+      },
+
+      async deleteSession(request) {
+        const { sessionId } = request.payload
+        try {
+          await deleteSessionLifecycle(sessionId)
+        } catch (error: unknown) {
+          if (error instanceof SessionDeletionUnknown) {
+            return err(request, {
+              code: 'session-not-found',
+              message: error.message,
+              details: { sessionId: error.sessionId },
+            })
+          }
+          const live = ctx.agents.get(sessionId) ?? ctx.sessions.get(sessionId)
+          if (live !== undefined && ownedAgentHandles.get(sessionId)?.agent !== live) {
+            return err(request, {
+              code: 'agent-busy',
+              message: error instanceof Error ? error.message : String(error),
+              details: { reason: 'session-live-under-external-owner' },
+            })
+          }
+          throw error
+        }
+        return ok(request, {
+          deleted: true as const,
+          archivedSessionIds: [...ctx.workspaceRegistry.archivedSessionIds],
+        })
       },
     },
 
@@ -3229,6 +3577,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         if ('error' in found) return err(request, found.error)
         const { agent } = found
         const swap = async (): Promise<RpcResponse<{ agentPreset: string }>> => {
+          if (deletingSessions.has(sessionId) || deletedSessions.has(sessionId)) {
+            return err(request, sessionDeletionError(sessionId))
+          }
           // Re-read inside the queue: an earlier switch may have run, and a
           // conversation may have started, since this request arrived.
           if (!sessionBlank(agent.session)) {
@@ -3240,6 +3591,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           }
           try {
             const preset = await presets.recompose(agent.ctx, agentPreset)
+            if (deletingSessions.has(sessionId) || deletedSessions.has(sessionId)) {
+              return err(request, sessionDeletionError(sessionId))
+            }
             // Recorded only after the swap committed: the log states what the
             // agent runs, and a rejected mount leaves the previous composition.
             agent.session.append('agent-preset/selected', { agentPreset: preset.id })
@@ -3256,11 +3610,12 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         }
         const queued = presetSwitches.get(sessionId) ?? Promise.resolve()
         const turn = queued.then(swap)
-        presetSwitches.set(sessionId, turn.catch(() => undefined))
+        const tracked = turn.then(() => undefined, () => undefined)
+        presetSwitches.set(sessionId, tracked)
         try {
           return await turn
         } finally {
-          if (presetSwitches.get(sessionId) === turn) presetSwitches.delete(sessionId)
+          if (presetSwitches.get(sessionId) === tracked) presetSwitches.delete(sessionId)
         }
       },
 
@@ -3662,6 +4017,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       host(_request, signal) {
         const queue = new FrameQueue<RpcRequest<HostFrame>>()
+        hostQueues.add(queue)
         const committedWorkspaces = ctx.workspaceRegistry.list()
         const committedWorkspaceIds = new Set(
           committedWorkspaces.map(workspace => String(workspace.id)),
@@ -3684,6 +4040,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             }))
           }),
           ctx.on('session/disposed', (session: Session) => {
+            if (deletingSessions.has(session.id)) return
             queue.push(frame({ type: 'host/session-removed', sessionId: session.id }))
           }),
           ctx.on('agent/status', ({ agent, status }: { agent: Agent; status: AgentStatus }) => {
@@ -3761,7 +4118,10 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             }),
           )),
         ]
-        return queue.iterate(signal, () => { for (const dispose of disposers) dispose() })
+        return queue.iterate(signal, () => {
+          hostQueues.delete(queue)
+          for (const dispose of disposers) dispose()
+        })
       },
     },
 
@@ -3827,6 +4187,10 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       // then questions — the two registries share one id space of UUIDs.
       const approval = pendingApprovals.get(message.rpcId)
       if (approval !== undefined) {
+        if (deletingSessions.has(approval.sessionId) || deletedSessions.has(approval.sessionId)) {
+          approval.resolve('cancelled')
+          return Promise.resolve({ accepted: false, reason: 'not-pending' })
+        }
         if (!message.result.ok) return Promise.resolve({ accepted: false, reason: 'bad-response' })
         const parsed = approvalResponsePayloadSchema.safeParse(message.result.value)
         // The payload's audit correlation must match the entry the rpcId routed
@@ -3839,6 +4203,12 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       }
       const pending = pendingQuestions.get(message.rpcId)
       if (pending === undefined) return Promise.resolve({ accepted: false, reason: 'not-pending' })
+      if (deletingSessions.has(pending.sessionId) || deletedSessions.has(pending.sessionId)) {
+        claimQuestion(pending, 'cancelled')
+        pending.reject(new UserQuestionError(
+          'the session was deleted before the user answered', 'ASK_ABORTED'))
+        return Promise.resolve({ accepted: false, reason: 'not-pending' })
+      }
       if (!message.result.ok) {
         if (message.result.error.code !== 'cancelled') {
           return Promise.resolve({ accepted: false, reason: 'bad-response' })

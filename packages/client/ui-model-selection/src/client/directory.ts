@@ -27,6 +27,8 @@ export interface ModelDirectoryState {
   automatic: boolean
   /** Whether this Host exposes automatic local routing. */
   automaticAvailable: boolean
+  /** Whether automatic retries may send this session's context to an external provider. */
+  externalFailoverConsent: boolean
   /** Successfully loaded provider groups (last good load). */
   groups: readonly ModelProviderGroup[]
   /** Provider-local failures from the last load; usable groups stay usable. */
@@ -45,6 +47,7 @@ export class ModelDirectory {
     routable: null,
     automatic: false,
     automaticAvailable: false,
+    externalFailoverConsent: false,
     groups: [],
     failures: [],
     status: 'idle',
@@ -84,12 +87,15 @@ export class ModelDirectory {
       this.store.update((s) => { s.status = 'error'; s.error = `${result.error.code}: ${result.error.message}` })
       throw new Error(`session.models failed: ${result.error.code}: ${result.error.message}`)
     }
-    const { current, routable, automatic, automaticAvailable, groups, failures } = result.value
+    const {
+      current, routable, automatic, automaticAvailable, externalFailoverConsent, groups, failures,
+    } = result.value
     this.store.update((s) => {
       s.current = current
       s.routable = routable
       s.automatic = automatic
       s.automaticAvailable = automaticAvailable
+      s.externalFailoverConsent = externalFailoverConsent ?? false
       s.groups = groups
       s.failures = failures
       s.status = 'ready'
@@ -104,8 +110,13 @@ export class ModelDirectory {
    * each entry's own retry surface engages.
    * @param selection - provider, provider-owned model id, and optional adapter-owned effort.
    * @param automatic - whether the Host should adapt future prompts between local tiers.
- */
-  async select(selection: ModelSelection, automatic = false): Promise<void> {
+   * @param externalFailoverConsent - whether automatic retries may use an external provider.
+   */
+  async select(
+    selection: ModelSelection,
+    automatic = false,
+    externalFailoverConsent = false,
+  ): Promise<void> {
     this.assertAvailable()
     const generation = ++this.generation
     this.store.update((s) => { s.status = 'selecting'; s.error = null })
@@ -116,7 +127,7 @@ export class ModelDirectory {
       ...selection.reasoningEffort === undefined
         ? {}
         : { reasoningEffort: selection.reasoningEffort },
-      ...automatic ? { automatic: true } : {},
+      ...automatic ? { automatic: true, externalFailoverConsent } : {},
     })
     if (this.disposed || generation !== this.generation) {
       if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
@@ -132,6 +143,7 @@ export class ModelDirectory {
       s.current = result.value.selected
       s.routable = true
       s.automatic = result.value.automatic
+      s.externalFailoverConsent = result.value.externalFailoverConsent ?? false
       s.status = 'ready'
       s.error = null
     })
@@ -150,6 +162,7 @@ export class ModelDirectory {
       s.routable = null
       s.automatic = false
       s.automaticAvailable = false
+      s.externalFailoverConsent = false
       s.groups = []
       s.failures = []
       s.status = 'idle'

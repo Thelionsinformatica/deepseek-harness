@@ -169,6 +169,11 @@ export interface SessionModels {
   automatic: boolean
   /** Whether this deployment exposes a local adaptive policy. */
   automaticAvailable: boolean
+  /**
+   * Whether this process may send this session's automatic retry content to a
+   * failover route declared external. Omission from an older Host means false.
+   */
+  externalFailoverConsent?: boolean
   /** Successfully loaded provider groups. */
   groups: ModelProviderGroup[]
   /** Provider-local failures; successful groups remain usable. */
@@ -308,8 +313,18 @@ export interface SessionsApi {
     reasoningEffort?: string
     /** Enable local adaptive routing; omission selects this model manually. */
     automatic?: boolean
+    /**
+     * Explicitly permit this session's automatic retries to use configured
+     * external failovers. Omission and false deny external transmission.
+     */
+    externalFailoverConsent?: boolean
   }>):
-  Promise<RpcResponse<{ selected: ModelSelection; automatic: boolean }>>
+  Promise<RpcResponse<{
+    selected: ModelSelection
+    automatic: boolean
+    /** Effective process-local consent; omitted only by older Hosts. */
+    externalFailoverConsent?: boolean
+  }>>
 
   /**
    * Renames a session: appends a `session/title` event with the `user`

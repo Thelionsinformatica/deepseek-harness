@@ -24,6 +24,7 @@ import {
   requireCompletionAudit,
   type CompletionAuditorConfig,
 } from './quality-audit.ts'
+import type {} from './completion-evidence.ts'
 import { renderWrapupContext } from './wrapup.ts'
 
 export const name = 'tool-goal'
@@ -429,6 +430,7 @@ export function apply(ctx: Context, config: Config): void {
         if (current === undefined) throw new HarnessError('no current goal exists', 'GOAL_NOT_FOUND')
         requireCompletedTodos(execution, current)
       }
+      let completionAudit: Awaited<ReturnType<typeof requireCompletionAudit>> | undefined
       if (args.action === 'complete' && resolved.completionAuditor !== undefined) {
         const current = authority.kind === 'goal-round' ? authority.goal : ctx.goals.get(execution.agent)
         if (current === undefined) throw new HarnessError('no current goal exists', 'GOAL_NOT_FOUND')
@@ -440,7 +442,7 @@ export function apply(ctx: Context, config: Config): void {
           execution.start.data.turn,
           resolved.completionAuditor.maxAttemptsPerTurn,
         )
-        await requireCompletionAudit(
+        completionAudit = await requireCompletionAudit(
           ctx,
           execution.agent,
           current,
@@ -448,6 +450,9 @@ export function apply(ctx: Context, config: Config): void {
           resolved.completionAuditor,
           exec.signal,
         )
+      }
+      if (completionAudit !== undefined) {
+        execution.agent.session.append('goal/completion-audit', completionAudit)
       }
       const goal = args.action === 'complete'
         ? ctx.goals.complete(execution.agent, ref)

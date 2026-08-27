@@ -265,6 +265,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Owns the local shadow queue, derives workspace authority from a live or persisted Session, and records immutable human decisions through a projected Remote without writing final memory.',
   },
   {
+    key: 'procedureLearning',
+    pkg: 'tool-memory',
+    title: 'Evidence-gated procedure learning',
+    mode: 'core',
+    consumers: ['tool-memory'],
+    note: 'Turns unique successful durable tool trajectories plus independent verifier evidence into reviewable, revalidatable, and revocable workspace procedures without retaining credentials or raw tool results.',
+  },
+  {
     key: 'sessionQuery',
     pkg: 'session-query',
     title: 'Session reads, traces, filters, and search',

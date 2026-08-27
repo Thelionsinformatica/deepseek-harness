@@ -102,6 +102,31 @@ describe('PiAiAdapter provider routing', () => {
     expect(server.headers[0]?.['x-dsh-response-telemetry-id']).toMatch(/^\d+-\d+$/)
   })
 
+  it('ignores OmniRoute cost telemetry on a non-OmniRoute provider', async () => {
+    const server = await mockServer([{
+      events: textEvents,
+      headers: { 'x-omniroute-response-cost': '0.0000000015' },
+      commentsBeforeDone: ['x-omniroute-response-cost=0.0000000035'],
+    }])
+    const adapter = adapterOf({ freellmapi: {
+      api: 'openai-completions',
+      apiKeyEnv: 'PI_TEST_KEY',
+      baseURL: server.url,
+      models: [{ id: 'auto' }],
+    } })
+
+    const chunks = []
+    for await (const chunk of adapter.stream({ provider: 'freellmapi', model: 'auto', messages: [] })) {
+      chunks.push(chunk)
+    }
+
+    expect(chunks.find(chunk => chunk.type === 'usage')).toEqual({
+      type: 'usage',
+      usage: { inputTokens: 3, outputTokens: 1 },
+    })
+    expect(server.headers[0]?.['x-dsh-response-telemetry-id']).toBeUndefined()
+  })
+
   it('keeps concurrent OmniRoute response charges isolated by request', async () => {
     const server = await mockServer([
       {

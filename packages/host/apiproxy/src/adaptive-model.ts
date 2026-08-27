@@ -32,7 +32,7 @@ export interface AdaptiveFailoverConfig {
   /** Provider-owned reasoning effort for the replacement request. */
   reasoningEffort?: string
   /** Local execution or a route that may transmit request content externally. */
-  residency?: 'local' | 'external'
+  residency: 'local' | 'external'
   /** Provider-neutral failure codes that prove the active route is unavailable. */
   failureCodes: string[]
 }
@@ -86,6 +86,13 @@ export interface AdaptiveRoutingDecision {
   model: string
   reasoningEffort?: ReasoningEffortId
   tier: 'fast' | 'main' | 'expert' | 'goal-round' | 'failover'
+}
+
+/** Failover decision carrying the data-residency fact enforced by the Host. */
+export interface AdaptiveFailoverDecision extends AdaptiveRoutingDecision {
+  /** Local execution or a route that may transmit request content externally. */
+  residency: 'local' | 'external'
+  tier: 'failover'
 }
 
 /** Failed request facts available before ordinary provider retry policy runs. */
@@ -196,7 +203,7 @@ export function chooseAdaptiveModel(
 export function chooseAdaptiveFailover(
   config: AdaptiveRoutingConfig,
   input: AdaptiveFailoverInput,
-): AdaptiveRoutingDecision | undefined {
+): AdaptiveFailoverDecision | undefined {
   const failover = config.failovers?.find(candidate =>
     candidate.fromProviders.includes(input.provider)
     && candidate.failureCodes.includes(input.failureCode)
@@ -207,6 +214,7 @@ export function chooseAdaptiveFailover(
   return {
     provider: failover.provider,
     model: failover.model,
+    residency: failover.residency,
     ...failover.reasoningEffort === undefined
       ? {}
       : { reasoningEffort: ReasoningEffortId(failover.reasoningEffort) },

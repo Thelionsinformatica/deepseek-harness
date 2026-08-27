@@ -72,6 +72,8 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/client/ui-sidebar': { kind: 'none', reason: 'Browser-side UI plugin layer; registers nothing model-facing.' },
   'packages/client/ui-brand-official': { kind: 'none', reason: 'Browser-side presentation occupants; registers nothing model-facing.' },
   'packages/client/ui-conversation': { kind: 'none', reason: 'Browser-side UI plugin layer; registers nothing model-facing.' },
+  'packages/client/ui-work-dashboard': { kind: 'none', reason: 'Browser-side Workspace and Session projection; registers nothing model-facing.' },
+  'packages/client/ui-voice': { kind: 'none', reason: 'Browser-side microphone capture; audio remains ephemeral and registers nothing model-facing.' },
   'packages/client/ui-message-feedback': { kind: 'none', reason: 'Browser-side controls over the message-feedback sidecar; ratings and notes never enter the Session log, model context, or telemetry.' },
   'packages/client/ui-tool': { kind: 'none', reason: 'Browser-side Tool presentation layer; renders logged calls without changing model context.' },
   'packages/client/ui-jobs': { kind: 'none', reason: 'Browser-side read-only projection of ctx.jobs records; dsh-tool-jobs owns the model-facing behavior.' },
@@ -166,6 +168,10 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/web/web': { kind: 'indirect', reason: 'The provider registry delegates model rendering to dsh-tool-web.' },
   'packages/web/web-fetch-http': { kind: 'indirect', reason: 'The provider backend delegates model rendering to dsh-tool-web.' },
   'packages/web/web-search-exa': { kind: 'indirect', reason: 'The provider backend delegates model rendering to dsh-tool-web.' },
+  'packages/memory/memory': { kind: 'indirect', reason: 'The provider registry delegates model rendering to dsh-tool-memory.' },
+  'packages/memory/memory-local': { kind: 'indirect', reason: 'The local provider delegates model rendering to dsh-tool-memory.' },
+  'packages/memory/personal-memory': { kind: 'indirect', reason: 'The provider registry delegates model rendering to dsh-tool-memory.' },
+  'packages/memory/personal-memory-local': { kind: 'indirect', reason: 'The local provider delegates model rendering to dsh-tool-memory.' },
   'packages/workflow/workflow': { kind: 'indirect', reason: 'The service delegates parent and child model rendering to its consumer and engine.' },
 }
 

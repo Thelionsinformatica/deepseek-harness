@@ -726,6 +726,56 @@ describe('SQLite session search', () => {
 })
 
 describe('SQLite reconciliation and source lifecycle', () => {
+  it('purges persistent FTS and TEMP rows atomically and idempotently', async () => {
+    const shared = header('purged-derived-session', 10, { cwd: '/work' })
+    TestPersistence.reset([{ meta: shared, events: messageEvents('persisted purge marker') }])
+    const ctx = await liveContext()
+    await ctx.plugin(TestPersistence)
+    const service = ctx.sessionQuery as SqliteSessionQueryEngine
+    await expect(service.searchSessions({ query: 'persisted purge marker' }))
+      .resolves.toMatchObject({ items: [{ header: shared, live: false, persisted: true }] })
+    const live = ctx.sessions.prepare(shared.id, {
+      seed: messageEvents('live purge marker'),
+      meta: shared,
+      seedSource: 'persistence',
+    })
+    const detach = ctx.sessions.enter(live)
+    ctx.sessions.announce(live)
+
+    await expect(service.searchSessions({ query: 'purge marker' }))
+      .resolves.toMatchObject({ items: [{ header: shared, live: true, persisted: true }] })
+    const db = (service as unknown as { _db: DatabaseSync })._db
+    expect(db.prepare('SELECT COUNT(*) AS count FROM persisted_sessions WHERE id = ?').get(shared.id))
+      .toEqual({ count: 1 })
+    expect(db.prepare('SELECT COUNT(*) AS count FROM persisted_docs WHERE session_id = ?').get(shared.id))
+      .toEqual({ count: 1 })
+    expect(db.prepare('SELECT COUNT(*) AS count FROM temp.live_sessions WHERE id = ?').get(shared.id))
+      .toEqual({ count: 1 })
+    expect(db.prepare('SELECT COUNT(*) AS count FROM temp.live_docs WHERE session_id = ?').get(shared.id))
+      .toEqual({ count: 1 })
+
+    TestPersistence.entries.delete(shared.id)
+    TestPersistence.revisions.delete(shared.id)
+    detach()
+    const before = db.prepare(
+      'SELECT global_generation FROM search_state WHERE singleton = 1',
+    ).get() as { global_generation: number }
+    await service.purgeSession(shared.id)
+    await service.purgeSession(shared.id)
+
+    expect(db.prepare('SELECT COUNT(*) AS count FROM persisted_sessions WHERE id = ?').get(shared.id))
+      .toEqual({ count: 0 })
+    expect(db.prepare('SELECT COUNT(*) AS count FROM persisted_docs WHERE session_id = ?').get(shared.id))
+      .toEqual({ count: 0 })
+    expect(db.prepare('SELECT COUNT(*) AS count FROM temp.live_sessions WHERE id = ?').get(shared.id))
+      .toEqual({ count: 0 })
+    expect(db.prepare('SELECT COUNT(*) AS count FROM temp.live_docs WHERE session_id = ?').get(shared.id))
+      .toEqual({ count: 0 })
+    expect(db.prepare('SELECT global_generation FROM search_state WHERE singleton = 1').get())
+      .toEqual({ global_generation: before.global_generation + 1 })
+    await expect(service.searchSessions({ query: 'purge marker' })).resolves.toEqual({ items: [] })
+  })
+
   it('owns queued request and filter values before waiting for the serializer', async () => {
     const durable = header('owned')
     TestPersistence.reset([{ meta: durable, events: messageEvents('durable needle') }])

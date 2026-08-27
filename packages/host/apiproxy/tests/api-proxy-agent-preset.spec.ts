@@ -9,8 +9,10 @@ import { mkdtempSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import AgentRegistry, { type AgentFactory } from '@deepseek-ai/dsh-agent'
+import AgentRegistry, { agentEvents, type AgentFactory } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { AttachmentId } from '@deepseek-ai/dsh-attachment'
+import { createUserMessage, markAgentLoopRequest, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId, type Session } from '@deepseek-ai/dsh-session'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import { RpcId, type RpcRequest } from '../src/api/rpc.ts'
@@ -21,7 +23,7 @@ import {
 import type {} from '@deepseek-ai/dsh-agent-presets/types'
 import { GoalId } from '@deepseek-ai/dsh-goal'
 import { createApiProxy } from '../src/api-proxy.ts'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 let nextRpc = 0
 function request<P>(payload: P): RpcRequest<P> {
@@ -338,6 +340,397 @@ describe('agentPreset.list', () => {
     // Nothing to write to either, so a surface offering "new preset" knows to
     // stay hidden rather than offering a button whose save always fails.
     expect(response.result.value.authorable).toBe(false)
+  })
+})
+
+describe('automatic model failover', () => {
+  it('records a content-free shadow recommendation without changing the request or stream', async () => {
+    const { api, ctx } = await harness(undefined, undefined, {
+      defaults: {
+        adaptiveModelSelection: () => ({ provider: 'test', model: 'local-model' }),
+        adaptiveRoutingShadow: {
+          policyVersion: 'integration-shadow-v1',
+          externalPolicy: 'fallback-only',
+          routes: [
+            { provider: 'test', model: 'local-model', residency: 'local', quality: 1, priority: 10 },
+            { provider: 'cloud', model: 'api-model', residency: 'external', quality: 3, priority: 20 },
+          ],
+        },
+      },
+    })
+    ctx.provide('llm', {
+      resolveCallConfig: (selection: { provider: string; model: string }) => Promise.resolve(selection),
+      resolveModelInfo: (provider: string, model: string) => Promise.resolve({
+        provider,
+        id: model,
+        name: model,
+        context: { contextWindow: provider === 'test' ? 32768 : 262144 },
+        defaultMaxTokens: provider === 'test' ? 8192 : 32768,
+        inputModalities: ['text'],
+      }),
+    } as never)
+    const sessionId = SessionId('automatic-shadow')
+    await api.sessions.create(request({ sessionId }))
+    const agent = ctx.agents.get(sessionId)
+    if (agent === undefined) throw new Error('unreachable')
+    agent.session.append('turn/start', { turn: 1 })
+    agent.session.append('step/start', { turn: 1, step: 0 })
+    const message = createUserMessage({
+      content: [{ type: 'text', text: 'sensitive prompt that must not enter routing telemetry' }],
+      source: { kind: 'user' },
+    })
+    const options = markAgentLoopRequest({
+      provider: 'test',
+      model: 'local-model',
+      messages: [message],
+      maxTokens: 4096,
+      sessionId,
+    })
+    const terminal: StreamChunk = { type: 'finish', reason: { kind: 'stop' } }
+    const stream = ctx.waterfall(
+      'llm/stream',
+      options,
+      () => (async function* (): AsyncGenerator<StreamChunk> { yield terminal })(),
+    )
+    const received: StreamChunk[] = []
+    for await (const chunk of stream) received.push(chunk)
+
+    expect(received).toEqual([terminal])
+    expect(options.provider).toBe('test')
+    expect(options.model).toBe('local-model')
+    await vi.waitFor(() => {
+      expect(agent.session.events.some(event => event.type === 'llm/routing-shadow')).toBe(true)
+    })
+    const recorded = agent.session.events.find(event => event.type === 'llm/routing-shadow')
+    expect(recorded?.data).toMatchObject({
+      schemaVersion: 1,
+      policyVersion: 'integration-shadow-v1',
+      mode: 'shadow',
+      turn: 1,
+      step: 0,
+      observed: { provider: 'test', model: 'local-model' },
+      recommendation: { kind: 'route', provider: 'test', model: 'local-model' },
+      wouldChange: false,
+      request: { messageCount: 1, toolCount: 0, imageCount: 0 },
+    })
+    expect(JSON.stringify(recorded?.data)).not.toContain('sensitive prompt')
+    await ctx.fiber.dispose()
+  })
+
+  it('continues the same request through the configured replacement before provider retries', async () => {
+    let observedHasImage: boolean | undefined
+    const { api, ctx } = await harness(undefined, undefined, {
+      defaults: {
+        adaptiveModelSelection: () => ({ provider: 'test', model: 'local-model' }),
+        adaptiveModelFailover: ({ provider, failure, hasImage }: {
+          provider: string
+          failure: { code: string }
+          hasImage?: boolean
+        }) => {
+          observedHasImage = hasImage
+          return provider === 'test' && failure.code === 'TRANSPORT'
+            ? { provider: 'cloud', model: 'api-model', residency: 'external' as const }
+            : undefined
+        },
+      },
+    })
+    ctx.provide('llm', {
+      resolveCallConfig: (selection: { provider: string; model: string; reasoningEffort?: string }) =>
+        Promise.resolve(selection),
+    } as never)
+    const sessionId = SessionId('automatic-failover')
+    await api.sessions.create(request({ sessionId }))
+    expect(await api.sessions.selectModel(request({
+      sessionId,
+      provider: 'test',
+      model: 'test-model',
+      automatic: true,
+      externalFailoverConsent: true,
+    }))).toMatchObject({ result: { ok: true, value: { externalFailoverConsent: true } } })
+    const agent = ctx.agents.get(sessionId)
+    if (agent === undefined) throw new Error('unreachable')
+    agent.session.append('user/message', createUserMessage({
+      content: [{
+        type: 'image',
+        attachment: {
+          attachmentId: AttachmentId('sha256:private-image'),
+          mediaType: 'image/png',
+          bytes: 1,
+          width: 1,
+          height: 1,
+        },
+      }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    let downstreamCalls = 0
+    const signal = new AbortController().signal
+
+    const decision = await agentEvents(ctx, agent).waterfall('agent/request-error', {
+      turn: 1,
+      step: 0,
+      provider: 'test',
+      failure: { code: 'TRANSPORT', message: 'local connection refused' },
+      retryPolicy: undefined,
+      signal,
+    }, () => {
+      downstreamCalls += 1
+      return Promise.resolve(undefined)
+    })
+
+    expect(decision).toEqual({ kind: 'retry' })
+    expect(observedHasImage).toBe(true)
+    expect(downstreamCalls).toBe(0)
+    expect(agent.session.events.at(-1)).toMatchObject({
+      type: 'llm/failover',
+      data: {
+        turn: 1,
+        step: 0,
+        from: { provider: 'test', model: 'test-model' },
+        to: { provider: 'cloud', model: 'api-model' },
+        failure: { code: 'TRANSPORT', message: 'local connection refused' },
+        reason: 'provider-unavailable',
+      },
+    })
+    await expect(agentEvents(ctx, agent).waterfall('agent/request', {
+      turn: 1,
+      step: 0,
+      signal,
+    }, () => Promise.resolve({ provider: 'test', model: 'test-model' })))
+      .resolves.toMatchObject({ provider: 'cloud', model: 'api-model' })
+    await ctx.fiber.dispose()
+  })
+
+  it('denies a text-only external retry until this session explicitly consents', async () => {
+    const { api, ctx } = await harness(undefined, undefined, {
+      defaults: {
+        adaptiveModelSelection: () => ({ provider: 'test', model: 'local-model' }),
+        adaptiveModelFailover: () => ({
+          provider: 'cloud', model: 'api-model', residency: 'external' as const,
+        }),
+      },
+    })
+    const resolveCallConfig = vi.fn((selection: { provider: string; model: string }) => Promise.resolve(selection))
+    ctx.provide('llm', { resolveCallConfig } as never)
+    const sessionId = SessionId('external-failover-consent')
+    await api.sessions.create(request({ sessionId }))
+    const agent = ctx.agents.get(sessionId)
+    if (agent === undefined) throw new Error('unreachable')
+    agent.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'private customer context' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    let downstreamCalls = 0
+    const failure = {
+      turn: 1,
+      step: 0,
+      provider: 'test',
+      failure: { code: 'TRANSPORT' as const, message: 'local connection refused' },
+      retryPolicy: undefined,
+      signal: new AbortController().signal,
+    }
+
+    const denied = await agentEvents(ctx, agent).waterfall('agent/request-error', failure, () => {
+      downstreamCalls += 1
+      return Promise.resolve(undefined)
+    })
+
+    expect(denied).toBeUndefined()
+    expect(downstreamCalls).toBe(1)
+    expect(resolveCallConfig).not.toHaveBeenCalled()
+    expect(agent.session.events.some(event => event.type === 'llm/failover')).toBe(false)
+
+    const consented = await api.sessions.selectModel(request({
+      sessionId,
+      provider: 'test',
+      model: 'test-model',
+      automatic: true,
+      externalFailoverConsent: true,
+    }))
+    expect(consented).toMatchObject({ result: { ok: true, value: { externalFailoverConsent: true } } })
+    resolveCallConfig.mockClear()
+
+    const allowed = await agentEvents(ctx, agent).waterfall('agent/request-error', failure, () => {
+      downstreamCalls += 1
+      return Promise.resolve(undefined)
+    })
+    expect(allowed).toEqual({ kind: 'retry' })
+    expect(downstreamCalls).toBe(1)
+    expect(resolveCallConfig).toHaveBeenCalledWith({
+      provider: 'cloud', model: 'api-model', residency: 'external',
+    })
+    expect(agent.session.events.at(-1)).toMatchObject({
+      type: 'llm/failover',
+      data: { to: { provider: 'cloud', model: 'api-model' } },
+    })
+    await ctx.fiber.dispose()
+  })
+
+  it('skips an unavailable intermediate adapter and continues through the next configured fallback', async () => {
+    const attemptedProviders: string[] = []
+    const { api, ctx } = await harness(undefined, undefined, {
+      defaults: {
+        adaptiveModelSelection: () => ({ provider: 'test', model: 'local-model' }),
+        adaptiveModelFailover: ({ provider }: { provider: string }) => {
+          attemptedProviders.push(provider)
+          if (provider === 'test') return { provider: 'missing', model: 'missing-model', residency: 'local' as const }
+          if (provider === 'missing') return { provider: 'cloud', model: 'api-model', residency: 'local' as const }
+          return undefined
+        },
+      },
+    })
+    ctx.provide('llm', {
+      resolveCallConfig: (selection: { provider: string; model: string }) => {
+        if (selection.provider === 'missing') throw new Error('no adapter registered')
+        return Promise.resolve(selection)
+      },
+    } as never)
+    const sessionId = SessionId('automatic-skip-unavailable-fallback')
+    await api.sessions.create(request({ sessionId }))
+    const agent = ctx.agents.get(sessionId)
+    if (agent === undefined) throw new Error('unreachable')
+    let downstreamCalls = 0
+
+    const decision = await agentEvents(ctx, agent).waterfall('agent/request-error', {
+      turn: 1,
+      step: 0,
+      provider: 'test',
+      failure: { code: 'TRANSPORT', message: 'local connection refused' },
+      retryPolicy: undefined,
+      signal: new AbortController().signal,
+    }, () => {
+      downstreamCalls += 1
+      return Promise.resolve(undefined)
+    })
+
+    expect(decision).toEqual({ kind: 'retry' })
+    expect(attemptedProviders).toEqual(['test', 'missing'])
+    expect(downstreamCalls).toBe(0)
+    expect(agent.session.events.at(-1)).toMatchObject({
+      type: 'llm/failover',
+      data: {
+        from: { provider: 'test', model: 'test-model' },
+        to: { provider: 'cloud', model: 'api-model' },
+      },
+    })
+    await ctx.fiber.dispose()
+  })
+
+  it('rejects a configured provider cycle and delegates once to ordinary recovery', async () => {
+    const { api, ctx } = await harness(undefined, undefined, {
+      defaults: {
+        adaptiveModelSelection: () => ({ provider: 'test', model: 'local-model' }),
+        adaptiveModelFailover: ({ provider }: { provider: string }) =>
+          provider === 'test'
+            ? { provider: 'cloud', model: 'api-model', residency: 'local' as const }
+            : { provider: 'test', model: 'local-model', residency: 'local' as const },
+      },
+    })
+    ctx.provide('llm', {
+      resolveCallConfig: () => {
+        throw new Error('candidate unavailable')
+      },
+    } as never)
+    const sessionId = SessionId('automatic-provider-cycle')
+    await api.sessions.create(request({ sessionId }))
+    const agent = ctx.agents.get(sessionId)
+    if (agent === undefined) throw new Error('unreachable')
+    let downstreamCalls = 0
+
+    const decision = await agentEvents(ctx, agent).waterfall('agent/request-error', {
+      turn: 1,
+      step: 0,
+      provider: 'test',
+      failure: { code: 'TRANSPORT', message: 'local connection refused' },
+      retryPolicy: undefined,
+      signal: new AbortController().signal,
+    }, () => {
+      downstreamCalls += 1
+      return Promise.resolve(undefined)
+    })
+
+    expect(decision).toBeUndefined()
+    expect(downstreamCalls).toBe(1)
+    expect(agent.session.events.some(event => event.type === 'llm/failover')).toBe(false)
+    await ctx.fiber.dispose()
+  })
+
+  it('stops the cascade when cancellation lands during candidate resolution', async () => {
+    const attemptedProviders: string[] = []
+    const controller = new AbortController()
+    const { api, ctx } = await harness(undefined, undefined, {
+      defaults: {
+        adaptiveModelSelection: () => ({ provider: 'test', model: 'local-model' }),
+        adaptiveModelFailover: ({ provider }: { provider: string }) => {
+          attemptedProviders.push(provider)
+          return { provider: 'cloud', model: 'api-model', residency: 'local' as const }
+        },
+      },
+    })
+    ctx.provide('llm', {
+      resolveCallConfig: () => {
+        controller.abort()
+        throw new Error('resolution cancelled')
+      },
+    } as never)
+    const sessionId = SessionId('automatic-cancel-cascade')
+    await api.sessions.create(request({ sessionId }))
+    const agent = ctx.agents.get(sessionId)
+    if (agent === undefined) throw new Error('unreachable')
+    let downstreamCalls = 0
+
+    const decision = await agentEvents(ctx, agent).waterfall('agent/request-error', {
+      turn: 1,
+      step: 0,
+      provider: 'test',
+      failure: { code: 'TRANSPORT', message: 'local connection refused' },
+      retryPolicy: undefined,
+      signal: controller.signal,
+    }, () => {
+      downstreamCalls += 1
+      return Promise.resolve(undefined)
+    })
+
+    expect(decision).toBeUndefined()
+    expect(attemptedProviders).toEqual(['test'])
+    expect(downstreamCalls).toBe(0)
+    expect(agent.session.events.some(event => event.type === 'llm/failover')).toBe(false)
+    await ctx.fiber.dispose()
+  })
+
+  it('preserves manual selection and delegates its failure to ordinary recovery', async () => {
+    const { api, ctx } = await harness(undefined, undefined, {
+      defaults: {
+        adaptiveModelSelection: () => ({ provider: 'test', model: 'local-model' }),
+        adaptiveModelFailover: () => ({ provider: 'cloud', model: 'api-model', residency: 'external' }),
+      },
+    })
+    ctx.provide('llm', {
+      resolveCallConfig: (selection: { provider: string; model: string; reasoningEffort?: string }) =>
+        Promise.resolve(selection),
+    } as never)
+    const sessionId = SessionId('manual-no-failover')
+    await api.sessions.create(request({ sessionId }))
+    await api.sessions.selectModel(request({ sessionId, provider: 'test', model: 'manual-model' }))
+    const agent = ctx.agents.get(sessionId)
+    if (agent === undefined) throw new Error('unreachable')
+    let downstreamCalls = 0
+
+    const decision = await agentEvents(ctx, agent).waterfall('agent/request-error', {
+      turn: 1,
+      step: 0,
+      provider: 'test',
+      failure: { code: 'TRANSPORT', message: 'manual route failed' },
+      retryPolicy: undefined,
+      signal: new AbortController().signal,
+    }, () => {
+      downstreamCalls += 1
+      return Promise.resolve(undefined)
+    })
+
+    expect(decision).toBeUndefined()
+    expect(downstreamCalls).toBe(1)
+    expect(agent.session.events.some(event => event.type === 'llm/failover')).toBe(false)
+    await ctx.fiber.dispose()
   })
 })
 

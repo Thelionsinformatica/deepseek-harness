@@ -365,6 +365,19 @@ describe('normalizeSessionLog', () => {
       .toContain(String.raw`{{cwd}}\\nested\\proof.txt`)
   })
 
+  it('scrubs Windows cwd paths embedded in JSON text inside a session event', () => {
+    const windowsCtx: NormalizeContext = { sessionIds: [], cwd: String.raw`C:\work\snapshot` }
+    const nestedJson = JSON.stringify({ path: `${windowsCtx.cwd}\\nested\\proof.txt` }, null, 2)
+    const ev = JSON.stringify({
+      type: 'tool/result', seq: 2, time: 5,
+      data: { content: [{ type: 'text', text: nestedJson }] },
+    })
+
+    const out = normalizeSessionLog(`${header({ cwd: windowsCtx.cwd })}\n${ev}\n`, windowsCtx)
+    expect(out).toContain(String.raw`\"path\": \"{{cwd}}/nested/proof.txt\"`)
+    expect(out).not.toContain(String.raw`C:\\work\\snapshot`)
+  })
+
   it('scrubs the session id in the header', () => {
     const out = normalizeSessionLog(`${header({ id: ctx.sessionIds[0] })}\n`, ctx)
     expect(out).toContain('{{sessionId}}')

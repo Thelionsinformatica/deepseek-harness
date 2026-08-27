@@ -65,6 +65,7 @@
   name: '@deepseek-ai/dsh-tool-todo'
   config:
     allowParallelInProgress: true
+    preserveExistingItems: false
 
 - id: fs-local
   name: '@deepseek-ai/dsh-fs-local'

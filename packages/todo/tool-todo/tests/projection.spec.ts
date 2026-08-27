@@ -42,7 +42,7 @@ async function harness(withTodoTool: boolean): Promise<Bench> {
   await ctx.plugin(UserQuestionService)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(SessionProjectionRegistry)
-  if (withTodoTool) await ctx.plugin(ToolTodo, { allowParallelInProgress: true })
+  if (withTodoTool) await ctx.plugin(ToolTodo, { allowParallelInProgress: true, preserveExistingItems: false })
   const session = ctx.sessions.create()
   ctx.agents.register({ id: session.id, session, status: 'idle', ctx } as Agent)
   const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
@@ -91,7 +91,7 @@ describe('todos projection provider', () => {
     expect(projections?.asOfSeq).toBe(session.seq - 1)
   })
 
-  it('clears the standing plan on the next turn/start (turn/end keeps it)', async () => {
+  it('keeps the standing plan across an automatic turn and clears it on the next direct-human message', async () => {
     const bench = await harness(true)
     const session = bench.session
     seedMessage(session)
@@ -99,7 +99,16 @@ describe('todos projection provider', () => {
     session.append('todo/write', { todos: list })
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     expect((await bench.tailProjections())?.values.todos).toEqual(list)
-    session.append('turn/start', { turn: 1 })
+    session.append('turn/start', { turn: 2 })
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'automatic continuation' }],
+      source: { kind: 'plugin', plugin: 'test' },
+    }), { surfaceOp: 'append' })
+    expect((await bench.tailProjections())?.values.todos).toEqual(list)
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'start different work' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
     const cleared = await bench.tailProjections()
     expect(cleared?.values.todos).toBeNull()
     expect(cleared?.asOfSeq).toBe(session.seq - 1)
@@ -116,7 +125,7 @@ describe('todos projection provider', () => {
   it('drops the key when the tool-todo fiber unloads (HMR safety)', async () => {
     const bench = await harness(false)
     seedMessage(bench.session)
-    const fiber = await bench.ctx.plugin(ToolTodo, { allowParallelInProgress: true })
+    const fiber = await bench.ctx.plugin(ToolTodo, { allowParallelInProgress: true, preserveExistingItems: false })
     expect((await bench.tailProjections())?.values.todos).toBeNull()
     await fiber.dispose()
     expect('todos' in ((await bench.tailProjections())?.values ?? {})).toBe(false)

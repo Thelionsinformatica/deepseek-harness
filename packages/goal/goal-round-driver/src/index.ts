@@ -6,6 +6,7 @@
 import { isDeepStrictEqual } from 'node:util'
 import { FiberState } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
 import type { GoalMessageSource, GoalRef, GoalView } from '@deepseek-ai/dsh-goal'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -17,6 +18,115 @@ export { renderGoalRoundPrompt } from './prompt.ts'
 
 export const name = 'goal-round-driver'
 export const inject = ['agents', 'goals', 'sessions']
+
+/** Deployment policy for automatic goal admission. */
+export interface Config {
+  /** Agent preset ids whose complex direct-human tasks become goals; `*` matches every preset. */
+  autoStartPresets?: string[]
+  /** Round cap assigned to goals admitted by this driver. */
+  autoStartMaxGoalRounds?: number
+  /** Maximum model steps in one armed-goal turn; zero leaves turns unbounded. */
+  maxStepsPerTurn?: number
+}
+
+/** Loader schema for the opt-in automatic-admission policy. */
+export const Config: z<Config> = z.object({
+  autoStartPresets: z.array(z.string()).default([]),
+  autoStartMaxGoalRounds: z.number().step(1).min(1).default(12),
+  maxStepsPerTurn: z.natural().default(0),
+})
+
+/** Imperative work verbs, deliberately narrower than general analysis or questions. */
+const EXECUTION_MARKERS = new RegExp(
+  String.raw`\b(?:${[
+    'crie|criar|construa|construir|desenvolva|desenvolver',
+    'implemente|implementar|configure|configurar|instale|instalar',
+    'integre|integrar|acople|acoplar|corrija|corrigir|resolva|resolver',
+    'refatore|refatorar|melhore|melhorar|migre|migrar',
+    'execute|executar|testar|valide|validar|entregue|entregar',
+    'build|implement|configure|install|integrate|fix|resolve',
+    'refactor|improve|migrate|execute|validate|deliver',
+  ].join('|')})\b`,
+  'iu',
+)
+
+/** Concrete artifacts that distinguish implementation work from a short command or factual request. */
+const WORK_TARGET_MARKERS = new RegExp(
+  String.raw`\b(?:${[
+    'projeto|site|aplicativo|app|sistema|c[oó]digo|arquivo|pasta',
+    'reposit[oó]rio|frontend|backend|banco de dados|api|interface',
+    'dashboard|build|testes?|migra[cç][aã]o|deploy',
+    'project|website|application|code|file|folder|repository|database|tests?',
+  ].join('|')})\b`,
+  'iu',
+)
+
+/** Explicit persistence language independently signals multi-round intent. */
+const PERSISTENCE_MARKERS = new RegExp(
+  String.raw`\b(?:${[
+    'at[eé] (?:terminar|concluir|funcionar|validar)',
+    'n[aã]o pare|sem parar|do in[ií]cio ao fim|completo|completa',
+    'continue trabalhando|until (?:done|complete|working|validated)',
+    'do not stop|keep working|end[- ]to[- ]end',
+  ].join('|')})\b`,
+  'iu',
+)
+
+/** Common one-line health probes ask for a response, not project execution. */
+const RESPONSE_ONLY_MARKER = /^(?:teste local:\s*)?(?:responda|diga)\s+(?:apenas|somente)\b|^(?:local test:\s*)?(?:answer|say)\s+only\b/iu
+
+/** Explicit read-only/no-tool constraints override incidental execution words elsewhere in the prompt. */
+const NON_EXECUTION_MARKER = new RegExp(
+  String.raw`\b(?:${[
+    'n[aã]o (?:altere|modifique|edite) (?:arquivos?|nada)',
+    'n[aã]o (?:use|utilize) ferramentas?',
+    'sem (?:alterar|modificar|editar) arquivos?',
+    'do not (?:modify|edit|change) (?:files?|anything)',
+    'do not use tools?',
+    'without (?:modifying|editing|changing) files?',
+  ].join('|')})\b`,
+  'iu',
+)
+
+/**
+ * Decide whether accepted direct-human content is implementation work that needs autonomous rounds.
+ * The policy requires an execution verb plus either a concrete artifact, explicit persistence, or
+ * enough structure to make a single-turn answer unsafe. It never performs network or model calls.
+ * @param content - accepted human message blocks after downstream pre-step rewrites.
+ * @returns whether the driver should create a persisted goal.
+ */
+export function shouldAutoStartGoal(content: readonly ContentBlock[]): boolean {
+  const text = content
+    .filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text')
+    .map(block => block.text)
+    .join('\n')
+    .trim()
+  if (text.length === 0
+    || RESPONSE_ONLY_MARKER.test(text)
+    || NON_EXECUTION_MARKER.test(text)
+    || !EXECUTION_MARKERS.test(text)) return false
+  return WORK_TARGET_MARKERS.test(text)
+    || PERSISTENCE_MARKERS.test(text)
+    || text.length > 280
+    || text.split(/\r?\n/u).length > 4
+}
+
+/** Validate direct apply calls as strictly as Loader-normalized configuration. */
+function resolveConfig(config: Config): Required<Config> {
+  const autoStartPresets = config.autoStartPresets ?? []
+  if (autoStartPresets.some(preset => preset.length === 0 || preset !== preset.trim())) {
+    throw new TypeError('autoStartPresets entries must be non-empty normalized strings')
+  }
+  const autoStartMaxGoalRounds = config.autoStartMaxGoalRounds ?? 12
+  if (!Number.isSafeInteger(autoStartMaxGoalRounds) || autoStartMaxGoalRounds < 1) {
+    throw new TypeError('autoStartMaxGoalRounds must be a positive safe integer')
+  }
+  const maxStepsPerTurn = config.maxStepsPerTurn ?? 0
+  if (!Number.isSafeInteger(maxStepsPerTurn) || maxStepsPerTurn < 0) {
+    throw new TypeError('maxStepsPerTurn must be a non-negative safe integer')
+  }
+  return { autoStartPresets: [...new Set(autoStartPresets)], autoStartMaxGoalRounds, maxStepsPerTurn }
+}
 
 /** Identity reserved before a goal continuation enters the agent inbox. */
 interface RoundIdentity {
@@ -43,6 +153,7 @@ interface DriverState {
   requested: boolean
   run: Promise<void> | undefined
   stopping: boolean
+  budgetCancellation: boolean
 }
 
 /** Whether a source identifies an automatic, positive-numbered goal round. */
@@ -73,8 +184,37 @@ function renderThrown(value: unknown): string {
 }
 
 /** Install automatic same-session continuation and its race fences. */
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, config: Config = {}): void {
+  const resolved = resolveConfig(config)
   const states = new Map<Agent, DriverState>()
+
+  /** Whether this exact root agent belongs to the deployment's automatic-goal cohort. */
+  function automaticAdmissionEnabled(agent: Agent): boolean {
+    if (!ctx.agents.roots().includes(agent)) return false
+    const preset = agent.session.header.agentPreset
+    return resolved.autoStartPresets.includes('*')
+      || (preset !== undefined && resolved.autoStartPresets.includes(preset))
+  }
+
+  /** Admit at most one goal from the accepted direct-human batch. Failures never reject the user's step. */
+  function admitAutomaticGoal(agent: Agent, messages: readonly UserMessage[]): void {
+    if (!automaticAdmissionEnabled(agent)) return
+    const current = ctx.goals.get(agent)
+    if (current !== undefined && current.phase !== 'complete') return
+    const human = messages.filter(message => message.source.kind === 'user')
+    const content = human.flatMap(message => message.content)
+    if (!shouldAutoStartGoal(content)) return
+    const objective = content
+      .filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text')
+      .map(block => block.text)
+      .join('\n')
+      .trim()
+    try {
+      ctx.goals.create(agent, { objective, maxGoalRounds: resolved.autoStartMaxGoalRounds })
+    } catch (error: unknown) {
+      ctx.logger.warn(`goal-round-driver: could not auto-start a goal for agent "${agent.id}": ${renderThrown(error)}`)
+    }
+  }
 
   /** Create state for an exact currently live agent. */
   function stateFor(agent: Agent): DriverState {
@@ -88,6 +228,7 @@ export function apply(ctx: Context): void {
       requested: false,
       run: undefined,
       stopping: false,
+      budgetCancellation: false,
     }
     states.set(agent, state)
     return state
@@ -255,6 +396,7 @@ export function apply(ctx: Context): void {
       state.attempt = undefined
       state.competingQueued = false
       state.needsCheckpoint = false
+      state.budgetCancellation = false
     })
     ctx.on('agent/status', ({ agent, status }) => {
       const state = stateFor(agent)
@@ -309,12 +451,34 @@ export function apply(ctx: Context): void {
       if (agent === undefined || agent.session !== session) return
       const state = stateFor(agent)
       switch (event.type) {
+        case 'step/end': {
+          if (resolved.maxStepsPerTurn === 0 || event.data.step < resolved.maxStepsPerTurn
+            || state.budgetCancellation || !automaticAdmissionEnabled(agent)) return
+          const goal = currentGoal(state)
+          if (goal === undefined || goal.phase !== 'active' || goal.activation !== 'armed') return
+          state.budgetCancellation = true
+          // A budget edge is an orchestration checkpoint, not a user abort.
+          // Remove the admitted reservation so idle scheduling advances to
+          // the next numbered round instead of pausing the goal.
+          state.attempt = undefined
+          agent.cancel({ kind: 'hook', reason: 'goal-step-budget' })
+          return
+        }
         case 'user/message':
           if (state.attempt !== undefined && event.data.id === state.attempt.messageId) {
             state.attempt.phase = 'admitted'
           }
           return
         case 'turn/end':
+          if (event.data.reason.kind === 'aborted'
+            && event.data.reason.reason.kind === 'hook'
+            && event.data.reason.reason.reason === 'goal-step-budget'
+            && state.budgetCancellation) {
+            state.budgetCancellation = false
+            state.needsCheckpoint = true
+            state.attempt = undefined
+            return
+          }
           if (event.data.reason.kind === 'max-tokens') {
             disarm(state)
             return
@@ -349,7 +513,11 @@ export function apply(ctx: Context): void {
     ctx.on('agent/pre-step', async ({ agent, messages, signal }, next): Promise<PreStepDecision> => {
       const submitted = messages.find((message): message is UserMessage & { source: GoalMessageSource } =>
         isGoalRoundSource(message.source))
-      if (submitted === undefined) return next()
+      if (submitted === undefined) {
+        const decision = await next()
+        if (!signal.aborted && decision.kind === 'enter') admitAutomaticGoal(agent, decision.messages)
+        return decision
+      }
       const { content, source } = submitted
       const state = stateFor(agent)
       let valid = false

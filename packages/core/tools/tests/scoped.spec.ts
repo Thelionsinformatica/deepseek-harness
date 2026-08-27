@@ -33,6 +33,20 @@ async function mintAgentScope(ctx: Context, name: string): Promise<{ scope: Scop
   return { scope, key }
 }
 
+/** Mint a child scope parented to `parent`, as a subagent or preset child does. */
+async function mintChildScope(
+  ctx: Context,
+  parent: Agent,
+  name: string,
+): Promise<{ scope: Scope; key: Agent }> {
+  const key = { id: name as SessionId } as Agent
+  bindScopeParent(key, parent)
+  let scope!: Scope
+  await ctx.plugin(Object.assign((inner: Context) => { scope = createScope(inner, key) },
+    { inject: ['tools', 'systemPrompt'] }))
+  return { scope, key }
+}
+
 function tool(name: string, reply = `ran:${name}`): ToolDefinition {
   return {
     name,
@@ -202,16 +216,6 @@ describe('restrict()', () => {
 })
 
 describe('restrict() over an inherited scope layer', () => {
-  /** Mint a child scope parented to `parent`, as a subagent's creation window does. */
-  async function mintChild(ctx: Context, parentKey: Agent, name: string): Promise<{ scope: Scope; key: Agent }> {
-    const key = { id: name as SessionId } as Agent
-    bindScopeParent(key, parentKey)
-    let scope!: Scope
-    await ctx.plugin(Object.assign((inner: Context) => { scope = createScope(inner, key) },
-      { inject: ['tools', 'systemPrompt'] }))
-    return { scope, key }
-  }
-
   it('filters tools the child inherits from an ancestor scope, not only global ones', async () => {
     // The shape every preset deployment has: no model-facing row in the global
     // layer, all of them contributed by an ancestor scope the child joined.
@@ -219,7 +223,7 @@ describe('restrict() over an inherited scope layer', () => {
     const parent = await mintAgentScope(ctx, 'parent')
     parent.scope.ctx.tools.register(tool('bash'))
     parent.scope.ctx.tools.register(tool('read'))
-    const child = await mintChild(ctx, parent.key, 'child')
+    const child = await mintChildScope(ctx, parent.key, 'child')
 
     expect(ctx.tools.schemas(child.key).map(t => t.name).sort()).toEqual(['bash', 'read'])
     child.scope.ctx.tools.restrict({ deny: ['bash'] })
@@ -240,7 +244,7 @@ describe('restrict() over an inherited scope layer', () => {
     const parent = await mintAgentScope(ctx, 'parent')
     parent.scope.ctx.tools.register(tool('bash'))
     parent.scope.ctx.tools.register(tool('read'))
-    const child = await mintChild(ctx, parent.key, 'child')
+    const child = await mintChildScope(ctx, parent.key, 'child')
     child.scope.ctx.tools.register(tool('report'))
 
     child.scope.ctx.tools.restrict({ allow: ['read'] })
@@ -254,11 +258,63 @@ describe('restrict() over an inherited scope layer', () => {
     ctx.tools.register(tool('web'))
     const parent = await mintAgentScope(ctx, 'parent')
     parent.scope.ctx.tools.register(tool('bash'))
-    const child = await mintChild(ctx, parent.key, 'child')
+    const child = await mintChildScope(ctx, parent.key, 'child')
     parent.scope.ctx.tools.restrict({ deny: ['web'] })
 
     expect(ctx.tools.schemas(child.key).map(t => t.name)).toEqual(['bash'])
     expect(ctx.tools.schemas(parent.key).map(t => t.name)).toEqual(['bash'])
+  })
+})
+
+describe('compactDescriptions()', () => {
+  const fullToolDescription = 'Echo a supplied value with a deliberately verbose model-facing description.'
+  const fullParameterDescription = 'The exact value returned to the caller without any modification.'
+
+  it('inherits and overrides model-facing caps without changing registry definitions', async () => {
+    const ctx = await mount()
+    const parent = await mintAgentScope(ctx, 'parent')
+    const child = await mintChildScope(ctx, parent.key, 'child')
+    ctx.tools.register({
+      ...tool('echo'),
+      description: fullToolDescription,
+      parameters: {
+        type: 'object',
+        properties: {
+          value: { type: 'string', description: fullParameterDescription },
+        },
+      },
+    })
+
+    parent.scope.ctx.tools.compactDescriptions(24)
+    const inherited = await ctx.systemPrompt.assemble({ scope: child.key })
+    const inheritedSchema = inherited.tools.find(schema => schema.name === 'echo')
+    const inheritedProperties = inheritedSchema?.parameters.properties as Record<string, { description?: string }> | undefined
+    expect(inheritedSchema?.description).toBe('Echo a supplied value...')
+    expect(inheritedProperties?.value?.description).toBe('The exact value retur...')
+
+    const restoreParent = child.scope.ctx.tools.compactDescriptions(12)
+    const overridden = await ctx.systemPrompt.assemble({ scope: child.key })
+    expect(overridden.tools.find(schema => schema.name === 'echo')?.description).toBe('Echo a su...')
+    restoreParent()
+    expect((await ctx.systemPrompt.assemble({ scope: child.key })).tools.find(schema => schema.name === 'echo')?.description)
+      .toBe('Echo a supplied value...')
+
+    expect(ctx.tools.schemas(child.key).find(schema => schema.name === 'echo')?.description)
+      .toBe(fullToolDescription)
+    expect(ctx.tools.get('echo', child.key)?.description).toBe(fullToolDescription)
+  })
+
+  it('rejects invalid, global, and duplicate declarations', async () => {
+    const ctx = await mount()
+    const { scope } = await mintAgentScope(ctx, 'agent')
+
+    expect(() => ctx.tools.compactDescriptions(24)).toThrow(/requires a scoped context/)
+    expect(() => scope.ctx.tools.compactDescriptions(2)).toThrow(/integer of at least 3/)
+    expect(() => scope.ctx.tools.compactDescriptions(3.5)).toThrow(/integer of at least 3/)
+    const dispose = scope.ctx.tools.compactDescriptions(24)
+    expect(() => scope.ctx.tools.compactDescriptions(12)).toThrow(/conflicts with 24/)
+    dispose()
+    expect(() => scope.ctx.tools.compactDescriptions(12)).not.toThrow()
   })
 })
 

@@ -1,0 +1,31 @@
+# Live overlay for the automatic-goal integration scenario. The replay run
+# selects the sibling snapshot config, while record mode keeps the real app.
+- id: base
+  name: '@deepseek-ai/cordis-plugin-include'
+  config:
+    path: ./cordis.yml
+    patches:
+      - id: acp-agent
+        name: '@deepseek-ai/dsh-acp-demo'
+        config:
+          provider: deepseek-official
+          model: deepseek-v4-pro
+          persistenceRoot: !!js process.env.DSH_SNAPSHOT_SESSIONS_ROOT ?? './.sessions'
+          persistenceCompression: !!js "process.env.DSH_SNAPSHOT === undefined ? 'zstd' : 'none'"
+          workspaceContext:
+            maxBytes: 65536
+          goals:
+            tool:
+              completionRequiresCompletedTodos: true
+              completionAuditorProvider: spawn
+              completionAuditorModelProvider: deepseek-official
+              completionAuditorModel: deepseek-v4-flash
+              completionAuditorMaxTokens: 4096
+              completionAuditorMaxAttemptsPerTurn: 2
+            driver:
+              autoStartPresets: ['*']
+              autoStartMaxGoalRounds: 3
+          persona: |
+            You are a coding assistant powered by the {{model}} model. Your working directory is {{cwd}}. Your bash tool runs under a file sandbox — a `[sandbox: file access denied …]` result is policy, not a command bug.
+
+            Verify your work by running the code or tests. Keep answers brief and factual.

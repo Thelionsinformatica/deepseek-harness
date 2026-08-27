@@ -46,3 +46,25 @@ export const en = {
   failed: 'Mount failed',
   unloading: 'Unloading',
 } satisfies Record<PluginInventoryLocaleKey, string>
+
+/** Brazilian Portuguese dictionary checked against the Chinese key set. */
+export const pt = {
+  tab: 'Lista de plugins',
+  loading: 'Lendo plugins…',
+  error: 'Os plugins estão temporariamente indisponíveis.',
+  retry: 'Tentar novamente',
+  search: 'Pesquisar plugins',
+  catalog: 'Lista de plugins',
+  empty: 'Nenhum plugin disponível.',
+  emptySearch: 'Nenhum plugin encontrado.',
+  enabledTag: 'Ativado',
+  disabledTag: 'Desativado',
+  configuration: 'Configuração',
+  cordis: 'Status do Cordis',
+  unobserved: 'Não montado',
+  pending: 'Aguardando dependências',
+  loadingPhase: 'Carregando',
+  active: 'Montado',
+  failed: 'Falha na montagem',
+  unloading: 'Desmontando',
+} satisfies Record<PluginInventoryLocaleKey, string>

@@ -1,0 +1,12 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "bash",
+        "hooks": [
+          { "type": "command", "command": "echo '{\"continue\":false,\"stopReason\":\"Codex hook stopped this tool call\"}'" }
+        ]
+      }
+    ]
+  }
+}

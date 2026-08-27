@@ -17,16 +17,17 @@ import {
 } from 'react'
 import clsx from 'clsx'
 import type { ModelReasoningEffort, ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import {
   IconCheckOutline16, IconChevronDownOutline14, IconChevronRightOutline14,
   IconWarningOutline16, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsLocale, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ModelSelectInjected } from './slots.ts'
 import css from './ModelSelect.module.css'
 
 /** Which pane the dropdown shows: the two-row root or one drilled-in list. */
-type Pane = 'root' | 'model' | 'effort'
+type Pane = 'root' | 'model' | 'effort' | 'automatic'
 
 /** One dynamic effort row; undefined means preserve the provider default. */
 interface EffortChoice {
@@ -43,8 +44,8 @@ interface EffortChoice {
  * @returns the trigger and, while open, the two-level menu.
  */
 export function ModelSelect(
-  { locked, available, directory, load, select, t }:
-  ModelSelectInjected & { locked: boolean } & PropsLocale<'model'>,
+  { locked, available, directory, load, select, selectAutomatic, useSession, t }:
+  ModelSelectInjected & { locked: boolean; useSession: SnapshotSelectorHook<ConversationSnapshot> } & PropsLocale<'model'>,
 ) {
   const state = useSyncExternalStore(
     fn => directory.subscribe(fn),
@@ -52,12 +53,18 @@ export function ModelSelect(
   )
   const [open, setOpen] = useState(false)
   const [pane, setPane] = useState<Pane>('root')
+  const [externalFailoverConsent, setExternalFailoverConsent] = useState(false)
   // The in-menu error strip serves catalog loads (its Retry re-runs the
   // load); a rejected SELECTION announces through the transient toast
   // instead, so the strip renders only while the latest failure-capable
   // action was a load.
   const lastActionRef = useRef<'load' | 'select'>('load')
   const [toast, setToast] = useState<{ seq: number; text: string } | null>(null)
+  const running = useSession(snapshot => snapshot.running)
+  const failoverSeq = useSession(snapshot =>
+    snapshot.nodes.findLast(node => node.kind === 'model-failover')?.seq ?? null)
+  const previousRunning = useRef(false)
+  const previousFailoverSeq = useRef(failoverSeq)
   const toastSeq = useRef(0)
   const rootRef = useRef<HTMLDivElement | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
@@ -114,6 +121,27 @@ export function ModelSelect(
       load()
     }
   }, [available, load])
+
+  // The Host chooses the tier immediately before admitting an idle prompt.
+  // Refresh on the running edge so the corner indicator names the route that
+  // actually entered the request, not merely the pre-turn default.
+  useEffect(() => {
+    const started = running && !previousRunning.current
+    previousRunning.current = running
+    if (!started || !state.automatic) return
+    lastActionRef.current = 'load'
+    load()
+  }, [load, running, state.automatic])
+
+  // Automatic failover changes the Host selection inside an active turn, so
+  // the running edge has already passed. Refresh when its durable notice lands.
+  useEffect(() => {
+    const changed = failoverSeq !== null && failoverSeq !== previousFailoverSeq.current
+    previousFailoverSeq.current = failoverSeq
+    if (!changed || !state.automatic) return
+    lastActionRef.current = 'load'
+    load()
+  }, [failoverSeq, load, state.automatic])
 
   useEffect(() => {
     if (!open) return
@@ -179,7 +207,7 @@ export function ModelSelect(
   }
 
   const choose = (selection: ModelSelection): void => {
-    if (state.current?.provider === selection.provider && state.current.model === selection.model) {
+    if (!state.automatic && state.current?.provider === selection.provider && state.current.model === selection.model) {
       close(true)
       return
     }
@@ -189,7 +217,7 @@ export function ModelSelect(
 
   const chooseEffort = (effort: string | undefined): void => {
     if (state.current === null) return
-    if (effectiveEffort === effort) {
+    if (!state.automatic && effectiveEffort === effort) {
       close(true)
       return
     }
@@ -202,13 +230,31 @@ export function ModelSelect(
     void select(selection).then(settleSelection)
   }
 
+  const configureAutomatic = (): void => {
+    setExternalFailoverConsent(state.externalFailoverConsent)
+    setPane('automatic')
+  }
+
+  const chooseAutomatic = (): void => {
+    lastActionRef.current = 'select'
+    void selectAutomatic(externalFailoverConsent).then(settleSelection)
+  }
+
   const modelLabel = currentChoice?.model.name ?? t('trigger.fallback')
-  const triggerLabel = effortLabel === undefined ? modelLabel : `${modelLabel} · ${effortLabel}`
-  const triggerAria = currentChoice === undefined
-    ? t('trigger.selectAria')
-    : effortLabel === undefined
-      ? t('trigger.aria', { model: modelLabel })
-      : t('trigger.ariaEffort', { model: modelLabel, effort: effortLabel })
+  const triggerModelLabel = state.automatic ? t('automatic.name') : modelLabel
+  const triggerDetail = state.automatic
+    ? effortLabel === undefined ? modelLabel : `${modelLabel} · ${effortLabel}`
+    : effortLabel
+  const triggerLabel = triggerDetail === undefined ? triggerModelLabel : `${triggerModelLabel} · ${triggerDetail}`
+  const triggerAria = state.automatic
+    ? effortLabel === undefined
+      ? t('trigger.ariaAutomatic', { model: modelLabel })
+      : t('trigger.ariaAutomaticEffort', { model: modelLabel, effort: effortLabel })
+    : currentChoice === undefined
+      ? t('trigger.selectAria')
+      : effortLabel === undefined
+        ? t('trigger.aria', { model: modelLabel })
+        : t('trigger.ariaEffort', { model: modelLabel, effort: effortLabel })
   itemRefs.current = []
   let itemIndex = 0
   const itemRef = () => {
@@ -236,8 +282,8 @@ export function ModelSelect(
           }
         }}
       >
-        <span className={css.triggerLabel}>{modelLabel}</span>
-        {effortLabel !== undefined && <span className={css.triggerEffort}>{effortLabel}</span>}
+        <span className={css.triggerLabel}>{triggerModelLabel}</span>
+        {triggerDetail !== undefined && <span className={css.triggerEffort}>{triggerDetail}</span>}
         <IconChevronDownOutline14 className={clsx(css.chevron, open && css.chevronOpen)} />
       </button>
 
@@ -270,6 +316,25 @@ export function ModelSelect(
             <>
               {state.status === 'loading' && (
                 <div className={css.status}>{t('status.loading')}</div>
+              )}
+              {state.automaticAvailable && (
+                <button
+                  ref={itemRef()}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={state.automatic}
+                  className={clsx(css.option, state.automatic && css.selected)}
+                  disabled={busy}
+                  onClick={configureAutomatic}
+                >
+                  <span className={css.optionCopy}>
+                    <span className={css.modelName}>{t('automatic.name')}</span>
+                    <span className={css.description}>{t('automatic.description')}</span>
+                  </span>
+                  <span className={css.check}>
+                    {state.automatic ? <IconCheckOutline16 /> : null}
+                  </span>
+                </button>
               )}
               {state.error !== null && lastActionRef.current === 'load' && (
                 <div className={css.error}>
@@ -322,6 +387,48 @@ export function ModelSelect(
               {state.status === 'ready' && choices.length === 0 && (
                 <div className={css.empty}>{t('empty.models')}</div>
               )}
+            </>
+          )}
+
+          {pane === 'automatic' && (
+            <>
+              <div className={css.automaticSummary}>
+                <span className={css.modelName}>{t('automatic.name')}</span>
+                <span className={clsx(css.description, css.wrappingDescription)}>
+                  {t('automatic.description')}
+                </span>
+              </div>
+              <button
+                ref={itemRef()}
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={externalFailoverConsent}
+                className={clsx(css.option, externalFailoverConsent && css.selected)}
+                disabled={busy}
+                onClick={() => { setExternalFailoverConsent(value => !value) }}
+              >
+                <span className={css.optionCopy}>
+                  <span className={css.modelName}>{t('automatic.externalConsent.name')}</span>
+                  <span className={clsx(css.description, css.wrappingDescription)}>
+                    {t('automatic.externalConsent.description')}
+                  </span>
+                </span>
+                <span className={css.check}>
+                  {externalFailoverConsent ? <IconCheckOutline16 /> : null}
+                </span>
+              </button>
+              <button
+                ref={itemRef()}
+                type="button"
+                role="menuitem"
+                className={clsx(css.option, css.automaticAction)}
+                disabled={busy}
+                onClick={chooseAutomatic}
+              >
+                <span className={css.modelName}>
+                  {state.automatic ? t('automatic.action.save') : t('automatic.action.enable')}
+                </span>
+              </button>
             </>
           )}
 

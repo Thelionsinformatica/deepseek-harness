@@ -18,13 +18,15 @@ What a preset can own is the **presentation** of that registry. `ctx.tools.prese
 
 One agent declares one presentation. A second declaration in the same composition is refused rather than merged: two answers to "which form does the model see" is a contradiction, not an override.
 
+The optional integer `descriptionMaxLength` (minimum `3`) normalizes whitespace and caps each tool or parameter description in the model-facing schema. The registry's complete definitions, validation, execution, and `ctx.tools.schemas()` output stay unchanged. A nearer agent scope may declare another cap and disposal restores the inherited value.
+
 ## Model Experience
 
-Indirectly, through the projection it selects in `dsh-tools`: `code` presents `run_code` plus a generated SDK section and the rule that only `run_code` may be called directly, `native` presents every tool schema. The selection also decides what may EXECUTE: under `code` the registry resolves a model-direct call naming any other tool to `UNKNOWN_TOOL`, so this row is what keeps the announced surface and the callable surface the same for every agent it covers ([executor-collapse note](../../../.agents/notes/implemented/bug-fix/2026-08-07-code-mode-executor-collapse.md)).
+Indirectly, through the projection it selects in `dsh-tools`: `code` presents `run_code` plus a generated SDK section and the rule that only `run_code` may be called directly, `native` presents every tool schema. The selection also decides what may EXECUTE: under `code` the registry resolves a model-direct call naming any other tool to `UNKNOWN_TOOL`, so this row is what keeps the announced surface and the callable surface the same for every agent it covers ([executor-collapse note](../../../.agents/notes/implemented/bug-fix/2026-08-07-code-mode-executor-collapse.md)). `descriptionMaxLength` reduces fixed prompt tokens in either projection without changing the callable surface.
 
 #### KV Cache effect
 
-No direct invalidation; the presentation is fixed when the agent is composed, so its request prefix is stable for the session's life.
+No direct invalidation; presentation and the optional description cap are fixed when the agent is composed, so its request prefix is stable for the session's life.
 
 ## Known Limitations and Deferred Work
 

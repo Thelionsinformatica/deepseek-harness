@@ -5,10 +5,12 @@
  * The tool registry itself stays on the host plane — the agent loop's
  * scheduler, the API proxy's presenters, and every tool plugin are all its
  * consumers, so it cannot move into a preset. What a preset CAN own is the
- * presentation: `ctx.tools.presentAs()` declares it for the mounting SCOPE,
- * which is the preset's standing mount, so the declaration covers every agent
- * joined to that preset and a Code Mode preset runs beside native ones in one
- * process. One row per composition, not one per session.
+ * presentation: `ctx.tools.presentAs()` declares its form and
+ * `ctx.tools.compactDescriptions()` may bound its model-facing description
+ * text for the mounting SCOPE, which is the preset's standing mount. The
+ * declarations cover every agent joined to that preset, so differently
+ * presented agents run beside one another in one process. One row per
+ * composition, not one per session.
  *
  * A code mode needs a TypeScript code runtime, which is a host-plane service
  * ([`dsh-code-runtime-worker-thread`](../../code-runtime/code-runtime-worker/README.md)).
@@ -44,11 +46,17 @@ export interface Config {
    * composed for nothing.
    */
   mode: ToolPresentationMode
+  /**
+   * Optional character cap applied to normalized tool and parameter
+   * descriptions in the model-facing schema only; minimum 3.
+   */
+  descriptionMaxLength?: number
 }
 
 /** Runtime schema. */
 export const Config: z<Config> = z.object({
   mode: z.union(['native', 'code', 'both'] as const).required(),
+  descriptionMaxLength: z.number().step(1).min(3),
 })
 
 /**
@@ -57,6 +65,9 @@ export const Config: z<Config> = z.object({
  * @param config - the selected presentation.
  */
 export function apply(ctx: Context, config: Config): void {
+  if (config.descriptionMaxLength !== undefined) {
+    ctx.tools.compactDescriptions(config.descriptionMaxLength)
+  }
   // `presentAs` is itself the effect — it registers through the calling
   // context and hands back that exact disposer — so the declaration unwinds
   // with this row without a second wrapper owning it.

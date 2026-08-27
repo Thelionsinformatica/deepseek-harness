@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -61,6 +62,7 @@ const headlessSessionExpected = join(snapshotsDir, 'headless-profile', 'session.
 const headlessFailureExpected = join(snapshotsDir, 'headless-profile', 'stderr.expected.txt')
 const cliMockLlmPluginPath = fileURLToPath(new URL('./fixtures/cli-mock-llm.ts', import.meta.url))
 const refreshing = process.env.DSH_SNAPSHOT === 'refresh'
+const bashAvailable = spawnSync('bash', ['--version'], { stdio: 'ignore' }).status === 0
 
 interface JsonObject {
   [key: string]: unknown
@@ -178,6 +180,16 @@ function normalizeHeadlessStream(rawStdout: string, cwd: string): string {
   return normalizeStdout(`${normalizedRecords.map(record => JSON.stringify(record)).join('\n')}\n`, context)
 }
 
+/** Keep the cross-platform golden canonical while exercising PowerShell on Windows. */
+function normalizeCliShellSnapshot(snapshot: string): string {
+  if (process.platform !== 'win32') return snapshot
+  const powershellArguments = '{\\"command\\":\\"[Console]::Write(\'CLI_TOOL_ROUND_TRIP\')\\",\\"description\\":\\"Prove the CLI tool round trip.\\"}'
+  const bashArguments = '{\\"command\\":\\"printf CLI_TOOL_ROUND_TRIP\\",\\"description\\":\\"Prove the CLI tool round trip.\\"}'
+  return snapshot
+    .replaceAll('"name":"pwsh"', '"name":"bash"')
+    .replaceAll(powershellArguments, bashArguments)
+}
+
 /** Zero durable goal timestamps inside both metadata records and rendered XML JSON. */
 function normalizeGoalTimestamps(value: unknown): unknown {
   if (typeof value === 'string') {
@@ -264,7 +276,7 @@ describe('headless stream-json snapshots', () => {
         const actual = logs[0]
         if (actual === undefined) throw new Error('the headless profile did not persist its session')
         const context = contextFromLogs([actual.content])
-        const session = normalizeSessionSnapshot(actual.content, context)
+        const session = normalizeCliShellSnapshot(normalizeSessionSnapshot(actual.content, context))
         if (refreshing) await writeFile(headlessSessionExpected, session)
         await expect(session).toMatchFileSnapshot(headlessSessionExpected)
         expect(session).toContain(task)
@@ -353,7 +365,7 @@ describe('headless stream-json snapshots', () => {
     expect(normalized).toBe(await readFile(streamExpected, 'utf8'))
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
-  it('recovers from context overflow through an assembled compaction', async () => {
+  it.skipIf(!bashAvailable)('recovers from context overflow through an assembled compaction', async () => {
     const prompt = await scenarioPrompt(compactionScenarioDir, 'compaction-recovery')
     let expectedSession = await readFile(compactionSessionFixture, 'utf8')
     let runCwd = ''
@@ -592,7 +604,7 @@ describe('headless stream-json snapshots', () => {
     }
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
-  it('replays the advanced toolchain through the one-shot app', async () => {
+  it.skipIf(!bashAvailable)('replays the advanced toolchain through the one-shot app', async () => {
     const prompt = await scenarioPrompt(advancedScenarioDir, 'advanced-toolchain')
     const fixtureFiles = [
       advancedSessionFixture,
@@ -954,7 +966,7 @@ describe('headless stream-json snapshots', () => {
     expect(normalized).toBe(await readFile(streamExpected, 'utf8'))
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
-  it('replays persistent PTY tools through the one-shot app', async () => {
+  it.skipIf(!bashAvailable)('replays persistent PTY tools through the one-shot app', async () => {
     const input = JSON.parse(await readFile(join(ptyScenarioDir, 'input.json'), 'utf8')) as {
       steps?: { op?: unknown; text?: unknown }[]
     }

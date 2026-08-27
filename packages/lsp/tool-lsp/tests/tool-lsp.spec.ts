@@ -64,6 +64,17 @@ const okLocations: LspQueryResult = {
 }
 
 describe('tool-lsp registration', () => {
+  it('keeps the parent composition active without publishing a broken tool when lsp is unavailable', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(ToolLsp)
+
+    expect(ctx.tools.get('lsp')).toBeUndefined()
+    const prompt = await ctx.systemPrompt.assemble()
+    expect(prompt.sections.map(s => s.text).join('\n')).not.toContain(LSP_PROMPT_TEXT)
+  })
+
   it('registers the lsp tool and its prompt section', async () => {
     const { ctx } = await mount(stubProvider(() => okLocations))
     expect(ctx.tools.get('lsp')).toBeDefined()

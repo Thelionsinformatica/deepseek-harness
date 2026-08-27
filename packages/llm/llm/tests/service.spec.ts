@@ -124,6 +124,7 @@ describe('LlmRuntime', () => {
       'usage-limit-exceeded',
       'out of credits',
       'OpenAI API error (429): You exceeded your current quota, please check your plan and billing details.',
+      'Your prepayment credits are depleted. Please go to AI Studio to add more credits.',
     ]) expect(isQuotaExceededError(detail)).toBe(true)
     expect(isQuotaExceededError('HTTP 429: rate limit reached')).toBe(false)
     expect(isQuotaExceededError('quota resets in one minute')).toBe(false)
@@ -384,8 +385,11 @@ describe('LlmRuntime', () => {
           [Symbol.asyncIterator](): AsyncIterator<StreamChunk> {
             return {
               // Third-party adapters can reject with arbitrary values.
-              // oxlint-disable-next-line typescript/prefer-promise-reject-errors
-              next: () => Promise.reject('plain provider failure'),
+              next: () => {
+                const pending = Promise.withResolvers<IteratorResult<StreamChunk>>()
+                pending.reject('plain provider failure')
+                return pending.promise
+              },
             }
           },
         }

@@ -15,9 +15,12 @@
 
 - id: goal-round-driver
   name: '@deepseek-ai/dsh-goal-round-driver'
+  config:
+    autoStartPresets: [leon]
+    autoStartMaxGoalRounds: 12
 ```
 
-该插件没有可调配置。`maxGoalRounds` 属于目标定义，面向模型的阻塞阈值则属于 [`dsh-tool-goal`](../tool-goal/README.zh.md)；在驱动器中重复任一数值都可能产生分歧策略。
+自动准入是显式启用的。`autoStartPresets` 指定哪些根 agent 预设会把已接纳的人类直接实现请求转成持久 goal；`*` 会启用全部预设。准入要求明确的执行动词：`teste`/`test` 这类有歧义的名词本身不足以触发，而明确的禁止编辑或禁止使用工具约束会让分析探测保持单轮。以 `responda apenas`/`answer only` 开头的短探测也保持单轮；该短语若出现在实现请求后部，则不会抑制实际工作。`autoStartMaxGoalRounds` 只为驱动器自动创建的 goal 指定上限。已有 goal 仍拥有其持久化的 `maxGoalRounds`，面向模型的阻塞阈值则继续由 [`dsh-tool-goal`](../tool-goal/README.zh.md) 所有。
 
 ## Round 约定
 
@@ -25,7 +28,7 @@
 
 `MessageId` 通过持久 inbox 插入和领取来标识预留消息；它不标识轮次结果。人类消息不消耗 goal 上限。如果人类工作在预留前进入 inbox，或加入预留的待处理批次，自动工作会让行，直到 agent 进入 idle；混合批次中的待处理自动提示词会被拒绝，只有在该检查点之后才重新预留。
 
-保留的提示词会点明经过 JSON 引用的目标与 `round/maxGoalRounds`，将当前工作区、工具结果和持久会话状态视为权威信息，要求在完成前提供证据，并要求在工作仍未完成时保持目标 active。引用可将多行或形似标签的目标文本保留为数据。goal 生命周期变更仍必须通过 `dsh-tool-goal` 的独立权限检查。
+保留的提示词会点明经过 JSON 引用的目标与 `round/maxGoalRounds`。在执行任何变更前，它要求模型核对持久 todo 计划、相关工作区产物以及最近缺失或失败的验证；从首个未完成条目继续；保留而非替换计划；并避免重新创建已经检查过的工作。只有在最终变更后，每项要求的测试、启动或健康检查都得到实际工具结果证据，才可完成。本地服务器通过一个只包含服务器启动命令的受管理后台调用启动；HTTP 健康检查在单独的前台调用中运行；随后只停止该后台调用返回的任务句柄。健康检查失败或连接被拒绝时，必须先读取该服务器任务的输出再更换端口，因为 stderr 是主要运行时证据。端口被占用时改用其他端口或报告冲突，不得终止现有端口所有者。引用可将多行或形似标签的目标文本保留为数据。goal 生命周期变更仍必须通过 `dsh-tool-goal` 的独立权限检查。
 
 ## Idle 检查点
 

@@ -15,9 +15,12 @@ Same-session continuation driver for [`ctx.goals`](../goal/README.md). It turns 
 
 - id: goal-round-driver
   name: '@deepseek-ai/dsh-goal-round-driver'
+  config:
+    autoStartPresets: [leon]
+    autoStartMaxGoalRounds: 12
 ```
 
-The plugin has no tunable configuration. `maxGoalRounds` belongs to the goal definition, while the model-facing blocked threshold belongs to [`dsh-tool-goal`](../tool-goal/README.md); duplicating either value in the driver could produce divergent policy.
+Automatic admission is opt-in. `autoStartPresets` names the root-agent presets whose accepted direct-human implementation requests become persisted goals; `*` enables every preset. Admission requires an unambiguous execution verb: ambiguous nouns such as `teste`/`test` do not qualify by themselves, while explicit no-edit or no-tool constraints keep analytical probes single-turn. A short probe that starts with `responda apenas`/`answer only` also stays single-turn; the same phrase later in an implementation request does not suppress real work. `autoStartMaxGoalRounds` is the cap assigned only to those driver-created goals. Existing goals still own their persisted `maxGoalRounds`, while the model-facing blocked threshold remains owned by [`dsh-tool-goal`](../tool-goal/README.md).
 
 ## Round contract
 
@@ -25,7 +28,7 @@ When an exact live agent is idle with an active, armed goal and remaining capaci
 
 `MessageId` identifies the reserved message through durable inbox insertion and claim; it does not identify a turn result. Human messages do not consume the goal cap. If human work enters the inbox before a reservation or joins its pending batch, automatic work yields until the agent becomes idle; a pending automatic prompt in a mixed batch is rejected and re-reserved only after that checkpoint.
 
-The retained prompt names the JSON-quoted objective and `round/maxGoalRounds`, treats the current workspace, tool results, and durable session state as authoritative, requires evidence before completion, and tells the model to leave the goal active when work remains. Quoting preserves multiline or tag-like objective text as data. Goal lifecycle mutations still require the independent authority checks in `dsh-tool-goal`.
+The retained prompt names the JSON-quoted objective and `round/maxGoalRounds`. Before any mutation it tells the model to reconcile the durable todo plan, relevant workspace artifacts, and latest missing or failed verification; continue from the first unfinished item; preserve rather than replace the plan; and avoid recreating inspected work. Completion requires actual tool-result evidence from every requested test, start, or health check after the final change. A local server starts in one managed background call containing only the server start command; its HTTP health check runs in a separate foreground call; then only the returned job handle is stopped. A failed or refused health check requires reading that server job's output before changing ports because stderr is the primary runtime evidence. An occupied port selects another port or becomes a reported conflict instead of a reason to terminate its owner. Quoting preserves multiline or tag-like objective text as data. Goal lifecycle mutations still require the independent authority checks in `dsh-tool-goal`.
 
 ## Idle checkpoint
 

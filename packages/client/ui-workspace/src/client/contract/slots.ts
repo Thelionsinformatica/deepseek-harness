@@ -129,6 +129,10 @@ export type WorkspaceBrowserInjected = {
    * session clears the selection into the New Session view state.
    */
   archiveSession: (sessionId: SessionId) => Promise<void>
+  /** Restore an archived Session to every ordinary browsing surface. */
+  unarchiveSession: (sessionId: SessionId) => Promise<void>
+  /** Permanently delete a Session log and its derived conversation data. */
+  deleteSession: (sessionId: SessionId) => Promise<void>
   /**
    * Reorder a session inside its Workspace account (DOM-insertBefore
    * semantics: omitted anchor appends to the end). The view refreshes from

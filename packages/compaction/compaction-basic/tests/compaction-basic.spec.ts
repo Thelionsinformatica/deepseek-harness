@@ -839,6 +839,77 @@ describe('optional model-free tool-result pruning', () => {
 })
 
 describe('compaction region transaction', () => {
+  it('preserves ComfyUI operational state across compaction and model switches', async () => {
+    const compact = service()
+    const callId = CallId('comfyui-health')
+    const session = Session.create(SessionId('comfyui-continuity'))
+    session.append('turn/start', { turn: 1 })
+    session.append('user/message', createUserMessage({
+      content: [{
+        type: 'text',
+        text: `${'Trabalho em andamento. '.repeat(200)}Continue em E:\\Producao\\ComfyUI_MCP sem pedir a URL novamente.`,
+      }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    session.append('step/start', { turn: 1, step: 1 })
+    session.append('request/header', {
+      header: { config: { provider: MODEL, model: MODEL } },
+      reason: 'initial',
+    })
+    session.append('assistant/message', {
+      turn: 1,
+      step: 1,
+      message: createMessage({
+        role: 'assistant',
+        content: [{
+          type: 'tool-call',
+          id: callId,
+          name: 'pwsh',
+          arguments: '{"path":"E:\\\\Producao\\\\ComfyUI_MCP","api_key":"test-nvidia-fixture-key"}',
+        }],
+        source: { kind: 'model', provider: MODEL, model: MODEL },
+      }),
+    }, { surfaceOp: 'append' })
+    session.append('tool/call', {
+      turn: 1,
+      step: 1,
+      callId,
+      name: 'pwsh',
+      arguments: '{}',
+    })
+    session.append('tool/result', {
+      turn: 1,
+      step: 1,
+      message: createToolResultMessage({
+        callId,
+        content: [{
+          type: 'text',
+          text: 'HTTP 200; ComfyUI running; PID 74224; endpoint http://127.0.0.1:8188/?token=EXPOSED',
+        }],
+        isError: false,
+      }),
+    }, { surfaceOp: 'append' })
+    session.append('step/end', { turn: 1, step: 1 })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    session.append('turn/start', { turn: 2 })
+
+    const nodes = session.surface.nodes
+    await compact.compactRegion(nodes[0]!, nodes.at(-1)!, agent(session, 'qwen3.8-heretic'), SIGNAL)
+    const replay = Session.create(SessionId('comfyui-model-switch'), [...session.events])
+    const text = replay.deriveMessages()
+      .flatMap(message => message.content)
+      .flatMap(block => block.type === 'text' ? [block.text] : [])
+      .join('\n')
+
+    expect(text).toContain('## Operational Continuity (deterministic)')
+    expect(text).toContain('E:\\Producao\\ComfyUI_MCP')
+    expect(text).toContain('http://127.0.0.1:8188/')
+    expect(text).toContain('tool result pwsh: HTTP 200; ComfyUI running; PID 74224')
+    expect(text.match(/Reference: http:\/\/127\.0\.0\.1:8188\//gu)).toHaveLength(1)
+    expect(text).not.toContain('EXPOSED')
+    expect(text).not.toContain('nvapi-')
+  })
+
   it('lands a framed, replayable checkpoint with exact source seqs and token price', async () => {
     const compact = service()
     compact.rawOutput = [

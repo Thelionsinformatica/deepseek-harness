@@ -14,7 +14,9 @@
 
 3 个规范值都与已经渲染给 Native 调用方的紧凑 JSON 一致：`{ goal: null }` 或 `{ goal: { id, revision, objective, phase, roundsStarted, maxGoalRounds, blockedReason? }, activation }`。因此，编程消费方无需解析渲染后的 JSON，即可收到相同领域结构。
 
-自主 Goal Round 成功报告 `complete` 或 `blocked` 时，会用 `concludeTurn()` 标记该次工具执行，使物理轮次在该步骤后停止。人类直接变更绝不会导致这种停止：assistant 可以确认变更，循环仍可接收并发的人类 steering（中途引导）。
+配置独立审核后，`complete` 调用会以 `Verify delivery` 保持 pending，同时一个全新的一次性 subagent 检查继承的工作区。审核器接收目标和当前任务列表，使用配置的模型路由，返回经过 schema 校验的通过／拒绝结论，并且不能调用编辑、委派、goal、todo、workflow 或 Code Mode 工具。拒绝、无效或不可用的结论会让 goal 保持 active，并把有长度上限的可操作反馈作为失败的工具结果返回；只有无发现项的通过结论才允许比较并设置的完成变更。
+
+自主 Goal Round 成功报告 `complete` 或 `blocked` 时，会收到一条延迟的收尾指令，使 assistant 在普通的无工具调用停止前仍会报告结果。人类直接变更不会收到该指令：assistant 可以确认变更，循环仍可接收并发的人类 steering（中途引导）。
 
 ## 权限
 
@@ -31,9 +33,18 @@ complete 与 blocked 还接受完全一致的当前 Goal Round：来源为 goal 
   name: '@deepseek-ai/dsh-tool-goal'
   config:
     blockedAfterConsecutiveRounds: 3
+    completionRequiresCompletedTodos: true
+    completionAuditorProvider: spawn
+    completionAuditorModelProvider: google
+    completionAuditorModel: gemini-3.6-flash
+    completionAuditorMaxTokens: 4096
+    completionAuditorMaxAttemptsPerTurn: 2
+    completionAuditorReportMaxCharacters: 6000
 ```
 
-该值必须是正的安全整数。它既提供模型自行报告阻塞的硬下限，也决定模型指引中指明的数值。
+`blockedAfterConsecutiveRounds` 必须是正的安全整数。它既提供模型自行报告阻塞的硬下限，也决定模型指引中指明的数值。当 `completionRequiresCompletedTodos` 为 true 时，只有当前 goal 已存在非空的 `todo_write` 列表且所有条目均为 `completed`，`complete` 才会被接受；为兼容既有组合，默认值为 false。
+
+空的 `completionAuditorProvider` 会禁用独立审核。非空值指定 `ctx.subagents` 上的一次性 provider；执行时缺失会以失败关闭。`completionAuditorModelProvider` 与 `completionAuditorModel` 必须同时配置，或者同时省略以继承执行器路由。其余正安全整数分别限制输出 token、同一父轮次中的启动次数和反馈字符数。审核器继承会话工作区与委派后的 sandbox／approval 策略；固定 persona 禁止修改源文件，工具过滤器移除第一方变更与递归编排工具。
 
 ## 模型体验
 
@@ -41,17 +52,17 @@ complete 与 blocked 还接受完全一致的当前 Goal Round：来源为 goal 
 
 #### 模型看到的内容
 
-固定 goal 策略说明何种用户语义意图值得创建 goal，要求更新前先精确读取 ref，解释会话 resume／fork 后如何重新启用续行，并限制完成／阻塞声明。配置的阈值会插入该指引。
+固定 goal 策略说明何种用户语义意图值得创建 goal，要求更新前先精确读取 ref，说明部署可能已经创建 goal，解释会话 resume／fork 后如何重新启用续行，并限制完成／阻塞声明。配置的阻塞、todo 完成与独立审核规则会插入该指引。
 
 ##### Goal 策略
 
 ```markdown
-Use goal tools for one long-running completion objective in the current session. create_goal may infer goal intent from a direct human request in any language; do not create a goal for routine single-turn work. Call get_goal before update_goal and copy its exact goal_id and revision. After session resume or fork, an active goal is disarmed: when a human asks to continue or resume in any wording or language, use update_goal action resume to rearm it. Mark complete only when the objective is actually achieved. Mark blocked only after the same blocking condition persists for at least 3 consecutive goal rounds, and report that concrete condition in blocked_reason; difficulty, uncertainty, or useful remaining work is not blocked.
+Use goal tools for one long-running completion objective in the current session. create_goal may infer goal intent from a direct human request in any language; do not create a goal for routine single-turn work. A deployment may create the goal automatically for an accepted implementation task, so call get_goal before create_goal or update_goal and copy its exact goal_id and revision. After session resume or fork, an active goal is disarmed: when a human asks to continue or resume in any wording or language, use update_goal action resume to rearm it. Mark complete only when the objective is actually achieved. Mark blocked only after the same blocking condition persists for at least 3 consecutive goal rounds, and report that concrete condition in blocked_reason; difficulty, uncertainty, or useful remaining work is not blocked. Completion is rejected until this goal has a non-empty todo_write list and every item is completed. A complete request starts an independent workspace audit. Rejection keeps the goal active and returns actionable findings; correct them and revalidate before requesting completion again.
 ```
 
 #### Token 影响
 
-此插件的提示词注册位于请求范围内时，每次请求都会产生少量固定输入成本。
+此插件的提示词注册位于请求范围内时，每次请求都会产生少量固定输入成本。每次配置的完成尝试会增加一个全新审核器上下文及其工具结果，受 `completionAuditorMaxTokens` 和 `completionAuditorMaxAttemptsPerTurn` 限制。
 
 #### KV Cache 影响
 
@@ -74,7 +85,8 @@ schema 的定义与可见性不变时，前缀保持稳定。调用和结果会�
 ## 已知限制与暂缓事项
 
 - **语义意图仍由模型判断**：执行只能证明当前轮次包含一条人类直接发送的消息，无法证明请求是否足够重大而值得创建 goal。
-- **阻塞条件是否相同仍由模型判断**：运行时强制统计互不重复的已准入 Goal Round，而不判断障碍在语义上是否等价；独立评估器的实现暂缓。
+- **阻塞条件是否相同仍由模型判断**：运行时强制统计互不重复的已准入 Goal Round，而不判断障碍在语义上是否等价；完成审核器不评估 blocked 报告。
+- **Shell 验证受指令约束，而非强制只读**：变更工具会被移除，但保留 `bash` 或 `pwsh` 的审核器可以运行会生成缓存或构建产物的测试脚本。persona 禁止更改源文件，委派后的 approval 仍为 `never`。
 - **不负责调度或直接面向人类呈现**：这些工具只变更状态；同会话驱动器与 [`dsh-command-goal`](../command-goal/README.zh.md) 是同一领域的独立消费方。
 - **Goal Round 权限需要驱动器**：除非续行驱动器准入 goal 来源的用户轮次，否则自主 `complete`／`blocked` 路径不会启用；只挂载这个包不会创建这些轮次。
 - **提示词注册与过滤相互独立**：某个范围可能隐藏工具，却保留指引，除非部署将两项注册限定在同一范围。

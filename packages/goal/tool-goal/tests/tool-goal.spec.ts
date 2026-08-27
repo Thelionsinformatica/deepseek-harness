@@ -8,10 +8,16 @@ import type { GoalRef } from '@deepseek-ai/dsh-goal'
 import { createUserMessage, CallId } from '@deepseek-ai/dsh-llm'
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-session'
+import SubagentRuntime from '@deepseek-ai/dsh-subagent'
+import type {
+  ResolvedSubagentStartRequest,
+  SubagentResult,
+} from '@deepseek-ai/dsh-subagent'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import type { ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import * as toolGoal from '@deepseek-ai/dsh-tool-goal'
+import { completionEvidenceDigest } from '../src/completion-evidence.ts'
 
 const testToolSignal = new AbortController().signal
 
@@ -73,12 +79,47 @@ async function harness(config: toolGoal.Config = {}) {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(AgentRegistry)
+  await ctx.plugin(SubagentRuntime)
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(GoalService)
   const fiber = await ctx.plugin(toolGoal, config)
   const root = stubAgent(`goal-tool-root-${Math.random()}`)
   ctx.agents.register(root.agent)
   return { ctx, fiber, root }
+}
+
+/** Register a structured one-shot auditor whose results are supplied by the test. */
+function auditProvider(ctx: Context, results: readonly SubagentResult[]) {
+  const requests: ResolvedSubagentStartRequest[] = []
+  let disposed = 0
+  let index = 0
+  ctx.subagents.registerProvider({
+    name: 'audit',
+    capabilities: { outputSchema: true, depthLimit: true, toolFilter: true, persona: true },
+    inheritsParentContext: false,
+    start(request) {
+      requests.push(request)
+      const result = results[index++]
+      if (result === undefined) throw new Error('audit provider script exhausted')
+      return Promise.resolve({
+        id: SessionId(`quality-auditor-${index}`),
+        localAgent: undefined,
+        result: Promise.resolve(result),
+        dispose() { disposed += 1; return Promise.resolve() },
+      })
+    },
+  })
+  return { requests, disposed: () => disposed }
+}
+
+const AUDIT_CONFIG: toolGoal.Config = {
+  completionRequiresCompletedTodos: true,
+  completionAuditorProvider: 'audit',
+  completionAuditorModelProvider: 'google',
+  completionAuditorModel: 'gemini-test',
+  completionAuditorMaxTokens: 2048,
+  completionAuditorMaxAttemptsPerTurn: 2,
+  completionAuditorReportMaxCharacters: 2000,
 }
 
 /** Execute one registered tool under an optional driver initiator. */
@@ -397,6 +438,254 @@ describe('goal tool state transitions', () => {
     expect(resultGoal(complete)).toMatchObject({ phase: 'complete' })
     expect(complete.concludesTurn).toBeUndefined()
     expect(complete.additionalContexts).toBeUndefined()
+  })
+
+  it('refuses Leon completion until the current goal has a non-empty all-completed task list', async () => {
+    const { ctx, root } = await harness({ completionRequiresCompletedTodos: true })
+    openTurn(root, { kind: 'user' })
+    const created = ctx.goals.create(root.agent, { objective: 'deliver verified work' })
+
+    const missing = await execute(ctx, 'update_goal', {
+      goal_id: created.id, revision: created.revision, action: 'complete',
+    }, root.agent)
+    expect(missing.error?.info?.code).toBe('GOAL_TOOL_TODOS_REQUIRED')
+
+    root.session.append('todo/write', { todos: [
+      { content: 'run validation', status: 'in_progress' },
+      { content: 'verify build', status: 'pending' },
+    ] })
+    const incomplete = await execute(ctx, 'update_goal', {
+      goal_id: created.id, revision: created.revision, action: 'complete',
+    }, root.agent)
+    expect(incomplete.error?.info?.code).toBe('GOAL_TOOL_TODOS_INCOMPLETE')
+    expect(incomplete.error?.message).toContain('run validation')
+
+    root.session.append('todo/write', { todos: [
+      { content: 'run validation', status: 'completed' },
+      { content: 'verify build', status: 'completed' },
+    ] })
+    const complete = await execute(ctx, 'update_goal', {
+      goal_id: created.id, revision: created.revision, action: 'complete',
+    }, root.agent)
+    expect(resultGoal(complete)).toMatchObject({ phase: 'complete', revision: 2 })
+  })
+
+  it('commits completion only after a fresh structured auditor passes', async () => {
+    const { ctx, root } = await harness(AUDIT_CONFIG)
+    const audit = auditProvider(ctx, [{
+      stopReason: 'completed',
+      output: [],
+      structured: { status: 'pass', summary: 'Entrega validada.', findings: [] },
+    }])
+    openTurn(root, { kind: 'user' })
+    const created = ctx.goals.create(root.agent, { objective: 'deliver a tested scheduling site' })
+    root.session.append('todo/write', { todos: [
+      { content: 'build the scheduling flow', status: 'completed' },
+      { content: 'run the tests', status: 'completed' },
+    ] })
+
+    const complete = await execute(ctx, 'update_goal', {
+      goal_id: created.id, revision: created.revision, action: 'complete',
+    }, root.agent)
+    expect(resultGoal(complete)).toMatchObject({ phase: 'complete', revision: 2 })
+    expect(audit.disposed()).toBe(1)
+    expect(audit.requests).toHaveLength(1)
+    expect(audit.requests[0]?.agentOptions).toMatchObject({
+      provider: 'google', model: 'gemini-test', maxTokens: 2048,
+    })
+    expect(audit.requests[0]?.persona).toContain('independent release auditor')
+    expect(audit.requests[0]?.toolFilter?.deny).toEqual(expect.arrayContaining([
+      'create_goal', 'update_goal',
+    ]))
+    const prompt = audit.requests[0]?.prompt[0]
+    expect(prompt?.type).toBe('text')
+    if (prompt?.type !== 'text') throw new Error('expected audit text prompt')
+    expect(prompt.text).toContain('deliver a tested scheduling site')
+    expect(prompt.text).toContain('[completed] run the tests')
+    expect(audit.requests[0]?.outputSchema).toMatchObject({
+      type: 'object', required: ['status', 'summary', 'findings'],
+    })
+    const completeIndex = root.session.events.findIndex(event => event.type === 'goal/change'
+      && event.data.operation === 'complete')
+    const receipt = root.session.events[completeIndex - 1]
+    expect(receipt?.type).toBe('goal/completion-audit')
+    if (receipt?.type !== 'goal/completion-audit') throw new Error('expected durable audit receipt')
+    expect(receipt.data).toMatchObject({
+      version: 1,
+      goal: { id: created.id, revision: created.revision },
+      auditor: {
+        provider: 'audit',
+        sessionId: 'quality-auditor-1',
+        modelProvider: 'google',
+        model: 'gemini-test',
+        verdict: { algorithm: 'sha256' },
+      },
+      completedTodoCount: 2,
+      evidence: {
+        algorithm: 'sha256',
+        throughSeq: receipt.seq - 1,
+      },
+    })
+    expect(receipt.data.auditor.verdict.digest).toMatch(/^[a-f0-9]{64}$/)
+    const inspected = root.session.events.slice(
+      receipt.data.evidence.fromSeq,
+      receipt.data.evidence.throughSeq + 1,
+    )
+    expect(receipt.data.evidence.eventCount).toBe(inspected.length)
+    expect(receipt.data.evidence.digest).toBe(completionEvidenceDigest(inspected))
+    const persistedReceipt = JSON.stringify(receipt.data)
+    expect(persistedReceipt).not.toContain('deliver a tested scheduling site')
+    expect(persistedReceipt).not.toContain('run the tests')
+    expect(persistedReceipt).not.toContain('Entrega validada')
+  })
+
+  it('inherits the active Leon route when the completion auditor has no paid-model override', async () => {
+    const { ctx, root } = await harness({
+      completionRequiresCompletedTodos: true,
+      completionAuditorProvider: 'audit',
+      completionAuditorMaxTokens: 1024,
+      completionAuditorMaxAttemptsPerTurn: 1,
+      completionAuditorReportMaxCharacters: 1000,
+    })
+    const audit = auditProvider(ctx, [{
+      stopReason: 'completed',
+      output: [],
+      structured: { status: 'pass', summary: 'Rota atual validou a entrega.', findings: [] },
+    }])
+    openTurn(root, { kind: 'user' })
+    const created = ctx.goals.create(root.agent, { objective: 'stay local unless routing escalates' })
+    root.session.append('todo/write', { todos: [{ content: 'validate', status: 'completed' }] })
+
+    const complete = await execute(ctx, 'update_goal', {
+      goal_id: created.id, revision: created.revision, action: 'complete',
+    }, root.agent)
+
+    expect(resultGoal(complete)).toMatchObject({ phase: 'complete' })
+    expect(audit.requests[0]?.agentOptions).toEqual({ maxTokens: 1024 })
+    const receipt = root.session.events.find(event => event.type === 'goal/completion-audit')
+    expect(receipt?.data.auditor).toMatchObject({ provider: 'audit' })
+    expect(receipt?.type === 'goal/completion-audit' ? receipt.data.auditor : {})
+      .not.toHaveProperty('modelProvider')
+  })
+
+  it('keeps the goal active, returns findings, and permits a corrected retry', async () => {
+    const { ctx, root } = await harness(AUDIT_CONFIG)
+    auditProvider(ctx, [
+      {
+        stopReason: 'completed',
+        output: [],
+        structured: {
+          status: 'reject',
+          summary: 'O fluxo principal falhou.',
+          findings: [{
+            severity: 'high',
+            requirement: 'Criar agendamento',
+            evidence: 'O teste de conflito retornou resultado incorreto.',
+            correction: 'Corrigir a validação e executar o teste novamente.',
+          }],
+        },
+      },
+      {
+        stopReason: 'completed',
+        output: [],
+        structured: { status: 'pass', summary: 'Fluxo corrigido e validado.', findings: [] },
+      },
+    ])
+    openTurn(root, { kind: 'user' })
+    const created = ctx.goals.create(root.agent, { objective: 'deliver verified work' })
+    root.session.append('todo/write', { todos: [{ content: 'validate', status: 'completed' }] })
+
+    const rejected = await execute(ctx, 'update_goal', {
+      goal_id: created.id, revision: created.revision, action: 'complete',
+    }, root.agent)
+    expect(rejected.error?.info?.code).toBe('GOAL_QUALITY_REJECTED')
+    expect(rejected.error?.message).toContain('Criar agendamento')
+    expect(rejected.error?.message).toContain('Corrigir a validação')
+    expect(ctx.goals.get(root.agent)).toMatchObject({ phase: 'active', revision: 1 })
+    expect(root.session.events.some(event => event.type === 'goal/completion-audit')).toBe(false)
+
+    const accepted = await execute(ctx, 'update_goal', {
+      goal_id: created.id, revision: created.revision, action: 'complete',
+    }, root.agent)
+    expect(resultGoal(accepted)).toMatchObject({ phase: 'complete', revision: 2 })
+    expect(root.session.events.filter(event => event.type === 'goal/completion-audit')).toHaveLength(1)
+  })
+
+  it('invalidates a passing audit when the parent session changes during review', async () => {
+    const { ctx, root } = await harness(AUDIT_CONFIG)
+    let startAudit!: () => void
+    const started = new Promise<void>((resolve) => { startAudit = resolve })
+    let finishAudit!: (result: SubagentResult) => void
+    const result = new Promise<SubagentResult>((resolve) => { finishAudit = resolve })
+    ctx.subagents.registerProvider({
+      name: 'audit',
+      capabilities: { outputSchema: true, depthLimit: true, toolFilter: true, persona: true },
+      inheritsParentContext: false,
+      start() {
+        startAudit()
+        return Promise.resolve({
+          id: SessionId('quality-auditor-stale'),
+          localAgent: undefined,
+          result,
+          dispose: () => Promise.resolve(),
+        })
+      },
+    })
+    openTurn(root, { kind: 'user' })
+    const created = ctx.goals.create(root.agent, { objective: 'audit one immutable state' })
+    const todos = [{ content: 'validate immutable state', status: 'completed' as const }]
+    root.session.append('todo/write', { todos })
+
+    const pending = execute(ctx, 'update_goal', {
+      goal_id: created.id, revision: created.revision, action: 'complete',
+    }, root.agent)
+    await started
+    root.session.append('todo/write', { todos })
+    finishAudit({
+      stopReason: 'completed',
+      output: [],
+      structured: { status: 'pass', summary: 'Estado anterior validado.', findings: [] },
+    })
+    const stale = await pending
+
+    expect(stale.error?.info?.code).toBe('GOAL_QUALITY_AUDIT_STALE')
+    expect(ctx.goals.get(root.agent)).toMatchObject({ phase: 'active', revision: 1 })
+    expect(root.session.events.some(event => event.type === 'goal/completion-audit')).toBe(false)
+  })
+
+  it('fails closed on invalid audit output and bounds auditor starts per turn', async () => {
+    const config: toolGoal.Config = {
+      completionRequiresCompletedTodos: true,
+      completionAuditorProvider: 'audit',
+      completionAuditorModelProvider: 'google',
+      completionAuditorModel: 'gemini-test',
+      completionAuditorMaxTokens: 2048,
+      completionAuditorMaxAttemptsPerTurn: 1,
+      completionAuditorReportMaxCharacters: 2000,
+    }
+    const { ctx, root } = await harness(config)
+    auditProvider(ctx, [{
+      stopReason: 'completed',
+      output: [],
+      structured: { status: 'pass', summary: 'inconsistent', findings: [{
+        severity: 'medium', requirement: 'test', evidence: 'failed', correction: 'fix',
+      }] },
+    }])
+    openTurn(root, { kind: 'user' })
+    const created = ctx.goals.create(root.agent, { objective: 'fail closed' })
+    root.session.append('todo/write', { todos: [{ content: 'validate', status: 'completed' }] })
+
+    const invalid = await execute(ctx, 'update_goal', {
+      goal_id: created.id, revision: created.revision, action: 'complete',
+    }, root.agent)
+    expect(invalid.error?.info?.code).toBe('GOAL_QUALITY_AUDIT_INVALID_VERDICT')
+    expect(ctx.goals.get(root.agent)?.phase).toBe('active')
+
+    const limited = await execute(ctx, 'update_goal', {
+      goal_id: created.id, revision: created.revision, action: 'complete',
+    }, root.agent)
+    expect(limited.error?.info?.code).toBe('GOAL_QUALITY_AUDIT_LIMIT')
+    expect(ctx.goals.get(root.agent)?.phase).toBe('active')
   })
 
   it('rearms a restored active goal only after a new direct human prompt', async () => {

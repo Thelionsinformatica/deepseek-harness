@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-这三份**默认关闭的参考配置**通过 [`@deepseek-ai/dsh-mcp-client`](../../packages/mcp/mcp-client/README.zh.md) 将一个记忆系统连接到 DSH。请选择其中一份，或复制相同的通用 MCP 配置项来连接其他服务器。
+这四份**默认关闭的参考配置**通过 [`@deepseek-ai/dsh-mcp-client`](../../packages/mcp/mcp-client/README.zh.md) 将一个记忆系统连接到 DSH。请选择其中一份，或复制相同的通用 MCP 配置项来连接其他服务器。
 
 这些第三方配置仅作为互操作参考；收录不代表 DeepSeek 的认可、推荐、合作关系或持续支持承诺。
 
@@ -19,6 +19,7 @@ stdio 桥接器在启动子进程前会主动移除环境中名称通常表示�
 | [Memorix](https://github.com/AVIDS2/memorix) | `memorix@1.3.0`（`500792cad3144142293bfbb20acb4841c9f7fcfa`） | stdio | Node 22.18+，并执行 `npm install --global memorix@1.3.0` |
 | [MCP Reference Memory](https://github.com/modelcontextprotocol/servers/tree/main/src/memory) | `@modelcontextprotocol/server-memory@2026.7.4`（`6dd0a683e198783e30feabf7abaf42f925bd18b1`） | stdio | `npm install --global @modelcontextprotocol/server-memory@2026.7.4` |
 | [Engram](https://github.com/Gentleman-Programming/engram) | `v1.20.0`（`ba9e46ced152c37a7cb9e576153c41995873e2fc`） | stdio | Go 1.25.10+，并执行 `go install github.com/Gentleman-Programming/engram/cmd/engram@v1.20.0`，或安装匹配的发布版二进制文件 |
+| 通过 [Letta MCP Server](https://github.com/oculairmedia/Letta-MCP-server) 连接旧版 Letta V1 | `letta-mcp-server@3.0.3`（`ea8b0b19fa689bb303207e027d3fbd06b8b377e2`） | stdio | 兼容 Letta V1 0.16.x 的 API 服务器，并执行 `npm install --global letta-mcp-server@3.0.3` |
 
 ## 启用一个
 
@@ -28,7 +29,7 @@ stdio 桥接器在启动子进程前会主动移除环境中名称通常表示�
 dsh web --patch "$PWD/examples/mcp-memory/memorix.cordis.yml"
 ```
 
-请将文件名替换为 `mcp-reference-memory.cordis.yml` 或 `engram.cordis.yml`。该路径可以指向磁盘任意位置的一份复制文件。交付组合不包含任何记忆服务器，因此不传 `--patch` 就会让这三项全部保持关闭。
+请将文件名替换为 `mcp-reference-memory.cordis.yml`、`engram.cordis.yml` 或 `letta.cordis.yml`。该路径可以指向磁盘任意位置的一份复制文件。交付组合不包含任何记忆服务器，因此不传 `--patch` 就会让这四项全部保持关闭。
 
 如果要跨次运行保留所选配置，请将对应文件中的单个 `insert` patch 合并到用户 patch 层：只对一个 profile 生效则写入 `$DSH_HOME/profiles/<name>/cordis.patch.yml`，对本机所有 profile 生效则写入 `$DSH_HOME/cordis.patch.yml`。不要覆盖已有文件，其中可能已经包含无关的用户 patch。
 
@@ -63,6 +64,28 @@ dsh web --patch "$PWD/examples/mcp-memory/engram.cordis.yml"
 
 Engram 负责存储和项目选择：它默认使用 `~/.engram`，从 DSH 工作目录检测 Git 项目，并接受 `ENGRAM_DATA_DIR` 或 `ENGRAM_PROJECT` 作为环境覆盖项。
 
+### Letta
+
+此示例仅为现有 Letta V1 0.16.x 部署保留。[当前 Letta
+项目](https://github.com/letta-ai/letta)已停止维护该服务器，并将活跃开发迁移到
+Letta Agent 及其 App Server。固定版本的社区桥接器仍以 8283 端口上的旧 REST
+API 为目标，因此不要将其指向当前 Letta Agent App Server。Leon 不会交付或自动
+安装任何一代 Letta。
+
+对于数据策略符合你要求的兼容旧版部署，请安装固定版本的社区 MCP 桥接器：
+
+```sh
+npm install --global letta-mcp-server@3.0.3
+```
+
+启动 DSH 前，将 `LETTA_BASE_URL` 设为 API 服务器地址（示例默认使用 `http://127.0.0.1:8283`），并将 `LETTA_PASSWORD` 设为该服务器的密码：
+
+```sh
+dsh web --patch "$PWD/examples/mcp-memory/letta.cordis.yml"
+```
+
+该 overlay 只向已清理的子进程环境传递这两个变量，并且只公开 `letta_memory_unified`。桥接器中的 agent、工具、数据源、任务、文件和 MCP 管理工具不会向 Leon 暴露。Letta 负责自己的 agent ID、记忆块、归档、embedding、模型连接、数据库和迁移；该 overlay 不会复用或传输 DSH 的 Ollama 或 Gemini 凭据。如果两个服务需要使用同一个本地模型服务器，请在 Letta 中单独配置 Ollama。
+
 ## 可选的共用模型指令
 
 如果服务器的工具描述无法可靠触发记忆使用，请将以下简短、与提供方无关的指令添加到你现有的模型指令中：
@@ -79,7 +102,7 @@ Engram 负责存储和项目选择：它默认使用 `~/.engram`，从 DSH 工�
 2. 在同一个仍在运行的 Host 中创建 DSH 会话 B。不要复制会话 A 的对话。提出：`What is my validation drink? Check memory.`。确认模型调用了提供方的搜索或召回工具，并返回该值。
 3. 继续在会话 B 中提出：`Use that preference to suggest one drink for the meeting.`。确认回答使用了召回的值。
 
-必须新建 DSH 会话，但不需要重启 Host。只有 MCP 子进程崩溃后才需要重启或执行 HMR（热模块替换），因为当前的通用客户端不会自动重连；其工具注册会一直保留，直到插件 dispose（资源释放）或成功重新同步，针对已关闭传输的调用可能失败。初始发现过程是异步的，因此发送第一条验证提示词前，请等待提供方的 `mcp__...` 工具出现。
+必须新建 DSH 会话，但不需要重启 Host。子进程崩溃后，通用客户端会在有限的重试预算内重连；恢复期间保留最后一次成功注册的工具，预算耗尽后移除这些工具。此时需要执行 HMR（热模块替换）或重启 Host 才能开始新的预算。初始发现过程是异步的，因此发送第一条验证提示词前，请等待提供方的 `mcp__...` 工具出现。
 
 ## 接入其他 MCP 服务器
 

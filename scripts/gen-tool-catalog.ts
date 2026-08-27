@@ -55,6 +55,9 @@ import * as ToolGoal from '@deepseek-ai/dsh-tool-goal'
 import * as ToolSchedule from '@deepseek-ai/dsh-schedule'
 import Lsp from '@deepseek-ai/dsh-lsp'
 import * as ToolLsp from '@deepseek-ai/dsh-tool-lsp'
+import MemoryRuntime from '@deepseek-ai/dsh-memory'
+import PersonalMemoryRuntime from '@deepseek-ai/dsh-personal-memory'
+import * as ToolMemory from '@deepseek-ai/dsh-tool-memory'
 import * as ToolSkill from '@deepseek-ai/dsh-tool-skill'
 import * as ToolSessionQuery from '@deepseek-ai/dsh-tool-session-query'
 import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
@@ -408,6 +411,21 @@ const TOOL_PACKAGES: ToolPackage[] = [
       'The lsp tool keeps provider selection and language-server subprocesses behind ctx.lsp, so its model-visible schema stays stable across providers. Requires a registered provider (e.g. `@deepseek-ai/dsh-lsp-stdio`) at runtime; without one, a query returns the structured `LSP_UNAVAILABLE` error rather than changing the schema.',
   },
   {
+    pkg: '@deepseek-ai/dsh-tool-memory',
+    dir: 'tool-memory',
+    source: 'packages/memory/tool-memory/src/index.ts',
+    requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.memory', 'ctx.personalMemory', 'ctx.workspaceRegistry', 'a calling Agent with a registered workspace'],
+    writes: ['tool/call', 'provider-owned durable workspace or personal memory for mutations', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(MemoryRuntime)
+      await ctx.plugin(PersonalMemoryRuntime, { provider: 'catalog' })
+      ctx.provide('workspaceRegistry', {} as never)
+      await ctx.plugin(ToolMemory, { personalOwnerId: 'tool-catalog-owner' })
+    },
+    note:
+      'Workspace operations resolve the calling session cwd to a stable workspace id. Personal operations use an explicit owner partition independent from workspace identity. Writes require explicit retention policy guidance; corrections and deletion require the exact id and revision returned by search.',
+  },
+  {
     pkg: '@deepseek-ai/dsh-tool-ralph',
     dir: 'tool-ralph',
     source: 'packages/workflow/tool-ralph/src/index.ts',
@@ -568,10 +586,10 @@ const TOOL_PACKAGES: ToolPackage[] = [
     requires: ['ctx.tools', 'owning Agent session'],
     writes: ['tool/call', 'todo/write', 'tool/result'],
     async mount(ctx) {
-      await ctx.plugin(ToolTodo, { allowParallelInProgress: true })
+      await ctx.plugin(ToolTodo, { allowParallelInProgress: true, preserveExistingItems: false })
     },
     note:
-      'todo_write is session-owned state; UIs render the latest todo/write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task.',
+      'todo_write is session-owned state; UIs render the latest todo/write event as a checklist. Both deployment policies are required with no defaults: the catalog enables parallel active items and disables additive-plan preservation. Other compositions may require one active item or retain existing items across later writes.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-workflow',

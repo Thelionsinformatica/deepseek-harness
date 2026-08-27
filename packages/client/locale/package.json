@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-client-locale",
-  "description": "Locale plugin: Host-backed zh/en preference, browser-derived fallback, locale snapshots, and typed namespace dictionaries",
+  "description": "Leon locale plugin: Brazilian Portuguese default, Host-backed language preference, locale snapshots, and typed namespace dictionaries",
   "version": "0.1.1-rc.2",
   "publishConfig": {
     "access": "public"

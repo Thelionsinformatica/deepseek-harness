@@ -64,6 +64,8 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
             value: {
               current: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
               routable: true,
+              automatic: false,
+              automaticAvailable: false,
               groups: [],
               failures: [],
             },
@@ -83,6 +85,7 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
                   ? {}
                   : { reasoningEffort: request.payload.reasoningEffort },
               },
+              automatic: request.payload.automatic ?? false,
             },
           },
         }
@@ -190,6 +193,12 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
       },
       async archiveSession(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { archivedSessionIds: [request.payload.sessionId] } } }
+      },
+      async unarchiveSession(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { archivedSessionIds: [] } } }
+      },
+      async deleteSession(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { deleted: true as const, archivedSessionIds: [] } } }
       },
     },
     agentPresets: {

@@ -347,6 +347,93 @@ describe('argument validation', () => {
     expect(text(await call(ctx, 'pwsh', { command: 'Write-Output hi', description: 'd', timeoutMs: -1 })))
       .toContain('invalid timeoutMs: expected a positive number')
   })
+
+  it('rejects host process termination before shell resolution when disabled', async () => {
+    const { ctx, bash } = await setup({ allowHostProcessTermination: false })
+    const schema = ctx.tools.schemas().find(item => item.name === 'pwsh')
+    expect(schema?.description).toContain('Never free a port by killing its owner')
+    expect(schema?.description).toContain('one background call containing only the server start command')
+    expect(renderPrompt(await ctx.systemPrompt.assemble())).toContain('Never free a port by killing its owner')
+    expect(renderPrompt(await ctx.systemPrompt.assemble()))
+      .toContain('Run the HTTP health check in a separate foreground call')
+    expect(renderPrompt(await ctx.systemPrompt.assemble()))
+      .toContain('read the returned server job with `job_output` before changing ports')
+
+    const commands = [
+      'Stop-Process -Id 4012 -Force',
+      'Get-NetTCPConnection -LocalPort 3001 | ForEach-Object { Stop-Process -Id $_.OwningProcess }',
+      'taskkill.exe /PID 4012 /F',
+      'Get-Process -Id 4012 | ForEach-Object { $_.Kill() }',
+      'Stop-Service -Name Spooler',
+      'wmic process where processid=4012 call terminate',
+    ]
+    for (const command of commands) {
+      const result = await call(ctx, 'pwsh', { command, description: 'control host process' })
+      expect(result.isError).toBe(true)
+      expect(text(result)).toContain('host process termination is disabled for this agent')
+    }
+    expect(bash.requests).toHaveLength(0)
+
+    const benign = await call(ctx, 'pwsh', {
+      command: "Write-Output 'Stop-Process is disabled'",
+      description: 'explain process policy',
+    })
+    expect(benign.isError).toBe(false)
+    expect(bash.requests).toHaveLength(1)
+  })
+
+  it('preserves direct process control in the default generic composition', async () => {
+    const { ctx, bash } = await setup()
+    const result = await call(ctx, 'pwsh', { command: 'Stop-Process -Id 4012', description: 'stop selected process' })
+    expect(result.isError).toBe(false)
+    expect(bash.requests).toHaveLength(1)
+  })
+
+  it('enforces separate managed server start and health-check calls when enabled', async () => {
+    const { ctx, bash } = await setupWithTasks({ enforceManagedServerValidation: true })
+
+    const foreground = await call(ctx, 'pwsh', {
+      command: 'node server.js',
+      description: 'start local server',
+    })
+    expect(foreground.isError).toBe(true)
+    expect(text(foreground)).toContain('local server starts must use run_in_background')
+
+    const combined = await call(ctx, 'pwsh', {
+      command: "node server.js; Invoke-WebRequest -Uri 'http://localhost:3008/'",
+      description: 'start and test server',
+      run_in_background: true,
+    })
+    expect(combined.isError).toBe(true)
+    expect(text(combined)).toContain('HTTP health check in a separate foreground call')
+
+    const nested = await call(ctx, 'pwsh', {
+      command: 'Start-Job { node server.js }',
+      description: 'start nested server job',
+      run_in_background: true,
+    })
+    expect(nested.isError).toBe(true)
+    expect(text(nested)).toContain('must not create a nested PowerShell job')
+    expect(bash.requests).toHaveLength(0)
+
+    const server = await call(ctx, 'pwsh', {
+      command: 'node server.js',
+      description: 'start managed server',
+      run_in_background: true,
+    })
+    expect(server.isError).toBe(false)
+    const health = await call(ctx, 'pwsh', {
+      command: "Invoke-WebRequest -Uri 'http://localhost:3008/' -UseBasicParsing",
+      description: 'check server health',
+    })
+    expect(health.isError).toBe(false)
+    const syntax = await call(ctx, 'pwsh', {
+      command: 'node --check server.js',
+      description: 'check server syntax',
+    })
+    expect(syntax.isError).toBe(false)
+    expect(bash.requests).toHaveLength(3)
+  })
 })
 
 describe('execution through the bash seam', () => {

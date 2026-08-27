@@ -21,6 +21,8 @@ const overrideFile = join(scenarioDir, 'replay.override.json')
 const stdoutExpected = join(scenarioDir, 'stdout.expected.jsonl')
 const sessionExpected = join(scenarioDir, 'session.expected.jsonl')
 const wrapupDir = join(dirname(fileURLToPath(import.meta.url)), 'goal-snapshots/goal-wrapup')
+const autoStartDir = join(dirname(fileURLToPath(import.meta.url)), 'goal-snapshots/goal-auto-start')
+const autoStartConfig = fileURLToPath(new URL('../goal-auto-start.cordis.yml', import.meta.url))
 const refreshing = process.env.DSH_SNAPSHOT === 'refresh'
 
 const agent: AgentUnderTest = {
@@ -168,5 +170,68 @@ describe('same-session goal snapshot through the ACP automation driver', () => {
     }
     expect(stdout).toBe(await readFile(wrapupStdoutExpected, 'utf8'))
     expect(session).toBe(await readFile(wrapupSessionExpected, 'utf8'))
+  })
+
+  it('auto-admits implementation work and continues without a model create_goal call', async () => {
+    const input = JSON.parse(await readFile(join(autoStartDir, 'input.json'), 'utf8')) as InputScript
+    const result = await runScenario(input, {
+      agent,
+      mode: 'replay',
+      fixtureFile: join(autoStartDir, 'session.jsonl'),
+      childFiles: [join(autoStartDir, 'session.1.jsonl')],
+      overrideFile: join(autoStartDir, 'replay.override.json'),
+      configPath: autoStartConfig,
+    })
+
+    expect(result.stderr).toBe('')
+    expect(result.sessionLogs).toHaveLength(2)
+    const log = result.sessionLogs.find(item => item.id === result.sessionId)
+    if (log === undefined) throw new Error('automatic goal snapshot did not persist its session')
+    const auditLog = result.sessionLogs.find(item => item.id !== result.sessionId)
+    if (auditLog === undefined) throw new Error('automatic goal snapshot did not persist its audit child')
+    const records = parseJsonl(log.content)
+    const events = records.slice(1) as unknown as SessionEvent[]
+    const calls = events.filter(event => event.type === 'tool/call').map(event => event.data.name)
+    expect(calls).toEqual(['todo_write', 'todo_write', 'update_goal'])
+    const rounds = events.flatMap(event => event.type === 'user/message' && event.data.source.kind === 'goal'
+      && event.data.source.round > 0
+      ? [event.data.source.round]
+      : [])
+    expect(rounds).toEqual([1])
+    expect(foldGoal(events)).toMatchObject({
+      goal: {
+        objective: 'Implement and validate a small project from start to finish.',
+        phase: 'complete',
+        revision: 2,
+        maxGoalRounds: 3,
+      },
+      roundsStarted: 1,
+    })
+    const auditRecords = parseJsonl(auditLog.content)
+    const auditEvents = auditRecords.slice(1) as unknown as SessionEvent[]
+    expect(auditEvents.filter(event => event.type === 'tool/call').map(event => event.data.name))
+      .toEqual(['structured_output'])
+
+    const context: NormalizeContext = {
+      sessionIds: [result.sessionId, ...result.sessionLogs.map(item => item.id)]
+        .filter((id): id is string => id !== undefined),
+      cwd: result.cwd,
+    }
+    const stdout = normalizeStdout(result.rawStdout, context)
+    const session = normalizeGoalLog(log.content, context)
+    const auditSession = normalizeGoalLog(auditLog.content, context)
+    const stdoutFile = join(autoStartDir, 'stdout.expected.jsonl')
+    const sessionFile = join(autoStartDir, 'session.expected.jsonl')
+    const auditSessionFile = join(autoStartDir, 'audit-session.expected.jsonl')
+    if (refreshing) {
+      await Promise.all([
+        writeFile(stdoutFile, stdout),
+        writeFile(sessionFile, session),
+        writeFile(auditSessionFile, auditSession),
+      ])
+    }
+    expect(stdout).toBe(await readFile(stdoutFile, 'utf8'))
+    expect(session).toBe(await readFile(sessionFile, 'utf8'))
+    expect(auditSession).toBe(await readFile(auditSessionFile, 'utf8'))
   })
 })

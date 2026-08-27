@@ -8,7 +8,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { useEffect } from 'react'
 import type {
   AssistantMessageNode, CommandNode, CompactionSummaryNode, ConversationNode, ConversationSnapshot,
-  ModelRetryNode, RunningToolCall, SessionId, SessionListState, ToolCallBlock, ToolResultNode, TurnErrorNode,
+  ModelFailoverNode, ModelRetryNode, RunningToolCall, SessionId, SessionListState, ToolCallBlock, ToolResultNode, TurnErrorNode,
   TurnMaxTokensNode, UserMessageNode, WorkspaceListState,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
@@ -27,7 +27,7 @@ import { zh } from '../src/client/locales.ts'
 import { AssistantNodeView } from '../src/client/chat/AssistantNodeView.tsx'
 import { CommandNodeView, ManualCompactionNodeView } from '../src/client/chat/CommandNodeView.tsx'
 import {
-  CompactionNodeView, ContextMessageNodeView, RetryNodeView, TurnErrorNodeView,
+  CompactionNodeView, ContextMessageNodeView, ModelFailoverNodeView, RetryNodeView, TurnErrorNodeView,
   TurnMaxTokensNodeView, UnknownNodeView, UserMessageNodeView,
 } from '../src/client/chat/MessageItem.tsx'
 import { TurnTailNodeView } from '../src/client/chat/TurnTailNodeView.tsx'
@@ -102,6 +102,13 @@ const retry = (seq: number): ModelRetryNode => ({
   provider: 'mock', mode: 'normal', policyKey: 'mock-normal',
   retry: 1, maxRetries: 2, delayMs: 450,
   failure: { code: 'TRANSPORT', message: '连接被重置' },
+})
+const failover = (seq: number): ModelFailoverNode => ({
+  kind: 'model-failover', seq, time: seq * 1_000, turn: 1, step: 0,
+  from: { provider: 'ollama', model: 'qwen3.5:9b' },
+  to: { provider: 'google', model: 'gemini-3.6-flash' },
+  failure: { code: 'TRANSPORT', message: 'connection refused' },
+  reason: 'provider-unavailable',
 })
 const turnError = (seq: number, code?: string): TurnErrorNode => ({
   kind: 'turn-error', seq, time: seq * 1_000, turn: 1, step: 0,
@@ -218,6 +225,8 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
         return <CompactionNodeView {...nodeProps<'compaction'>()} />
       case 'model-retry':
         return <RetryNodeView {...nodeProps<'model-retry'>()} />
+      case 'model-failover':
+        return <ModelFailoverNodeView {...nodeProps<'model-failover'>()} />
       case 'turn-error':
         return <TurnErrorNodeView {...nodeProps<'turn-error'>()} />
       case 'turn-max-tokens':
@@ -549,14 +558,14 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     const disclosure = view.container.querySelector('details') as HTMLDetailsElement
     expect(disclosure.dataset.active).toBe('true')
-    expect(within(disclosure).getByRole('status').textContent).toBe('正在重试模型请求（1/2） · 1s')
+    expect(within(disclosure).getByRole('status').textContent).toBe('正在重试模型请求（1/2）… · 1s')
 
     act(() => {
       h.set({ nodes: [user(1, 'try'), nextRetry] })
     })
     expect(within(disclosure).getAllByRole('status')).toHaveLength(1)
     expect(view.container.querySelector('details')).toBe(disclosure)
-    expect(within(disclosure).getByRole('status').textContent).toBe('正在重试模型请求（2/2） · 1s')
+    expect(within(disclosure).getByRole('status').textContent).toBe('正在重试模型请求（2/2）… · 1s')
 
     act(() => {
       h.set({
@@ -578,6 +587,31 @@ describe('ChatView', () => {
     const cancelledDisclosure = view.container.querySelector('details') as HTMLDetailsElement
     expect(cancelledDisclosure.dataset.active).toBeUndefined()
     expect(within(cancelledDisclosure).getByRole('status').textContent).toContain('重试已取消')
+  })
+
+  it('shows the automatic API replacement as a durable status row', () => {
+    const h = makeHarness({ nodes: [user(1, 'continue'), failover(2)], running: true })
+    render(<h.ChatView {...h.props} />)
+
+    const status = screen.getByText('ollama 不可用').closest('[role="status"]')
+    expect(status?.textContent).toContain('ollama 不可用')
+    expect(status?.textContent).toContain('Leon 已通过配置的故障转移自动从 qwen3.5:9b 切换到 gemini-3.6-flash。')
+  })
+
+  it('distinguishes exhausted provider credits from a transient outage', () => {
+    const quota = {
+      ...failover(2),
+      from: { provider: 'google', model: 'gemini-3.6-flash' },
+      to: { provider: 'openai', model: 'gpt-5.6-terra' },
+      failure: { code: 'QUOTA', message: 'prepayment credits are depleted' },
+    } satisfies ModelFailoverNode
+    const h = makeHarness({ nodes: [user(1, 'continue'), quota], running: true })
+    render(<h.ChatView {...h.props} />)
+
+    const status = screen.getByText('google 没有可用额度').closest('[role="status"]')
+    expect(status?.textContent).toContain('该提供方报告额度或点数已耗尽')
+    expect(status?.textContent).toContain('gemini-3.6-flash')
+    expect(status?.textContent).toContain('gpt-5.6-terra')
   })
 
   it('renders terminal turn failures inline with their durable message and optional code', () => {
@@ -875,7 +909,7 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     expect(view.getByTestId('tool-seat-r1')).toBeTruthy()
     expect(h.toolOwners[0]?.block).toMatchObject({ callId: 'r1', argsRaw: '{"command":"cmd-r1"}' })
-    expect(view.getByRole('status').textContent).toBe('Deep diving...')
+    expect(view.getByRole('status').textContent).toBe('Leon 正在工作…')
   })
 
   it('keeps the Tool renderer mounted when a running call settles into log order', () => {
@@ -935,7 +969,7 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     // Freshly mounted (as after a reload) yet already past the 15s gate.
     const status = view.getByRole('status')
-    expect(status.textContent).toMatch(/^Deep diving\.\.\.2分0\d秒$/)
+    expect(status.textContent).toMatch(/^Leon 正在工作…2分0\d秒$/)
     expect(status.querySelector('[aria-hidden="true"]')).not.toBeNull()
     act(() => {
       h.set({ queue: [{
@@ -947,7 +981,7 @@ describe('ChatView', () => {
         text: 'also',
       }] })
     })
-    expect(status.textContent).toMatch(/^Deep diving\.\.\.2分0\d秒$/)
+    expect(status.textContent).toMatch(/^Leon 正在工作…2分0\d秒$/)
   })
 
   it('hands each ordered root call to the keyed business-node slot', () => {

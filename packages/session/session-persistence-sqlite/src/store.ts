@@ -238,6 +238,19 @@ export class SqliteStore implements PersistenceBackend<number> {
     }
   }
 
+  /** Delete one metadata row and its FK-cascaded events in one transaction. */
+  async deleteStored(id: SessionId): Promise<void> {
+    await this.open()
+    this.db.exec(sql('begin-immediate'))
+    try {
+      validateSchemaForMutation(this.databaseConstructor, this.db, this.databasePath)
+      this.db.prepare(sql('delete-session')).run(id)
+      this.db.exec(sql('commit'))
+    } catch (error: unknown) {
+      this.rollback(error, 'delete')
+    }
+  }
+
   async list(signal?: AbortSignal): Promise<SessionHeader[]> {
     await this.observe(signal)
     const rows = this.sessionRows()

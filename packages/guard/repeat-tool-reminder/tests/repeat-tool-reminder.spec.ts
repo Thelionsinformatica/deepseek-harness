@@ -13,7 +13,7 @@ import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent
 const testToolSignal = new AbortController().signal
 
 /**
- * Behavior suite for the repeat-tool-call guard: chain semantics (identical /
+ * Behavior suite for the repeat-tool reminder: chain semantics (identical /
  * different-tracked / untracked-transparent / per-agent / resets), threshold
  * escalation incl. the `thresholds[0]` gentle-text rule, canonicalization,
  * fold-onto-downstream-decision, and fail-loud config validation — all driven
@@ -275,7 +275,7 @@ describe('chain semantics', () => {
     expect(reminders(second)).toHaveLength(0)
   })
 
-  it('counts denied calls: hammering a denied tool still draws the reminder', async () => {
+  it('resets on denied calls because failure repetition belongs to recovery policy', async () => {
     const ctx = await harness({ thresholds: [2] })
     ctx.on('tools/pre-execute', async () => ({ kind: 'deny' as const, reason: 'sealed' }))
     const adapter = new MockAdapter([
@@ -288,7 +288,7 @@ describe('chain semantics', () => {
     agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
     await waitForIdle(ctx, agent)
 
-    expect(reminders(agent)).toHaveLength(1)
+    expect(reminders(agent)).toHaveLength(0)
   })
 
   it('ignores direct executes with no agent (they neither crash nor advance any chain)', async () => {
@@ -309,7 +309,7 @@ describe('chain semantics', () => {
 })
 
 describe('fold onto the downstream decision', () => {
-  it('folds the reminder onto a downstream block and keeps its feedback', async () => {
+  it('keeps a downstream block and does not classify it as successful repetition', async () => {
     const ctx = await harness({ thresholds: [2] })
     ctx.on('tools/post-execute', async () => ({
       kind: 'block' as const,
@@ -329,13 +329,9 @@ describe('fold onto the downstream decision', () => {
     await waitForIdle(ctx, agent)
 
     const found = reminders(agent)
-    expect(found).toHaveLength(3)
-    // Only the repeated call adds guard context; downstream source fields survive.
-    expect(found[0]!.text).toBe('downstream-ctx')
-    expect(found[0]!.source).toEqual({ kind: 'plugin', plugin: 'test' })
-    expect(found[1]!.text).toContain('repeating the exact same tool call')
-    expect(found[1]!.source).toEqual(guardSource('probe', 2))
-    expect(found[2]).toEqual({ text: 'downstream-ctx', source: { kind: 'plugin', plugin: 'test' } })
+    expect(found).toHaveLength(2)
+    expect(found.every(item => item.text === 'downstream-ctx')).toBe(true)
+    expect(found.every(item => JSON.stringify(item.source) === JSON.stringify({ kind: 'plugin', plugin: 'test' }))).toBe(true)
     // The block's feedback reached the tool result unchanged.
     const results = [...agent.session.events].filter((e): e is SessionEvent<'tool/result'> => e.type === 'tool/result')
     expect(results.every(r => r.data.message.content[0].isError)).toBe(true)

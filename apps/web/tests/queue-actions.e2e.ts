@@ -95,6 +95,7 @@ describe('web e2e: queue row actions', () => {
     for (const text of [REMOVE, EDIT]) {
       await input.fill(text)
       await input.press('Enter')
+      await expect.poll(() => input.inputValue(), { timeout: 10_000 }).toBe('')
     }
     const queueHeader = page.getByRole('button', { name: '2 queued messages' })
     await expect.poll(() => queueHeader.getAttribute('aria-expanded'), { timeout: 10_000 })

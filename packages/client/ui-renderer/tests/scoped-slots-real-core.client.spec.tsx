@@ -118,9 +118,8 @@ describe('createSlotRenderer over the real SlotCore', () => {
       return null
     })
     expect(captured!('spec.single', {})).not.toBeUndefined()   // live binding renders
-    // Unmount before disposing: an empty 'root' makes a LIVE root outlet
-    // rethrow boot-order (covered in the fake-host suite); the scenario here
-    // is a retained closure outliving both tree and registration.
+    // Unmount before disposing: this scenario is a retained closure outliving
+    // both the tree and registration, not the live root-transition path.
     view.unmount()
     dispose()
     expect(() => captured!('spec.single', {})).toThrow(StaleAuthorizationError)

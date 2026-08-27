@@ -232,6 +232,30 @@ export class WorkspaceManager {
   }
 
   /**
+   * Restore one archived session and install the full committed archive set.
+   * @param sessionId - archived session to make visible again.
+   * @returns the wire result containing the committed archive set.
+   */
+  async unarchiveSession(sessionId: SessionId): Promise<RpcResult<{ archivedSessionIds: SessionId[] }>> {
+    const { result } = await this.api.workspace.unarchiveSession({ sessionId })
+    if (result.ok) this.installArchived(result.value.archivedSessionIds)
+    return result
+  }
+
+  /**
+   * Permanently delete one session and install the post-commit archive set.
+   * @param sessionId - session whose Leon-owned history is permanently removed.
+   * @returns the wire result containing deletion status and the committed archive set.
+   */
+  async deleteSession(
+    sessionId: SessionId,
+  ): Promise<RpcResult<{ deleted: true; archivedSessionIds: SessionId[] }>> {
+    const { result } = await this.api.workspace.deleteSession({ sessionId })
+    if (result.ok) this.installArchived(result.value.archivedSessionIds)
+    return result
+  }
+
+  /**
    * Host-frame entry. Non-workspace frames are ignored so the runtime can
    * fan one host stream out to both object managers.
    * @param envelope - host stream envelope.

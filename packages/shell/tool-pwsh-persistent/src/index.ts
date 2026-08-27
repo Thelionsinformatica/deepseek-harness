@@ -95,7 +95,12 @@ function wrapCommand(command: string, marker: CommandMarkers): string {
   // regex needs digits immediately after it and the echo continues with
   // quote characters.
   const body = quoteForPwsh(command)
-  return `Write-Output '${marker.start}'; $LASTEXITCODE = $null; $__s = 1; try { Invoke-Expression "${body}"; $__ok = $? } catch { $__ok = $false }; if ($null -ne $LASTEXITCODE) { $__s = [int]$LASTEXITCODE } else { $__s = if ($__ok) { 0 } else { 1 } }; Write-Output ('${marker.end}' + $__s)`
+  // Finish an unterminated command row through the same Console.Out channel
+  // before switching back to pipeline output for the completion marker.
+  // ConPTY can otherwise redraw the visible row and a line-oriented capture
+  // may retain it twice. Commands that already ended their row receive no
+  // extra wrapper newline, preserving the historical output contract.
+  return `Write-Output '${marker.start}'; $LASTEXITCODE = $null; $__s = 1; try { Invoke-Expression "${body}"; $__ok = $? } catch { $__ok = $false }; if ($null -ne $LASTEXITCODE) { $__s = [int]$LASTEXITCODE } else { $__s = if ($__ok) { 0 } else { 1 } }; if ([Console]::CursorLeft -ne 0) { [Console]::Out.WriteLine() }; Write-Output ('${marker.end}' + $__s)`
 }
 
 function stripPrompt(text: string): string {
@@ -113,7 +118,10 @@ function commandOutput(
 ): CapturedOutput | undefined {
   const text = snapshot.text
   const end = text.lastIndexOf(marker.end)
-  const status = /^(\d+)\r?\n/.exec(text.slice(end + marker.end.length))?.[1]
+  // ConPTY/xterm scrollback can retain visual padding after the status digits.
+  // Treat horizontal whitespace before the line ending as terminal rendering,
+  // not command output, so the private completion marker never leaks.
+  const status = /^(\d+)[^\S\r\n]*\r?\n/.exec(text.slice(end + marker.end.length))?.[1]
   if (status === undefined) return undefined
   const startMarker = text.lastIndexOf(marker.start, end)
   const start = startMarker < 0 ? 0 : startMarker + marker.start.length

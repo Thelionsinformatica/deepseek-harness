@@ -496,4 +496,144 @@ describe('Web session model selection', () => {
       .not.toContain('deleted-gateway/deleted-model')
     await ctx.fiber.dispose()
   })
+
+  it('adapts idle prompts, exposes the active route, and preserves explicit manual control', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    const followup = vi.fn()
+    Object.assign(agent, { status: 'idle', followup })
+    const choose = vi.fn(({ content }: { content: readonly { type: string; text?: string }[] }) => ({
+      provider: 'deepseek-official',
+      model: content.some(part => part.text?.includes('auditoria') === true)
+        ? 'deepseek-reasoner'
+        : 'deepseek-chat',
+    }))
+    const saveDefaultModelSelection = vi.fn(() => Promise.resolve())
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-reasoner' }),
+      saveDefaultModelSelection,
+      adaptiveModelSelection: choose,
+      cwd: '/tmp',
+    })
+
+    expect(expectValue(await api.sessions.models(request({ sessionId })))).toMatchObject({
+      automatic: true,
+      automaticAvailable: true,
+      current: { provider: 'deepseek-official', model: 'deepseek-chat' },
+    })
+    expect(choose).toHaveBeenLastCalledWith({ content: [], hasHistory: false })
+
+    expectValue(await api.sessions.prompt(request({
+      sessionId, mode: 'queue' as const, content: [{ type: 'text' as const, text: 'Olá, Leon' }],
+    })))
+    expect(choose).toHaveBeenLastCalledWith(expect.objectContaining({ hasHistory: false }))
+    expect(expectValue(await api.sessions.models(request({ sessionId })))).toMatchObject({
+      automatic: true,
+      current: { provider: 'deepseek-official', model: 'deepseek-chat' },
+    })
+
+    agent.session.append('turn/start', { turn: 1 })
+    expectValue(await api.sessions.prompt(request({
+      sessionId,
+      mode: 'queue' as const,
+      content: [{ type: 'text' as const, text: 'Faça uma auditoria completa.' }],
+    })))
+    expect(choose).toHaveBeenLastCalledWith(expect.objectContaining({ hasHistory: true }))
+    expect(expectValue(await api.sessions.models(request({ sessionId })))).toMatchObject({
+      current: { provider: 'deepseek-official', model: 'deepseek-reasoner' },
+    })
+
+    const manual = expectValue(await api.sessions.selectModel(request({
+      sessionId, provider: 'deepseek-official', model: 'deepseek-chat',
+    })))
+    expect(manual.automatic).toBe(false)
+    expect(manual.externalFailoverConsent).toBe(false)
+    expect(saveDefaultModelSelection).toHaveBeenCalledOnce()
+    const decisionsBeforeManualPrompt = choose.mock.calls.length
+    expectValue(await api.sessions.prompt(request({
+      sessionId,
+      mode: 'queue' as const,
+      content: [{ type: 'text' as const, text: 'Faça outra auditoria completa.' }],
+    })))
+    expect(choose).toHaveBeenCalledTimes(decisionsBeforeManualPrompt)
+    expect(expectValue(await api.sessions.models(request({ sessionId })))).toMatchObject({
+      automatic: false,
+      current: { provider: 'deepseek-official', model: 'deepseek-chat' },
+    })
+
+    const enabled = expectValue(await api.sessions.selectModel(request({
+      sessionId,
+      provider: 'deepseek-official',
+      model: 'deepseek-chat',
+      automatic: true,
+      externalFailoverConsent: true,
+    })))
+    expect(enabled.automatic).toBe(true)
+    expect(enabled.externalFailoverConsent).toBe(true)
+    expect(expectValue(await api.sessions.models(request({ sessionId }))).externalFailoverConsent).toBe(true)
+    expect(saveDefaultModelSelection).toHaveBeenCalledOnce()
+    expect(followup).toHaveBeenCalledTimes(3)
+    await ctx.fiber.dispose()
+  })
+
+  it('binds a running-turn follow-up route to the exact next-turn inbox claim', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    const followup = vi.fn()
+    Object.assign(agent, { status: 'running', followup })
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      adaptiveModelSelection: ({ content }) => ({
+        provider: 'deepseek-official',
+        model: content.some(part => part.type === 'text' && part.text.includes('auditoria'))
+          ? 'deepseek-reasoner'
+          : 'deepseek-chat',
+        reasoningEffort: ReasoningEffortId('high'),
+      }),
+      cwd: '/tmp',
+    })
+
+    expectValue(await api.sessions.prompt(request({
+      sessionId,
+      mode: 'queue' as const,
+      content: [{ type: 'text' as const, text: 'Faça uma auditoria profunda.' }],
+    })))
+    const queued = followup.mock.calls[0]?.[0] as UserMessage
+
+    // The route is not allowed to change the still-running turn.
+    expect(expectValue(await api.sessions.models(request({ sessionId }))).current)
+      .toEqual({ provider: 'deepseek-official', model: 'deepseek-chat' })
+
+    // Claiming that exact ordinary message is the next-turn boundary. Its
+    // resolved route is installed before prompt assembly and model request.
+    agentEvents(ctx, agent).emit('agent/inbox/claimed', { message: queued, turn: 2 })
+    expect(expectValue(await api.sessions.models(request({ sessionId }))).current)
+      .toEqual({ provider: 'deepseek-official', model: 'deepseek-reasoner', reasoningEffort: 'high' })
+
+    expectValue(await api.sessions.selectModel(request({
+      sessionId, provider: 'deepseek-official', model: 'deepseek-chat', automatic: true,
+    })))
+    expectValue(await api.sessions.prompt(request({
+      sessionId,
+      mode: 'queue' as const,
+      content: [{ type: 'text' as const, text: 'Faça outra auditoria profunda.' }],
+    })))
+    const discarded = followup.mock.calls[1]?.[0] as UserMessage
+    agentEvents(ctx, agent).emit('agent/inbox/discarded', { message: discarded })
+    agentEvents(ctx, agent).emit('agent/inbox/claimed', { message: discarded, turn: 3 })
+    expect(expectValue(await api.sessions.models(request({ sessionId }))).current)
+      .toEqual({ provider: 'deepseek-official', model: 'deepseek-chat', reasoningEffort: 'high' })
+
+    expectValue(await api.sessions.prompt(request({
+      sessionId,
+      mode: 'queue' as const,
+      content: [{ type: 'text' as const, text: 'Faça uma terceira auditoria profunda.' }],
+    })))
+    const manuallyOverridden = followup.mock.calls[2]?.[0] as UserMessage
+    expectValue(await api.sessions.selectModel(request({
+      sessionId, provider: 'deepseek-official', model: 'deepseek-chat',
+    })))
+    agentEvents(ctx, agent).emit('agent/inbox/claimed', { message: manuallyOverridden, turn: 4 })
+    expect(expectValue(await api.sessions.models(request({ sessionId }))).current)
+      .toEqual({ provider: 'deepseek-official', model: 'deepseek-chat', reasoningEffort: 'high' })
+    await ctx.fiber.dispose()
+  })
 })

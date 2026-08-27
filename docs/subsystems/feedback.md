@@ -260,7 +260,23 @@ Storage-domain sidecar service. It inspects persisted Session history and never 
  * @returns the stable absent postcondition, or an explicit failure.
  */
 @Remote('delete') delete(request: MessageFeedbackDeleteRequest): Promise<MessageFeedbackDeleteResult>
+
+/**
+ * Durably remove the complete feedback sidecar row for one permanently
+ * deleted session. The operation does not inspect the now-deleted canonical
+ * log, is serialized with item puts/deletes for the same Session id, and is
+ * idempotent when the row is already absent.
+ *
+ * This Host-internal lifecycle method is intentionally not a Gateway
+ * Remote: end users delete a session through the session orchestrator, which
+ * owns canonical-log deletion and all sidecar purges as one workflow.
+ * @param sessionId - permanently deleted session whose feedback row must be absent.
+ * @returns resolution after the durable row deletion reaches its queue slot.
+ */
+purgeSession(sessionId: SessionId): Promise<void>
 ```
+
+Types: [SessionId](core.md)
 
 Source: [`packages/feedback/message-feedback/src/index.ts`](../../packages/feedback/message-feedback/src/index.ts)
 <!-- END GENERATED cordis-surface -->

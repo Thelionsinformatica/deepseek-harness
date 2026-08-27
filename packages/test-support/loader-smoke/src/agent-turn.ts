@@ -27,7 +27,7 @@ function addUsage(total: TokenUsage | undefined, step: TokenUsage): TokenUsage {
     inputTokens: (total?.inputTokens ?? 0) + step.inputTokens,
     outputTokens: (total?.outputTokens ?? 0) + step.outputTokens,
   }
-  for (const key of ['cacheReadTokens', 'cacheWriteTokens', 'reasoningTokens'] as const) {
+  for (const key of ['cacheReadTokens', 'cacheWriteTokens', 'reasoningTokens', 'providerCostUsdNanos'] as const) {
     if (total?.[key] !== undefined || step[key] !== undefined) next[key] = (total?.[key] ?? 0) + (step[key] ?? 0)
   }
   return next

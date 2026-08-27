@@ -488,6 +488,31 @@ describe('WorkspaceRuntime', () => {
     expect(workspaces.list.getSnapshot().archivedSessionIds).toEqual(['s-open'])
   })
 
+  it('restores and permanently deletes through unary echoes without waiting for Host frames', async () => {
+    const ctx = new Context()
+    const api = new FakeApiClient()
+    const sessions = new SessionRuntime(ctx, api, fakeRemote())
+    const workspaces = new WorkspaceRuntime(ctx, api, sessions)
+    api.onList = () => Promise.resolve(ok({
+      items: [{ sessionId: sid('target'), updatedAt: 1, running: false, blank: false }],
+    }) as never)
+    await sessions.refresh()
+    sessions.open(sid('target'))
+
+    api.onWorkspaceList = () => Promise.resolve(ok({
+      items: [], archivedSessionIds: [sid('target')],
+    }) as never)
+    await workspaces.refresh()
+    await expect(workspaces.unarchiveSession(sid('target'))).resolves.toBeUndefined()
+    expect(api.callsOf('workspace.unarchiveSession')).toEqual([{ sessionId: 'target' }])
+    expect(workspaces.list.getSnapshot().archivedSessionIds).toEqual([])
+
+    await expect(workspaces.deleteSession(sid('target'))).resolves.toBeUndefined()
+    expect(api.callsOf('workspace.deleteSession')).toEqual([{ sessionId: 'target' }])
+    expect(sessions.list.getSnapshot().ids).not.toContain('target')
+    expect(sessions.list.getSnapshot().current).toBeUndefined()
+  })
+
   it('clears a current archived by a remote frame and shields the set from a stale in-flight baseline', async () => {
     const ctx = new Context()
     const api = new FakeApiClient()

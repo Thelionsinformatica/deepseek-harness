@@ -46,11 +46,14 @@ function scriptedApi(overrides: {
       models: r => ok(r, {
         current: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
         routable: true,
+        automatic: false,
+        automaticAvailable: false,
         groups: [],
         failures: [],
       }),
       selectModel: r => ok(r, {
         selected: { provider: r.payload.provider, model: r.payload.model },
+        automatic: r.payload.automatic ?? false,
       }),
       rename: r => ok(r, { title: 'renamed', seq: 0 }),
       fork: r => ok(r, { sessionId: sid('s-fork') }),
@@ -88,6 +91,8 @@ function scriptedApi(overrides: {
       insertBefore: r => ok(r, { workspaceIds: [r.payload.workspaceId] }),
       insertSessionBefore: r => ok(r, { workspace: { workspaceId: 'w1' as never, path: '/t', title: 't', sessionIds: [], createdAt: '0', updatedAt: '0' } }),
       archiveSession: r => ok(r, { archivedSessionIds: [r.payload.sessionId] }),
+      unarchiveSession: r => ok(r, { archivedSessionIds: [] }),
+      deleteSession: r => ok(r, { deleted: true as const, archivedSessionIds: [] }),
     },
     skills: { list: r => ok(r, { skills: [] }), ...overrides.skills },
     agentPresets: {

@@ -7,12 +7,14 @@
 
 import { EventEmitter } from 'node:events'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import * as yaml from 'js-yaml'
 import { Context } from '@deepseek-ai/cordis'
+import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import { createLaunchEnvironmentSnapshot, DSH_LAUNCH_ENVIRONMENT_KEY } from '@deepseek-ai/dsh-launch-environment'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import type { WebServer } from '@deepseek-ai/dsh-host-webserver'
@@ -74,6 +76,7 @@ function fakeHttpServer(host: '127.0.0.1' | '0.0.0.0' = '127.0.0.1'): { server: 
   const server = {
     host,
     port: 4567,
+    register: () => () => {},
     registerFallback: (handler: unknown) => {
       fallback = handler
       return () => { fallback = undefined }
@@ -95,6 +98,143 @@ interface BashContribution {
 }
 
 describe('web-app runtime glue', () => {
+  it('pins Leon Automatic to Qwen/Ornith locally with FreeLLMAPI, Gemini, and OpenAI fallbacks', () => {
+    const patch = readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
+    const start = patch.indexOf('    - id: api-gateway')
+    const end = patch.indexOf('\n    - id:', start + 1)
+    const gateway = patch.slice(start, end)
+    expect(gateway).toContain('provider: ollama')
+    expect(gateway).toContain('fastProvider: ollama')
+    expect(gateway).toContain('mainProvider: ollama')
+    expect(gateway).toContain('expertProvider: ollama')
+    expect(gateway).toContain('fastModel: qwen3.5:9b')
+    expect(gateway).toContain('mainModel: qwen3.5:9b')
+    expect(patch).not.toContain('qwen3.5:4b')
+    expect(gateway).toContain('expertModel: ornith-1.5:9b')
+    expect(gateway).toContain('mainReasoningEffort: medium')
+    expect(gateway).toContain('fromRound: 1')
+    expect(gateway).toContain('model: ornith-1.5:9b')
+    expect(gateway).toContain('fromProviders:')
+    expect(gateway).toContain('- ollama')
+    expect(gateway).toContain('provider: freellmapi')
+    expect(gateway).toContain('provider: google')
+    expect(gateway).toContain('provider: openai')
+    expect(gateway).toContain('model: gemini-3.1-pro-preview-customtools')
+    expect(gateway).toContain('model: gpt-5.6-luna')
+    expect(gateway).toContain('reasoningEffort: low')
+    expect(gateway).not.toContain('qwen3.8-9b-distill-uncensored-heretic:latest')
+    expect(gateway).not.toContain('deepseek-ai/deepseek-v4-flash-0731')
+    expect(gateway).toContain('- TRANSPORT')
+    expect(gateway).toContain('policyVersion: leon-shadow-v1')
+    expect(gateway).toContain('externalPolicy: fallback-only')
+    expect(gateway).toContain('residency: local')
+    expect(gateway).toContain('residency: external')
+    expect(gateway).not.toMatch(/(?:provider|fastModel|mainModel|expertModel|model):.*deepseek/iu)
+    expect(patch).toContain("- id: ui-voice\n      name: '@deepseek-ai/dsh-client-ui-voice'")
+    expect(patch).toContain("- id: lsp\n      name: '@deepseek-ai/dsh-lsp'")
+    expect(patch).toContain("- id: lsp-stdio\n      name: '@deepseek-ai/dsh-lsp-stdio'")
+    expect(patch).toContain('typescript-language-server/lib/cli.mjs')
+    expect(patch).toContain('.tsx: typescriptreact')
+
+    const parsed = yaml.load(patch, { schema: entryListSchema })
+    const rows = (parsed as { insert?: { id?: string; config?: Record<string, unknown> }[] }[])
+      .flatMap(entry => entry.insert ?? [])
+    expect(rows.find(row => row.id === 'api-gateway')?.config).toMatchObject({
+      adaptiveRouting: {
+        expertProvider: 'ollama',
+        expertModel: 'ornith-1.5:9b',
+        goalRoundTiers: [{
+          fromRound: 1, provider: 'ollama', model: 'ornith-1.5:9b', reasoningEffort: 'high',
+        }],
+        failovers: [
+          {
+            fromProviders: ['ollama'],
+            provider: 'freellmapi',
+            model: 'auto',
+            residency: 'external',
+            failureCodes: ['TRANSPORT', 'TIMEOUT', 'SERVER', 'UNKNOWN_MODEL', 'NO_ADAPTER'],
+          },
+          {
+            fromProviders: ['freellmapi'],
+            provider: 'google',
+            model: 'gemini-3.1-pro-preview-customtools',
+            residency: 'external',
+          },
+          {
+            fromProviders: ['google'],
+            provider: 'openai',
+            model: 'gpt-5.6-luna',
+            reasoningEffort: 'low',
+            residency: 'external',
+          },
+        ],
+      },
+    })
+    const shadow = (rows.find(row => row.id === 'api-gateway')?.config as {
+      adaptiveRouting?: {
+        shadow?: {
+          policyVersion: string
+          externalPolicy: string
+          routes: Array<{ provider: string; model: string; residency: string }>
+        }
+      }
+    } | undefined)?.adaptiveRouting?.shadow
+    expect(shadow).toMatchObject({
+      policyVersion: 'leon-shadow-v1',
+      externalPolicy: 'fallback-only',
+    })
+    expect(shadow?.routes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ provider: 'ollama', model: 'qwen3.5:9b', residency: 'local' }),
+      expect.objectContaining({ provider: 'ollama', model: 'ornith-1.5:9b', residency: 'local' }),
+      expect.objectContaining({ provider: 'freellmapi', model: 'auto', residency: 'external' }),
+      expect.objectContaining({ provider: 'google', model: 'gemini-3.1-pro-preview-customtools', residency: 'external' }),
+      expect.objectContaining({ provider: 'openai', model: 'gpt-5.6-luna', residency: 'external' }),
+    ]))
+    expect(shadow?.routes).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ model: 'qwen3.8-9b-distill-uncensored-heretic:latest' }),
+      expect.objectContaining({ provider: 'nvidia' }),
+    ]))
+    const prices = rows.find(row => row.id === 'session-stats')?.config?.prices as unknown[]
+    expect(prices).toContainEqual({
+      provider: 'ollama', model: 'qwen3.5:9b',
+      inputUsdPerMillion: 0, outputUsdPerMillion: 0,
+    })
+    expect(prices).toContainEqual({
+      provider: 'ollama', model: 'ornith-1.5:9b',
+      inputUsdPerMillion: 0, outputUsdPerMillion: 0,
+    })
+    expect(prices).toContainEqual({
+      provider: 'ollama', model: 'qwen3.8-9b-distill-uncensored-heretic:latest',
+      inputUsdPerMillion: 0, outputUsdPerMillion: 0,
+    })
+    expect(prices).toContainEqual({
+      provider: 'google', model: 'gemini-3.1-pro-preview-customtools',
+      inputUsdPerMillion: 2, outputUsdPerMillion: 12,
+      cacheReadUsdPerMillion: 0.2,
+    })
+    expect(prices).not.toContainEqual(expect.objectContaining({ provider: 'freellmapi' }))
+    expect(prices).toContainEqual({
+      provider: 'openai', model: 'gpt-5.6-luna',
+      inputUsdPerMillion: 0.2, outputUsdPerMillion: 1.2,
+      cacheReadUsdPerMillion: 0.02,
+    })
+    expect(prices).toContainEqual({
+      provider: 'nvidia', model: 'deepseek-ai/deepseek-v4-flash-0731',
+      inputUsdPerMillion: 0, outputUsdPerMillion: 0,
+    })
+  })
+
+  it('ships local semantic memory retrieval as an explicit opt-in', () => {
+    const patch = readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
+    const parsed = yaml.load(patch, { schema: entryListSchema })
+    const rows = (parsed as { insert?: { id?: string; config?: Record<string, unknown> }[] }[])
+      .flatMap(entry => entry.insert ?? [])
+
+    expect(rows.find(row => row.id === 'memory-local')?.config).toMatchObject({
+      semanticSearch: { enabled: false },
+    })
+  })
+
   it('mounts dist serving, prompt section, bash variables, and publishes the URL with the LAN snapshot', async () => {
     stageDist()
     const ctx = new Context()
@@ -137,13 +277,20 @@ describe('web-app runtime glue', () => {
     ])
     const assembly = await ctx.systemPrompt.assemble()
     expect(assembly.sections.find(entry => entry.name === 'harness:source')?.text).toContain('DeepSeek Harness implementation checkout')
+    expect(assembly.sections.find(entry => entry.name === 'app:web-surface')?.text).toContain('Leon Web GUI')
     const section = assembly.sections.find(entry => entry.name === 'app:web-surface')
     expect(section?.text).toContain('http://127.0.0.1:4567')
     // The single update contract: the receiver is always on; no-refresh
     // reloads additionally need the rebuild watcher.
     expect(section?.text).toContain('pnpm run dev:web')
     const webRuntime = contributions.find(contribution => contribution.name === 'web-runtime')
-    expect(webRuntime?.resolve()).toEqual({ DSH_WEB_URL: 'http://127.0.0.1:4567' })
+    expect(Object.keys(webRuntime?.variables ?? {}).sort()).toEqual([
+      'DSH_NODE', 'DSH_PLAYWRIGHT_CLI', 'DSH_WEB_URL',
+    ])
+    const resolvedRuntime = webRuntime?.resolve()
+    expect(resolvedRuntime?.DSH_NODE).toBe(process.execPath)
+    expect(resolvedRuntime?.DSH_PLAYWRIGHT_CLI).toMatch(/[\\/]@playwright[\\/]cli[\\/]playwright-cli\.js$/u)
+    expect(resolvedRuntime?.DSH_WEB_URL).toBe('http://127.0.0.1:4567')
     await ctx.fiber.dispose()
   })
 

@@ -44,13 +44,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out trusted policy
+        if: ${{ github.repository != 'Thelionsinformatica/deepseek-harness' || vars.DSH_ISSUE_AUTOMATION_ENABLED == 'true' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
       - name: Create project token
         id: app-token
-        if: ${{ github.event_name != 'pull_request_review' || github.event.review.state == 'changes_requested' }}
+        if: ${{ (github.repository != 'Thelionsinformatica/deepseek-harness' || vars.DSH_ISSUE_AUTOMATION_ENABLED == 'true') && (github.event_name != 'pull_request_review' || github.event.review.state == 'changes_requested') }}
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
         with:
           client-id: ${{ vars.DSH_ISSUE_APP_CLIENT_ID }}
@@ -58,7 +59,10 @@ jobs:
           owner: deepseek-harness
           repositories: deepseek-harness
       - name: Handle repository event
-        if: ${{ github.event_name != 'pull_request_review' || github.event.review.state == 'changes_requested' }}
+        if: ${{ (github.repository != 'Thelionsinformatica/deepseek-harness' || vars.DSH_ISSUE_AUTOMATION_ENABLED == 'true') && (github.event_name != 'pull_request_review' || github.event.review.state == 'changes_requested') }}
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: node .github/issue-management/policy.mjs lifecycle
+      - name: Skip upstream issue lifecycle in the Leon fork
+        if: ${{ github.repository == 'Thelionsinformatica/deepseek-harness' && vars.DSH_ISSUE_AUTOMATION_ENABLED != 'true' }}
+        run: echo "Issue lifecycle is opt-in in the Leon fork. Configure the fork GitHub App and set DSH_ISSUE_AUTOMATION_ENABLED to enable it."

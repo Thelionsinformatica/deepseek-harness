@@ -390,6 +390,19 @@ abstract searchSessions( request: SessionSearchRequest, exec?: SessionSearchExec
 abstract searchEvents( request: SessionEventSearchRequest, exec?: SessionSearchExecContext, ): Promise<SessionEventSearchPage>
 
 /**
+ * Purge backend-owned derived data for one permanently deleted session.
+ *
+ * The provider-independent engine owns no derived storage, so its default
+ * implementation is an idempotent no-op. Backends that materialize an
+ * index override this method and serialize the purge with their reads and
+ * reconciliation work. The authoritative live owner and persisted log must
+ * already be quiescent or absent before the caller publishes deletion.
+ * @param _sessionId - logical session whose derived rows must be absent.
+ * @returns resolution after the backend reaches the absent postcondition.
+ */
+purgeSession(_sessionId: SessionId): Promise<void>
+
+/**
  * List the complete logical corpus using live-preferred records.
  * @param signal - optional cancellation for persistence listing.
  * @returns deterministic newest-first cloned session records.

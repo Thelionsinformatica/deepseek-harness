@@ -42,8 +42,28 @@ flowchart LR
   cfg --> plugin_dsh_base_credentials
   plugin_dsh_base_llm_pi_ai["llm-pi-ai<br/>@deepseek-ai/dsh-llm-pi-ai"]
   cfg --> plugin_dsh_base_llm_pi_ai
+  plugin_dsh_base_qwen3_5_9b["qwen3.5:9b<br/>Qwen 3.5 9B (Local)"]
+  cfg --> plugin_dsh_base_qwen3_5_9b
+  plugin_dsh_base_ornith_1_5_9b["ornith-1.5:9b<br/>Ornith 1.5 9B (Local Specialist)"]
+  cfg --> plugin_dsh_base_ornith_1_5_9b
+  plugin_dsh_base_qwen3_8_9b_distill_uncensored_heretic_latest["qwen3.8-9b-distill-uncensored-heretic:latest<br/>Qwen 3.8 9B Heretic (Local Manual)"]
+  cfg --> plugin_dsh_base_qwen3_8_9b_distill_uncensored_heretic_latest
+  plugin_dsh_base_auto["auto<br/>FreeLLMAPI Automatic"]
+  cfg --> plugin_dsh_base_auto
+  plugin_dsh_base_gemini_3_1_pro_preview_customtools["gemini-3.1-pro-preview-customtools<br/>Gemini 3.1 Pro Preview Custom Tools"]
+  cfg --> plugin_dsh_base_gemini_3_1_pro_preview_customtools
+  plugin_dsh_base_gpt_5_6_luna["gpt-5.6-luna<br/>GPT-5.6 Luna (Low)"]
+  cfg --> plugin_dsh_base_gpt_5_6_luna
+  plugin_dsh_base_deepseek_ai_deepseek_v4_flash_0731["deepseek-ai/deepseek-v4-flash-0731<br/>DeepSeek V4 Flash 0731 (NVIDIA NIM Manual)"]
+  cfg --> plugin_dsh_base_deepseek_ai_deepseek_v4_flash_0731
   plugin_dsh_base_session_persistence_jsonl["session-persistence-jsonl<br/>@deepseek-ai/dsh-session-persistence-jsonl"]
   cfg --> plugin_dsh_base_session_persistence_jsonl
+  plugin_dsh_base_storage["storage<br/>@deepseek-ai/dsh-storage"]
+  cfg --> plugin_dsh_base_storage
+  plugin_dsh_base_storage_json["storage-json<br/>@deepseek-ai/dsh-storage-json"]
+  cfg --> plugin_dsh_base_storage_json
+  plugin_dsh_base_storage_domain["storage-domain<br/>@deepseek-ai/dsh-storage-domain"]
+  cfg --> plugin_dsh_base_storage_domain
   plugin_dsh_base_attachment_local["attachment-local<br/>@deepseek-ai/dsh-attachment-local"]
   cfg --> plugin_dsh_base_attachment_local
   plugin_dsh_base_session_query_sqlite["session-query-sqlite<br/>@deepseek-ai/dsh-session-query-sqlite"]
@@ -114,6 +134,8 @@ flowchart LR
   cfg --> plugin_dsh_base_subagent_spawn_in_process
   plugin_dsh_base_subagent_fork_in_process["subagent-fork-in-process<br/>@deepseek-ai/dsh-subagent-fork-in-process"]
   cfg --> plugin_dsh_base_subagent_fork_in_process
+  plugin_dsh_base_subagent_opencode["subagent-opencode<br/>@deepseek-ai/dsh-subagent-acp"]
+  cfg --> plugin_dsh_base_subagent_opencode
   plugin_dsh_base_tool_subagent_control["tool-subagent-control<br/>@deepseek-ai/dsh-tool-subagent-control"]
   cfg --> plugin_dsh_base_tool_subagent_control
   plugin_dsh_base_tool_subagent_list_agents["tool-subagent-list-agents<br/>@deepseek-ai/dsh-tool-subagent-control/list-agents"]
@@ -122,6 +144,8 @@ flowchart LR
   cfg --> plugin_dsh_base_tool_subagent
   plugin_dsh_base_tool_subagent_fork["tool-subagent-fork<br/>@deepseek-ai/dsh-tool-subagent"]
   cfg --> plugin_dsh_base_tool_subagent_fork
+  plugin_dsh_base_tool_subagent_opencode["tool-subagent-opencode<br/>@deepseek-ai/dsh-tool-subagent"]
+  cfg --> plugin_dsh_base_tool_subagent_opencode
   plugin_dsh_base_tool_subagent_report["tool-subagent-report<br/>@deepseek-ai/dsh-tool-subagent-report"]
   cfg --> plugin_dsh_base_tool_subagent_report
   plugin_dsh_base_workflow_worker_thread["workflow-worker-thread<br/>@deepseek-ai/dsh-workflow-worker-thread"]
@@ -148,10 +172,10 @@ flowchart LR
   cfg --> plugin_dsh_base_tool_str_replace_editor
   plugin_dsh_base_repeat_tool_reminder["repeat-tool-reminder<br/>@deepseek-ai/dsh-repeat-tool-reminder"]
   cfg --> plugin_dsh_base_repeat_tool_reminder
+  plugin_dsh_base_failure_recovery_policy["failure-recovery-policy<br/>@deepseek-ai/dsh-failure-recovery-policy"]
+  cfg --> plugin_dsh_base_failure_recovery_policy
   plugin_dsh_base_web["web<br/>@deepseek-ai/dsh-web"]
   cfg --> plugin_dsh_base_web
-  plugin_dsh_base_web_search_deepseek["web-search-deepseek<br/>@deepseek-ai/dsh-web-search-deepseek"]
-  cfg --> plugin_dsh_base_web_search_deepseek
   plugin_dsh_base_tool_web["tool-web<br/>@deepseek-ai/dsh-tool-web"]
   cfg --> plugin_dsh_base_tool_web
   plugin_dsh_base_tools["tools<br/>@deepseek-ai/dsh-tools"]
@@ -162,8 +186,6 @@ flowchart LR
   cfg --> plugin_dsh_base_agent_loop
   plugin_dsh_base_fs_sandbox["fs-sandbox<br/>@deepseek-ai/dsh-fs-sandbox"]
   cfg --> plugin_dsh_base_fs_sandbox
-  plugin_dsh_base_llm_deepseek["llm-deepseek<br/>@deepseek-ai/dsh-llm-deepseek"]
-  cfg --> plugin_dsh_base_llm_deepseek
 ```
 
 | Plugin id | Package / module |
@@ -185,7 +207,17 @@ flowchart LR
 | `settings` | `@deepseek-ai/dsh-settings-file` |
 | `credentials` | `@deepseek-ai/dsh-credentials-local` |
 | `llm-pi-ai` | `@deepseek-ai/dsh-llm-pi-ai` |
+| `qwen3.5:9b` | `Qwen 3.5 9B (Local)` |
+| `ornith-1.5:9b` | `Ornith 1.5 9B (Local Specialist)` |
+| `qwen3.8-9b-distill-uncensored-heretic:latest` | `Qwen 3.8 9B Heretic (Local Manual)` |
+| `auto` | `FreeLLMAPI Automatic` |
+| `gemini-3.1-pro-preview-customtools` | `Gemini 3.1 Pro Preview Custom Tools` |
+| `gpt-5.6-luna` | `GPT-5.6 Luna (Low)` |
+| `deepseek-ai/deepseek-v4-flash-0731` | `DeepSeek V4 Flash 0731 (NVIDIA NIM Manual)` |
 | `session-persistence-jsonl` | `@deepseek-ai/dsh-session-persistence-jsonl` |
+| `storage` | `@deepseek-ai/dsh-storage` |
+| `storage-json` | `@deepseek-ai/dsh-storage-json` |
+| `storage-domain` | `@deepseek-ai/dsh-storage-domain` |
 | `attachment-local` | `@deepseek-ai/dsh-attachment-local` |
 | `session-query-sqlite` | `@deepseek-ai/dsh-session-query-sqlite` |
 | `session-projection` | `@deepseek-ai/dsh-session-projection` |
@@ -221,10 +253,12 @@ flowchart LR
 | `subagent` | `@deepseek-ai/dsh-subagent` |
 | `subagent-spawn-in-process` | `@deepseek-ai/dsh-subagent-spawn-in-process` |
 | `subagent-fork-in-process` | `@deepseek-ai/dsh-subagent-fork-in-process` |
+| `subagent-opencode` | `@deepseek-ai/dsh-subagent-acp` |
 | `tool-subagent-control` | `@deepseek-ai/dsh-tool-subagent-control` |
 | `tool-subagent-list-agents` | `@deepseek-ai/dsh-tool-subagent-control/list-agents` |
 | `tool-subagent` | `@deepseek-ai/dsh-tool-subagent` |
 | `tool-subagent-fork` | `@deepseek-ai/dsh-tool-subagent` |
+| `tool-subagent-opencode` | `@deepseek-ai/dsh-tool-subagent` |
 | `tool-subagent-report` | `@deepseek-ai/dsh-tool-subagent-report` |
 | `workflow-worker-thread` | `@deepseek-ai/dsh-workflow-worker-thread` |
 | `tool-workflow` | `@deepseek-ai/dsh-tool-workflow` |
@@ -238,14 +272,13 @@ flowchart LR
 | `tool-ralph` | `@deepseek-ai/dsh-tool-ralph` |
 | `tool-str-replace-editor` | `@deepseek-ai/dsh-tool-str-replace-editor` |
 | `repeat-tool-reminder` | `@deepseek-ai/dsh-repeat-tool-reminder` |
+| `failure-recovery-policy` | `@deepseek-ai/dsh-failure-recovery-policy` |
 | `web` | `@deepseek-ai/dsh-web` |
-| `web-search-deepseek` | `@deepseek-ai/dsh-web-search-deepseek` |
 | `tool-web` | `@deepseek-ai/dsh-tool-web` |
 | `tools` | `@deepseek-ai/dsh-tools` |
 | `system-prompt` | `@deepseek-ai/dsh-system-prompt` |
 | `agent-loop` | `@deepseek-ai/dsh-agent-loop` |
 | `fs-sandbox` | `@deepseek-ai/dsh-fs-sandbox` |
-| `llm-deepseek` | `@deepseek-ai/dsh-llm-deepseek` |
 
 Source config: [`packages/bundle/base/cordis.patch.yml`](../../packages/bundle/base/cordis.patch.yml).
 

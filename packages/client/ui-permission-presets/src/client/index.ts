@@ -28,7 +28,7 @@ import type { PermissionSelect } from '@deepseek-ai/dsh-permission-presets/clien
 import { PermissionRow } from './PermissionRow.tsx'
 import type { PermissionRowInjected } from './PermissionRow.tsx'
 import {
-  accessEn, accessZh, en, zh,
+  accessEn, accessPt, accessZh, en, pt, zh,
 } from './locales.ts'
 import {
   displayPermissionPreset, FULL_ACCESS_PRESET,
@@ -51,22 +51,26 @@ function selectOf(session: SessionFace | undefined): PermissionSelect | undefine
 }
 
 /** Flatten the projection select into popup rows; `custom` is display state, never a target. */
-function optionsOf(value: PermissionSelect, t: (key: string) => string): SelectOption[] {
+function optionsOf(
+  value: PermissionSelect,
+  accessT: (key: string) => string,
+  presetT: (key: import('./locales.ts').PermissionSettingsKey) => string,
+): SelectOption[] {
   return value.options
     .filter(option => option.value !== 'custom')
     .map(option => ({
       id: option.value,
-      label: displayPermissionPreset(option.value, option.name),
+      label: displayPermissionPreset(option.value, option.name, presetT),
       ...(option.description !== undefined ? { detail: option.description } : {}),
       ...(option.value === value.currentValue ? { active: true } : {}),
       ...(option.value === FULL_ACCESS_PRESET
         ? {
           confirmation: {
-            title: t('confirm.title'),
-            description: t('confirm.description'),
-            acknowledgeLabel: t('confirm.acknowledge'),
-            cancelLabel: t('confirm.cancel'),
-            confirmLabel: t('confirm.enable'),
+            title: accessT('confirm.title'),
+            description: accessT('confirm.description'),
+            acknowledgeLabel: accessT('confirm.acknowledge'),
+            cancelLabel: accessT('confirm.cancel'),
+            confirmLabel: accessT('confirm.enable'),
           },
         }
         : {}),
@@ -100,15 +104,23 @@ export function apply(ctx: ClientContext): void {
         'confirm.cancel': accessEn['confirm.cancel'],
         'confirm.enable': accessEn['confirm.enable'],
       }),
+      ctx.locale.register(ACCESS_NS, 'pt', {
+        'confirm.title': accessPt['confirm.title'],
+        'confirm.description': accessPt['confirm.description'],
+        'confirm.acknowledge': accessPt['confirm.acknowledge'],
+        'confirm.cancel': accessPt['confirm.cancel'],
+        'confirm.enable': accessPt['confirm.enable'],
+      }),
     ]
     return () => { for (const dispose of disposers) dispose() }
   }, 'ui-permission: Full access confirmation dictionaries')
   /* jscpd:ignore-end */
-  const t = ctx.locale.bind(ACCESS_NS)
+  const accessT = ctx.locale.bind(ACCESS_NS)
+  const presetT = ctx.locale.bind('settings.permission')
   const sessionFor = (session: ClientSessionContext): SessionFace | undefined =>
     sessions.binding(session.sessionId)?.session
 
-  ctx.effect(() => ctx.locale.register('settings.permission', { zh, en }), 'ui-permission: settings row dictionaries')
+  ctx.effect(() => ctx.locale.register('settings.permission', { pt, zh, en }), 'ui-permission: settings row dictionaries')
 
   const connection = ctx.get('connection') as ConnectionHandle
   // The row follows the shared describe mirror, whose owning plugin already
@@ -144,7 +156,7 @@ export function apply(ctx: ClientContext): void {
       options: (session) => {
         const value = selectOf(sessionFor(session))
         if (value === undefined) throw new Error('permission presets are not available on this host')
-        return Promise.resolve(optionsOf(value, t))
+        return Promise.resolve(optionsOf(value, accessT, presetT))
       },
       onSelect: async (option, session) => {
         const live = sessionFor(session)

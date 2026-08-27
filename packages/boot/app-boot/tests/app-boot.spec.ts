@@ -659,14 +659,16 @@ describe('boot', () => {
     expect(disposed).toBe(true)
   })
 
-  it('exposes dshHomePath to Loader config expressions', async () => {
+  it('exposes shared path resolvers to Loader config expressions', async () => {
     const dir = tmp()
     const dshHome = join(dir, 'home')
+    const workspace = join(dir, 'workspace')
     vi.stubEnv('DSH_HOME', dshHome)
+    vi.stubEnv('LEON_DEFAULT_WORKSPACE', workspace)
     writeFileSync(join(dir, 'capture.mjs'), [
       'export const name = "capture"',
       'export function apply(ctx, config) {',
-      '  ctx.provide("capturedPath", config.path)',
+      '  ctx.provide("capturedPaths", config)',
       '}',
       '',
     ].join('\n'))
@@ -674,13 +676,17 @@ describe('boot', () => {
       '- id: capture',
       '  name: ./capture.mjs',
       '  config:',
-      "    path: !!js dshHomePath('sessions')",
+      "    home: !!js dshHomePath('sessions')",
+      '    workspace: !!js resolveDefaultWorkspace()',
       '',
     ].join('\n'))
     let ctx: Context | undefined
     try {
       ctx = await boot(NAME, join(dir, 'cordis.yml'))
-      expect(ctx.get('capturedPath')).toBe(join(dshHome, 'sessions'))
+      expect(ctx.get('capturedPaths')).toEqual({
+        home: join(dshHome, 'sessions'),
+        workspace,
+      })
     } finally {
       await ctx?.fiber.dispose()
       vi.unstubAllEnvs()

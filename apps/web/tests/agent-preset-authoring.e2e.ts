@@ -46,13 +46,10 @@ describe('web e2e: agent-preset authoring is a host-side copy', () => {
 
   /** Tokenize the lane-owned preset root after general aria normalization. */
   function withPresetRoot(snapshot: string): string {
-    const rootSuffix = `/${userRoot.split('/').pop()!}`
-    return snapshot.split('\n').map((line) => {
-      const rootStart = line.indexOf(rootSuffix)
-      if (rootStart === -1) return line
-      const pathStart = line.lastIndexOf(' ', rootStart) + 1
-      return `${line.slice(0, pathStart)}{{presetRoot}}${line.slice(rootStart + rootSuffix.length)}`
-    }).join('\n')
+    return snapshot
+      .split(`${userRoot}\\`).join('{{presetRoot}}/')
+      .split(`${userRoot}/`).join('{{presetRoot}}/')
+      .split(userRoot).join('{{presetRoot}}')
   }
 
   beforeAll(async () => {
@@ -123,6 +120,7 @@ describe('web e2e: agent-preset authoring is a host-side copy', () => {
   it('copies 极简模式 whole under a new id and lands in its files', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-preset-authoring-copy'))
     const dialog = settingsDialog()
+    await dialog.getByRole('button', { name: '显示' }).click()
     await dialog.getByRole('button', { name: '复制: 极简模式' }).click()
     const copyDialog = page.getByRole('dialog', { name: '复制预设 · 复制自 极简模式' })
     await copyDialog.waitFor({ timeout: 10_000 })
@@ -223,6 +221,7 @@ describe('web e2e: agent-preset authoring is a host-side copy', () => {
     await expect.poll(async () => dialog.getByText('幽灵预设').count(), { timeout: 10_000 }).toBe(0)
     expect(existsSync(join(userRoot, 'ghost'))).toBe(false)
 
+    await dialog.getByRole('button', { name: '显示' }).click()
     await dialog.getByRole('button', { name: '复制: 极简模式' }).click()
     const copyDialog = page.getByRole('dialog', { name: '复制预设 · 复制自 极简模式' })
     await copyDialog.waitFor({ timeout: 10_000 })

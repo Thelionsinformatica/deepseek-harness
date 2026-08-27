@@ -61,6 +61,14 @@ flowchart LR
   cfg --> plugin_acp_tool_todo
   plugin_acp_repeat_tool_reminder["repeat-tool-reminder<br/>@deepseek-ai/dsh-repeat-tool-reminder"]
   cfg --> plugin_acp_repeat_tool_reminder
+  plugin_acp_storage["storage<br/>@deepseek-ai/dsh-storage"]
+  cfg --> plugin_acp_storage
+  plugin_acp_storage_json["storage-json<br/>@deepseek-ai/dsh-storage-json"]
+  cfg --> plugin_acp_storage_json
+  plugin_acp_storage_domain["storage-domain<br/>@deepseek-ai/dsh-storage-domain"]
+  cfg --> plugin_acp_storage_domain
+  plugin_acp_failure_recovery_policy["failure-recovery-policy<br/>@deepseek-ai/dsh-failure-recovery-policy"]
+  cfg --> plugin_acp_failure_recovery_policy
   plugin_acp_fs_sandbox["fs-sandbox<br/>@deepseek-ai/dsh-fs-sandbox"]
   cfg --> plugin_acp_fs_sandbox
   plugin_acp_fs_observation_policy["fs-observation-policy<br/>@deepseek-ai/dsh-fs-observation-policy"]
@@ -98,6 +106,10 @@ flowchart LR
 | `tool-ralph` | `@deepseek-ai/dsh-tool-ralph` |
 | `tool-todo` | `@deepseek-ai/dsh-tool-todo` |
 | `repeat-tool-reminder` | `@deepseek-ai/dsh-repeat-tool-reminder` |
+| `storage` | `@deepseek-ai/dsh-storage` |
+| `storage-json` | `@deepseek-ai/dsh-storage-json` |
+| `storage-domain` | `@deepseek-ai/dsh-storage-domain` |
+| `failure-recovery-policy` | `@deepseek-ai/dsh-failure-recovery-policy` |
 | `fs-sandbox` | `@deepseek-ai/dsh-fs-sandbox` |
 | `fs-observation-policy` | `@deepseek-ai/dsh-fs-observation-policy` |
 | `tool-fs` | `@deepseek-ai/dsh-tool-fs` |

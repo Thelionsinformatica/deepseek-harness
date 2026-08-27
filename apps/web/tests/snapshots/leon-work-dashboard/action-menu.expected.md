@@ -1,0 +1,26 @@
+- menu "Add to this task":
+  - text: Add
+  - menuitem "Files and folders Select images from this computer to attach to the chat":
+    - img
+    - text: Files and folders Select images from this computer to attach to the chat
+  - menuitem "Reference from project Search files and folders in the current workspace":
+    - img
+    - text: Reference from project Search files and folders in the current workspace
+  - menuitem "Work in a project Continue in another Leon workspace":
+    - img
+    - text: Work in a project Continue in another Leon workspace
+    - img
+  - menuitem "Goal Set an objective for a long-running task":
+    - img
+    - text: Goal Set an objective for a long-running task
+  - menuitem "Planning mode Let Leon plan before making changes":
+    - img
+    - text: Planning mode Let Leon plan before making changes
+  - text: Plugins
+  - menuitem "Plugins and skills Use installed capabilities":
+    - img
+    - text: Plugins and skills Use installed capabilities
+  - text: Advanced
+  - menuitem "Commands Open technical session actions":
+    - img
+    - text: Commands Open technical session actions

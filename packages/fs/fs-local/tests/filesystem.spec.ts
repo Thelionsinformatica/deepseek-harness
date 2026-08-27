@@ -161,7 +161,7 @@ describe('stat', () => {
 })
 
 describe('lstat', () => {
-  it('reports path metadata without following the final symlink component', async () => {
+  it.skipIf(process.platform === 'win32')('reports path metadata without following the final symlink component', async () => {
     await writeFile(join(dir, 'real.txt'), 'hello')
     await symlink(join(dir, 'real.txt'), join(dir, 'link.txt'))
 
@@ -303,7 +303,7 @@ describe('readBytes', () => {
 })
 
 describe('listDir', () => {
-  it('lists files and directories in stable name order with resolved child targets', async () => {
+  it.skipIf(process.platform === 'win32')('lists files and directories in stable name order with resolved child targets', async () => {
     await mkdir(join(dir, 'skills', 'dir-skill'), { recursive: true })
     await writeFile(join(dir, 'skills', 'zeta.md'), 'zeta')
     await writeFile(join(dir, 'skills', 'alpha.md'), 'alpha')
@@ -397,7 +397,7 @@ describe('writeText', () => {
     expect((await stat(path)).isDirectory()).toBe(true)
   })
 
-  it('createIfAbsent rejects and preserves a dangling symbolic link', async () => {
+  it.skipIf(process.platform === 'win32')('createIfAbsent rejects and preserves a dangling symbolic link', async () => {
     const path = join(dir, 'dangling')
     await symlink(join(dir, 'missing-target'), path)
     const target = await fs.resolve('dangling')
@@ -746,7 +746,7 @@ describe('editText', () => {
 })
 
 describe('symlink targetKey identity', () => {
-  it('two paths to the same file via a symlink share one version and write the real target', async () => {
+  it.skipIf(process.platform === 'win32')('two paths to the same file via a symlink share one version and write the real target', async () => {
     await writeFile(join(dir, 'real.txt'), 'hello')
     await symlink(join(dir, 'real.txt'), join(dir, 'link.txt'))
     const viaReal = await fs.resolve('real.txt')
@@ -758,7 +758,7 @@ describe('symlink targetKey identity', () => {
     expect(await readFile(join(dir, 'real.txt'), 'utf8')).toBe('bye') // link preserved
   })
 
-  it('a stale change is detected across both paths', async () => {
+  it.skipIf(process.platform === 'win32')('a stale change is detected across both paths', async () => {
     await writeFile(join(dir, 'real.txt'), 'hello')
     await symlink(join(dir, 'real.txt'), join(dir, 'link.txt'))
     const viaReal = await fs.resolve('real.txt')

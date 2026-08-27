@@ -7,8 +7,9 @@ import dynamicRemote from '@deepseek-ai/dsh-cordis-host-runner/remote'
 import fileReferencesRemote from '@deepseek-ai/dsh-file-reference/remote'
 import pluginInventoryRemote from '@deepseek-ai/dsh-host-plugin-inventory/remote'
 import messageFeedbackRemote from '@deepseek-ai/dsh-message-feedback/remote'
+import memoryCandidateReviewRemote from '@deepseek-ai/dsh-tool-memory/remote'
 import sessionReferencesRemote from '@deepseek-ai/dsh-session-reference/remote'
-import type { TypertClientRemote } from '@deepseek-ai/dsh-typert-protocol'
+import type { RemoteResult, TypertClientRemote } from '@deepseek-ai/dsh-typert-protocol'
 
 export type { TypertClientRemote as ClientRemote } from '@deepseek-ai/dsh-typert-protocol'
 export type { PluginInventorySnapshot } from '@deepseek-ai/dsh-host-plugin-inventory/types'
@@ -17,6 +18,7 @@ export type {} from '@deepseek-ai/dsh-file-reference/remote'
 export type {} from '@deepseek-ai/dsh-goal/remote'
 export type {} from '@deepseek-ai/dsh-host-plugin-inventory/remote'
 export type {} from '@deepseek-ai/dsh-message-feedback/remote'
+export type {} from '@deepseek-ai/dsh-tool-memory/remote'
 export type {} from '@deepseek-ai/dsh-session-reference/remote'
 // The forwarded-event allowlist's selection seat: without it in the consumer's
 // compilation face `TypertRemoteEvent` is `never` and every `$on` call fails.
@@ -95,6 +97,27 @@ export type { JsonValue } from '@deepseek-ai/dsh-session/types'
 export type { FileReferenceCandidate } from '@deepseek-ai/dsh-file-reference/types'
 export type { SessionReferenceMentionCandidate } from '@deepseek-ai/dsh-session-reference/types'
 
+interface RemoteBusinessFailure {
+  readonly ok: false
+  readonly error: { readonly code: string }
+}
+
+type CarriedRemoteResult<T> = RemoteResult<RemoteBusinessFailure | {
+  readonly ok: true
+  readonly value: T
+}>
+
+/**
+ * Unwrap the transport and business results returned by a generated Remote.
+ * @param carried - Nested carrier and Host operation result.
+ * @returns The successful Host operation value.
+ */
+export function remoteValue<T>(carried: CarriedRemoteResult<T>): T {
+  if (!carried.ok) throw new Error(`${carried.error.code}: ${carried.error.message}`)
+  if (!carried.value.ok) throw new Error(carried.value.error.code)
+  return carried.value.value
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Generated Remote namespaces selected by this Client assembly. */
@@ -115,7 +138,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   try {
     for (const contribution of [
       commandsRemote, goalsRemote, dynamicRemote, fileReferencesRemote,
-      pluginInventoryRemote, messageFeedbackRemote, sessionReferencesRemote,
+      pluginInventoryRemote, messageFeedbackRemote, memoryCandidateReviewRemote, sessionReferencesRemote,
     ]) {
       disposers.push(await ctx.remote.$mount(contribution))
     }

@@ -40,6 +40,8 @@ const publicLandlockPackages = new Set([
 /** Deliberate source payloads whose exact bytes are part of the package's audit surface. */
 const publicationSourceAllowlist: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/node-addon-landlock-run': ['src/main.c'],
+  // The local voice bridge executes this reviewed Python source directly.
+  '@deepseek-ai/dsh-web-app': ['runtime/transcribe-local.py'],
 }
 const repositoryUrl = 'git+https://github.com/deepseek-harness/deepseek-harness.git'
 /**
@@ -48,6 +50,9 @@ const repositoryUrl = 'git+https://github.com/deepseek-harness/deepseek-harness.
  * their trusted publishing against the repository that runs the workflow.
  */
 const publishedRepositoryUrl = 'git+https://github.com/deepseek-ai/deepseek-harness.git'
+/** Fork source used by Leon-owned release members during the repository transition. */
+const leonPublishedRepositoryUrl = 'git+https://github.com/Thelionsinformatica/deepseek-harness.git'
+const publishedRepositoryUrls = new Set([publishedRepositoryUrl, leonPublishedRepositoryUrl])
 /** Private packages that participate in workspace checks but not releases. */
 const experimentalPackageDirectory = /^packages\/experimental\/[^/]+$/
 /** npm namespace reserved for private experimental packages. */
@@ -160,8 +165,16 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-sandbox-windows-acl': ['lib/runner.js', 'lib/types-*.js'],
   // SQLite loads every statement from immutable package resources at runtime.
   '@deepseek-ai/dsh-session-persistence-sqlite': ['resources/sql/**/*.sql'],
+  // Candidate review is a Loader-addressable Host entry. tsdown shares the
+  // durable domain schema between it and the ordinary tool entry through one
+  // hashed chunk, so both runtime artifacts must ship together.
+  '@deepseek-ai/dsh-tool-memory': ['lib/review.js', 'lib/procedure-learning.js', 'lib/spec-*.js'],
+  // The goal entry and invariant share the generated completion-evidence
+  // implementation, so its hashed runtime chunk is part of the package closure.
+  '@deepseek-ai/dsh-tool-goal': ['lib/completion-evidence-*.js'],
   '@deepseek-ai/dsh-skill-badge': ['assets'],
   '@deepseek-ai/dsh-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
+  '@deepseek-ai/dsh-web-app': ['runtime/transcribe-local.py'],
 }
 
 function sameStringList(actual: readonly string[] | undefined, expected: readonly string[]): boolean {
@@ -293,9 +306,12 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
       errors.push(`${label}: release member must set publishConfig.access to "public"`)
     }
     if (manifest.repository?.type !== 'git'
-      || manifest.repository.url !== publishedRepositoryUrl
+      || manifest.repository.url === undefined
+      || !publishedRepositoryUrls.has(manifest.repository.url)
       || manifest.repository.directory !== dir) {
-      errors.push(`${label}: release member repository must use ${publishedRepositoryUrl} with directory ${dir}`)
+      errors.push(
+        `${label}: release member repository must use an approved source URL with directory ${dir}`,
+      )
     }
   } else if (!experimentalPackageDirectory.test(dir) && manifest.private !== true) {
     errors.push(`${label}: package.json must set "private": true`)

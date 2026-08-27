@@ -424,6 +424,17 @@ Source: [`packages/feedback/command-feedback/src/index.ts:62`](../packages/feedb
 
 Source: [`packages/goal/goal/src/domain.ts:66`](../packages/goal/goal/src/domain.ts)
 
+<a id="goalcompletion-audit--log-only"></a>
+
+#### `goal/completion-audit` — log-only
+
+```ts persistence-catalog
+/** Content-free receipt proving that an exact goal revision passed independent review. */
+'goal/completion-audit': GoalCompletionAuditMeta
+```
+
+Source: [`packages/goal/tool-goal/src/completion-evidence.ts:45`](../packages/goal/tool-goal/src/completion-evidence.ts)
+
 ### `hook/*`
 
 <a id="hookinvoked--log-only"></a>
@@ -476,6 +487,17 @@ Source: [`packages/hooks/hook-protocol/src/types.ts:31`](../packages/hooks/hook-
 
 ### `llm/*`
 
+<a id="llmfailover--log-only"></a>
+
+#### `llm/failover` — log-only
+
+```ts persistence-catalog
+/** Durable notice that automatic routing replaced an unavailable provider before retrying the request. */
+'llm/failover': LlmFailoverEventData
+```
+
+Source: [`packages/llm/llm-retry/src/types.ts:13`](../packages/llm/llm-retry/src/types.ts)
+
 <a id="llmretry--log-only"></a>
 
 #### `llm/retry` — log-only
@@ -497,6 +519,17 @@ Source: [`packages/llm/llm-retry/src/types.ts:9`](../packages/llm/llm-retry/src/
 ```
 
 Source: [`packages/llm/llm-retry/src/types.ts:11`](../packages/llm/llm-retry/src/types.ts)
+
+<a id="llmrouting-shadow--log-only"></a>
+
+#### `llm/routing-shadow` — log-only
+
+```ts persistence-catalog
+/** Durable, non-surface recommendation from a router that has no authority to change the active model. */
+'llm/routing-shadow': AdaptiveRoutingShadowEventData
+```
+
+Source: [`packages/host/apiproxy/src/adaptive-routing-shadow.ts:160`](../packages/host/apiproxy/src/adaptive-routing-shadow.ts)
 
 ### `permission/*`
 
@@ -1005,3 +1038,14 @@ Source: [`packages/core/session/src/types.ts:264`](../packages/core/session/src/
 ```
 
 Source: [`packages/web/web-search-deepseek/src/provider.ts:83`](../packages/web/web-search-deepseek/src/provider.ts)
+
+<a id="webgoogle-search-llm-request--log-only"></a>
+
+#### `web/google-search-llm-request` — log-only
+
+```ts persistence-catalog
+/** Secret-free auxiliary Gemini Google Search request recorded before dispatch. */
+'web/google-search-llm-request': GoogleSearchLlmRequest
+```
+
+Source: [`packages/web/web-search-google/src/provider.ts:52`](../packages/web/web-search-google/src/provider.ts)

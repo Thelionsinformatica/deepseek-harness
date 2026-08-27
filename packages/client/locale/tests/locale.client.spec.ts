@@ -158,7 +158,7 @@ describe('LocaleRuntime', () => {
   })
 
   it('persists an explicit pick of the provisional locale, so a shared DSH home agrees', () => {
-    // A browser naming no shipped language opens at FALLBACK_LOCALE with
+    // A browser naming no shipped language opens at the English default with
     // nothing stored. Choosing that same language in the menu must become
     // durable, or a Chinese browser sharing the home still opens Chinese.
     stubLanguages('fr-FR')
@@ -226,8 +226,8 @@ describe('LocaleRuntime', () => {
     expect(make().svc.getLocale().active).toBe('en')
     vi.stubGlobal('navigator', { language: 'en-US' })
     expect(make().svc.getLocale().active).toBe('en')
-    // No shipped language anywhere in the browser's preferences: en is the
-    // product default rather than an arbitrary near-match.
+    // No shipped language anywhere in the browser's preferences: English is
+    // the product default rather than an arbitrary near-match.
     stubLanguages('fr-FR', 'de')
     expect(make().svc.getLocale().active).toBe('en')
   })
@@ -251,18 +251,13 @@ describe('LocaleRuntime', () => {
   })
 
   it('serves English as both the opening locale and the dictionary fallback', () => {
-    // One constant covers both jobs: the locale the UI opens in with no usable
-    // browser signal, and the dictionary backing a key the active locale
-    // misses. Safe to share only because the shipped zh/en dictionaries carry
-    // identical key sets (asserted below on a registered pair).
     expect(FALLBACK_LOCALE).toBe('en')
     vi.stubGlobal('window', undefined)
     const { svc } = make()
-    // A key present only in en resolves for a zh reader through the fallback.
+    expect(svc.getLocale().active).toBe('en')
+    // A key present only in en resolves directly for an English reader.
     svc.register('ns', 'zh', {})
     svc.register('ns', 'en', { onlyEn: 'English only' })
-    svc.setLocale('zh')
-    expect(svc.getLocale().active).toBe('zh')
     expect(svc.bind('ns')('onlyEn')).toBe('English only')
     // The reverse no longer resolves: a zh-only key is unreachable from en, so
     // the key itself surfaces (fail loud) rather than silently rendering zh.
@@ -272,11 +267,78 @@ describe('LocaleRuntime', () => {
     expect(svc.bind('ns2')('onlyZh')).toBe('onlyZh')
   })
 
-  it('exposes the two shipped locales with self-described labels', () => {
+  it('exposes the three shipped locales with self-described labels', () => {
     const { svc } = make()
     expect(svc.getLocale().locales).toEqual([
+      { id: 'pt', label: 'Português (Brasil)' },
       { id: 'zh', label: '中文' },
       { id: 'en', label: 'English' },
     ])
+  })
+
+  it('translates English feature fallbacks through the Brazilian Portuguese pack', () => {
+    stubLanguages('pt-BR')
+    const { svc } = make()
+    svc.register('feature', 'en', {
+      settings: 'Settings',
+      session: 'New Session',
+      preset: 'Agent preset',
+      access: 'Access mode, current: {name}',
+      details: 'Click a tool row in the message flow to view its details',
+      provider: 'Edit {provider}',
+      apiKey: 'API key configured',
+      apiCost: 'API est. {cost}',
+      unpricedCalls: '{count} unpriced call(s)',
+      automatic: 'Leon Automatic',
+      automaticRoute: 'Leon Automatic, currently using {model}',
+      automaticRouteEffort: 'Leon Automatic, currently using {model}, reasoning effort {effort}',
+      automaticDescription: 'Uses the local 9B model at minimum effort, raises its effort for medium work, and calls the configured cloud model for complex work',
+      working: 'Leon is working…',
+      retryingLocal: 'Retrying local model',
+      retryingCloud: 'Retrying model request',
+      retryDelay: 'Retry delay: ',
+      failureReason: 'Failure reason: ',
+      failoverTitle: '{provider} unavailable',
+      failoverDetail: 'Leon automatically switched from {fromModel} to {model} through the configured fallback.',
+      quotaTitle: '{provider} has no available credits',
+      quotaDetail: 'The provider reported exhausted quota or credits; Leon automatically switched from {fromModel} to {model}.',
+      archived: 'Archived conversations',
+      archivedCount: 'Archived conversations: {n}',
+      deleteConversation: 'Delete conversation',
+      deleteDescription: 'Permanently delete “{name}” and its conversation history? This cannot be undone. Files in its workspace are not deleted, and personal memory is kept separately.',
+      fork: 'Fork session',
+    })
+    const t = svc.bind('feature')
+    expect(t('settings')).toBe('Configurações')
+    expect(t('session')).toBe('Nova sessão')
+    expect(t('preset')).toBe('Predefinição do agente')
+    expect(t('access', { name: 'Workspace Write' })).toBe('Modo de acesso, atual: Workspace Write')
+    expect(t('details')).toBe('Clique em uma ferramenta no fluxo de mensagens para ver os detalhes')
+    expect(t('provider', { provider: 'Gemini Cloud - Leon' })).toBe('Editar Gemini Cloud - Leon')
+    expect(t('apiKey')).toBe('Chave de API configurada')
+    expect(t('apiCost', { cost: 'US$0.0011' })).toBe('API est. US$0.0011')
+    expect(t('unpricedCalls', { count: 2 })).toBe('2 chamada(s) sem preço')
+    expect(t('automatic')).toBe('Leon Automático')
+    expect(t('automaticRoute', { model: 'Qwen 3.5 9B' })).toBe('Leon Automático, usando agora: Qwen 3.5 9B')
+    expect(t('automaticRouteEffort', { model: 'Qwen 3.5 9B', effort: 'Low' }))
+      .toBe('Leon Automático, usando agora: Qwen 3.5 9B, esforço de raciocínio: Low')
+    expect(t('automaticDescription')).toBe('Usa o modelo local 9B com esforço mínimo, aumenta o esforço em tarefas médias e chama o modelo em nuvem configurado nas tarefas complexas')
+    expect(t('working')).toBe('Leon está trabalhando…')
+    expect(t('retryingLocal')).toBe('Tentando novamente com o modelo local')
+    expect(t('retryingCloud')).toBe('Tentando novamente com o modelo')
+    expect(t('retryDelay')).toBe('Espera para nova tentativa: ')
+    expect(t('failureReason')).toBe('Motivo da falha: ')
+    expect(t('failoverTitle', { provider: 'FreeLLMAPI' })).toBe('FreeLLMAPI indisponível')
+    expect(t('failoverDetail', { fromModel: 'auto', model: 'Gemini 3.6 Flash' }))
+      .toBe('Leon mudou automaticamente de auto para Gemini 3.6 Flash pelo fallback configurado.')
+    expect(t('quotaTitle', { provider: 'google' })).toBe('google está sem créditos disponíveis')
+    expect(t('quotaDetail', { fromModel: 'Gemini 3.6 Flash', model: 'GPT-5.6 Terra' }))
+      .toBe('O provedor informou cota ou créditos esgotados; Leon mudou automaticamente de Gemini 3.6 Flash para GPT-5.6 Terra.')
+    expect(t('archived')).toBe('Conversas arquivadas')
+    expect(t('archivedCount', { n: 2 })).toBe('Conversas arquivadas: 2')
+    expect(t('deleteConversation')).toBe('Excluir conversa')
+    expect(t('deleteDescription', { name: 'Plano' }))
+      .toContain('a memória pessoal será preservada separadamente')
+    expect(t('fork')).toBe('Ramificar sessão')
   })
 })

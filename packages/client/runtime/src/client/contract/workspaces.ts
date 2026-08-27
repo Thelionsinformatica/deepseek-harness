@@ -91,4 +91,8 @@ export interface IWorkspaces {
    * @param sessionId - session to archive.
    */
   archiveSession(sessionId: SessionId): Promise<void>
+  /** Restore an archived session to grouping surfaces. */
+  unarchiveSession(sessionId: SessionId): Promise<void>
+  /** Permanently delete one session while preserving its cwd and user files. */
+  deleteSession(sessionId: SessionId): Promise<void>
 }

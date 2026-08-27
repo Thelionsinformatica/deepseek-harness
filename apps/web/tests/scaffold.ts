@@ -5,10 +5,10 @@
 // layer stack the profile boot composes), patched the
 // snapshot way — so a real chromium exercises the real HTTP uplink/WebSocket
 // downlink, api-gateway, agent loop, tools, and persistence. Modes ride $DSH_SNAPSHOT:
-// replay (default, keyless: normally disables the llm-deepseek row and
-// inserts dsh-llm-replay in providers mode), record (real adapter + key,
+// replay (default, keyless: mounts dsh-llm-replay in providers mode when a
+// fixture is supplied), record (manually mounted real adapter + key,
 // harvests fixtures from live session memory), refresh (keyless replay that
-// rewrites goldens). A first-run option keeps the real adapter mounted while
+// rewrites goldens). A provider-setup option mounts the real adapter while
 // masking its credential, without making a model call.
 //
 // Composition divergences from `dsh web`, all deliberate, all via include
@@ -18,14 +18,14 @@
 // disabled (recorded fixtures must not embed this repo's AGENTS.md);
 // session-title-llm disabled (its fire-and-forget title call would race the
 // loop for the session's replay cursor); webserver pinned to port 0 with the
-// built dist; ordinary keyless modes disable llm-deepseek and fill the open
-// llm seam post-boot with installLlmReplay on the settled root ctx
+// built dist; ordinary keyless modes omit llm-deepseek and fixture scenarios
+// add installLlmReplay on the settled root ctx
 // (the plugin-row path discards the ReplayHandle; the direct install keeps
 // assertConsumed for the teardown fixture-consumption check).
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Page } from 'playwright'
 import { expect } from 'vitest'
@@ -44,12 +44,9 @@ import {
   healProfilesModuleFallback,
   loadOverlayPatches,
 } from '@deepseek-ai/dsh-app-boot'
-import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
+import { dshHomePath, resolveDefaultWorkspace } from '@deepseek-ai/dsh-home-paths'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
-import { LlmAdapter } from '@deepseek-ai/dsh-llm'
-import type {
-  LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, RetryPolicyConfig, StreamChunk,
-} from '@deepseek-ai/dsh-llm'
+import type { RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
 import type { ReplayHandle } from '@deepseek-ai/dsh-llm-replay'
 import { installLlmReplay, parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
 import SessionStore, {
@@ -108,9 +105,9 @@ const INSTALL_ANCHOR = join(REPO_ROOT, 'apps/cli/package.json')
 /** The deployment's own agent-preset root, shipped beside the app's config. */
 const SHIPPED_PRESET_DIR = join(REPO_ROOT, 'apps/cli/config/agent-presets')
 
-// Replay publishes the provider catalog the gateway routes to (providers
-// mode, never catch-all: with llm-deepseek disabled no adapter exists, so a
-// catch-all would leave resolveModelInfo unroutable and compaction-basic's
+// Replay publishes the exact provider catalog recorded by a fixture (providers
+// mode, never catch-all, so a
+// catch-all would leave resolveModelInfo ambiguous and compaction-basic's
 // post-step pressure check would warn every step). The published
 // contextWindow keeps that pressure path provably inert for small fixtures.
 const REPLAY_PROVIDERS = [{
@@ -118,46 +115,6 @@ const REPLAY_PROVIDERS = [{
   name: 'DeepSeek',
   models: [{ id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', contextWindow: 128_000 }],
 }]
-
-/**
- * The routes a shipped composition always has, with no ability to stream.
- * A fixture-less keyless scenario issues no model calls, but its tree must
- * still answer `listProviders()` — surfaces legitimately gate on whether any
- * adapter serves a session's route, and an empty registry is a test artifact,
- * not a product state.
- */
-class RouteOnlyAdapter extends LlmAdapter {
-  constructor(private readonly providers: typeof REPLAY_PROVIDERS) {
-    super()
-  }
-
-  override providerInfo(provider: string): LlmProviderInfo {
-    return { id: provider, name: this.providers.find(entry => entry.id === provider)?.name ?? provider }
-  }
-
-  override listModels(provider: string): Promise<readonly LlmModelInfo[]> {
-    return Promise.resolve((this.providers.find(entry => entry.id === provider)?.models ?? [])
-      .map(model => ({ provider, id: model.id, name: model.name })))
-  }
-
-  override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
-    const listed = this.providers.find(entry => entry.id === provider)?.models
-      .find(entry => entry.id === model)
-    return Promise.resolve({
-      provider,
-      id: model,
-      name: listed?.name ?? model,
-      ...listed?.contextWindow === undefined ? {} : { contextWindow: listed.contextWindow },
-    })
-  }
-
-  override async *stream(): AsyncIterable<StreamChunk> {
-    throw new Error(
-      'web e2e scaffold: a model call was issued by a scenario that declared no replay fixture'
-      + ' — pass replayFixture, or keep the scenario free of model calls',
-    )
-  }
-}
 
 function replayProviders(contextWindow: number | undefined): typeof REPLAY_PROVIDERS {
   if (contextWindow === undefined) return REPLAY_PROVIDERS
@@ -253,16 +210,16 @@ export interface LaunchOptions {
    */
   cordisTools?: boolean
   /**
-   * Keep the shipped DeepSeek adapter mounted while masking the process
+   * Manually mount the optional DeepSeek adapter while masking the process
    * environment's DEEPSEEK_API_KEY for this scaffold lifetime. This is the
-   * keyless first-run configuration lane; the default disables the adapter.
+   * keyless provider-setup lane; the shipped Leon composition omits it.
    */
   deepSeekMissingCredential?: boolean
   /** Leave the current welcome notice pending; ordinary scenarios pre-acknowledge it before browser boot. */
   welcomeNoticePending?: boolean
   /**
-   * Patch the shipped DeepSeek search row to a deterministic endpoint and
-   * credential reference. Browser search scenarios keep the real provider and
+   * Manually mount the optional DeepSeek search row against a deterministic
+   * endpoint and credential reference. Browser search scenarios keep the real provider and
    * credentials seam while avoiding external search traffic and ambient keys.
    */
   deepSeekSearch?: {
@@ -504,16 +461,17 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       : [],
     ...options.deepSeekSearch === undefined
       ? []
-      : [{
+      : [{ insert: [{
         id: 'web-search-deepseek',
+        name: '@deepseek-ai/dsh-web-search-deepseek',
         config: {
           apiKeyEnv: options.deepSeekSearch.apiKeyEnv,
           baseURL: options.deepSeekSearch.baseURL,
         },
-      }],
+      }] }],
     ...mode === 'record' || options.deepSeekMissingCredential === true
-      ? []
-      : [{ id: 'llm-deepseek', disabled: true }],
+      ? [{ insert: [{ id: 'llm-deepseek', name: '@deepseek-ai/dsh-llm-deepseek' }] }]
+      : [],
   ]
 
   // Sessions inherit the gateway's process.cwd() default; run the boot from
@@ -533,8 +491,9 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     const rootConfig = join(profileDir, 'cordis.yml')
     await writeFile(rootConfig, '[]\n')
     ctx.baseUrl = pathToFileURL(profileDir).href + '/'
-    // This direct Loader harness supplies the same root-path capability as app-boot.
+    // This direct Loader harness supplies the same root-path capabilities as app-boot.
     ctx.provide('dshHomePath', dshHomePath)
+    ctx.provide('resolveDefaultWorkspace', resolveDefaultWorkspace)
     // A host with no command line still provides one: the web bundle's startup
     // row releases the rows waiting on it, and with no arguments each starts on
     // the values this scaffold composed above. An exit request can only come
@@ -570,7 +529,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     port = boundPort
 
     // Fill the open llm seam on the settled root ctx. Ordinary keyless modes
-    // disable llm-deepseek; the first-run lane keeps it mounted but has no
+    // omit llm-deepseek; the provider-setup lane mounts it but has no
     // replay fixture and never streams. The direct install, unlike the plugin
     // row, returns the ReplayHandle for the teardown consumption check.
     if (options.replayProvidersOnly) {
@@ -614,16 +573,6 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         ...(options.replayChildFixtures === undefined ? {} : { childFiles: options.replayChildFixtures }),
         ...(options.paceMs === undefined ? {} : { paceMs: options.paceMs }),
       })
-    } else if (mode !== 'record' && options.deepSeekMissingCredential !== true) {
-      // No fixture and no shipped adapter would leave the tree with ZERO
-      // provider routes — a state no product composition has, and one the
-      // composer refuses to type into. Register the same routes
-      // a fixture would, with streaming that still fails loud: the scenario
-      // issues no model calls, and one that slipped in must not pass quietly.
-      ctx.effect(() => ctx.llm.registerAdapter(
-        replayProviders(options.replayContextWindow).map(provider => provider.id),
-        new RouteOnlyAdapter(replayProviders(options.replayContextWindow)),
-      ), 'web e2e scaffold: route-only adapter')
     }
   } catch (error) {
     if (process.cwd() !== originalCwd) process.chdir(originalCwd)
@@ -768,7 +717,7 @@ export function fixtureUserPrompts(fixtureText: string): string[] {
 export function realizeSeedFixture(scaffold: WebScaffold, fixtureText: string, id: string): string {
   const realized = fixtureText
     .split('{{sessionId}}').join(id)
-    .split('{{cwd}}').join(scaffold.workspaceCwd)
+    .split('{{cwd}}').join(JSON.stringify(scaffold.workspaceCwd).slice(1, -1))
   const fixtureCwd = (JSON.parse(realized.split('\n', 1)[0]!) as { cwd?: string }).cwd
   return fixtureCwd === undefined
     ? realized
@@ -894,9 +843,12 @@ async function persistSeedSession(
  */
 function normalizeAria(snapshot: string, workspaceCwd: string): string {
   // The session heading renders the workspace's basename, not the full
-  // path, so both spellings must collapse to the token.
-  const base = workspaceCwd.split('/').pop()!
+  // path, while quoted ARIA values escape Windows separators. All three
+  // spellings must collapse to stable tokens.
+  const base = basename(workspaceCwd)
+  const escapedWorkspaceCwd = JSON.stringify(workspaceCwd).slice(1, -1)
   return snapshot
+    .split(escapedWorkspaceCwd).join('{{cwd}}')
     .split(workspaceCwd).join('{{cwd}}')
     .split(base).join('{{workspace}}')
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '{{uuid}}')

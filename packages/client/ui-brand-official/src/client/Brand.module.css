@@ -1,0 +1,64 @@
+.mark {
+  display: inline-block;
+  overflow: hidden;
+  border-radius: 50%;
+  flex: none;
+  filter: drop-shadow(0 0 5px rgb(249 91 46 / .28));
+}
+
+.mark img {
+  display: block;
+  width: auto;
+  max-width: none;
+  height: 100%;
+}
+
+.wordmark {
+  color: var(--dsw-alias-label-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.company {
+  display: flex;
+  flex-direction: column;
+  padding-left: 8px;
+  border-left: 1px solid rgb(249 115 47 / .46);
+  line-height: 1;
+}
+
+.company strong {
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .08em;
+}
+
+.company span {
+  margin-top: 3px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 7px;
+  font-weight: 600;
+  letter-spacing: .19em;
+}
+
+.leon {
+  background: linear-gradient(105deg, #f3313b 0%, #ff6a2f 48%, #ffb72e 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  font-size: 17px;
+  font-weight: 850;
+  letter-spacing: .06em;
+  line-height: 1;
+  filter: drop-shadow(0 0 8px rgb(249 91 46 / .18));
+}
+
+@media (forced-colors: active) {
+  .leon {
+    background: none;
+    color: CanvasText;
+    filter: none;
+  }
+}

@@ -6,8 +6,9 @@
 
 - id: system-prompt
   config:
+    includeHarnessIdentity: false
     persona: >-
-      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
+      Você é Leon, um assistente local independente de provedor, executado pelo modelo {{model}}. Seu diretório de trabalho é {{cwd}}.
 
 # The shared module-reload HMR row stays off; the launcher's watch-only
 # fallback still keeps the user patch layers live until the run exits.

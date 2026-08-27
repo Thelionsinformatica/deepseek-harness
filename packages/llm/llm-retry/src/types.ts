@@ -9,6 +9,8 @@ declare module '@deepseek-ai/dsh-session/types' {
     'llm/retry': LlmRetryEventData
     /** Durable transition written after a retry wait succeeds and before the next request attempt starts. */
     'llm/retry-started': LlmRetryStartedEventData
+    /** Durable notice that automatic routing replaced an unavailable provider before retrying the request. */
+    'llm/failover': LlmFailoverEventData
   }
 }
 
@@ -45,4 +47,20 @@ export interface LlmRetryStartedEventData {
   turn: number
   step: number
   retry: number
+}
+
+/** Durable payload recorded before automatic routing retries through a replacement provider. */
+export interface LlmFailoverEventData {
+  turn: number
+  step: number
+  from: {
+    provider: string
+    model: string
+  }
+  to: {
+    provider: string
+    model: string
+  }
+  failure: LlmFailure
+  reason: 'provider-unavailable'
 }

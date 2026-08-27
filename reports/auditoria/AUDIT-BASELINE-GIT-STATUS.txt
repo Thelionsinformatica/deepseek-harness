@@ -1,0 +1,106 @@
+ M .agents/notes/implemented/feature/2026-06-18-compaction-capability-seam.i18n.yaml
+ M .agents/notes/implemented/feature/2026-06-18-compaction-capability-seam.md
+ M .agents/notes/implemented/feature/2026-06-18-compaction-capability-seam.zh.md
+ M .env.example
+ M apps/cli/composition.md
+ M apps/cli/config/agent-presets/leon/agent.cordis.yml
+ M apps/cli/config/agent-presets/leon/skills/leon-windows/scripts/uia.ps1
+ M apps/cli/tests/leon-windows-uia.spec.ts
+ M apps/web/tests/model-failover-row.e2e.ts
+ M apps/web/tests/snapshots/model-failover-row/ui.expected.md
+ M docs/capability-seams.md
+ M docs/event-producer-consumer.md
+ M examples/headless-agent/tests/snapshots/compaction-recovery/input.json
+ M examples/headless-agent/tests/snapshots/compaction-recovery/session.jsonl
+ M examples/headless-agent/tests/snapshots/compaction-recovery/stream-json.expected.jsonl
+ M package.json
+ M packages/bundle/base/README.i18n.yaml
+ M packages/bundle/base/README.md
+ M packages/bundle/base/README.zh.md
+ M packages/bundle/base/cordis.patch.yml
+ M packages/bundle/base/tests/base.spec.ts
+ M packages/bundle/web-app/README.md
+ M packages/bundle/web-app/README.zh.md
+ M packages/bundle/web-app/cordis.patch.yml
+ M packages/bundle/web-app/package.json
+ M packages/bundle/web-app/tests/web-app.spec.ts
+ M packages/client/locale/src/locales/pt.ts
+ M packages/client/ui-conversation/src/client/chat/StatsLine.tsx
+ M packages/client/ui-conversation/src/client/locales.ts
+ M packages/client/ui-conversation/tests/chat-stats.client.spec.tsx
+ M packages/client/ui-renderer/src/client/scoped-slots.tsx
+ M packages/client/ui-renderer/tests/app.client.spec.tsx
+ M packages/client/ui-renderer/tests/scoped-slots-real-core.client.spec.tsx
+ M packages/client/ui-renderer/tests/scoped-slots.client.spec.tsx
+ M packages/client/ui-renderer/tests/stale-authorization.client.spec.tsx
+ M packages/client/ui-renderer/tests/ui-renderer.client.spec.tsx
+ M packages/client/ui-settings-general/src/client/SettingsRoot.tsx
+ M packages/compaction/compaction-basic/README.i18n.yaml
+ M packages/compaction/compaction-basic/README.md
+ M packages/compaction/compaction-basic/README.zh.md
+ M packages/compaction/compaction-basic/src/region.ts
+ M packages/compaction/compaction-basic/src/summarizer.ts
+ M packages/compaction/compaction-basic/tests/compaction-basic.spec.ts
+ M packages/core/agent-loop/tests/resume.spec.ts
+ M packages/goal/tool-goal/src/index.ts
+ M packages/goal/tool-goal/src/invariant.ts
+ M packages/goal/tool-goal/src/quality-audit.ts
+ M packages/goal/tool-goal/tests/tool-goal.spec.ts
+ M packages/host/apiproxy/tests/adaptive-model.spec.ts
+ M packages/memory/memory-local/src/index.ts
+ M packages/memory/tool-memory/README.i18n.yaml
+ M packages/memory/tool-memory/README.md
+ M packages/memory/tool-memory/README.zh.md
+ M packages/memory/tool-memory/package.json
+ M packages/memory/tool-memory/src/index.ts
+ M packages/memory/tool-memory/src/invariant.ts
+ M packages/memory/tool-memory/src/ranking.ts
+ M packages/memory/tool-memory/src/spec.ts
+ M packages/memory/tool-memory/tests/integration.spec.ts
+ M packages/session/session-stats/src/projection.ts
+ M packages/session/session-stats/src/types.ts
+ M packages/session/session-stats/tests/projection.spec.ts
+ M pnpm-lock.yaml
+ M scripts/gen-cordis-catalog.ts
+ M scripts/gen-doc-graphs.ts
+ M tsconfig.base.json
+ M tsconfig.client.json
+ M tsdown.config.ts
+?? .agents/notes/implemented/feature/2026-08-26-leon-personalization-settings.i18n.yaml
+?? .agents/notes/implemented/feature/2026-08-26-leon-personalization-settings.md
+?? .agents/notes/implemented/feature/2026-08-26-leon-personalization-settings.zh.md
+?? .agents/notes/implemented/feature/2026-08-26-structured-procedure-learning.i18n.yaml
+?? .agents/notes/implemented/feature/2026-08-26-structured-procedure-learning.md
+?? .agents/notes/implemented/feature/2026-08-26-structured-procedure-learning.zh.md
+?? .agents/notes/implemented/testing/2026-08-26-leon-acceptance-7.i18n.yaml
+?? .agents/notes/implemented/testing/2026-08-26-leon-acceptance-7.md
+?? .agents/notes/implemented/testing/2026-08-26-leon-acceptance-7.zh.md
+?? .agents/notes/implemented/testing/2026-08-26-leon-acceptance-8.i18n.yaml
+?? .agents/notes/implemented/testing/2026-08-26-leon-acceptance-8.md
+?? .agents/notes/implemented/testing/2026-08-26-leon-acceptance-8.zh.md
+?? docs/auditoria/
+?? docs/evals/leon-acceptance-7.i18n.yaml
+?? docs/evals/leon-acceptance-7.md
+?? docs/evals/leon-acceptance-7.zh.md
+?? docs/evals/leon-acceptance-8.i18n.yaml
+?? docs/evals/leon-acceptance-8.md
+?? docs/evals/leon-acceptance-8.zh.md
+?? packages/client/ui-settings-personalization/
+?? packages/goal/tool-goal/src/completion-evidence.ts
+?? packages/goal/tool-goal/tests/invariant.spec.ts
+?? packages/host/apiproxy/tests/leon-acc-006-local-real.acceptance.spec.ts
+?? packages/host/apiproxy/tests/leon-acc-006-local-real.fixture.ts
+?? packages/host/apiproxy/tests/leon-acc-006-routing-policy.fixture.ts
+?? packages/host/apiproxy/tests/leon-acc-006-routing-policy.spec.ts
+?? packages/memory/tool-memory/src/procedure-contracts.ts
+?? packages/memory/tool-memory/src/procedure-learning.ts
+?? packages/memory/tool-memory/src/procedure-tools.ts
+?? packages/memory/tool-memory/tests/long-horizon-decision.acceptance.spec.ts
+?? packages/memory/tool-memory/tests/procedure-learning.acceptance.spec.ts
+?? packages/memory/tool-memory/tests/procedure-tools.acceptance.spec.ts
+?? scripts/leon-acceptance-7-model.spec.ts
+?? scripts/leon-acceptance-7-model.ts
+?? scripts/leon-acceptance-8-model.spec.ts
+?? scripts/leon-acceptance-8-model.ts
+?? scripts/run-leon-acceptance-7.ts
+?? scripts/run-leon-acceptance-8.ts

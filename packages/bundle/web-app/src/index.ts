@@ -14,6 +14,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { networkInterfaces } from 'node:os'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -25,6 +26,7 @@ import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-shell-env'
+import { registerVoiceTranscription } from './voice-transcription.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'web-app'
@@ -53,6 +55,14 @@ export interface Config {
   surfaceContext: boolean
   /** Explicit `--trusted-host` authorities from this invocation. */
   trustedHosts: string[]
+  /** Python runtime containing the local decoder and Vosk packages. */
+  voicePythonPath?: string
+  /** Offline Brazilian Portuguese Vosk model directory. */
+  voiceModelPath?: string
+  /** Maximum encoded microphone upload in bytes. */
+  voiceMaxBytes?: number
+  /** Maximum local transcription process lifetime in milliseconds. */
+  voiceTimeoutMs?: number
 }
 
 export const Config: z<Config> = z.object({
@@ -60,6 +70,10 @@ export const Config: z<Config> = z.object({
   printUrl: z.boolean().default(true),
   surfaceContext: z.boolean().default(true),
   trustedHosts: z.array(String).default([]),
+  voicePythonPath: z.string().default(''),
+  voiceModelPath: z.string().default(''),
+  voiceMaxBytes: z.natural().min(1).default(10 * 1024 * 1024),
+  voiceTimeoutMs: z.natural().min(1).default(45_000),
 })
 
 /** Bind-dependent Web values shared by the trust fence and URL display. */
@@ -72,6 +86,16 @@ export interface WebRuntimeValues {
 
 /** Environment variable naming the canonical local URL of this Web GUI. */
 const DSH_WEB_URL = 'DSH_WEB_URL' as const
+/** Trusted executable used by the on-demand Leon browser skill. */
+const DSH_NODE = 'DSH_NODE' as const
+/** Installed Playwright CLI entry used by the on-demand Leon browser skill. */
+const DSH_PLAYWRIGHT_CLI = 'DSH_PLAYWRIGHT_CLI' as const
+
+/** Resolve the browser automation entry from this bundle's pinned dependency. */
+function resolvePlaywrightCli(): string {
+  const require = createRequire(import.meta.url)
+  return join(dirname(require.resolve('@playwright/cli/package.json')), 'playwright-cli.js')
+}
 
 // Display-only mirror of the webserver schema's loopback host: the address the
 // local URL always prints. Not a source of truth — the schema is.
@@ -143,7 +167,7 @@ function webSurfacePrompt(webUrl: string): string {
   const updateContract = 'The client-plugin HMR receiver is active, but client-plugin changes reload without a refresh only while '
     + '`pnpm run dev:web` is also running from this same checkout to rebuild their bundles; verify that watcher before promising automatic updates. '
     + 'Every other change — the apps/web shell and plain packages — requires rebuilding the affected Web artifacts and verifying this existing URL after a page refresh. '
-  return `You are interacting with the user through the DeepSeek Harness Web GUI at ${webUrl}. `
+  return `You are interacting with the user through the Leon Web GUI at ${webUrl}. `
     + 'When the user refers to "this page", "this GUI", or "this app" without naming another target, they mean this GUI. '
     + 'The browser provides no implicit DOM, route, or screenshot context. '
     + updateContract
@@ -231,7 +255,15 @@ export function apply(ctx: Context, config: Config): void {
   // Release dependent rows only after bind-dependent trust has been sampled once.
   ctx.provide(WEB_RUNTIME_SERVICE, runtime)
   ctx.plugin(FrontendStatic, { distIndex: internals.resolveDistIndex() })
+  registerVoiceTranscription(ctx, {
+    pythonPath: config.voicePythonPath ?? '',
+    modelPath: config.voiceModelPath ?? '',
+    scriptPath: fileURLToPath(new URL('../runtime/transcribe-local.py', import.meta.url)),
+    maxBytes: config.voiceMaxBytes ?? 10 * 1024 * 1024,
+    timeoutMs: config.voiceTimeoutMs ?? 45_000,
+  })
   if (config.surfaceContext) {
+    const playwrightCli = resolvePlaywrightCli()
     ctx.inject(['systemPrompt'], (promptCtx) => {
       addHarnessSourceSection(promptCtx, SOURCE_ROOT)
       promptCtx.systemPrompt.section({
@@ -244,9 +276,15 @@ export function apply(ctx: Context, config: Config): void {
       runtimeCtx.shellEnv.register({
         name: 'web-runtime',
         variables: {
-          [DSH_WEB_URL]: { description: 'Canonical local URL of the DeepSeek Harness Web GUI serving this session.' },
+          [DSH_WEB_URL]: { description: 'Canonical local URL of the Leon Web GUI serving this session.' },
+          [DSH_NODE]: { description: 'Trusted Node.js executable used by Leon runtime helpers.' },
+          [DSH_PLAYWRIGHT_CLI]: { description: 'Pinned Playwright CLI entry used for visible browser automation.' },
         },
-        resolve: () => ({ [DSH_WEB_URL]: localWebUrl(runtimeCtx) }),
+        resolve: () => ({
+          [DSH_NODE]: process.execPath,
+          [DSH_PLAYWRIGHT_CLI]: playwrightCli,
+          [DSH_WEB_URL]: localWebUrl(runtimeCtx),
+        }),
       })
     })
   }

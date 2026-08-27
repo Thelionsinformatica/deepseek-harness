@@ -6,7 +6,13 @@ The dsh browser-surface bundle. [`cordis.patch.yml`](cordis.patch.yml) rides ove
 
 ## Model retry defaults
 
-Web uses the shared bounded normal default of five eligible retries after the initial request. The `deepseek-official` route and settings-added pi-ai routes use that default when they omit `retryPolicy`; explicit provider policies still win. Web adds no retry-specific composition override, so the same omission behavior applies to non-Web profiles.
+The shipped local `ollama` route and loopback `freellmapi` gateway each allow one eligible retry after the initial request. Leon Automatic normally replaces an unavailable route before that backoff; the bounded retry remains for manual selection or when every configured replacement is unavailable. Settings-added pi-ai routes and manually mounted compatibility routes still use the shared bounded default of five retries when they omit `retryPolicy`; explicit provider policies always win.
+
+## Leon capability composition
+
+The Web deployment mounts cited Google Search grounding, guarded public-page fetch, browser-zone time context, and durable Session-local reminders. The shipped Leon preset exposes search and fetch as native tools, adds the `leon-browser`, `leon-project-engineer`, and `leon-windows` skills to its on-demand catalog, and receives `schedule_create`, `schedule_list`, and `schedule_delete` from the host Schedule lifecycle.
+
+`@playwright/cli` is a pinned runtime dependency rather than an ambient global command. When `surfaceContext` is true, this plugin publishes the trusted `DSH_NODE` and `DSH_PLAYWRIGHT_CLI` paths beside `DSH_WEB_URL`; the browser skill invokes those exact paths to open a headed Chrome session. Browser instructions are loaded only for matching tasks, avoiding a permanent MCP browser schema on every local-model request.
 
 ## Model Experience
 
@@ -14,11 +20,11 @@ Web uses the shared bounded normal default of five eligible retries after the in
 
 #### What the model sees
 
-When `surfaceContext` is true, the `harness:source` section identifies the on-disk Harness implementation without claiming it is the working directory, and the `app:web-surface` global section (order −98) orients the model to the GUI: the canonical local URL, the "this page" referent, the update contract (the reload receiver is always on; no-refresh reloads additionally need the `pnpm run dev:web` watcher), and the instruction not to start replacement servers. `DSH_WEB_URL` additionally appears in the managed bash environment with its description, resolved per invocation from the live server. When it is false, neither section nor the variable is registered.
+When `surfaceContext` is true, the `harness:source` section identifies the on-disk Harness implementation without claiming it is the working directory, and the `app:web-surface` global section (order −98) orients the model to the Leon GUI: the canonical local URL, the "this page" referent, the update contract (the reload receiver is always on; no-refresh reloads additionally need the `pnpm run dev:web` watcher), and the instruction not to start replacement servers. `DSH_WEB_URL`, `DSH_NODE`, and `DSH_PLAYWRIGHT_CLI` additionally appear in the managed shell environment with descriptions. The URL resolves per invocation from the live server, while the executable paths come from the running Web installation. When `surfaceContext` is false, neither section nor these variables are registered.
 
 #### Token effect
 
-One source line and one prompt paragraph per session plus two managed-environment variable lines; constant per process.
+One source line and one prompt paragraph per session plus three managed-environment variable lines; constant per process.
 
 #### KV Cache effect
 
@@ -31,3 +37,6 @@ The prompt section sits near the system prompt's head and is stable for the life
 - **Only handoff startup is observable** — observation ends when the platform opener accepts spawn, except that Windows waits for its short-lived PowerShell launcher to exit; a later browser exit is not reported, and the printed URL remains the manual fallback.
 - **SSH forwarding owns the browser URL** — the printed canonical URL names the remote host's loopback endpoint; automatic handoff is suppressed, and the SSH client or editor must expose and open its local forwarded address.
 - **Browser command overrides are launch-only** — a discovered `.env` may not set `BROWSER`; only an inherited value may reach an opener path that honors the variable, so a checkout cannot choose an executable for automatic handoff.
+- **Automated browsing uses a Leon-owned profile** — the Playwright session does not silently inherit an already-open personal browser profile. Authentication must be completed in the visible Leon browser, and the profile cannot be shared by concurrent owners.
+- **Reminders are Session-local** — they run on time only while their originating Session is live; a cold Session processes an overdue reminder after resume rather than delivering an external notification.
+- **Arbitrary desktop GUI control is deferred** — Leon can operate files, PowerShell, Windows APIs, programs, and web pages, but the shipped composition does not claim pixel-level control of every Windows application.

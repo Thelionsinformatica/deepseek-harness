@@ -88,6 +88,8 @@ export class FakeApiClient implements IApiClient {
   onModels: (payload: unknown) => Promise<RpcResponse<SessionModels>> = () => Promise.resolve(ok({
     current: this.defaultModel,
     routable: true,
+    automatic: false,
+    automaticAvailable: false,
     groups: [{
       id: 'deepseek-official',
       name: 'DeepSeek',
@@ -95,9 +97,12 @@ export class FakeApiClient implements IApiClient {
     }],
     failures: [],
   }))
-  onSelectModel: (payload: { provider: string; model: string }) =>
-  Promise<RpcResponse<{ selected: ModelSelection }>> =
-    payload => Promise.resolve(ok({ selected: { provider: payload.provider, model: payload.model } }))
+  onSelectModel: (payload: { provider: string; model: string; automatic?: boolean }) =>
+  Promise<RpcResponse<{ selected: ModelSelection; automatic: boolean }>> =
+    payload => Promise.resolve(ok({
+      selected: { provider: payload.provider, model: payload.model },
+      automatic: payload.automatic ?? false,
+    }))
   onPrompt: (payload: unknown) => Promise<RpcResponse<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
   onAttachment: (payload: unknown) => Promise<RpcResponse<{ attachment: { attachmentId: never; mediaType: 'image/png'; bytes: number; width: number; height: number }; data: string }>> =
     () => Promise.resolve(ok({ attachment: { attachmentId: 'a' as never, mediaType: 'image/png', bytes: 1, width: 1, height: 1 }, data: 'AA==' }))
@@ -205,6 +210,12 @@ export class FakeApiClient implements IApiClient {
   onWorkspaceArchiveSession: (payload: unknown) => Promise<RpcResponse<{ archivedSessionIds: SessionId[] }>> =
     payload => Promise.resolve(ok({ archivedSessionIds: [(payload as { sessionId: SessionId }).sessionId] }))
 
+  onWorkspaceUnarchiveSession: (payload: unknown) => Promise<RpcResponse<{ archivedSessionIds: SessionId[] }>> =
+    () => Promise.resolve(ok({ archivedSessionIds: [] }))
+
+  onWorkspaceDeleteSession: (payload: unknown) => Promise<RpcResponse<{ deleted: true; archivedSessionIds: SessionId[] }>> =
+    () => Promise.resolve(ok({ deleted: true, archivedSessionIds: [] }))
+
   readonly workspace: IApiClient['workspace'] = {
     list: (payload: unknown) => this.record('workspace.list', payload, this.onWorkspaceList(payload).then(response => (
       response.result.ok
@@ -220,6 +231,10 @@ export class FakeApiClient implements IApiClient {
       this.record('workspace.insertSessionBefore', payload, this.onWorkspaceInsertSessionBefore(payload)),
     archiveSession: (payload: unknown) =>
       this.record('workspace.archiveSession', payload, this.onWorkspaceArchiveSession(payload)),
+    unarchiveSession: (payload: unknown) =>
+      this.record('workspace.unarchiveSession', payload, this.onWorkspaceUnarchiveSession(payload)),
+    deleteSession: (payload: unknown) =>
+      this.record('workspace.deleteSession', payload, this.onWorkspaceDeleteSession(payload)),
   }
 
   // Payloads stay `unknown` (lint-lane note above); response rows are the real

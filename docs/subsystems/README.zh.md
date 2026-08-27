@@ -39,6 +39,11 @@
 | [compaction.md](compaction.zh.md) | 压缩（compaction）seam：`compaction/*` 会话事件、`CompactionResult`、`CompactionEngine` 接口 |
 | [subagent.md](subagent.zh.md) | subagent seam：命名提供方注册表、`SubagentStartRequest`/`Result`/`Run`、启动时与运行时能力拆分 |
 | [agent-team.md](agent-team.zh.md) | Agent Teams：隐式 Lead 身份、具名 continuable teammate、持久 peer mailbox 与共享任务 DAG |
+| [memory.md](memory.zh.md) | 持久工作区记忆：提供方中立的记录、显式记住/搜索/纠正/遗忘操作、修订安全与隔离 |
+| [memory-v2-architecture.md](memory-v2-architecture.zh.md) | 受控记忆 V2 的参考架构与分阶段演进计划 |
+| [memory-v2-current-state.md](memory-v2-current-state.zh.md) | 经审计的 Leon 基线、测试覆盖率、已实现能力与剩余记忆 V2 缺口 |
+| [memory-v2-retrieval.md](memory-v2-retrieval.zh.md) | 从本地优先词法搜索到混合检索的管线、上下文控制与指标 |
+| [memory-v2-security-policy.md](memory-v2-security-policy.zh.md) | 确定性记忆策略、敏感数据控制、决策追踪与云端同意 |
 | [web.md](web.zh.md) | Web 访问 seam：`WebSearchRequest`/`Result`、`WebFetchRequest`/`Result`、`WebFetchBody`、提供方可用性、`WebError` |
 | [spill.md](spill.zh.md) | spill 存储 seam：`SaveTextSpill`、`SpillOwner`/`SpillSource`、`SpillRef`、品牌类型 `SpillLocator` |
 | [workflow.md](workflow.zh.md) | 工作流 seam：`WorkflowStartRequest`、`WorkflowMeta`、`WorkflowRun`/`Result`、`workflow/*` 事件载荷、`WorkflowError` 致命性 |

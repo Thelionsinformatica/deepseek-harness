@@ -25,13 +25,15 @@ harness 的扩展面是其类型化拦截点（见[拦截扩展点 Agent Note](2
 |---|---|---|
 | `agent/session-start`（emit） | additionalContext → `agent.inject()` | 纯 stdout 输出 → additionalContext → `agent.inject()` |
 | `agent/pre-step` | `deny`→`reject`；仅上下文→委托并折叠到 `enter` | `block`→`reject`；仅上下文→委托并折叠到 `enter` |
-| `tools/pre-execute` | `deny`→`deny`；`ask`→`ask` | `block`→`deny`（无 allow/ask） |
+| `tools/pre-execute` | `continue:false`→`deny`；否则 `deny`→`deny`、`ask`→`ask` | `continue:false`→`deny`；否则 `block`→`deny`（无 allow/ask） |
 | `tools/post-execute` | `deny`→`block`+反馈；仅上下文→委托并折叠 | 同上 |
 | `agent/turn-stopping` | 阻塞的 Stop → 下一步 steering（中途引导） | 同上 |
 | `subagent/start`（emit） | additionalContext → 注入到存活的进程内 subagent；远程 subagent 无本地注入目标 | 本桥接不支持 |
 | `subagent/end`（emit） | 仅观察 | 本桥接不支持 |
 
 CC 桥接的 `ask` 结果是一条真正的权限路径，而非终态桥接决策：`dsh-tools` 通过可选的[审批 seam](2026-07-06-approval-seam.zh.md) 来解析它。ACP（Agent Client Protocol）自动化客户端可以应答所属会话的一次性机器策略请求，`allowed-once` 后继续执行；如果没有 ApprovalService 或应答器，调用以 `deny` 安全关闭。
+
+在 `PreToolUse`，合并后的 `stop` 优先于方言权限决策，并变为针对当前调用的 `deny`。桥接逐字传递 `stopReason`，缺失时回退为 `stopped by PreToolUse hook`，且不会调用已注册的工具主体。这是对当前调用的否决，而非 agent 级硬停止：生成的工具错误仍保留在循环中，模型可以选择后续步骤。
 
 ### 上下文来源始终是插件（误标签防护）
 
@@ -59,7 +61,7 @@ Claude Code 始终导出 `CLAUDE_PROJECT_DIR`，常见的未修改钩子引用 `
 
 - **工具输入重写。** CC/Codex 的 `updatedInput` 被记录日志并发出警告，但不予执行——输入重写是一个推迟的一致性设计问题（见 [pre-tool-input-rewrite Agent Note](../../proposed/feature/2026-06-30-pre-tool-input-rewrite.zh.md)），因为 pre-execution 参数被 `tool/call` 审计、`assistant/message` 历史和工具展示共同读取，诚实的重写是一个设计单元，而非一个字段。
 - **Stop 循环防护**（`TODO(stop-loop-guard)`）。Claude Code 提供 `stop_hook_active` 并在连续八次阻塞后覆盖钩子；Codex 提供 `stop_hook_active` 但未记录等效上限。两个桥接始终报告 `false`，因此一个无条件阻塞的 Stop 钩子会在每一步强制继续——在状态追踪落地之前，钩子作者必须自行限制。
-- **钩子 `continue:false`（硬停止）。** 钩子可以请求终止整个运行（CC/Codex `continue:false`）；共享合并将其折叠为 `MergedHookOutcome.stop`/`stopReason`，但没有桥接对其采取行动（`TODO(hook-continue-false)`）——拦截点尚无「硬停止 agent」原语（Decision 阻塞/引导的是单个点，而非整个运行）。与循环防护工作一同推迟；轮中请求会将停止请求记录在 `hook/result` 中，钩子在此期间保留其逐点效果（决策/上下文）。
+- **钩子 `continue:false`（agent 级硬停止）。** 共享合并会将此请求折叠为 `MergedHookOutcome.stop`/`stopReason`，两个桥接现在都在 `PreToolUse` 将其作为当前调用否决来执行。其他已映射点仍只记录请求，因为拦截 seam 没有「硬停止 agent」原语（Decision 只能阻塞或引导一个点，而非整个运行）。agent 级取消仍在 `TODO(hook-continue-false)` 下推迟。
 - **配置发现。** 路径在 `cordis.yml` 中显式指定且为进程级（见上文）；完整的多层 CC/Codex 优先级遍历、按会话的项目本地发现以及信任/hash 模型未被重新实现（`TODO(per-session-hook-config)`）。
 - **Session-start / subagent-start 上下文为尽力而为（`TODO(session-start-gating)`）。** 两个钩子以 detached 方式运行，不阻塞启动流程，因此其上下文在就绪时注入，但可能错过首个请求或短命的 subagent。要保证首请求送达，需要一个 awaited 的启动扩展点。
 
@@ -69,4 +71,4 @@ Claude Code 始终导出 `CLAUDE_PROJECT_DIR`，常见的未修改钩子引用 `
 
 ## 后果
 
-匹配语义、退出码处理和合并优先级位于 `dsh-hook-protocol`；每个桥接只负责解析配置、构建方言 payload 和映射结果。逐文件覆盖率包含配置分支以及通过真实循环、`dsh-bash-local` 和 shell 脚本的端到端映射，同时一个真实 Loader 冒烟测试守护包的导出形态。原生插件绕过协议格式，直接返回类型化决策。
+匹配语义、退出码处理和合并优先级位于 `dsh-hook-protocol`；每个桥接只负责解析配置、构建方言 payload 和映射结果。逐文件覆盖率包含配置分支以及通过真实循环、`dsh-bash-local` 和 shell 脚本的端到端映射，其中包括断言：工具前 hook 返回 `continue:false` 时会记录 `stop`，且已注册的工具主体不会被调用。同时，一个真实 Loader 冒烟测试守护包的导出形态。原生插件绕过协议格式，直接返回类型化决策。

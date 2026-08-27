@@ -62,8 +62,8 @@ export interface CoveragePartitionCoordinatorOptions {
 export function parseCoveragePartitionCount(raw: string | undefined): number | undefined {
   if (raw === undefined || raw === '') return undefined
   const parsed = Number.parseInt(raw, 10)
-  if (!Number.isSafeInteger(parsed) || parsed < 2 || String(parsed) !== raw) {
-    throw new Error(`${COVERAGE_PARTITIONS_ENV} must be an integer greater than 1, got ${JSON.stringify(raw)}.`)
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || String(parsed) !== raw) {
+    throw new Error(`${COVERAGE_PARTITIONS_ENV} must be a positive integer, got ${JSON.stringify(raw)}.`)
   }
   return parsed
 }
@@ -95,8 +95,8 @@ export class CoveragePartitionCoordinator {
 
   /** Create a coordinator from validated process-independent inputs. */
   public constructor(options: CoveragePartitionCoordinatorOptions) {
-    if (!Number.isSafeInteger(options.partitions) || options.partitions < 2) {
-      throw new Error(`coverage partitions must be an integer greater than 1, got ${String(options.partitions)}.`)
+    if (!Number.isSafeInteger(options.partitions) || options.partitions < 1) {
+      throw new Error(`coverage partitions must be a positive integer, got ${String(options.partitions)}.`)
     }
     this.root = options.root
     this.partitions = options.partitions

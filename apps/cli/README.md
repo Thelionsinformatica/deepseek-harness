@@ -13,7 +13,7 @@ The `dsh` command is the product launcher for profiles: ordered stacks of plugin
 | `dsh web` | Alias of `--profile web`. |
 | `dsh plugin --profile <name> <pnpm args>` | Manage a profile's plugins by forwarding to pnpm in the profile directory. |
 
-The invoking directory is the default workspace root. The `web` and `headless` profiles auto-initialize on first use from shipped templates; any other profile must be created through `dsh plugin`.
+New Leon sessions use `E:/computador` as their Windows workspace root. `$LEON_DEFAULT_WORKSPACE` lets the installer or operator select another directory; [`resolveDefaultWorkspace()`](../../packages/util/home-paths/README.md) owns the complete precedence and non-Windows behavior. The `web` and `headless` profiles auto-initialize on first use from shipped templates; any other profile must be created through `dsh plugin`.
 
 ## App arguments
 

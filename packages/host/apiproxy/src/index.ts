@@ -15,8 +15,11 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
+import { resolveDefaultWorkspace } from '@deepseek-ai/dsh-home-paths'
 import type { ApiProxy } from './api/index.ts'
 import { createApiProxy, DEFAULT_COLD_BLANK_PROBE_MAX_BYTES } from './api-proxy.ts'
+import { chooseAdaptiveFailover, chooseAdaptiveModel, type AdaptiveRoutingConfig } from './adaptive-model.ts'
+import { validateAdaptiveRoutingShadowConfig } from './adaptive-routing-shadow.ts'
 import {
   DEFAULT_SESSION_LOG_COMPRESSION_LEVEL,
   type SessionLogCompressionLevel,
@@ -59,6 +62,8 @@ export interface Config {
    * @default 1024
    */
   coldBlankProbeMaxBytes?: number
+  /** Optional prompt tiers with explicit provider-neutral goal-round escalation. */
+  adaptiveRouting?: AdaptiveRoutingConfig
 }
 
 /**
@@ -77,6 +82,62 @@ export class ApiProxyService extends Service implements ApiProxy {
     sessionExportCompressionLevel: z.number().step(1).min(0).max(9)
       .default(DEFAULT_SESSION_LOG_COMPRESSION_LEVEL) as z<SessionLogCompressionLevel>,
     coldBlankProbeMaxBytes: z.natural().default(DEFAULT_COLD_BLANK_PROBE_MAX_BYTES),
+    // Schemastery object schemas default to {}, which would make an absent
+    // optional block validate its required children. The outer union has no
+    // object default, so omission stays undefined while a supplied block is
+    // still validated in full.
+    adaptiveRouting: z.union([z.object({
+      provider: z.string().required(),
+      fastProvider: z.string(),
+      mainProvider: z.string(),
+      expertProvider: z.string(),
+      fastModel: z.string().required(),
+      mainModel: z.string().required(),
+      expertModel: z.string(),
+      fastReasoningEffort: z.string(),
+      mainReasoningEffort: z.string(),
+      expertReasoningEffort: z.string(),
+      simpleMaxCharacters: z.natural().min(1).default(280),
+      expertMinCharacters: z.natural().min(1).default(800),
+      goalRoundTiers: z.array(z.object({
+        fromRound: z.number().step(1).min(1).required(),
+        provider: z.string().required(),
+        model: z.string().required(),
+        reasoningEffort: z.string(),
+      })).default([]),
+      failovers: z.array(z.object({
+        fromProviders: z.array(z.string().min(1)).min(1),
+        provider: z.string().min(1).required(),
+        model: z.string().min(1).required(),
+        reasoningEffort: z.string(),
+        residency: z.union(['local', 'external'] as const).required(),
+        failureCodes: z.array(z.string().min(1)).min(1),
+      })).default([]),
+      shadow: z.union([z.object({
+        policyVersion: z.string().required(),
+        routes: z.array(z.object({
+          provider: z.string().required(),
+          model: z.string().required(),
+          residency: z.union(['local', 'external'] as const).required(),
+          quality: z.number().step(1).min(1).required(),
+          priority: z.number().step(1).min(0).required(),
+          coldStartTtftMs: z.number().min(0),
+          inputUsdPerMillion: z.number().min(0),
+          outputUsdPerMillion: z.number().min(0),
+        })).min(1),
+        externalPolicy: z.union(['deny', 'fallback-only', 'allow'] as const).default('fallback-only'),
+        outputReserveTokens: z.number().step(1).min(1).default(8192),
+        toolLoopReserveTokens: z.number().step(1).min(0).default(4096),
+        mediumInputTokens: z.number().step(1).min(1).default(12000),
+        expertInputTokens: z.number().step(1).min(1).default(24000),
+        expertMessageCount: z.number().step(1).min(1).default(20),
+        expertToolCount: z.number().step(1).min(1).default(8),
+        circuitBreakerFailures: z.number().step(1).min(1).default(3),
+        latencyMinSamples: z.number().step(1).min(1).default(3),
+        latencyDegradedMultiplier: z.number().min(1).default(2.5),
+        capacityFailureCooldownMs: z.number().step(1).min(0).default(600000),
+      })]),
+    })]),
   })
 
   readonly sessions: ApiProxy['sessions']
@@ -95,10 +156,26 @@ export class ApiProxyService extends Service implements ApiProxy {
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'apiProxy')
+    if (config.adaptiveRouting?.shadow !== undefined) {
+      validateAdaptiveRoutingShadowConfig(config.adaptiveRouting.shadow)
+    }
     const api = createApiProxy(ctx, {
       defaultModelSelection: () => ctx.agentDefaultModel.currentSelection(),
       saveDefaultModelSelection: selection => ctx.agentDefaultModel.saveSelection(selection),
-      cwd: process.cwd(),
+      ...config.adaptiveRouting === undefined
+        ? {}
+        : {
+          adaptiveModelSelection: input => chooseAdaptiveModel(config.adaptiveRouting as AdaptiveRoutingConfig, input),
+          adaptiveModelFailover: input => chooseAdaptiveFailover(config.adaptiveRouting as AdaptiveRoutingConfig, {
+            provider: input.provider,
+            failureCode: input.failure.code,
+            hasImage: input.hasImage,
+          }),
+          ...config.adaptiveRouting.shadow === undefined
+            ? {}
+            : { adaptiveRoutingShadow: config.adaptiveRouting.shadow },
+        },
+      cwd: resolveDefaultWorkspace(),
       ...config.nativeOpen === undefined ? {} : { canOpenPath: () => config.nativeOpen as boolean },
       ...(config.sessionExportCompressionLevel === undefined
         ? {}

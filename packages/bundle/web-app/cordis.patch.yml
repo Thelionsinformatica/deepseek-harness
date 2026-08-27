@@ -15,8 +15,9 @@
 
 - id: system-prompt
   config:
+    includeHarnessIdentity: false
     persona: >-
-      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
+      Você é Leon, um assistente local independente de provedor, executado pelo modelo {{model}}. Seu diretório de trabalho é {{cwd}}.
 
 # TODO: Re-enable shared HMR for Web after its reload lifecycle is tested.
 - id: hmr
@@ -48,23 +49,81 @@
     - id: code-runtime
       name: '@deepseek-ai/dsh-code-runtime-worker-thread'
 
-    - id: storage
-      name: '@deepseek-ai/dsh-storage'
-
-    - id: storage-json
-      name: '@deepseek-ai/dsh-storage-json'
+    # Leon-owned long-term memory: the seam is provider-neutral while this
+    # deployment selects the local storage-domain provider explicitly.
+    - id: memory
+      name: '@deepseek-ai/dsh-memory'
       config:
-        root: !!js dshHomePath('storages')
+        provider: local
 
-    - id: storage-domain
-      name: '@deepseek-ai/dsh-storage-domain'
+    - id: memory-local
+      name: '@deepseek-ai/dsh-memory-local'
       config:
-        backend: json
+        # Corrections preserve prior revisions atomically. Set to v1 only as
+        # an emergency rollback that resumes in-place overwrites.
+        historyMode: temporal-v2
+        # Hybrid semantic recall is available through local Ollama only. It
+        # remains opt-in until LEON-EVAL-PTBR proves the latency/recall tradeoff.
+        semanticSearch:
+          enabled: false
+
+    # Personal memory has its own service, provider registry, and physical
+    # storage domain. It can cross project boundaries only inside the explicit
+    # local-owner partition configured by Leon's preset.
+    - id: personal-memory
+      name: '@deepseek-ai/dsh-personal-memory'
+      config:
+        provider: local
+
+    - id: personal-memory-local
+      name: '@deepseek-ai/dsh-personal-memory-local'
+      config:
+        historyMode: temporal-v2
+
+    # One Host-owned source of truth for the shadow queue and its human review
+    # trail. The browser addresses a Session; this service resolves and guards
+    # the internal workspace partition before returning projected candidates.
+    - id: memory-candidate-review
+      name: '@deepseek-ai/dsh-tool-memory/review'
+      config:
+        reviewedBy: leon-local-operator
+        # Final writes require all three gates: this master switch, the exact
+        # workspace id, and the exact local owner id. The shipped product writes
+        # nothing automatically until the operator opts in deliberately.
+        automaticWrite: false
+        automaticWriteWorkspaceIds: []
+        automaticWriteUserIds: []
+        # Correction/forget stay confirmation-gated in the UI and endpoint.
+        # Set this back to read-only for an immediate mutation rollback.
+        administrationMode: full
+        # Stable local partition for personal preferences shared across projects.
+        personalOwnerId: leon-local-owner
+
+    # Reviewed, workspace-scoped executable procedures. The model can nominate
+      # only durable successful call ids; an exact direct-human review command
+      # must accept the candidate before later sessions can retrieve its steps.
+    - id: procedure-learning
+      name: '@deepseek-ai/dsh-tool-memory/procedure-learning'
+      config:
+        reviewedBy: leon-local-operator
 
     - id: message-feedback
       name: '@deepseek-ai/dsh-message-feedback'
       config:
         maxNoteBytes: 8192
+
+    # Leon's browser deployment reuses the Google credential already stored
+    # for Gemini. Search remains a model-selected tool call; the local fetch
+    # provider can retrieve only anonymous public HTTP(S) resources and applies
+    # its own SSRF, redirect, response-size, and timeout policy.
+    - id: web-search-google
+      name: '@deepseek-ai/dsh-web-search-google'
+      config:
+        apiKeyEnv: GOOGLE_API_KEY
+        model: gemini-3.1-pro-preview-customtools
+
+    - id: web-fetch-http
+      name: '@deepseek-ai/dsh-web-fetch-http'
 
     # Browser Session export: `/export` command plus the shared download dialog.
     - id: session-log-download
@@ -85,10 +144,76 @@
     - id: file-reference-local
       name: '@deepseek-ai/dsh-file-reference-local'
 
-    # Whole-log turn/step counts for the chat stats strip (the sessionStats
-    # projection key); the projection registry itself is a base-layer row.
+    # Read-only semantic navigation for TypeScript and JavaScript projects.
+    # The language server is pinned as a Web bundle dependency and launched
+    # through Node directly, avoiding PATH, npx downloads, and shell wrappers.
+    - id: lsp
+      name: '@deepseek-ai/dsh-lsp'
+
+    - id: lsp-stdio
+      name: '@deepseek-ai/dsh-lsp-stdio'
+      config:
+        servers:
+          typescript:
+            command: !!js process.execPath
+            args:
+              - !!js "process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('typescript-language-server/lib/cli.mjs')"
+              - --stdio
+            extensionToLanguage:
+              .ts: typescript
+              .tsx: typescriptreact
+              .js: javascript
+              .jsx: javascriptreact
+              .mts: typescript
+              .cts: typescript
+              .mjs: javascript
+              .cjs: javascript
+
+    # Whole-log turn/step counts and configured API cost estimate for the chat
+    # stats strip and Work dashboard. Local Ollama routes are deliberately $0.
+    # Gemini and OpenAI are the 2026-08-26 public Standard snapshots. Gemini's
+    # flat estimate covers prompts up to 200k tokens; longer prompts use the
+    # provider's higher tier. The configured NVIDIA prototype is a free hosted
+    # endpoint. FreeLLMAPI has no fixed estimate because its upstream varies.
     - id: session-stats
       name: '@deepseek-ai/dsh-session-stats'
+      config:
+        prices:
+          - provider: ollama
+            model: qwen3.5:9b
+            inputUsdPerMillion: 0
+            outputUsdPerMillion: 0
+          - provider: ollama
+            model: ornith-1.5:9b
+            inputUsdPerMillion: 0
+            outputUsdPerMillion: 0
+          - provider: ollama
+            model: qwen3.8-9b-distill-uncensored-heretic:latest
+            inputUsdPerMillion: 0
+            outputUsdPerMillion: 0
+          - provider: google
+            model: gemini-3.1-pro-preview-customtools
+            inputUsdPerMillion: 2.00
+            outputUsdPerMillion: 12.00
+            cacheReadUsdPerMillion: 0.20
+          - provider: openai
+            model: gpt-5.6-luna
+            inputUsdPerMillion: 0.20
+            outputUsdPerMillion: 1.20
+            cacheReadUsdPerMillion: 0.02
+          - provider: nvidia
+            model: deepseek-ai/deepseek-v4-flash-0731
+            inputUsdPerMillion: 0
+            outputUsdPerMillion: 0
+
+    # Browser-zone time context lets Leon interpret natural-language dates;
+    # Schedule adds durable one-shot and fixed-rate reminders to every future
+    # root session created by this Web deployment.
+    - id: time-context
+      name: '@deepseek-ai/dsh-time-context'
+
+    - id: schedule
+      name: '@deepseek-ai/dsh-schedule'
 
     # Resolve bind host, SSH launch, and display once at boot, then mount the
     # matching dual-face directory picker. Mount -native or -browse directly in
@@ -104,6 +229,131 @@
     # shares. The base layer's agent-default-model service owns the default model.
     - id: api-gateway
       name: '@deepseek-ai/dsh-host-apiproxy'
+      config:
+        # Leon Automatic keeps ordinary work on Qwen, promotes complex work and
+        # autonomous goal rounds to the local Ornith specialist, then escalates
+        # only on provider failure: FreeLLMAPI -> direct Gemini -> direct OpenAI.
+        # Each transition is persisted as llm/failover and shown in the chat.
+        adaptiveRouting:
+          provider: ollama
+          fastProvider: ollama
+          mainProvider: ollama
+          expertProvider: ollama
+          fastModel: qwen3.5:9b
+          mainModel: qwen3.5:9b
+          expertModel: ornith-1.5:9b
+          fastReasoningEffort: 'off'
+          mainReasoningEffort: medium
+          expertReasoningEffort: high
+          simpleMaxCharacters: 280
+          expertMinCharacters: 700
+          goalRoundTiers:
+            - fromRound: 1
+              provider: ollama
+              model: ornith-1.5:9b
+              reasoningEffort: high
+          failovers:
+            - fromProviders:
+                - ollama
+              provider: freellmapi
+              model: auto
+              residency: external
+              failureCodes:
+                - TRANSPORT
+                - TIMEOUT
+                - SERVER
+                - UNKNOWN_MODEL
+                - NO_ADAPTER
+            - fromProviders:
+                - freellmapi
+              provider: google
+              model: gemini-3.1-pro-preview-customtools
+              residency: external
+              failureCodes:
+                - TRANSPORT
+                - TIMEOUT
+                - SERVER
+                - RATE_LIMIT
+                - QUOTA
+                - EMPTY_RESPONSE
+                - AUTH
+                - INVALID_CREDENTIAL
+                - MISSING_CREDENTIAL
+                - UNKNOWN_MODEL
+            - fromProviders:
+                - google
+              provider: openai
+              model: gpt-5.6-luna
+              reasoningEffort: low
+              residency: external
+              failureCodes:
+                - TRANSPORT
+                - TIMEOUT
+                - SERVER
+                - RATE_LIMIT
+                - QUOTA
+                - EMPTY_RESPONSE
+                - AUTH
+                - INVALID_CREDENTIAL
+                - MISSING_CREDENTIAL
+                - UNKNOWN_MODEL
+          # The next-generation preflight is deliberately passive. It reads
+          # exact assembled-request pressure and registered route capabilities,
+          # persists a content-free recommendation, and never replaces the
+          # provider/model selected by the policy above.
+          shadow:
+            policyVersion: leon-shadow-v1
+            externalPolicy: fallback-only
+            outputReserveTokens: 8192
+            toolLoopReserveTokens: 4096
+            mediumInputTokens: 12000
+            expertInputTokens: 24000
+            expertMessageCount: 20
+            expertToolCount: 8
+            circuitBreakerFailures: 3
+            latencyMinSamples: 3
+            latencyDegradedMultiplier: 2.5
+            capacityFailureCooldownMs: 600000
+            routes:
+              - provider: ollama
+                model: qwen3.5:9b
+                residency: local
+                quality: 1
+                priority: 10
+                coldStartTtftMs: 12000
+                inputUsdPerMillion: 0
+                outputUsdPerMillion: 0
+              - provider: ollama
+                model: ornith-1.5:9b
+                residency: local
+                quality: 2
+                priority: 20
+                coldStartTtftMs: 12000
+                inputUsdPerMillion: 0
+                outputUsdPerMillion: 0
+              - provider: freellmapi
+                model: auto
+                residency: external
+                quality: 3
+                priority: 30
+                coldStartTtftMs: 15000
+              - provider: google
+                model: gemini-3.1-pro-preview-customtools
+                residency: external
+                quality: 4
+                priority: 40
+                coldStartTtftMs: 13000
+                inputUsdPerMillion: 2
+                outputUsdPerMillion: 12
+              - provider: openai
+                model: gpt-5.6-luna
+                residency: external
+                quality: 3
+                priority: 50
+                coldStartTtftMs: 10000
+                inputUsdPerMillion: 0.2
+                outputUsdPerMillion: 1.2
+
 
     - id: cordis-host-runner
       name: '@deepseek-ai/dsh-cordis-host-runner'
@@ -142,6 +392,12 @@
         printUrl: true
         surfaceContext: true
         trustedHosts: !!js ctx.webStartup.trustedHosts
+        voicePythonPath: !!js >-
+          process.env.LEON_VOICE_PYTHON ?? (process.platform === 'win32' ? 'E:\\Computador\\lab-envs\\Twsman1-JARVIS\\Scripts\\python.exe' : '')
+        voiceModelPath: !!js >-
+          process.env.LEON_VOICE_VOSK_MODEL ?? (process.platform === 'win32' ? 'E:\\Computador\\labs\\Twsman1-JARVIS\\models\\vosk-pt' : '')
+        voiceMaxBytes: 10485760
+        voiceTimeoutMs: 45000
 
     # The client-plugin reload chain, always mounted: it is idle until a
     # rebuild watcher (pnpm run dev:web) actually rewrites client bundles. It
@@ -203,11 +459,26 @@
     - id: ui-settings-models
       name: '@deepseek-ai/dsh-client-ui-settings-models'
 
+    - id: ui-settings-personalization
+      name: '@deepseek-ai/dsh-client-ui-settings-personalization'
+
     - id: ui-settings-plugin-inventory
       name: '@deepseek-ai/dsh-client-ui-settings-plugin-inventory'
 
     - id: ui-conversation
       name: '@deepseek-ai/dsh-client-ui-conversation'
+
+    # Leon Work overview for the blank-session Hero. Metrics come from the
+    # existing Session and Workspace projections; the chat remains the task
+    # execution surface after a user starts or opens work.
+    - id: ui-work-dashboard
+      name: '@deepseek-ai/dsh-client-ui-work-dashboard'
+
+    # Local-first browser microphone capture beside the composer send path.
+    # The web-runtime route transcribes each ephemeral clip through the local
+    # PT-BR Vosk worker before the ordinary chat input submits it.
+    - id: ui-voice
+      name: '@deepseek-ai/dsh-client-ui-voice'
 
     # Official occupants for the generic sidebar and conversation brand slots.
     - id: ui-brand-official

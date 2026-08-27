@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, stat, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -173,11 +173,17 @@ function enablePresetTool(composition: string, id: string): string {
 }
 
 let ctx: Context
+const lspProjects: string[] = []
 beforeAll(async () => {
   const settingsFile = join(await mkdtemp(join(tmpdir(), 'dsh-web-presets-')), 'settings.yaml')
   await writeFile(settingsFile, '{}\n')
   ctx = await bootWeb(settingsFile)
 }, 120_000)
+
+afterAll(async () => {
+  await ctx?.fiber.dispose()
+  await Promise.all(lspProjects.map(project => rm(project, { recursive: true, force: true })))
+})
 
 describe('the shipped Web composition', () => {
   it('leaves the global tool layer empty', () => {
@@ -219,7 +225,13 @@ describe('the shipped Web composition', () => {
   it('supplies both shipped presets, and only those, from the system root', async () => {
     const listed = await ctx.agentPresets.list()
 
-    expect(listed.map(preset => preset.id).sort()).toEqual(['code', 'cordis', 'minimal', 'standard'])
+    expect(listed.map(preset => preset.id).sort()).toEqual([
+      'code',
+      'cordis',
+      'leon',
+      'minimal',
+      'standard',
+    ])
     expect(listed.every(preset => preset.trust === 'system')).toBe(true)
     expect(ctx.agentPresets.defaultId).toBe('standard')
   })
@@ -370,6 +382,257 @@ describe('the shipped Web composition', () => {
 
     expect((await readFile(skill, 'utf8')).startsWith('---\nname: editing-cordis-compositions')).toBe(true)
   })
+
+  it('ships Leon memory and web tools and scopes its on-demand capabilities', async () => {
+    const skill = join(
+      CONFIG_DIR, 'agent-presets', 'leon', 'skills', 'leon-project-engineer', 'SKILL.md',
+    )
+    expect((await readFile(skill, 'utf8')).startsWith('---\nname: leon-project-engineer')).toBe(true)
+    const browserSkill = join(
+      CONFIG_DIR, 'agent-presets', 'leon', 'skills', 'leon-browser', 'SKILL.md',
+    )
+    expect((await readFile(browserSkill, 'utf8')).startsWith('---\nname: leon-browser')).toBe(true)
+    const windowsSkill = join(
+      CONFIG_DIR, 'agent-presets', 'leon', 'skills', 'leon-windows', 'SKILL.md',
+    )
+    expect((await readFile(windowsSkill, 'utf8')).startsWith('---\nname: leon-windows')).toBe(true)
+    const knowledgeSkill = join(
+      CONFIG_DIR, 'agent-presets', 'leon', 'skills', 'leon-knowledge-base', 'SKILL.md',
+    )
+    expect((await readFile(knowledgeSkill, 'utf8')).startsWith('---\nname: leon-knowledge-base')).toBe(true)
+
+    const handle = await ctx.agents.create({
+      sessionId: SessionId(`preset-skills-leon-${randomUUID()}`),
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'leon').then(() => undefined),
+    })
+    try {
+      const tools = toolNames(ctx, handle.agent)
+      expect(tools).toEqual(expect.arrayContaining([
+        'lsp',
+        'mcp__leon_files__list_allowed_directories', 'mcp__leon_files__list_directory',
+        'mcp__leon_files__read_text_file', 'mcp__leon_files__search_files',
+        'memory_forget', 'memory_remember', 'memory_search', 'memory_update', 'web_fetch', 'web_search',
+        'schedule_create', 'schedule_delete', 'schedule_list',
+      ]))
+      expect(toolNames(ctx).filter(name => name.startsWith('memory_'))).toEqual([])
+      expect(ctx.settings.describe().map(row => String(row.ns))).toContain('web-search-google')
+
+      const leonAssembly = await ctx.systemPrompt.assemble({ scope: handle.agent })
+      const persona = leonAssembly.sections.find(section => section.name === 'deployment:persona')?.text ?? ''
+      expect(persona).toContain('Use web_search antes de responder')
+      expect(persona).toContain('fatos estáveis, responda diretamente')
+      expect(persona).toContain('conteúdo privado de arquivos locais')
+
+      const scoped = (await ctx.skills.list({ scope: handle.agent })).map(item => item.name)
+      expect(scoped).toContain('leon-project-engineer')
+      expect(scoped).toContain('leon-browser')
+      expect(scoped).toContain('leon-knowledge-base')
+      expect(scoped).toContain('leon-windows')
+      expect((await ctx.skills.list()).map(item => item.name)).not.toContain('leon-project-engineer')
+      expect((await ctx.skills.list()).map(item => item.name)).not.toContain('leon-browser')
+      expect((await ctx.skills.list()).map(item => item.name)).not.toContain('leon-knowledge-base')
+      expect((await ctx.skills.list()).map(item => item.name)).not.toContain('leon-windows')
+
+      const loaded = await ctx.tools.execute({
+        callId: CallId('preset-leon-project-engineer-load'),
+        name: 'skill',
+        arguments: { name: 'leon-project-engineer' },
+        signal: new AbortController().signal,
+        agent: handle.agent,
+      })
+      expect(loaded.isError).toBe(false)
+      expect(JSON.stringify(loaded.content)).toContain('Verificação e entrega')
+
+      const browserLoaded = await ctx.tools.execute({
+        callId: CallId('preset-leon-browser-load'),
+        name: 'skill',
+        arguments: { name: 'leon-browser' },
+        signal: new AbortController().signal,
+        agent: handle.agent,
+      })
+      expect(browserLoaded.isError).toBe(false)
+      expect(JSON.stringify(browserLoaded.content)).toContain('Navegação visível e segura')
+      expect(JSON.stringify(browserLoaded.content)).toContain('Contexto persistente da página')
+
+      const knowledgeLoaded = await ctx.tools.execute({
+        callId: CallId('preset-leon-knowledge-base-load'),
+        name: 'skill',
+        arguments: { name: 'leon-knowledge-base' },
+        signal: new AbortController().signal,
+        agent: handle.agent,
+      })
+      expect(knowledgeLoaded.isError).toBe(false)
+      expect(JSON.stringify(knowledgeLoaded.content)).toContain('Base de conhecimento do Leon')
+      expect(JSON.stringify(knowledgeLoaded.content)).toContain('cópias imutáveis')
+
+      const windowsLoaded = await ctx.tools.execute({
+        callId: CallId('preset-leon-windows-load'),
+        name: 'skill',
+        arguments: { name: 'leon-windows' },
+        signal: new AbortController().signal,
+        agent: handle.agent,
+      })
+      expect(windowsLoaded.isError).toBe(false)
+      expect(JSON.stringify(windowsLoaded.content)).toContain('Operação segura do Windows')
+      expect(JSON.stringify(windowsLoaded.content)).toContain('Interface gráfica por acessibilidade')
+      expect(JSON.stringify(windowsLoaded.content)).toContain('AllowWindowId')
+
+      if (process.platform === 'win32') {
+        const assembly = await ctx.systemPrompt.assemble({ scope: handle.agent })
+        const pwshGuidance = assembly.sections.find(section => section.name === 'tool:pwsh')?.text ?? ''
+        const denied = await ctx.tools.execute({
+          callId: CallId('preset-leon-block-host-process-termination'),
+          name: 'pwsh',
+          arguments: { command: 'Stop-Process -Id 4012 -Force', description: 'stop occupied port owner' },
+          signal: new AbortController().signal,
+          agent: handle.agent,
+        })
+        const combinedServerCheck = await ctx.tools.execute({
+          callId: CallId('preset-leon-block-combined-server-health-check'),
+          name: 'pwsh',
+          arguments: {
+            command: "node server.js; Invoke-WebRequest -Uri 'http://localhost:3008/'",
+            description: 'start and test server',
+            run_in_background: true,
+          },
+          signal: new AbortController().signal,
+          agent: handle.agent,
+        })
+        expect({
+          modelGuidance: pwshGuidance.includes('Never free a port by killing its owner'),
+          serverProtocol: pwshGuidance.includes('HTTP health check in a separate foreground call'),
+          serverFailureDiagnosis: pwshGuidance.includes('job_output` before changing ports'),
+          denied: denied.isError,
+          denialExplainsRecovery: JSON.stringify(denied.content)
+            .includes('host process termination is disabled for this agent'),
+          combinedServerCheckDenied: combinedServerCheck.isError,
+          protocolRecoveryExplained: JSON.stringify(combinedServerCheck.content)
+            .includes('HTTP health check in a separate foreground call'),
+        }).toEqual({
+          modelGuidance: true,
+          serverProtocol: true,
+          serverFailureDiagnosis: true,
+          denied: true,
+          denialExplainsRecovery: true,
+          combinedServerCheckDenied: true,
+          protocolRecoveryExplained: true,
+        })
+      }
+    } finally {
+      await handle.dispose()
+    }
+  })
+
+  it('keeps Leon MCP filesystem access read-only and inside the source tree', async () => {
+    const handle = await ctx.agents.create({
+      sessionId: SessionId(`preset-mcp-leon-${randomUUID()}`),
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'leon').then(() => undefined),
+    })
+    try {
+      const tools = toolNames(ctx, handle.agent)
+      expect(tools).not.toEqual(expect.arrayContaining([
+        'mcp__leon_files__create_directory',
+        'mcp__leon_files__edit_file',
+        'mcp__leon_files__move_file',
+        'mcp__leon_files__write_file',
+      ]))
+
+      const allowed = await ctx.tools.execute({
+        callId: CallId('preset-leon-mcp-allowed-root'),
+        name: 'mcp__leon_files__list_allowed_directories',
+        arguments: {},
+        signal: new AbortController().signal,
+        agent: handle.agent,
+      })
+      expect(allowed.isError).toBe(false)
+      const allowedText = allowed.content
+        .map(block => block.type === 'text' ? block.text : '')
+        .join('\n')
+      expect(allowedText.toLowerCase())
+        .toContain(REPO_ROOT.replace(/[\\/]+$/u, '').toLowerCase())
+
+      const readme = await ctx.tools.execute({
+        callId: CallId('preset-leon-mcp-read-source'),
+        name: 'mcp__leon_files__read_text_file',
+        arguments: { path: join(REPO_ROOT, 'README.md'), head: 3 },
+        signal: new AbortController().signal,
+        agent: handle.agent,
+      })
+      expect(readme.isError).toBe(false)
+      expect(JSON.stringify(readme.content)).toContain('Leon')
+
+      const escaped = await ctx.tools.execute({
+        callId: CallId('preset-leon-mcp-reject-parent'),
+        name: 'mcp__leon_files__read_text_file',
+        arguments: { path: dirname(REPO_ROOT) },
+        signal: new AbortController().signal,
+        agent: handle.agent,
+      })
+      expect(escaped.isError).toBe(true)
+      expect(JSON.stringify(escaped.content)).toMatch(/outside allowed directories|Access denied/iu)
+    } finally {
+      await handle.dispose()
+    }
+  })
+
+  it('keeps Leon static model context within its local-first startup budget', async () => {
+    const handle = await ctx.agents.create({
+      sessionId: SessionId(`preset-context-leon-${randomUUID()}`),
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'leon').then(() => undefined),
+    })
+    try {
+      const assembly = await ctx.systemPrompt.assemble({ scope: handle.agent })
+      const sectionsBytes = Buffer.byteLength(JSON.stringify(assembly.sections), 'utf8')
+      const toolsBytes = Buffer.byteLength(JSON.stringify(assembly.tools), 'utf8')
+      const sectionSizes = assembly.sections
+        .map(section => `${section.name}=${Buffer.byteLength(JSON.stringify(section), 'utf8')}B`)
+        .join(', ')
+      // Leon intentionally keeps its full local-first arsenal visible. These
+      // byte ceilings still fit a 32k-token local context with ample room for
+      // the user's request, while catching accidental prompt/schema bloat.
+      expect(sectionsBytes, sectionSizes).toBeLessThanOrEqual(10_000)
+      expect(toolsBytes).toBeLessThanOrEqual(22_000)
+      expect(sectionsBytes + toolsBytes).toBeLessThanOrEqual(32_000)
+    } finally {
+      await handle.dispose()
+    }
+  })
+
+  it('runs the shipped TypeScript language server through Leon\'s scoped lsp tool', async () => {
+    const project = await mkdtemp(join(tmpdir(), 'leon-lsp-project-'))
+    lspProjects.push(project)
+    await writeFile(join(project, 'tsconfig.json'), JSON.stringify({
+      compilerOptions: { strict: true, module: 'nodenext' },
+    }))
+    await writeFile(join(project, 'index.ts'), [
+      'export function greet(name: string): string { return `Olá ${name}` }',
+      "export const message = greet('Leon')",
+      '',
+    ].join('\n'))
+    const handle = await ctx.agents.create({
+      sessionId: SessionId(`preset-lsp-leon-${randomUUID()}`),
+      meta: { cwd: project },
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'leon').then(() => undefined),
+    })
+    try {
+      const result = await ctx.tools.execute({
+        callId: CallId('preset-leon-lsp-references'),
+        name: 'lsp',
+        arguments: {
+          operation: 'findReferences',
+          file_path: 'index.ts',
+          line: 1,
+          character: 17,
+        },
+        signal: new AbortController().signal,
+        agent: handle.agent,
+      })
+      expect(result.isError).toBe(false)
+      expect(JSON.stringify(result.content)).toContain('index.ts')
+    } finally {
+      await handle.dispose()
+    }
+  }, 60_000)
 
   it('merges the global skill layer into a preset agent\'s catalog, keeping local discovery preset-side', async () => {
     const proj = await mkdtemp(join(tmpdir(), 'dsh-preset-skill-proj-'))
@@ -726,7 +989,7 @@ describe('a launcher that configures no writable root', () => {
     await mkdir(join(home, '.agent-presets', 'derived-mine'), { recursive: true })
     await writeFile(
       join(home, '.agent-presets', 'derived-mine', 'agent.cordis.yml'),
-      '- id: tool-todo\n  name: \'@deepseek-ai/dsh-tool-todo\'\n  config:\n    allowParallelInProgress: true\n',
+      '- id: tool-todo\n  name: \'@deepseek-ai/dsh-tool-todo\'\n  config:\n    allowParallelInProgress: true\n    preserveExistingItems: true\n',
     )
     const settingsFile = join(await mkdtemp(join(tmpdir(), 'dsh-preset-derived-settings-')), 'settings.yaml')
     await writeFile(settingsFile, '{}\n')

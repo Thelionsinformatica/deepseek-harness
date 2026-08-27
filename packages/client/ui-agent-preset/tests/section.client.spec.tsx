@@ -107,13 +107,27 @@ describe('the preset list', () => {
     expect(within(rowFor('mine')).getByText(en.userTrust)).toBeTruthy()
   })
 
-  it('separates built-in presets from custom ones', () => {
-    renderSection()
+  it('leads with the default assistant and keeps the other shipped modes collapsed', () => {
+    renderSection({
+      rows: [
+        ...READY.rows,
+        { id: 'minimal', trust: 'system', isDefault: false },
+      ],
+    })
 
-    // Two different things: one set ships with the deployment and is
-    // read-only, the other is the user's own.
-    expect(screen.getByRole('heading', { name: en.builtInGroup })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: en.primaryGroup })).toBeTruthy()
+    expect(rowFor('standard')).toBeTruthy()
+    expect(screen.getByRole('heading', { name: new RegExp(en.advancedGroup) })).toBeTruthy()
+    expect(screen.queryByText(en.presetMinimalName)).toBeNull()
     expect(screen.getByRole('heading', { name: en.customGroup })).toBeTruthy()
+
+    const disclosure = screen.getByRole('button', { name: en.showAdvanced })
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(disclosure)
+
+    expect(disclosure.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByText(en.presetMinimalName)).toBeTruthy()
+    expect(screen.getByRole('button', { name: en.hideAdvanced })).toBeTruthy()
   })
 
   it('shows no group heading for a set nobody has', () => {
@@ -155,6 +169,9 @@ describe('the preset list', () => {
     const mine = rowFor('mine')
     expect(within(mine).getByRole('button', { name: `${en.openLocation}: mine` })).toBeTruthy()
     expect(within(mine).queryByRole('button', { name: `${en.view}: mine` })).toBeNull()
+    // The actions explain themselves without relying on icon recognition.
+    expect(within(standard).getByText(en.view)).toBeTruthy()
+    expect(within(mine).getByText(en.openLocation)).toBeTruthy()
   })
 
   it('offers Delete only for a locally authored preset', () => {

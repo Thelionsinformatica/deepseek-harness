@@ -51,7 +51,10 @@
 
 /* Effort value beside the model name (mock's 'High': same 13/20/500, caption tone). */
 .triggerEffort {
-  flex: 0 0 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--dsw-alias-label-caption);
 }
 
@@ -214,6 +217,23 @@
   line-height: 18px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.wrappingDescription {
+  white-space: normal;
+}
+
+.automaticSummary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+}
+
+.automaticAction {
+  justify-content: center;
+  margin-top: 4px;
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .check {

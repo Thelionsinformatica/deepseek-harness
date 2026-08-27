@@ -1,6 +1,7 @@
 /** Direct one-shot Agent driving, durable aggregation, flushing, and exit mapping. */
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { resolve } from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentHandle, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
@@ -11,7 +12,10 @@ import type { Session, UserMessage } from '@deepseek-ai/dsh-session'
 import { apply, Config, internals } from '../src/index.ts'
 
 const originalInternals = { ...internals }
-afterEach(() => { Object.assign(internals, originalInternals) })
+afterEach(() => {
+  Object.assign(internals, originalInternals)
+  vi.unstubAllEnvs()
+})
 
 interface Script {
   before?(session: Session): void
@@ -108,6 +112,19 @@ async function bench(script: Script): Promise<{
 }
 
 describe('headless runner', () => {
+  it('pins the configured Leon workspace on the new session', async () => {
+    const workspace = resolve('headless-leon-workspace')
+    let actual: string | undefined
+    vi.stubEnv('LEON_DEFAULT_WORKSPACE', workspace)
+    const test = await bench({
+      before(session) { actual = session.header.cwd },
+      afterPrompt(session, message) { appendTurn(session, 1, message, 'done', true) },
+    })
+    expect(await test.run()).toMatchObject({ code: 0 })
+    expect(actual).toBe(workspace)
+    await test.ctx.fiber.dispose()
+  })
+
   it('aggregates the final text across the complete idle-to-idle interval and flushes before exit', async () => {
     const test = await bench({
       before(session) {

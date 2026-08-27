@@ -60,8 +60,11 @@ describe('CI workflow', () => {
     const node24Coverage = workflow.jobs['node-24-coverage']
     const node24Consumers = workflow.jobs['node-24-consumers']
     const aggregate = workflow.jobs['all-checks-passed']
-    if (!Array.isArray(windows.steps) || !Array.isArray(aggregate.needs)) {
-      throw new TypeError('Windows job must define steps and the aggregate must define needs')
+    if (!Array.isArray(windows.steps)
+      || !Array.isArray(aggregate.needs)
+      || !isRecord(node24Coverage.env)
+      || !isRecord(node24Consumers.env)) {
+      throw new TypeError('Windows job must define steps, coverage and consumers must define env, and the aggregate must define needs')
     }
     const commandSteps = windows.steps.filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
@@ -81,10 +84,15 @@ describe('CI workflow', () => {
     expect(windowsNative['runs-on']).toContain('self-hosted')
     expect(windowsNative['runs-on']).toContain('dsh-win-ci')
     expect(windowsNative['runs-on']).toContain('dsh-windows-2025-16core')
+    expect(windowsNative['runs-on']).toContain("github.repository != 'deepseek-ai/deepseek-harness'")
+    expect(windowsNative['runs-on']).toContain('windows-latest')
     expect(windowsNative.name).toBe('windows node 24 / native complete')
     expect(windowsNative.if).toBe("github.event_name == 'pull_request'")
     expect(windowsNative.env).toMatchObject({
-      DSH_COVERAGE_TEST_TIMEOUT_MS: '30000',
+      DSH_COVERAGE_MAX_WORKERS: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '6' }}",
+      DSH_COVERAGE_PARTITIONS: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '8' }}",
+      DSH_COVERAGE_TEST_TIMEOUT_MS: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '60000' || '30000' }}",
+      DSH_GATE_CONCURRENCY: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '4' }}",
     })
     const nativeSteps = windowsNative.steps as unknown[]
     const nativeCommandSteps = nativeSteps.filter((step): step is Record<string, unknown> & { run: string } => (
@@ -114,7 +122,28 @@ describe('CI workflow', () => {
       expect(job['runs-on'], `${jobName} runs-on must use the Linux failover switch`).toContain('DSH_CI_FAILOVER_LINUX')
       expect(job['runs-on'], `${jobName} runs-on must not use the Windows failover switch`).not.toContain('DSH_CI_FAILOVER_WINDOWS')
       expect(job['runs-on']).toContain('vm-backup')
+      expect(job['runs-on']).toContain("github.repository != 'deepseek-ai/deepseek-harness'")
+      expect(job['runs-on']).toContain('ubuntu-latest')
     }
+    expect(node24Consumers.env).toMatchObject({
+      DSH_GATE_CONCURRENCY: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '8' }}",
+      DSH_OXLINT_THREADS: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '4' || '8' }}",
+      DSH_PUBLINT_CONCURRENCY: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '4' || '8' }}",
+      DSH_SKIP_REAL_PWSH: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '0' }}",
+      DSH_WEB_SNAPSHOT_WORKERS: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '6' }}",
+    })
+    expect(node24Coverage.env).toMatchObject({
+      DSH_COVERAGE_MAX_WORKERS: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '6' }}",
+      DSH_COVERAGE_PARTITIONS: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '4' }}",
+      DSH_GATE_CONCURRENCY: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '3' }}",
+      DSH_SKIP_REAL_PWSH: "${{ github.repository != 'deepseek-ai/deepseek-harness' && '1' || '0' }}",
+    })
+    const snapshotConcurrency = node24Consumers.env.DSH_SNAPSHOT_MAX_CONCURRENCY
+    if (typeof snapshotConcurrency !== 'string') {
+      throw new TypeError('consumer snapshot concurrency must be a workflow expression')
+    }
+    expect(snapshotConcurrency).toContain("github.repository != 'deepseek-ai/deepseek-harness'")
+    expect(snapshotConcurrency).toContain("&& '2'")
     expect(aggregate['runs-on']).toContain('DSH_CI_FAILOVER_LINUX')
     expect(aggregate['runs-on']).not.toContain('DSH_CI_FAILOVER_WINDOWS')
     expect(aggregate['runs-on']).toContain('vm-backup')
@@ -428,7 +457,10 @@ describe('Issue lifecycle workflow', () => {
     const lifecycle = loadWorkflow('.github/workflows/issue-lifecycle.yml')
     const policy = loadWorkflow('.github/workflows/issue-policy.yml')
     const lifecycleJob = workflowJob(lifecycle, 'lifecycle')
-    if (!Array.isArray(lifecycleJob.steps)) throw new TypeError('Issue lifecycle job must define steps')
+    const policyJob = workflowJob(policy, 'policy')
+    if (!Array.isArray(lifecycleJob.steps) || !Array.isArray(policyJob.steps)) {
+      throw new TypeError('Issue lifecycle and policy jobs must define steps')
+    }
 
     // The job has no job-level `if`, so it is listed on every pull_request /
     // pull_request_review event and reports success instead of a gray skip. The
@@ -445,16 +477,26 @@ describe('Issue lifecycle workflow', () => {
     expect(lifecyclePullRequest.types).not.toContain('ready_for_review')
     expect(lifecyclePullRequest.types).toContain('review_requested')
     expect(lifecycleReview.types).toEqual(['submitted'])
-    const gated = "${{ github.event_name != 'pull_request_review' || github.event.review.state == 'changes_requested' }}"
+    const gated = "${{ (github.repository != 'Thelionsinformatica/deepseek-harness' || vars.DSH_ISSUE_AUTOMATION_ENABLED == 'true') && (github.event_name != 'pull_request_review' || github.event.review.state == 'changes_requested') }}"
+    const forkSkip = "${{ github.repository == 'Thelionsinformatica/deepseek-harness' && vars.DSH_ISSUE_AUTOMATION_ENABLED != 'true' }}"
     const steps = lifecycleJob.steps.filter(isRecord)
     const tokenStep = steps.find(s => s.name === 'Create project token')
     const handleStep = steps.find(s => s.name === 'Handle repository event')
+    const lifecycleSkipStep = steps.find(s => s.name === 'Skip upstream issue lifecycle in the Leon fork')
     expect(tokenStep).toMatchObject({ if: gated })
     expect(handleStep).toMatchObject({ if: gated })
+    expect(lifecycleSkipStep).toMatchObject({ if: forkSkip })
 
     // issue-policy owns PR validation; it is read-only and a real gate.
     const policyPullRequest = workflowEvent(policy, 'pull_request')
     expect(policyPullRequest.types).toContain('ready_for_review')
+    const policySteps = policyJob.steps.filter(isRecord)
+    expect(policySteps.find(s => s.name === 'Validate pull request')).toMatchObject({
+      if: "${{ github.repository != 'Thelionsinformatica/deepseek-harness' || vars.DSH_ISSUE_AUTOMATION_ENABLED == 'true' }}",
+    })
+    expect(policySteps.find(s => s.name === 'Skip upstream issue policy in the Leon fork')).toMatchObject({
+      if: forkSkip,
+    })
   })
 })
 

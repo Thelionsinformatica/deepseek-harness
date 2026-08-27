@@ -203,6 +203,34 @@ describe('syncTools', () => {
     expect(ctx.tools.get('add')).toBeUndefined()
   })
 
+  it('registers only exact raw names admitted by allowedTools', async () => {
+    const client = createMockClient([
+      { name: 'letta_memory_unified', inputSchema: { type: 'object' } },
+      { name: 'letta_agent_advanced', inputSchema: { type: 'object' } },
+    ])
+
+    const disposers = await syncTools(client as never, ctx, {
+      ...defaultOpts,
+      allowedTools: new Set(['letta_memory_unified']),
+    }, new Map())
+
+    expect([...disposers.keys()]).toEqual(['mcp__srv__letta_memory_unified'])
+    expect(ctx.tools.get('mcp__srv__letta_memory_unified')).toBeDefined()
+    expect(ctx.tools.get('mcp__srv__letta_agent_advanced')).toBeUndefined()
+  })
+
+  it('keeps the previous generation when an allowed tool disappears', async () => {
+    const client = createMockClient([{ name: 'stable', inputSchema: { type: 'object' } }])
+    const first = await syncTools(client as never, ctx, defaultOpts, new Map())
+
+    await expect(syncTools(client as never, ctx, {
+      ...defaultOpts,
+      allowedTools: new Set(['missing']),
+    }, first)).rejects.toThrow('allowedTools not advertised by the server: missing')
+
+    expect(ctx.tools.get('mcp__srv__stable')).toBeDefined()
+  })
+
   it('lets two servers publish the same raw name side by side', async () => {
     const clientA = createMockClient([{ name: 'search', inputSchema: { type: 'object' } }])
     const clientB = createMockClient([{ name: 'search', inputSchema: { type: 'object' } }])

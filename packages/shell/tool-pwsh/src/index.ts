@@ -143,6 +143,13 @@ const BACKGROUND_SERVER_GUIDANCE = 'For a local server, make one background call
   + '`job_kill`. Never place the health check after the server start in the same command. If the HTTP check '
   + 'fails or the connection is refused, read the returned server job with `job_output` before changing ports; '
   + 'its stderr is the primary runtime evidence.'
+const HOST_PROCESS_TERMINATION_PROMPT = 'Direct host process/service termination is rejected. '
+  + 'Never free a port by killing its owner; choose another port or use `run_in_background`, then `job_kill` '
+  + 'only its returned job.'
+const BACKGROUND_SERVER_PROMPT = 'Local server: make one background call containing only the server start command. '
+  + 'Run the HTTP health check in a separate foreground call; then `job_kill` the server job. '
+  + 'Never combine start and check. On failure/refusal, read the returned server job with `job_output` '
+  + 'before changing ports; stderr is primary evidence.'
 const MANAGED_SERVER_BACKGROUND_DENIAL = 'local server starts must use run_in_background; make one background '
   + 'call containing only the server start command, run the HTTP health check in a separate foreground call, '
   + 'then stop the returned job with job_kill'
@@ -305,10 +312,11 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.systemPrompt.section({
     name: 'tool:pwsh',
     order: 105,
-    text: 'Non-zero exits are reported as `[exit code: N]` markers; investigate failures before moving on. '
-      + 'On Windows a killed process settles as `[exit code: 1]` without a signal marker; treat a bare exit 1 after an interruption as a termination, not a command failure.'
-      + (backgroundEnabled ? ` ${BACKGROUND_SERVER_GUIDANCE}` : '')
-      + (allowHostProcessTermination ? '' : ` ${HOST_PROCESS_TERMINATION_GUIDANCE}`),
+    text: 'Non-zero exits are reported as `[exit code: N]` markers; investigate. '
+      + 'On Windows, a killed process can yield `[exit code: 1]` without a signal marker; after interruption, '
+      + 'treat it as termination, not command failure.'
+      + (backgroundEnabled ? ` ${BACKGROUND_SERVER_PROMPT}` : '')
+      + (allowHostProcessTermination ? '' : ` ${HOST_PROCESS_TERMINATION_PROMPT}`),
   })
 
   ctx.tools.register(defineTool({

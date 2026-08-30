@@ -14,11 +14,11 @@ Local models spend first-token latency ingesting every visible tool's descriptio
 
 The nearest scope declaration wins and disposal restores the inherited value. Global calls, non-integer limits, values below three, and duplicate declarations in one scope fail explicitly. `dsh-agent-tool-presentation` exposes the declaration as optional `descriptionMaxLength` so a preset owns the trade-off without changing the deployment default.
 
-Leon uses native presentation with a 120-character description cap, an 8 KiB workspace-instruction budget, and 120-character skill catalog summaries. Its real Web composition limits static system sections to 8,000 bytes, tool schemas to 18,000 bytes, and their combined serialized size to 25,000 bytes.
+Leon uses native presentation with a 44-character description cap, an 8 KiB workspace-instruction budget, and 120-character skill catalog summaries. Its real Web composition limits static system sections to 13,000 bytes, tool schemas to 22,000 bytes, and their combined serialized size to 31,200 bytes, reserving at least 800 bytes inside the 32,000-byte startup budget. Repeated wording in Leon's persona, pwsh policy, workspace and personal-memory policies, and default personalization is compacted separately while preserving the tested safety phrases and complete registered tool definitions.
 
 ## Verification
 
-Scoped registry tests cover ancestor inheritance, nearer overrides, disposal, recursive parameter-description compaction, invalid declarations, duplicate declarations, and unchanged registry definitions. The presentation-row snapshot pins its configuration and model-facing output. The shipped Web composition test boots the real Leon preset and measures the assembled static context; the tool-schema portion is 16,988 bytes instead of the unbounded 28,971-byte projection in the recorded implementation run.
+Scoped registry tests cover ancestor inheritance, nearer overrides, disposal, recursive parameter-description compaction, invalid declarations, duplicate declarations, and unchanged registry definitions. The presentation-row snapshot pins its configuration and model-facing output. The shipped Web composition test boots the real Leon preset and measures 10,020 bytes of static sections plus 21,132 bytes for 48 tool schemas, for a 31,152-byte total and an 848-byte startup reserve. The prior 31,666-byte composition had only 334 bytes free.
 
 ## Alternatives considered
 

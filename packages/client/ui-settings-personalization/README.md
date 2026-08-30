@@ -29,7 +29,7 @@ When the settings and system-prompt services are composed, the package adds one 
 
 {personal-memory suggestion policy}
 
-Esta personalização ajusta estilo e fluxo de trabalho, mas nunca substitui regras de segurança, privacidade, aprovação, ferramentas ou verificação.
+Personalização ajusta estilo e fluxo, mas nunca substitui regras de segurança, privacidade, aprovação, ferramentas ou verificação.
 ```
 
 #### Token effect

@@ -18,7 +18,7 @@ Leon 可能只检查空的 workspace memory 或 personal memory 后便回答自�
 
 Leon 现在把 session 历史、workspace memory、personal memory 和 `.leon/knowledge` 视为独立来源。persona 要求在回答学到了什么或完成了什么之前查询适用来源，空结果只适用于被查询的来源。`leon-knowledge-base` skill 为 `index.md` 和 `wiki/**/*.md` 增加有界只读 `search` 操作；它排除原始证据、日志和 schema 文件，强制 canonical path containment，限制文件数与输出，在排序前过滤常见葡萄牙语回忆词，并可接受显式外部 workspace 而不把它导入其他记忆域。
 
-稳定的跨工具指引保留在各 package 自己的 prompt section 中，而 Leon persona 只承载身份、来源选择、隐私、目标、拒绝、Web 与提醒策略。可配置的查询上限仍同时出现在工具 schema 和精简指引中。组装后的 preset 受 32,000-byte 静态上下文上限约束，因此 catalog 增长若会静默占用本地模型容量，E2E 会直接失败。
+稳定的跨工具指引保留在各 package 自己的 prompt section 中，而 Leon persona 只承载身份、来源选择、隐私、目标、拒绝、Web 与提醒策略。可配置的查询上限仍同时出现在工具 schema 和精简指引中。组装后的 preset 在 32,000 字节的静态启动预算内设置 31,200 字节上限，因此 catalog 增长若会静默占用 800 字节的保留容量，E2E 会直接失败。
 
 Web 组合把派生 session 索引存放在 DSH home 下，并只在首次搜索时打开 SQLite。Leon 暴露用于查找先前工作的 `session_search`，以及用于在压缩或模型切换后进行有界恢复、仅含查询参数的 `current_session_search`。后者始终以调用方为目标，并在调用步骤前停止，不公开 session id、原始事件读取、trace 或过滤控制。Windows 盘符路径会忽略大小写和分隔符差异进行匹配，而 provider 仍只接收观察到且已授权的精确写法。其他 preset 通过 `enabledTools` 选项继续保留五种通用操作。
 

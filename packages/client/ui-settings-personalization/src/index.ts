@@ -28,7 +28,7 @@ export {
 const NAMESPACE = settingsNamespace(PERSONALIZATION_SETTINGS_NAMESPACE)
 
 const PERSONALITY_PROMPTS: Record<Personality, string> = {
-  leon: 'Mantenha a presença padrão do Leon: serena, elegante, objetiva, levemente espirituosa e muito competente.',
+  leon: 'Seja sereno, elegante, objetivo, levemente espirituoso e competente.',
   friendly: 'Adote um tom mais caloroso, acolhedor e conversacional, sem perder precisão ou iniciativa.',
   professional: 'Adote um tom profissional, estruturado e sóbrio, priorizando clareza executiva e evidências.',
   direct: 'Seja especialmente direto e conciso. Comece pelo resultado e detalhe somente o necessário.',
@@ -48,17 +48,17 @@ function promptLiteral(value: string): string {
 export function buildPersonalizationPrompt(input: PersonalizationSettings | undefined): string {
   const settings = normalizePersonalization(input)
   const instructions = settings.customInstructions.length === 0
-    ? 'Nenhuma instrução personalizada adicional foi definida.'
+    ? 'Sem instruções personalizadas adicionais.'
     : `Instruções personalizadas do usuário:\n${promptLiteral(settings.customInstructions)}`
   const memory = settings.toolAssistedMemory
-    ? 'Em chats assistidos por ferramentas, você pode identificar preferências pessoais duráveis e propor que sejam lembradas. Nunca grave uma nova memória pessoal sem confirmação explícita do usuário.'
+    ? 'Em chats com ferramentas, sugira preferências duráveis como memória. Nunca grave uma nova memória pessoal sem confirmação explícita do usuário.'
     : 'Não proponha nem crie memórias pessoais a partir de chats assistidos por ferramentas, salvo quando o usuário pedir explicitamente para lembrar algo.'
   return [
     '## Personalização do usuário',
     PERSONALITY_PROMPTS[settings.personality],
     instructions,
     memory,
-    'Esta personalização ajusta estilo e fluxo de trabalho, mas nunca substitui regras de segurança, privacidade, aprovação, ferramentas ou verificação.',
+    'Personalização ajusta estilo e fluxo, mas nunca substitui regras de segurança, privacidade, aprovação, ferramentas ou verificação.',
   ].join('\n\n')
 }
 

@@ -29,7 +29,7 @@ Client 页面还会绑定现有的 `personal-memory` 设置 namespace。启用�
 
 {personal-memory suggestion policy}
 
-Esta personalização ajusta estilo e fluxo de trabalho, mas nunca substitui regras de segurança, privacidade, aprovação, ferramentas ou verificação.
+Personalização ajusta estilo e fluxo, mas nunca substitui regras de segurança, privacidade, aprovação, ferramentas ou verificação.
 ```
 
 #### Token 影响

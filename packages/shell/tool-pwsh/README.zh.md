@@ -55,15 +55,15 @@
 ##### Pwsh guidance
 
 ```markdown
-Non-zero exits are reported as `[exit code: N]` markers; investigate failures before moving on. On Windows a killed process settles as `[exit code: 1]` without a signal marker; treat a bare exit 1 after an interruption as a termination, not a command failure.
+Non-zero exits are reported as `[exit code: N]` markers; investigate. On Windows, a killed process can yield `[exit code: 1]` without a signal marker; after interruption, treat it as termination, not command failure.
 
-For a local server, make one background call containing only the server start command. Run the HTTP health check in a separate foreground call, then stop the returned job with `job_kill`. Never place the health check after the server start in the same command. If the HTTP check fails or the connection is refused, read the returned server job with `job_output` before changing ports; its stderr is the primary runtime evidence.
+Local server: make one background call containing only the server start command. Run the HTTP health check in a separate foreground call; then `job_kill` the server job. Never combine start and check. On failure/refusal, read the returned server job with `job_output` before changing ports; stderr is primary evidence.
 ```
 
 ##### 禁用主机进程控制时的指引
 
 ```markdown
-Direct host process and service termination commands are rejected. Never free a port by killing its owner; choose another port, or start the server with `run_in_background` and stop only its returned job with `job_kill`.
+Direct host process/service termination is rejected. Never free a port by killing its owner; choose another port or use `run_in_background`, then `job_kill` only its returned job.
 ```
 
 #### Token 影响

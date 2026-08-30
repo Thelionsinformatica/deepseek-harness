@@ -703,15 +703,15 @@ describe('the shipped Web composition', () => {
         .map(tool => `${tool.name}=${Buffer.byteLength(JSON.stringify(tool), 'utf8')}B`)
         .sort((left, right) => Number.parseInt(right.split('=').at(-1) ?? '0') - Number.parseInt(left.split('=').at(-1) ?? '0'))
         .join(', ')
-      // Leon intentionally keeps its full local-first arsenal visible. These
-      // byte ceilings still fit a 32k-token local context with ample room for
-      // the user's request, while catching accidental prompt/schema bloat.
+      // Leon keeps its full local-first arsenal visible. These byte ceilings
+      // reserve at least 800 bytes inside the static 32,000-byte startup
+      // budget and catch accidental prompt or schema growth.
       expect(sectionsBytes, sectionSizes).toBeLessThanOrEqual(13_000)
       expect(toolsBytes, toolSizes).toBeLessThanOrEqual(22_000)
       expect(
         sectionsBytes + toolsBytes,
         `sections: ${sectionSizes}; tools: ${toolSizes}`,
-      ).toBeLessThanOrEqual(32_000)
+      ).toBeLessThanOrEqual(31_200)
     } finally {
       await handle.dispose()
     }

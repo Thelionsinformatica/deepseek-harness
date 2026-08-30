@@ -65,6 +65,7 @@ async function executeSessionSearch(
       'SESSION_QUERY_TOOL_UNAUTHORIZED',
     )
   }
+  const workspaceCwds = await workspaceAccess.workspaceCwdValues(ctx, caller, exec.signal)
   const query = toolInput.normalizeQuery(args.query)
   const sessionFilters = toolInput.buildSessionFilters(args)
   const eventFilters = toolInput.buildEventFilters({
@@ -86,7 +87,7 @@ async function executeSessionSearch(
     if (parentValues.length === 0) return presentation.formatEmptySessionSearch()
     sessionFilters.push({ kind: 'parent', values: parentValues })
   }
-  sessionFilters.push({ kind: 'cwd', values: [cwd] })
+  sessionFilters.push({ kind: 'cwd', values: workspaceCwds })
   const collected = await collectPages(
     maxResults,
     exec.signal,
@@ -271,7 +272,7 @@ async function collectPages<T>(
   }
 }
 
-/** Five model-facing session-query operation implementations. */
+/** Model-facing session-query operation implementations shared by compact aliases. */
 export const operations = {
   executeSessionSearch,
   executeEventSearch,

@@ -531,7 +531,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'llm/routing-shadow': AdaptiveRoutingShadowEventData
 ```
 
-来源：[`packages/host/apiproxy/src/adaptive-routing-shadow.ts:160`](../packages/host/apiproxy/src/adaptive-routing-shadow.ts)
+来源：[`packages/host/apiproxy/src/adaptive-routing-shadow.ts:163`](../packages/host/apiproxy/src/adaptive-routing-shadow.ts)
 
 ### `permission/*`
 

@@ -12,8 +12,35 @@ param(
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing.Common
+# The fixture shares the user's desktop, so it must remain UIA-visible without accepting ambient keyboard input.
+if (-not ('LeonUiaTestForm' -as [type])) {
+  $formReferences = @(
+    [System.Windows.Forms.Form].Assembly.Location
+    [System.ComponentModel.Component].Assembly.Location
+  )
+  Add-Type -TypeDefinition @'
+using System.Windows.Forms;
 
-$form = [System.Windows.Forms.Form]::new()
+public sealed class LeonUiaTestForm : Form
+{
+    private const int WsExNoActivate = 0x08000000;
+
+    protected override bool ShowWithoutActivation => true;
+
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            CreateParams parameters = base.CreateParams;
+            parameters.ExStyle |= WsExNoActivate;
+            return parameters;
+        }
+    }
+}
+'@ -ReferencedAssemblies $formReferences
+}
+
+$form = [LeonUiaTestForm]::new()
 $form.Text = $Title
 $form.Name = 'LeonTestWindow'
 $form.Size = [System.Drawing.Size]::new(360, 180)
@@ -26,6 +53,9 @@ $editor = [System.Windows.Forms.TextBox]::new()
 $editor.Name = 'LeonEditor'
 $editor.Location = [System.Drawing.Point]::new(20, 20)
 $editor.Size = [System.Drawing.Size]::new(300, 30)
+$editor.ShortcutsEnabled = $false
+$editor.ImeMode = [System.Windows.Forms.ImeMode]::Disable
+$editor.Add_KeyPress({ $_.Handled = $true })
 
 $button = [System.Windows.Forms.Button]::new()
 $button.Name = 'LeonActionButton'

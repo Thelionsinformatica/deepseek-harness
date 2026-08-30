@@ -7,6 +7,7 @@
  */
 
 import { WebError } from '@deepseek-ai/dsh-web'
+import { assertPublicUrlHostname } from './network-policy.ts'
 
 /** The body kinds this provider decodes. */
 export type FetchableKind = 'html' | 'text'
@@ -14,8 +15,9 @@ export type FetchableKind = 'html' | 'text'
 /**
  * Validate a request URL against the basic transport hygiene the provider
  * enforces before any network access: http(s) only, no embedded credentials,
- * bounded length. Returns the parsed `URL`. Throws {@link WebError} otherwise.
- * (SSRF / private-network blocking is deferred — see the package Agent Note.)
+ * bounded length, and no literal or localhost alias for a non-public target.
+ * Returns the parsed `URL`. DNS-derived destinations are validated separately
+ * immediately before connection. Throws {@link WebError} otherwise.
  *
  * @param input - the raw URL string from the fetch request.
  * @param maxUrlLength - inclusive upper bound on `input`'s length.
@@ -37,6 +39,7 @@ export function validateFetchUrl(input: string, maxUrlLength: number): URL {
   if (url.username.length > 0 || url.password.length > 0) {
     throw new WebError('credentials in URLs are not allowed', 'WEB_BLOCKED_URL')
   }
+  assertPublicUrlHostname(url.hostname)
   return url
 }
 

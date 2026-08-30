@@ -10,10 +10,11 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { GoalBar } from '../src/client/GoalBar.tsx'
 import type { GoalActionResult, GoalBarActions } from '../src/client/slots.ts'
-import { zh } from '../src/client/locales.ts'
+import { pt, zh } from '../src/client/locales.ts'
 
 // The framework-injected t seat, stubbed over the zh dictionaries (the default locale).
 const t: Parameters<typeof GoalBar>[0]['t'] = makeTranslate(zh, commonZh)
+const tPt: Parameters<typeof GoalBar>[0]['t'] = makeTranslate(pt)
 
 afterEach(cleanup)
 
@@ -33,6 +34,7 @@ function makeActions() {
     onEdit: vi.fn<GoalBarActions['onEdit']>(() => Promise.resolve({ ok: true, value: undefined })),
     onPause: vi.fn<GoalBarActions['onPause']>(() => Promise.resolve({ ok: true, value: undefined })),
     onResume: vi.fn<GoalBarActions['onResume']>(() => Promise.resolve({ ok: true, value: undefined })),
+    onExtendAndResume: vi.fn<GoalBarActions['onExtendAndResume']>(() => Promise.resolve({ ok: true, value: undefined })),
     onClear: vi.fn<GoalBarActions['onClear']>(() => Promise.resolve({ ok: true, value: undefined })),
   } satisfies GoalBarActions
 }
@@ -174,6 +176,24 @@ describe('GoalBar', () => {
     render(<GoalBar goal={makeGoal({ phase: 'blocked' })} {...actions} t={t} />)
     expect(screen.getByText('受阻的目标')).toBeTruthy()
     expect(screen.getByText('受阻的目标').closest('[title]')).toBeNull()
+  })
+
+  it('shows a localized round-limit reason visibly without claiming completion', () => {
+    const actions = makeActions()
+    const goal = makeGoal({
+      phase: 'blocked',
+      maxGoalRounds: 20,
+      blockedReason: { code: 'round-limit', message: 'Goal reached its configured limit of 20 rounds' },
+    })
+    render(<GoalBar goal={goal} {...actions} t={tPt} />)
+
+    expect(screen.getByText('Objetivo bloqueado')).toBeTruthy()
+    const reason = screen.getByText(/Limite configurado de 20 rodadas atingido/)
+    expect(reason.textContent).toContain('Ship the redesign')
+    expect(reason.textContent?.toLowerCase()).not.toContain('conclu')
+    expect(reason.closest('[title]')?.getAttribute('title')).toBe('Limite configurado de 20 rodadas atingido')
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar por mais 20 rodadas' }))
+    expect(actions.onExtendAndResume).toHaveBeenCalledTimes(1)
   })
 
   it('keeps the edit draft open and reports a failed save', async () => {

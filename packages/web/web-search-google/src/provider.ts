@@ -61,6 +61,8 @@ export interface GoogleSearchProviderOptions {
   resolveApiKey?: () => Promise<string | undefined>
   /** Credential reference named by missing-credential diagnostics. */
   apiKeyEnv?: CredentialRef
+  /** Compatibility references named by diagnostics, in resolution order after {@link apiKeyEnv}. */
+  apiKeyEnvFallbacks?: readonly CredentialRef[]
   /** Gemini API base; `/interactions` is appended. */
   baseURL: string
   /** Search-capable Gemini model id. */
@@ -224,9 +226,10 @@ export class GoogleSearchProvider implements WebSearchProvider {
     }
     /* jscpd:ignore-end */
     if (resolved !== undefined && resolved.length > 0) return resolved
-    const ref = options.apiKeyEnv ?? 'GOOGLE_API_KEY'
+    const refs = [options.apiKeyEnv ?? 'GOOGLE_API_KEY', ...(options.apiKeyEnvFallbacks ?? [])]
+    const describedRefs = refs.map(ref => `"${ref}"`).join(' then ')
     throw new WebError(
-      `Gemini Google Search has no API key for "${ref}"; store it on the Models page or export it in the launching environment`,
+      `Gemini Google Search has no API key for ${describedRefs}; store one of those declared references on the Models page or export it in the launching environment`,
       'WEB_PROVIDER_CREDENTIAL_MISSING',
     )
   }

@@ -2,9 +2,9 @@
 
 [English](README.md) | 中文
 
-这是一个针对工具失败的确定性自恢复 guard。它为每个会话存储一个原子恢复单元；同一条完全相同的工具调用以等价原因失败两次后，会注入一条带日志记录的恢复提示。如果模型随后仍请求这条未改变的调用，单调工具 guard 会在分发前拒绝它。持久单元可跨会话恢复及供应商／模型切换保留；模型只要更换工具、参数或策略即可立即继续。
+这是一个针对重复工具失败和没有最终输出的模型终止响应的确定性自恢复 guard。它为每个会话存储一个原子工具恢复单元；同一条完全相同的工具调用以等价原因失败两次后，会注入一条带日志记录的恢复提示。如果模型随后仍请求这条未改变的调用，单调工具 guard 会在分发前拒绝它。启用最终响应恢复后，仅包含 reasoning 或视觉上空白文本的响应会获得次数受限且带日志记录的同轮续行；重复的无响应会明确失败，而不会把该轮错误地标记为已完成。为保持兼容性，本包 schema 默认关闭这项能力，而共享 base 部署会显式启用一次恢复。
 
-本包与 [`repeat-tool-reminder`](../repeat-tool-reminder/README.zh.md) 互补：成功的相同调用由后者给出建议提醒，失败及被下游阻止的调用由本包统一处理。决策记录见[工具失败恢复 Agent Note](../../../.agents/notes/implemented/feature/2026-08-24-tool-failure-recovery-policy.zh.md)。
+本包与 [`repeat-tool-reminder`](../repeat-tool-reminder/README.zh.md) 互补：成功的相同调用由后者给出建议提醒，失败及被下游阻止的调用由本包统一处理。决策记录见[工具失败恢复](../../../.agents/notes/implemented/feature/2026-08-24-tool-failure-recovery-policy.zh.md)和 [Leon 上下文连续性](../../../.agents/notes/implemented/bug-fix/2026-08-28-leon-context-continuity-and-target-preservation.zh.md)。
 
 ## 配置
 
@@ -13,11 +13,12 @@
   name: '@deepseek-ai/dsh-failure-recovery-policy'
   config:
     maxEquivalentFailures: 2 # default; integer >= 2
+    maxNoFinalResponseRecoveries: 1 # deployment value; schema default 0; integer 0..3
     include: []              # tool-name patterns to track; empty means all tools
     exclude: []              # tool-name patterns to ignore
 ```
 
-`include` 和 `exclude` 接受 `*` 通配符。失败上限无效时，插件会在加载阶段明确报错，而不是静默改变策略。
+`include` 和 `exclude` 接受 `*` 通配符。`maxNoFinalResponseRecoveries: 0` 会禁用引导续行，并把第一次缺少最终响应归类为可见错误；1 到 3 的值会限制同一路由上的额外请求次数。上限无效时，插件会在加载阶段明确报错，而不是静默改变策略。
 
 ## 失败身份与生命周期
 
@@ -38,6 +39,12 @@
 达到配置的等价失败次数后，插件通过 `additionalContexts` 将恢复消息放在最前。agent loop 会把它记录为来源于插件的 `user/message`，同时保留原始 `tool/result` 和全部下游上下文。之后未改变的调用会在工具实现执行前由 `ctx.tools.guard()` 拒绝。被拒绝的 token 不会再次计为失败，因此策略保持单调，不会淹没历史记录。
 
 更换工具或参数会通过启动另一条链解除锁定。guard 不要求模型展示私有推理；它只要求采取另一项可观察动作，或根据现有证据结束任务。
+
+## 缺少最终响应
+
+在 `agent/turn-stopping` 时，guard 会检查开放轮次中的最新 assistant message。非空白文本、工具调用或其他终止扩展 block 会正常完成。reasoning 加空格或不可见 Unicode 格式字符不会。`max-tokens` finish 仍是容量结果，绝不会被盲目续行。
+
+只要仍有允许次数，缺少最终响应就会在同一个运行中 agent 上排入一条来源于插件的 next-step message，因此保留当前 provider/model 路由。每条已提交恢复消息都从当前轮次的持久日志计数，所以恢复和并发 listener 无法重置上限。允许次数用尽后，`llm/stream` wrapper 会把再次出现的空成功 finish 转换成稳定的 `NO_FINAL_RESPONSE` 错误 finish。周围的 stream 和 turn-stopping listener 仍会运行；UI 会收到明确的轮次错误，而不是错误的已完成状态。
 
 ## 模型体验
 
@@ -65,6 +72,26 @@ Identify the likely cause from the logged tool results before continuing. Do not
 
 仅追加：恢复上下文位于可复用请求前缀之后，不会使已有前缀缓存条目失效。
 
+### 最终响应续行
+
+#### 模型看到的内容
+
+下一次请求会收到以下原样续行文本：
+
+##### 续行提示
+
+```markdown
+The previous model response stopped after internal reasoning or blank text without completing the task. Continue now: call the tools required to execute the pending work, or provide the final user-facing answer if no tool is needed. Do not repeat or restate the plan.
+```
+
+#### Token 影响
+
+有效终止响应不增加 token。每次允许的恢复会添加一条紧凑的日志消息和一次额外模型请求；配置上限同时限制两者。
+
+#### KV Cache 影响
+
+仅追加：续行位于缺少最终输出的响应之后，并保留已有请求前缀。
+
 ## 已知限制与暂缓事项
 
 - 检测采用精确匹配而非模糊匹配；有意义的参数变化会被有意允许。
@@ -72,5 +99,6 @@ Identify the likely cause from the logged tool results before continuing. Do not
 - 已有的 pre-execute 拒绝已经阻止分发；本策略会观察其失败，但不会替换原始原因。
 - 嵌套 Code Mode 调用被排除，使程序自行控制内部重试策略。
 - 本策略改变工具使用策略，而不改变模型／供应商路由；传输故障转移仍由路由器负责。
+- 最终响应续行保留活动路由。它不会选择更强模型，也不会授权外部 provider。
 - 操作租约和不确定结果记录可供具有外部效果的工具适配器使用，但这个精确失败 guard 不会自动为每次工具调用预留租约。
 - 已配置的 JSON 领域后端只协调一个 Leon 主机进程。跨进程可见性需要具有共享原子记录原语的后端。

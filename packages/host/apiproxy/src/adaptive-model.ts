@@ -78,6 +78,8 @@ export interface AdaptiveRoutingInput {
   hasHistory: boolean
   /** Positive automatic goal round currently entering a model request. */
   goalRound?: number
+  /** Policy recovery that requires the strongest configured verification route. */
+  recovery?: 'completion-evidence'
 }
 
 /** Transparent result consumed by the Host admission boundary. */
@@ -85,7 +87,7 @@ export interface AdaptiveRoutingDecision {
   provider: string
   model: string
   reasoningEffort?: ReasoningEffortId
-  tier: 'fast' | 'main' | 'expert' | 'goal-round' | 'failover'
+  tier: 'fast' | 'main' | 'expert' | 'recovery' | 'goal-round' | 'failover'
 }
 
 /** Failover decision carrying the data-residency fact enforced by the Host. */
@@ -127,6 +129,9 @@ const CONTINUATION_MARKERS = /^(?:continue|continuar|pode continuar|prossiga|sig
  * Images, very large structured prompts and explicit high-complexity markers
  * use the optional expert model (or only raise main-model effort when no
  * separate expert model is configured).
+ * Completion-evidence recovery bypasses prompt classification and uses the
+ * expert route and effort, falling back to the main route only when no expert
+ * model is configured.
  * A numbered goal round first consults the explicit escalation tiers. Every
  * selected route still passes through the Host's ordinary availability check.
  * Everything else within the configured bound uses the fast model.
@@ -138,6 +143,17 @@ export function chooseAdaptiveModel(
   config: AdaptiveRoutingConfig,
   input: AdaptiveRoutingInput,
 ): AdaptiveRoutingDecision {
+  if (input.recovery === 'completion-evidence') {
+    const reasoningEffort = config.expertReasoningEffort ?? config.mainReasoningEffort
+    return {
+      provider: config.expertModel === undefined
+        ? config.mainProvider ?? config.provider
+        : config.expertProvider ?? config.provider,
+      model: config.expertModel ?? config.mainModel,
+      ...reasoningEffort === undefined ? {} : { reasoningEffort: ReasoningEffortId(reasoningEffort) },
+      tier: 'recovery',
+    }
+  }
   const goalRound = input.goalRound
   const goalTier = goalRound === undefined
     ? undefined

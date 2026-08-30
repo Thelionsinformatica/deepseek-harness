@@ -19,6 +19,7 @@ function healthyEnvironment() {
     home: 'C:\\Users\\Test\\.dsh',
     workspace: 'E:\\computador',
     ollamaBaseUrl: 'http://127.0.0.1:11434',
+    freeLlmApiBaseUrl: 'http://127.0.0.1:31415',
     checkedAt: '2026-08-27T12:00:00.000Z',
     path: async (path: string) => {
       const normalized = path.replaceAll('\\', '/')
@@ -28,12 +29,17 @@ function healthyEnvironment() {
         ? file
         : directory
     },
-    http: async (url: string) => url.endsWith('/api/tags')
-      ? {
+    http: async (url: string) => {
+      if (url.endsWith('/api/tags')) return {
         status: 200,
         body: JSON.stringify({ models: [{ name: 'qwen3.5:9b' }, { name: 'ornith-1.5:9b' }] }),
       }
-      : { status: 200, body: '<html><title>Leon — The Lions Informática</title></html>' },
+      if (url.endsWith('/readyz')) return {
+        status: 200,
+        body: JSON.stringify({ status: 'ok', ready_upstreams: 1 }),
+      }
+      return { status: 200, body: '<html><title>Leon — The Lions Informática</title></html>' }
+    },
     command: () => 'PowerShell 7.5.2',
   }
 }
@@ -55,12 +61,13 @@ describe('Leon doctor', () => {
         { id: 'workspace', label: 'Pasta de trabalho', status: 'ok', summary: 'E:\\computador' },
         { id: 'profile', label: 'Perfil', status: 'ok', summary: 'web instalado' },
         { id: 'build', label: 'Aplicativo compilado', status: 'ok', summary: 'versão 1.2.3' },
-        { id: 'ollama', label: 'Ollama', status: 'ok', summary: '2 modelo(s); Qwen e Ornith disponíveis' },
+        { id: 'ollama', label: 'Ollama', status: 'ok', summary: '2 modelo(s); Qwen automático disponível' },
+        { id: 'freellmapi', label: 'Roteador externo', status: 'ok', summary: 'FreeLLMAPI ativo em http://127.0.0.1:31415; 1 provedor(es) pronto(s)' },
         { id: 'web', label: 'Leon Web', status: 'ok', summary: 'ativo em http://127.0.0.1:3080/' },
       ],
     })
     expect(JSON.stringify(report)).not.toMatch(/api[_-]?key|token|secret/iu)
-    expect(formatDoctorReport(report)).toContain('Resumo: 8 OK, 0 aviso(s), 0 falha(s).')
+    expect(formatDoctorReport(report)).toContain('Resumo: 9 OK, 0 aviso(s), 0 falha(s).')
   })
 
   it('distinguishes recoverable warnings from installation failures', async () => {
@@ -90,6 +97,7 @@ describe('Leon doctor', () => {
       expect.objectContaining({ id: 'profile', status: 'warning' }),
       expect.objectContaining({ id: 'build', status: 'warning' }),
       expect.objectContaining({ id: 'ollama', status: 'warning' }),
+      expect.objectContaining({ id: 'freellmapi', status: 'warning' }),
       expect.objectContaining({ id: 'web', status: 'warning' }),
     ]))
   })
@@ -98,14 +106,75 @@ describe('Leon doctor', () => {
     const environment = healthyEnvironment()
     const report = await collectDoctorReport(options, {
       ...environment,
-      http: async (url: string) => url.endsWith('/api/tags')
-        ? { status: 200, body: JSON.stringify({ models: [{ name: 'qwen3.5:9b' }] }) }
-        : { status: 200, body: '<html><title>Outra aplicação</title></html>' },
+      http: async (url: string) => {
+        if (url.endsWith('/api/tags')) return { status: 200, body: JSON.stringify({ models: [{ name: 'qwen3.5:9b' }] }) }
+        if (url.endsWith('/readyz')) return { status: 503, body: JSON.stringify({ status: 'unavailable', reason: 'no_upstreams_configured' }) }
+        return { status: 200, body: '<html><title>Outra aplicação</title></html>' }
+      },
     })
 
     expect(report.checks).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'ollama', status: 'warning' }),
+      expect.objectContaining({ id: 'ollama', status: 'ok' }),
+      expect.objectContaining({ id: 'freellmapi', status: 'warning' }),
       expect.objectContaining({ id: 'web', status: 'failed', summary: 'a porta 3080 respondeu, mas não foi identificada como Leon' }),
     ]))
+    const freeLlmApiCheck = report.checks.find(check => check.id === 'freellmapi')
+    expect(freeLlmApiCheck?.summary).toContain('nenhum provedor configurado')
+  })
+
+  it('warns only when the automatic Qwen model is missing', async () => {
+    const environment = healthyEnvironment()
+    const report = await collectDoctorReport(options, {
+      ...environment,
+      http: async (url: string) => {
+        if (url.endsWith('/api/tags')) return {
+          status: 200,
+          body: JSON.stringify({ models: [{ name: 'ornith-1.5:9b' }, { name: 'qwen3.8-distill:9b-q8' }] }),
+        }
+        if (url.endsWith('/readyz')) return {
+          status: 200,
+          body: JSON.stringify({ status: 'ok', ready_upstreams: 1 }),
+        }
+        return { status: 200, body: '<html><title>Leon</title></html>' }
+      },
+    })
+
+    expect(report.checks).toContainEqual(expect.objectContaining({
+      id: 'ollama',
+      status: 'warning',
+      details: ['modelo necessário ausente: qwen3.5:9b'],
+    }))
+  })
+
+  it('fails closed when another service occupies the FreeLLMAPI endpoint', async () => {
+    const environment = healthyEnvironment()
+    const report = await collectDoctorReport(options, {
+      ...environment,
+      http: async (url: string) => {
+        if (url.endsWith('/api/tags')) return { status: 200, body: JSON.stringify({ models: [{ name: 'qwen3.5:9b' }, { name: 'ornith-1.5:9b' }] }) }
+        if (url.endsWith('/readyz')) return { status: 200, body: '<html><title>Outro serviço</title></html>' }
+        return { status: 200, body: '<html><title>Leon</title></html>' }
+      },
+    })
+
+    expect(report.checks).toContainEqual(expect.objectContaining({
+      id: 'freellmapi',
+      status: 'failed',
+      summary: 'a porta respondeu, mas não foi identificada como FreeLLMAPI',
+    }))
+  })
+
+  it('fails closed when a 503 response imitates an unknown FreeLLMAPI reason', async () => {
+    const environment = healthyEnvironment()
+    const report = await collectDoctorReport(options, {
+      ...environment,
+      http: async (url: string) => {
+        if (url.endsWith('/api/tags')) return { status: 200, body: JSON.stringify({ models: [{ name: 'qwen3.5:9b' }, { name: 'ornith-1.5:9b' }] }) }
+        if (url.endsWith('/readyz')) return { status: 503, body: JSON.stringify({ status: 'unavailable', reason: 'something_else' }) }
+        return { status: 200, body: '<html><title>Leon</title></html>' }
+      },
+    })
+
+    expect(report.checks).toContainEqual(expect.objectContaining({ id: 'freellmapi', status: 'failed' }))
   })
 })

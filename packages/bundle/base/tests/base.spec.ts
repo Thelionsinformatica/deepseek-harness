@@ -49,6 +49,7 @@ describe('dsh-base bundle', () => {
     })
     expect(rows.find(row => row.id === 'failure-recovery-policy')?.config).toEqual({
       maxEquivalentFailures: 2,
+      maxNoFinalResponseRecoveries: 1,
     })
     expect(rows.find(row => row.id === 'storage-json')?.config).toEqual({
       root: { __jsExpr: "dshHomePath('storages')" },
@@ -81,6 +82,7 @@ describe('dsh-base bundle', () => {
           models: [
             { id: 'qwen3.5:9b' },
             { id: 'ornith-1.5:9b' },
+            { id: 'qwen3.8-distill:9b-q8' },
             { id: 'qwen3.8-9b-distill-uncensored-heretic:latest' },
           ],
         },
@@ -92,7 +94,8 @@ describe('dsh-base bundle', () => {
           models: [{ id: 'auto' }],
         },
         google: {
-          apiKeyEnv: 'GOOGLE_API_KEY',
+          apiKeyEnv: 'GEMINI_API_KEY',
+          apiKeyEnvFallbacks: ['GOOGLE_API_KEY'],
           models: [{ id: 'gemini-3.1-pro-preview-customtools' }],
         },
         openai: {

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/testing/2026-08-26-leon-acceptance-7.md
-2026-08-26-leon-acceptance-7.md: 26d1cc2ff217fdcddced82e2f08b8b80a4817b07
-2026-08-26-leon-acceptance-7.zh.md: 1bb9e55ec424d3905aa942db6c9bf26b4092ea31
+2026-08-26-leon-acceptance-7.md: 8df4c45c0f6d2e6948f7958a927f9e502ecf9e0d
+2026-08-26-leon-acceptance-7.zh.md: d9f92195d13389b3506d7f454af42de884841a60

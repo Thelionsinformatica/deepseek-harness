@@ -58,6 +58,7 @@ import * as ToolLsp from '@deepseek-ai/dsh-tool-lsp'
 import MemoryRuntime from '@deepseek-ai/dsh-memory'
 import PersonalMemoryRuntime from '@deepseek-ai/dsh-personal-memory'
 import * as ToolMemory from '@deepseek-ai/dsh-tool-memory'
+import * as ToolKnowledgeBase from '@deepseek-ai/dsh-tool-knowledge-base'
 import * as ToolSkill from '@deepseek-ai/dsh-tool-skill'
 import * as ToolSessionQuery from '@deepseek-ai/dsh-tool-session-query'
 import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
@@ -409,6 +410,22 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'The lsp tool keeps provider selection and language-server subprocesses behind ctx.lsp, so its model-visible schema stays stable across providers. Requires a registered provider (e.g. `@deepseek-ai/dsh-lsp-stdio`) at runtime; without one, a query returns the structured `LSP_UNAVAILABLE` error rather than changing the schema.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-knowledge-base',
+    dir: 'tool-knowledge-base',
+    source: 'packages/knowledge/tool-knowledge-base/src/index.ts',
+    requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.subprocess', 'an exact authorized .leon/knowledge root'],
+    writes: ['tool/call', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(LocalSubprocessRuntime)
+      await ctx.plugin(ToolKnowledgeBase, {
+        scriptPath: resolve(root, 'apps/cli/config/agent-presets/leon/skills/leon-knowledge-base/scripts/knowledge.mjs'),
+      })
+    },
+    note:
+      'Both tools are read-only wrappers over a trusted local JSON helper with fixed argv and bounded output. '
+      + 'An external-root deployment must pair them with an authorization guard; the Leon preset requires a direct-human exact target lock.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-memory',

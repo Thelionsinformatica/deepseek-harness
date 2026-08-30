@@ -548,6 +548,28 @@ export interface ToolResultPruneConfig {
 
 来源：[`packages/compaction/compaction-tool-result-pruner/src/types.ts:4`](../packages/compaction/compaction-tool-result-pruner/src/types.ts)
 
+<a id="deepseek-aidsh-completion-claim-policy"></a>
+
+## `@deepseek-ai/dsh-completion-claim-policy`
+
+```ts config-catalog
+/** Deployment policy for evidence recovery at the final turn boundary. */
+export interface Config {
+  /** Same-turn corrections allowed before the policy rejects the claim (default 0, maximum 3). */
+  maxEvidenceRecoveries?: number
+  /** Maximum UTF-8 bytes retained in one recovery message (default 4096). */
+  maxRecoveryMessageBytes?: number
+  /** Maximum quoted absolute artifact paths checked per claim (default 32). */
+  maxArtifactClaims?: number
+  /** Verify absolute Windows paths quoted in backticks by the final claim (default false). */
+  verifyAbsoluteArtifactClaims?: boolean
+  /** Require at least one successful tool result in the current turn (default false). */
+  requireCurrentTurnEvidence?: boolean
+}
+```
+
+来源：[`packages/guard/completion-claim-policy/src/index.ts:37`](../packages/guard/completion-claim-policy/src/index.ts)
+
 <a id="deepseek-aidsh-cordis-host-runner"></a>
 
 ## `@deepseek-ai/dsh-cordis-host-runner`
@@ -644,6 +666,42 @@ export interface Config {
 
 来源：[`packages/experimental/tool-agent-team/src/index.ts:17`](../packages/experimental/tool-agent-team/src/index.ts)
 
+<a id="deepseek-aidsh-explicit-target-policy"></a>
+
+## `@deepseek-ai/dsh-explicit-target-policy`
+
+需要：`tools`
+
+```ts config-catalog
+/** Configuration for recognizing explicit target suffixes in direct user text. */
+export interface Config {
+  /** Case- and separator-insensitive suffixes such as `.leon/knowledge`. */
+  markers: string[]
+  /** Additional model tools whose path argument participates in the lock. */
+  additionalToolRules?: AdditionalToolRule[]
+  /** Root model tools denied while a direct-human target lock is active. */
+  blockedToolsWhileLocked?: string[]
+  /** Successful root tools required before a locked turn may stop. */
+  requiredToolsWhileLocked?: string[]
+  /** Same-turn continuations used to obtain missing required tools. */
+  maxRequiredToolRecoveries?: number
+}
+
+/** Deployment-owned path rule for a model tool not built into this policy. */
+export interface AdditionalToolRule {
+  /** Exact model-facing tool name. */
+  name: string
+  /** Argument that carries the absolute path. */
+  argument: string
+  /** Deny the tool unless the latest direct human message established a lock. */
+  requireLock?: boolean
+  /** Permit only the exact locked target, not descendants. */
+  exact?: boolean
+}
+```
+
+来源：[`packages/guard/explicit-target-policy/src/index.ts:21`](../packages/guard/explicit-target-policy/src/index.ts)
+
 <a id="deepseek-aidsh-failure-recovery-policy"></a>
 
 ## `@deepseek-ai/dsh-failure-recovery-policy`
@@ -655,6 +713,8 @@ export interface Config {
 export interface Config {
   /** Failures permitted before the recovery notice and later denial (default 2). */
   maxEquivalentFailures?: number
+  /** Same-turn steering attempts after a terminal response without final output (default 0, maximum 3). */
+  maxNoFinalResponseRecoveries?: number
   /** Tool-name wildcard patterns eligible for recovery; empty tracks every tool. */
   include?: string[]
   /** Tool-name wildcard patterns omitted from recovery tracking. */
@@ -662,7 +722,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/guard/failure-recovery-policy/src/index.ts:61`](../packages/guard/failure-recovery-policy/src/index.ts)
+来源：[`packages/guard/failure-recovery-policy/src/index.ts:65`](../packages/guard/failure-recovery-policy/src/index.ts)
 
 <a id="deepseek-aidsh-file-reference-local"></a>
 
@@ -953,7 +1013,10 @@ export interface AdaptiveRoutingShadowConfig {
   expertInputTokens?: number
   /** Message-count threshold that raises the minimum route quality to three. */
   expertMessageCount?: number
-  /** Tool-count threshold that raises the minimum route quality to three. */
+  /**
+   * Legacy threshold retained only while older deployment files are migrated.
+   * @deprecated Offered tool schemas do not measure task difficulty.
+   */
   expertToolCount?: number
   /** Consecutive provider failures required before the shadow circuit opens. */
   circuitBreakerFailures?: number
@@ -1173,6 +1236,11 @@ export interface Config {
 export interface PiAiProviderProfile {
   /** Credential reference (environment-variable name) resolved per request through `ctx.credentials`. */
   apiKeyEnv?: string
+  /**
+   * Ordered compatibility references tried only when {@link apiKeyEnv} resolves to no value.
+   * Every entry is explicit: the adapter never searches unrelated ambient keys.
+   */
+  apiKeyEnvFallbacks?: string[]
   /** Name shown by configuration surfaces; defaults to the route key. */
   displayName?: string
   /**
@@ -1404,7 +1472,7 @@ export type PiAiThinkingFormat = NonNullable<OpenAICompletionsCompat['thinkingFo
 
 依赖：`Api`（`@earendil-works/pi-ai`）· `CacheRetention`（`@earendil-works/pi-ai`）· `Model`（`@earendil-works/pi-ai`）· `ModelThinkingLevel`（`@earendil-works/pi-ai`）· `OpenAICompletionsCompat`（`@earendil-works/pi-ai`）· [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets`（`@earendil-works/pi-ai`）· `Transport`（`@earendil-works/pi-ai`)
 
-来源：[`packages/llm/llm-pi-ai/src/config.ts:213`](../packages/llm/llm-pi-ai/src/config.ts)
+来源：[`packages/llm/llm-pi-ai/src/config.ts:220`](../packages/llm/llm-pi-ai/src/config.ts)
 
 <a id="deepseek-aidsh-llm-replay"></a>
 
@@ -2962,6 +3030,30 @@ export type CompletionDelivery = 'quiet' | 'wakeup'
 
 来源：[`packages/jobs/tool-jobs/src/index.ts:32`](../packages/jobs/tool-jobs/src/index.ts)
 
+<a id="deepseek-aidsh-tool-knowledge-base"></a>
+
+## `@deepseek-ai/dsh-tool-knowledge-base`
+
+需要：`tools` · `systemPrompt` · `subprocess`
+
+```ts config-catalog
+/** Trusted deployment configuration; none of these values comes from the model. */
+export interface Config {
+  /** Absolute path to the packaged `knowledge.mjs` compatible helper. */
+  scriptPath: string
+  /** Cooperative tool-call deadline in milliseconds. */
+  timeoutMs?: number
+  /** Maximum complete stdout bytes accepted from the helper. */
+  maxOutputBytes?: number
+  /** Maximum retained stderr bytes used for diagnostics. */
+  stderrMaxBytes?: number
+  /** Process-tree termination grace in milliseconds. */
+  graceMs?: number
+}
+```
+
+来源：[`packages/knowledge/tool-knowledge-base/src/index.ts:34`](../packages/knowledge/tool-knowledge-base/src/index.ts)
+
 <a id="deepseek-aidsh-tool-lsp"></a>
 
 ## `@deepseek-ai/dsh-tool-lsp`
@@ -3105,10 +3197,15 @@ export interface Config {
   maxSearchResults?: number
   /** Cooperative full-text search deadline in milliseconds. Defaults to 30000. */
   searchTimeoutMs?: number
+  /** Non-empty subset exposed to the model. Defaults to the five general operations. */
+  enabledTools?: SessionQueryToolName[]
 }
+
+/** One model-facing session-query operation. */
+export type SessionQueryToolName = typeof SESSION_QUERY_TOOL_NAMES[number]
 ```
 
-来源：[`packages/session-query/tool-session-query/src/index.ts:29`](../packages/session-query/tool-session-query/src/index.ts)
+来源：[`packages/session-query/tool-session-query/src/index.ts:51`](../packages/session-query/tool-session-query/src/index.ts)
 
 <a id="deepseek-aidsh-tool-skill"></a>
 
@@ -3121,10 +3218,20 @@ export interface Config {
 export interface Config {
   /** Maximum normalized description length rendered in the session catalog; minimum 3. */
   catalogDescriptionMaxLength?: number
+  /** Trusted deployment rules that inject a skill when direct human text contains one configured literal. */
+  autoLoad?: AutoLoadRule[]
+}
+
+/** Model-facing skill catalog configuration. */
+export interface AutoLoadRule {
+  /** Exact available skill name to inject when a direct human message matches. */
+  name: string
+  /** Literal text fragments; slash direction, Unicode width, case, and whitespace are normalized. */
+  contains: string[]
 }
 ```
 
-来源：[`packages/skill/tool-skill/src/index.ts:61`](../packages/skill/tool-skill/src/index.ts)
+来源：[`packages/skill/tool-skill/src/index.ts:69`](../packages/skill/tool-skill/src/index.ts)
 
 <a id="deepseek-aidsh-tool-str-replace-editor"></a>
 
@@ -3552,6 +3659,8 @@ export interface Config {
   apiKey?: string
   /** Credential reference resolved for each search. */
   apiKeyEnv?: string
+  /** Ordered compatibility references tried only when {@link apiKeyEnv} resolves to no value. */
+  apiKeyEnvFallbacks?: string[]
   /** Gemini API base; `/interactions` is appended. */
   baseURL?: string
   /** Search-capable Gemini model id. */
@@ -3559,7 +3668,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/web/web-search-google/src/index.ts:40`](../packages/web/web-search-google/src/index.ts)
+来源：[`packages/web/web-search-google/src/index.ts:42`](../packages/web/web-search-google/src/index.ts)
 
 <a id="deepseek-aidsh-web-search-perplexity"></a>
 

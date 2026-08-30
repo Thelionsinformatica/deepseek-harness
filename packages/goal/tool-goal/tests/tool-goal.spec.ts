@@ -8,6 +8,7 @@ import type { GoalRef } from '@deepseek-ai/dsh-goal'
 import { createUserMessage, CallId } from '@deepseek-ai/dsh-llm'
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-session'
+import type { TodoItem } from '@deepseek-ai/dsh-session'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type {
   ResolvedSubagentStartRequest,
@@ -450,19 +451,26 @@ describe('goal tool state transitions', () => {
     }, root.agent)
     expect(missing.error?.info?.code).toBe('GOAL_TOOL_TODOS_REQUIRED')
 
-    root.session.append('todo/write', { todos: [
+    const todos: TodoItem[] = [
       { content: 'run validation', status: 'in_progress' },
       { content: 'verify build', status: 'pending' },
-    ] })
+      { content: 'retain completed evidence', status: 'completed' },
+      { content: 'verify the fourth requirement', status: 'pending' },
+    ]
+    root.session.append('todo/write', { todos })
     const incomplete = await execute(ctx, 'update_goal', {
       goal_id: created.id, revision: created.revision, action: 'complete',
     }, root.agent)
     expect(incomplete.error?.info?.code).toBe('GOAL_TOOL_TODOS_INCOMPLETE')
-    expect(incomplete.error?.message).toContain('run validation')
+    expect(incomplete.error?.message).toContain(JSON.stringify(todos))
+    expect(incomplete.error?.message).toContain('verify the fourth requirement')
+    expect(incomplete.error?.message).toContain('retain completed evidence')
+    const assembly = await ctx.systemPrompt.assemble({ scope: root.agent })
+    expect(assembly.sections.find(section => section.name === 'tool:goal')?.text)
+      .toContain('incomplete-list rejection returns the complete canonical list')
 
     root.session.append('todo/write', { todos: [
-      { content: 'run validation', status: 'completed' },
-      { content: 'verify build', status: 'completed' },
+      ...todos.map(todo => ({ ...todo, status: 'completed' as const })),
     ] })
     const complete = await execute(ctx, 'update_goal', {
       goal_id: created.id, revision: created.revision, action: 'complete',

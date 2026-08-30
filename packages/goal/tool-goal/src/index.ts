@@ -157,7 +157,10 @@ function guidance(
     + 'consecutive goal rounds, and report that concrete condition in blocked_reason; difficulty, uncertainty, '
     + 'or useful remaining work is not blocked.'
     + (completionRequiresCompletedTodos
-      ? ' Completion is rejected until this goal has a non-empty todo_write list and every item is completed.'
+      ? ' Completion is rejected until this goal has a non-empty todo_write list and every item is completed. '
+        + 'An incomplete-list rejection returns the complete canonical list; preserve every content string and its '
+        + 'relative order, update statuses, retain legitimate newly discovered items with todo_write, then retry '
+        + 'completion.'
       : '')
     + (completionAuditorEnabled
       ? ' A complete request starts an independent workspace audit. Rejection keeps the goal active and returns '
@@ -240,9 +243,11 @@ function requireCompletedTodos(execution: GoalToolExecution, goal: GoalView): vo
   }
   const remaining = todos.filter(todo => todo.status !== 'completed')
   if (remaining.length === 0) return
-  const summary = remaining.slice(0, 3).map(todo => todo.content).join('; ')
   throw new HarnessError(
-    `complete rejected: ${remaining.length} todo item(s) remain incomplete${summary === '' ? '' : `: ${summary}`}`,
+    `complete rejected: ${remaining.length} todo item(s) remain incomplete. `
+      + `Canonical current todo_write list: ${JSON.stringify(todos)}. `
+      + 'Finish the remaining work, then keep this list intact and in order while updating statuses and retaining '
+      + 'any legitimately discovered new items before retrying completion.',
     'GOAL_TOOL_TODOS_INCOMPLETE',
   )
 }

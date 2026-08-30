@@ -20,19 +20,19 @@
 
 该开关会同时改变面向模型的指令与接受的输入——`true` 要求模型标记每个正在推进的任务并接受任意数量；`false` 要求恰好一个，并以 `Error: invalid todos: at most one task may be in_progress (got <n>)` 拒绝标记更多的调用。持久日志不变式**不**跟随它：在允许并行时写下的日志，在部署收紧策略之后仍必须可回放，因此不变式对活跃数量保持沉默。
 
-`preserveExistingItems` 同样为必填项。设为 `true` 时，同一人类直接任务内的后续写入必须以完全相同的内容和相对顺序保留每个现有条目，且已完成条目不能倒退；仍可插入新发现的条目。之后的人类直接消息会开始一份新计划。Leon 启用此策略，避免自动续行 Round 替换或重新打开其常驻检查表；通用组合可选择 `false`，保留不受限制的整表替换。
+`preserveExistingItems` 同样为必填项。设为 `true` 时，同一人类直接任务内的后续写入必须以完全相同的内容和相对顺序保留每个现有条目，且已完成条目不能倒退；仍可插入新发现的条目。该规则位于面向模型描述的开头，因此描述压缩仍会保留这项安全要求。只有在没有未结束的持久 goal 继续拥有检查表时，之后的人类直接消息才会开始新计划；恢复消息会保留 active、paused 或 blocked goal 的计划，直到该 goal 进入终态。Leon 启用此策略，避免续行 Round 或重启后的人类恢复消息替换或重新打开常驻检查表；通用组合可选择 `false`，保留不受限制的整表替换。
 
 ## 验证
 
-除 schema 的类型／必填／枚举检查外，`execute` 还会拒绝空或重复的 `content`，以及 `content`/`status` 之外的任何条目键——扩展条目形状（id、嵌套）会明确报错而不是被静默压平，保证落日志的快照与模型自认为写入的内容一致。可同时处于 `in_progress` 的任务数量以及现有计划是否只能增量演进都由部署决定（见 § 配置）。被保留策略拒绝的写入不会追加 `todo/write` 事件。
+除 schema 的类型／必填／枚举检查外，`execute` 还会拒绝空或重复的 `content`，以及 `content`/`status` 之外的任何条目键——扩展条目形状（id、嵌套）会明确报错而不是被静默压平，保证落日志的快照与模型自认为写入的内容一致。可同时处于 `in_progress` 的任务数量以及现有计划是否只能增量演进都由部署决定（见 § 配置）。因删除、重命名、重排或已完成条目倒退而被拒绝的写入不会追加 `todo/write` 事件，并会按规范顺序返回完整的已接受列表，使模型可以更新状态、保留或插入真正新发现的工作，并在无需从压缩历史重建的情况下重试。
 
 ## 渲染
 
-规范结果为 `{ todos, counts: { pending, inProgress, completed } }`；其 Native 渲染器返回精简的更新确认。工具还会写入完整 `todo/write` 会话事件。UI 订阅事件流，并自行渲染该持久化列表：[web 客户端](../../client/ui-conversation)基于当前有效计划（其后没有更晚人类直接 `user/message` 的最近一次 `todo/write`）显示计划条和专属工具行（[展示](../../../.agents/notes/implemented/feature/2026-07-23-web-todo-display.zh.md)、[生命周期](../../../.agents/notes/implemented/feature/2026-07-28-todo-plan-clears-on-next-turn.zh.md)）。自动继续消息会为同一目标保留该列表。
+规范结果为 `{ todos, counts: { pending, inProgress, completed } }`；其 Native 渲染器返回精简的更新确认。工具还会写入完整 `todo/write` 会话事件。UI 订阅事件流，并根据常驻投影自行渲染该持久化列表：[web 客户端](../../client/ui-conversation)显示计划条和专属工具行（[展示](../../../.agents/notes/implemented/feature/2026-07-23-web-todo-display.zh.md)、[生命周期](../../../.agents/notes/implemented/feature/2026-07-28-todo-plan-clears-on-next-turn.zh.md)）。当未结束的持久 goal 拥有列表时，自动继续消息与人类直接恢复消息都会保留它。
 
 ## 会话投影
 
-当组合挂载了 `ctx.sessionProjections`（[`@deepseek-ai/dsh-session-projection`](../../session/session-projection/README.zh.md)）时，本包在一个注入的子插件中注册 `todos` 投影单元：`init` = `null`（尚无写入）、`apply` = 从每个 `todo/write` 取整表，在之后的人类直接 `user/message` 上清为 `null`，而自动继续消息会保留该值；`view` = 恒等、`stateVersion` = 3。该键在本包中合并进 `SessionProjectionMap`（经 Service Definition 包的 `/types` 出口）；框架驱动该单元，载体通过历史尾页与 `session/projection` 推送帧提供该值。未挂载注册表的组合不受影响。生命周期理由见 [在下一项人类任务开始时清空 todo 计划](../../../.agents/notes/implemented/feature/2026-07-28-todo-plan-clears-on-next-turn.zh.md)。
+当组合挂载了 `ctx.sessionProjections`（[`@deepseek-ai/dsh-session-projection`](../../session/session-projection/README.zh.md)）时，本包会在注入的子插件中注册 `todos` 投影单元。其仅主机可见的状态保存最新整表以及拥有该列表的未结束 goal id；wire view 只暴露任务列表。`todo/write` 替换列表，`goal/change` 获取或释放所有权，而人类直接 `user/message` 只有在没有未结束 goal 拥有列表时才会清空它。goal 进入终态会释放所有权，但最终检查表会保留到下一项人类任务；创建另一个 goal 会立即清除该旧检查表。投影使用 `stateVersion` = 4。该键在本包中合并进 `SessionProjectionMap`（经 Service Definition 包的 `/types` 出口）；框架驱动该单元，载体通过历史尾页与 `session/projection` 推送帧提供该值。未挂载注册表的组合不受影响。生命周期理由见 [在下一项人类任务开始时清空 todo 计划](../../../.agents/notes/implemented/feature/2026-07-28-todo-plan-clears-on-next-turn.zh.md)。
 
 ## 导出形状
 
@@ -58,11 +58,11 @@
 
 #### 模型看到的内容
 
-每个 assistant 工具调用都会在参数中保留整个替换列表。成功时原样返回 `Updated todo list: <pending> pending, <inProgress> in progress, <completed> completed.`。稳定失败文本为 ``Error: invalid todo: `content` must be a non-empty string``、`Error: invalid todos: duplicate content "<content>"`、`Error: todo_write requires an owning agent session`，以及仅在相应部署策略下出现的 `Error: invalid todos: at most one task may be in_progress (got <n>)`、`Error: invalid todos: preserved plan must retain existing item "<content>"` 与 `Error: invalid todos: completed item cannot move backward "<content>"`。完整 `todo/write` 会话事件是 UI 与回放状态，而非第二条模型消息。
+每个 assistant 工具调用都会在参数中保留整个替换列表。成功时原样返回 `Updated todo list: <pending> pending, <inProgress> in progress, <completed> completed.`。稳定失败文本为 ``Error: invalid todo: `content` must be a non-empty string``、`Error: invalid todos: duplicate content "<content>"`、`Error: todo_write requires an owning agent session`，以及仅在相应部署策略下出现的 `Error: invalid todos: at most one task may be in_progress (got <n>)`、`Error: invalid todos: preserved plan must retain existing item "<content>"; retry with this canonical list intact and in order; update statuses and retain any legitimate new items: <json>`，以及 `Error: invalid todos: completed item cannot move backward "<content>"` 后对应的规范列表后缀。完整 `todo/write` 会话事件是 UI 与回放状态，而非第二条模型消息。
 
 #### Token 影响
 
-token 用量会随模型每次提交的完整列表增长，且这些调用参数会保留到压缩（compaction）。结果本身很小，且形状固定。
+token 用量会随模型每次提交的完整列表增长，且这些调用参数会保留到压缩（compaction）。成功结果很小；保留策略拒绝会重复完整的已接受列表，因此成本随该列表增长。
 
 #### KV Cache 影响
 

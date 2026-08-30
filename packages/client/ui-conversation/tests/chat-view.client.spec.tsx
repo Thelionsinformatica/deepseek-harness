@@ -172,6 +172,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
   // Selection rides the REAL chat store (same construction path as
   // production; the view reads it through the PropsStore useStore share).
   const chat = createChatStore().create()
+  const technicalContextVisible = createSnapshotStore(false)
   const t = makeTranslate(zh, commonZh)
   const toolOwners: Array<{
     callId: string
@@ -286,6 +287,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
       submit: () => {},
     },
     useStore: bindSnapshotSelector(chat),
+    useTechnicalContextVisible: bindSnapshotSelector(technicalContextVisible),
     actions: chat.actions,
     renderSlot,
     SessionProvider: SessionProviderStub,
@@ -304,7 +306,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
   const setSelection = (next: SelectionTarget | null): void => { chat.actions.select(next) }
   return {
     set, ChatView, props, openDetails, openFile, loadOlder, inspectCall,
-    chatScroll, forkAt, setSelection, toolOwners,
+    chatScroll, forkAt, setSelection, toolOwners, technicalContextVisible,
   }
 }
 
@@ -386,6 +388,36 @@ describe('Chat node rendering', () => {
 })
 
 describe('ChatView', () => {
+  it('keeps prompt-assembly events hidden by default and reveals them on demand', () => {
+    const context = {
+      kind: 'context', seq: 2, time: 2_000,
+      content: [{ type: 'text', text: 'internal prompt preparation' }],
+      source: null,
+      provenance: { role: 'inject', label: 'skill-catalog' },
+      form: null,
+    } as const satisfies ConversationNode
+    const recall = {
+      kind: 'context', seq: 3, time: 3_000,
+      content: [{ type: 'text', text: 'remembered decision' }],
+      source: null,
+      provenance: { role: 'recall', label: 'project-memory' },
+      form: null,
+    } as const satisfies ConversationNode
+    const h = makeHarness({ nodes: [user(1, 'hello'), context, recall, assistant(4, 'ready')] })
+    const view = render(<h.ChatView {...h.props} />)
+
+    expect(view.queryByText('上下文注入')).toBeNull()
+    expect(view.getByText('跨会话召回')).toBeDefined()
+    expect(view.getByText('hello')).toBeDefined()
+    expect(view.getByText('ready')).toBeDefined()
+
+    act(() => { h.technicalContextVisible.set(true) })
+    expect(view.getByText('上下文注入')).toBeDefined()
+
+    act(() => { h.technicalContextVisible.set(false) })
+    expect(view.queryByText('上下文注入')).toBeNull()
+  })
+
   it('hands a windowless tool result to the Tool seat with an empty tool name', () => {
     const h = makeHarness({
       nodes: [{ ...toolResult(3, 'w1'), call: null }],

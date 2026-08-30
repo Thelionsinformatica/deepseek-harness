@@ -16,7 +16,7 @@ Web bundle 固定 `@playwright/cli` 版本，通过受信任的受管 shell 变�
 
 当用户明确询问“此页面”或当前打开的浏览器时，`leon-browser` 会先运行随技能提供的 `scripts/context.mjs` helper，而不是要求用户手工提供 URL。helper 只查询固定的 Playwright `leon` 会话，返回有界的活动标签页元数据、标签页清单、警告/错误摘要和无障碍快照，并把最后结果保存在 `DSH_HOME/browser-context/`，供页面未变化的后续请求复用。它拒绝不安全的会话名，从 Playwright 子进程环境中移除名称形似凭据的变量，并且从不读取 cookie、浏览器存储、请求头、请求体或截图。导航、重新加载、切换标签页或页面交互之后，技能必须重新检查，不能复用旧状态。
 
-当用户明确要求操作原生 Windows 应用时，`leon-windows` 现在可以运行随技能提供的 `scripts/uia.ps1` connector。connector 通过 Windows UI Automation 列出顶层窗口、检查当前聚焦或指定的窗口，并返回受深度与节点数量限制的无障碍树，同时不读取控件值。只有请求把检查所得的精确 `windowId` 与进程名再次作为 allowlist，并通过 automation ID 或精确名称和类型唯一解析到一个无障碍控件时，修改操作才会放行。Invoke、Value、Selection 和显式的新文件截图操作都会在 `DSH_HOME/windows-uia/` 下追加本地 JSONL 审计事件；输入值不会写入日志，密码控件会被拒绝，而且 connector 不注入全局按键、不使用屏幕坐标、不覆盖截图，也不提升权限。
+当用户明确要求操作原生 Windows 应用时，`leon-windows` 现在可以运行随技能提供的 `scripts/uia.ps1` connector。connector 通过 Windows UI Automation 列出顶层窗口、检查当前聚焦或指定的窗口，并返回受深度与节点数量限制的无障碍树，同时不读取控件值。其 JSON 输出显式使用 UTF-8 编码，因此本地化窗口标题仍是有效的协议数据。只有请求把检查所得的精确 `windowId` 与进程名再次作为 allowlist，并通过 automation ID 或精确名称和类型唯一解析到一个无障碍控件时，修改操作才会放行。Invoke、Value、Selection 和显式的新文件截图操作都会在 `DSH_HOME/windows-uia/` 下追加本地 JSONL 审计事件；输入值不会写入日志，密码控件会被拒绝，而且 connector 不注入全局按键、不使用屏幕坐标、不覆盖截图，也不提升权限。
 
 Web 宿主还会在未来浏览器会话创建前挂载时间上下文与 Schedule。新的 root agent 获得会话范围内持久的提醒工具，Leon persona 必须使用这些工具，不能只在文字中承诺记住。
 

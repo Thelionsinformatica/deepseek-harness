@@ -4,7 +4,7 @@
 
 这是 Harness [Web 能力](../web/README.zh.md)（`ctx.web`）的 Google Search grounding `WebSearchProvider`。它发送启用托管 `google_search` 工具且不保存状态的 Gemini Interactions API 请求，再把 model-output 文本和 `url_citation` 注解映射为 [`dsh-tool-web`](../tool-web/README.zh.md) 使用的标准 `WebSearchResult`。
 
-提供方复用 Leon 的 Gemini 模型路由所用的 `GOOGLE_API_KEY` 凭据引用。每次搜索都会通过 `ctx.credentials` 解析该引用；没有凭据服务时才读取启动环境。密钥不会进入请求日志或提供方结果。
+通用提供方每次搜索都会通过 `ctx.credentials` 解析 `GOOGLE_API_KEY`；没有凭据服务时才读取启动环境。`apiKeyEnvFallbacks` 可以声明一条显式、有序的兼容引用链；任何未声明的环境密钥都不会被尝试。Leon 把通用默认值覆盖为主引用 `GEMINI_API_KEY`、fallback `GOOGLE_API_KEY`，因此升级后的安装无需复制机密即可继续使用原有 Google 密钥。密钥不会进入请求日志或提供方结果。
 
 ## 配置
 
@@ -12,6 +12,7 @@
 |---|---|---|
 | `apiKey` | 未设置 | Google API 密钥字面值。应优先使用 `apiKeyEnv`，避免机密进入配置。 |
 | `apiKeyEnv` | `GOOGLE_API_KEY` | 每次搜索解析的凭据引用。缺失时以 `WEB_PROVIDER_CREDENTIAL_MISSING` 失败。 |
+| `apiKeyEnvFallbacks` | `[]` | 仅在 `apiKeyEnv` 缺失后按顺序尝试的兼容引用；重复项会被拒绝，无关环境密钥会被忽略。 |
 | `baseURL` | `https://generativelanguage.googleapis.com/v1beta` | Gemini API 基址；提供方追加 `/interactions`。 |
 | `model` | `gemini-3.6-flash` | 接收辅助搜索请求的 Gemini 模型。该模型必须支持 Google Search grounding。 |
 
@@ -20,10 +21,11 @@
   name: '@deepseek-ai/dsh-web-search-google'
   config:
     apiKeyEnv: GOOGLE_API_KEY
+    apiKeyEnvFallbacks: []
     model: gemini-3.6-flash
 ```
 
-插件安装 `web-search-google` Settings 分节。凭据引用、端点或模型的变更会作用于下一次搜索，无需注销提供方。
+插件安装 `web-search-google` Settings 分节。凭据引用、端点或模型的变更会作用于下一次搜索，无需注销提供方。Leon 的 Web bundle 提供 `apiKeyEnv: GEMINI_API_KEY` 与 `apiKeyEnvFallbacks: [GOOGLE_API_KEY]`；该兼容别名是部署选择，不是隐藏的包默认值。
 
 ## 请求与结果映射
 

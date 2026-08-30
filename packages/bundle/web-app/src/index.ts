@@ -15,7 +15,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { networkInterfaces } from 'node:os'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { addHarnessSourceSection } from '@deepseek-ai/dsh-app-boot'
@@ -112,7 +112,7 @@ function launchedThroughSsh(ctx: Context): boolean {
   })
 }
 
-const BROWSER_OPENER_MODULE = import.meta.resolve('open')
+const BROWSER_OPENER_MODULE = pathToFileURL(createRequire(import.meta.url).resolve('open')).href
 
 const BROWSER_OPENER_PROGRAM = `
 try {

@@ -575,6 +575,94 @@ describe('Web session model selection', () => {
     await ctx.fiber.dispose()
   })
 
+  it('escalates completion-evidence recovery before prompt assembly', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    const choose = vi.fn((input: { recovery?: 'completion-evidence' }) => input.recovery === 'completion-evidence'
+      ? {
+        provider: 'deepseek-official',
+        model: 'deepseek-reasoner',
+        reasoningEffort: ReasoningEffortId('high'),
+      }
+      : {
+        provider: 'deepseek-official',
+        model: 'deepseek-chat',
+        reasoningEffort: ReasoningEffortId('off'),
+      })
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      adaptiveModelSelection: choose,
+      cwd: '/tmp',
+    })
+    const signal = new AbortController().signal
+    const seed: LlmCallConfig = { provider: 'seed', model: 'seed' }
+    const recovery = {
+      id: 'completion-recovery',
+      role: 'user',
+      content: [{ type: 'text', text: 'Verify the completion evidence.' }],
+      source: { kind: 'plugin', plugin: 'completion-claim-policy', form: 'evidence-recovery' },
+    } as unknown as UserMessage
+
+    expect(expectValue(await api.sessions.models(request({ sessionId }))).current)
+      .toEqual({ provider: 'deepseek-official', model: 'deepseek-chat' })
+    expect((await ctx.systemPrompt.assemble()).variables)
+      .toMatchObject({ provider: 'deepseek-official', model: 'deepseek-chat' })
+
+    ;(agent.inbox.nextStep as UserMessage[]).push(recovery)
+    expect((await ctx.systemPrompt.assemble()).variables)
+      .toMatchObject({ provider: 'deepseek-official', model: 'deepseek-reasoner' })
+    await expect(agentEvents(ctx, agent).waterfall(
+      'agent/request', { turn: 1, step: 0, signal }, () => Promise.resolve(seed),
+    )).resolves.toMatchObject({
+      provider: 'deepseek-official',
+      model: 'deepseek-reasoner',
+      reasoningEffort: 'high',
+    })
+    expect(choose).toHaveBeenCalledWith(expect.objectContaining({ recovery: 'completion-evidence' }))
+    await ctx.fiber.dispose()
+  })
+
+  it('keeps completion-evidence recovery on the manually selected route', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    const choose = vi.fn((input: { recovery?: 'completion-evidence' }) => ({
+      provider: 'deepseek-official',
+      model: input.recovery === 'completion-evidence' ? 'deepseek-reasoner' : 'deepseek-chat',
+      reasoningEffort: ReasoningEffortId(input.recovery === 'completion-evidence' ? 'high' : 'off'),
+    }))
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      adaptiveModelSelection: choose,
+      cwd: '/tmp',
+    })
+    expectValue(await api.sessions.models(request({ sessionId })))
+    expectValue(await api.sessions.selectModel(request({
+      sessionId,
+      provider: 'deepseek-official',
+      model: 'deepseek-chat',
+      reasoningEffort: 'off',
+    })))
+    const choicesBeforeRecovery = choose.mock.calls.length
+    ;(agent.inbox.nextStep as UserMessage[]).push({
+      id: 'manual-completion-recovery',
+      role: 'user',
+      content: [{ type: 'text', text: 'Verify the completion evidence.' }],
+      source: { kind: 'plugin', plugin: 'completion-claim-policy', form: 'evidence-recovery' },
+    } as unknown as UserMessage)
+
+    expect((await ctx.systemPrompt.assemble()).variables)
+      .toMatchObject({ provider: 'deepseek-official', model: 'deepseek-chat' })
+    await expect(agentEvents(ctx, agent).waterfall(
+      'agent/request',
+      { turn: 1, step: 0, signal: new AbortController().signal },
+      () => Promise.resolve({ provider: 'seed', model: 'seed' }),
+    )).resolves.toMatchObject({
+      provider: 'deepseek-official',
+      model: 'deepseek-chat',
+      reasoningEffort: 'off',
+    })
+    expect(choose).toHaveBeenCalledTimes(choicesBeforeRecovery)
+    await ctx.fiber.dispose()
+  })
+
   it('binds a running-turn follow-up route to the exact next-turn inbox claim', async () => {
     const { ctx, agent, sessionId } = await harness()
     const followup = vi.fn()

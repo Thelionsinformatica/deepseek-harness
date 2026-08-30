@@ -58,6 +58,7 @@ function groundedResponse(): GoogleInteractionResponse {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
 })
 
 describe('mapGoogleInteraction', () => {
@@ -120,7 +121,8 @@ describe('GoogleSearchProvider', () => {
   })
 
   it('posts a stateless Interactions request with Google Search enabled', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse(groundedResponse()))
+    const fetchMock = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
+      jsonResponse(groundedResponse()))
     const recordRequest = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
 
@@ -198,6 +200,71 @@ describe('web-search-google plugin registration', () => {
 
     expect(result.sources).toHaveLength(1)
     expect(GOOGLE_SEARCH_PROVIDER_ID).toBe('google-grounding')
+    await ctx.fiber.dispose()
+  })
+
+  it('prefers GEMINI_API_KEY and falls back to the declared GOOGLE_API_KEY alias', async () => {
+    const fetchMock = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
+      jsonResponse(groundedResponse()))
+    vi.stubGlobal('fetch', fetchMock)
+    vi.stubEnv('GEMINI_API_KEY', 'gemini-primary')
+    vi.stubEnv('GOOGLE_API_KEY', 'google-legacy')
+    const primaryCtx = new Context()
+    await primaryCtx.plugin(WebRuntime)
+    await primaryCtx.plugin(googlePlugin, {
+      apiKeyEnv: 'GEMINI_API_KEY',
+      apiKeyEnvFallbacks: ['GOOGLE_API_KEY'],
+      model: 'gemini-test',
+      baseURL: options.baseURL,
+    })
+    await primaryCtx.web.search({ query: 'primary' })
+    expect(fetchMock.mock.calls[0]?.[1]?.headers)
+      .toMatchObject({ 'x-goog-api-key': 'gemini-primary' })
+    await primaryCtx.fiber.dispose()
+
+    vi.stubEnv('GEMINI_API_KEY', '')
+    const fallbackCtx = new Context()
+    await fallbackCtx.plugin(WebRuntime)
+    await fallbackCtx.plugin(googlePlugin, {
+      apiKeyEnv: 'GEMINI_API_KEY',
+      apiKeyEnvFallbacks: ['GOOGLE_API_KEY'],
+      model: 'gemini-test',
+      baseURL: options.baseURL,
+    })
+    await fallbackCtx.web.search({ query: 'fallback' })
+    expect(fetchMock.mock.calls[1]?.[1]?.headers)
+      .toMatchObject({ 'x-goog-api-key': 'google-legacy' })
+    await fallbackCtx.fiber.dispose()
+  })
+
+  it('does not consult an undeclared ambient Google credential name', async () => {
+    vi.stubEnv('GOOGLE_API_KEY', 'must-not-be-used-either')
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const ctx = new Context()
+    await ctx.plugin(WebRuntime)
+    await ctx.plugin(googlePlugin, {
+      apiKeyEnv: 'CUSTOM_GEMINI_PRIMARY',
+      model: 'gemini-test',
+      baseURL: options.baseURL,
+    })
+
+    const error = await ctx.web.search({ query: 'missing' }).catch((cause: unknown) => cause)
+    expect(error).toMatchObject({ code: 'WEB_PROVIDER_CREDENTIAL_MISSING' })
+    if (!(error instanceof Error)) throw new TypeError('expected the missing-credential error')
+    expect(error.message).toMatch(/CUSTOM_GEMINI_PRIMARY/)
+    expect(error.message).not.toMatch(/GOOGLE_API_KEY/)
+    expect(fetchMock).not.toHaveBeenCalled()
+    await ctx.fiber.dispose()
+  })
+
+  it('rejects a duplicate fallback reference at plugin load', async () => {
+    const ctx = new Context()
+    await ctx.plugin(WebRuntime)
+    await expect(ctx.plugin(googlePlugin, {
+      apiKeyEnv: 'GEMINI_API_KEY',
+      apiKeyEnvFallbacks: ['GEMINI_API_KEY'],
+    })).rejects.toThrow(/repeated credential reference/)
     await ctx.fiber.dispose()
   })
 })

@@ -529,7 +529,7 @@ Source: [`packages/llm/llm-retry/src/types.ts:11`](../packages/llm/llm-retry/src
 'llm/routing-shadow': AdaptiveRoutingShadowEventData
 ```
 
-Source: [`packages/host/apiproxy/src/adaptive-routing-shadow.ts:160`](../packages/host/apiproxy/src/adaptive-routing-shadow.ts)
+Source: [`packages/host/apiproxy/src/adaptive-routing-shadow.ts:163`](../packages/host/apiproxy/src/adaptive-routing-shadow.ts)
 
 ### `permission/*`
 

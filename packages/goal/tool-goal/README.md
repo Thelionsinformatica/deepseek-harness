@@ -42,7 +42,7 @@ Complete and blocked also accept the exact current goal round: a goal-sourced `u
     completionAuditorReportMaxCharacters: 6000
 ```
 
-`blockedAfterConsecutiveRounds` must be a positive safe integer. It supplies both the hard lower bound on model self-blocking and the number named in model guidance. When `completionRequiresCompletedTodos` is true, `complete` is rejected unless the current goal has a non-empty `todo_write` list and every item is `completed`; the default is false for backward-compatible compositions.
+`blockedAfterConsecutiveRounds` must be a positive safe integer. It supplies both the hard lower bound on model self-blocking and the number named in model guidance. When `completionRequiresCompletedTodos` is true, `complete` is rejected unless the current goal has a non-empty `todo_write` list and every item is `completed`; an incomplete-list rejection returns that full canonical list, including completed entries, so a retry can preserve every content string and relative order, update statuses, and retain legitimate newly discovered items. The default is false for backward-compatible compositions.
 
 An empty `completionAuditorProvider` disables independent review. A non-empty value names a one-shot provider on `ctx.subagents`; absence at execution fails closed. `completionAuditorModelProvider` and `completionAuditorModel` are configured together or both omitted to inherit the executor route. The remaining positive safe integers bound output tokens, starts in one parent turn, and feedback characters. The auditor inherits the session workspace and delegated sandbox/approval policy, while its fixed persona forbids source modification and its tool filter removes first-party mutation and recursive orchestration tools.
 
@@ -57,7 +57,7 @@ A fixed goal policy says when semantic human intent warrants creation, requires 
 ##### Goal policy
 
 ```markdown
-Use goal tools for one long-running completion objective in the current session. create_goal may infer goal intent from a direct human request in any language; do not create a goal for routine single-turn work. A deployment may create the goal automatically for an accepted implementation task, so call get_goal before create_goal or update_goal and copy its exact goal_id and revision. After session resume or fork, an active goal is disarmed: when a human asks to continue or resume in any wording or language, use update_goal action resume to rearm it. Mark complete only when the objective is actually achieved. Mark blocked only after the same blocking condition persists for at least 3 consecutive goal rounds, and report that concrete condition in blocked_reason; difficulty, uncertainty, or useful remaining work is not blocked. Completion is rejected until this goal has a non-empty todo_write list and every item is completed. A complete request starts an independent workspace audit. Rejection keeps the goal active and returns actionable findings; correct them and revalidate before requesting completion again.
+Use goal tools for one long-running completion objective in the current session. create_goal may infer goal intent from a direct human request in any language; do not create a goal for routine single-turn work. A deployment may create the goal automatically for an accepted implementation task, so call get_goal before create_goal or update_goal and copy its exact goal_id and revision. After session resume or fork, an active goal is disarmed: when a human asks to continue or resume in any wording or language, use update_goal action resume to rearm it. Mark complete only when the objective is actually achieved. Mark blocked only after the same blocking condition persists for at least 3 consecutive goal rounds, and report that concrete condition in blocked_reason; difficulty, uncertainty, or useful remaining work is not blocked. Completion is rejected until this goal has a non-empty todo_write list and every item is completed. An incomplete-list rejection returns the complete canonical list; preserve every content string and its relative order, update statuses, retain legitimate newly discovered items with todo_write, then retry completion. A complete request starts an independent workspace audit. Rejection keeps the goal active and returns actionable findings; correct them and revalidate before requesting completion again.
 ```
 
 #### Token effect
@@ -72,11 +72,11 @@ Prefix-stable while the plugin scope, configured threshold, and guidance text ar
 
 #### What the model sees
 
-The generated [`get_goal`, `create_goal`, and `update_goal` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-goal). Successful results are compact JSON. A mutation appends the goal domain's durable `goal/change` event without queuing model context. `activation` in a result is a live observation and never becomes replay authority.
+The generated [`get_goal`, `create_goal`, and `update_goal` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-goal). Successful results are compact JSON. A rejected completion with unfinished tasks includes the complete canonical `todo_write` list. A mutation appends the goal domain's durable `goal/change` event without queuing model context. `activation` in a result is a live observation and never becomes replay authority.
 
 #### Token effect
 
-Fixed schema cost plus one compact result per call. The durable mutation adds no separate model-visible context.
+Fixed schema cost plus one result per call. Successful results are compact; an unfinished-task rejection scales with the current list. The durable mutation adds no separate model-visible context.
 
 #### KV Cache effect
 

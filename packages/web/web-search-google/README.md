@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 A Google Search grounding `WebSearchProvider` for the harness [web capability](../web/README.md) (`ctx.web`). It sends a stateless Gemini Interactions API request with the managed `google_search` tool, then maps model-output text and `url_citation` annotations into the normalized `WebSearchResult` consumed by [`dsh-tool-web`](../tool-web/README.md).
 
-The provider reuses the `GOOGLE_API_KEY` credential reference used by Leon's Gemini model route. It resolves that reference for every search through `ctx.credentials`, or through the launching environment when the credential service is absent. The key never enters the request log or provider result.
+The generic provider resolves `GOOGLE_API_KEY` for every search through `ctx.credentials`, or through the launching environment when the credential service is absent. `apiKeyEnvFallbacks` can name an explicit ordered compatibility chain; no undeclared ambient key is ever tried. Leon overrides the generic default with primary `GEMINI_API_KEY` and fallback `GOOGLE_API_KEY`, so an upgraded installation can reuse its existing stored Google key without copying the secret. The key never enters the request log or provider result.
 
 ## Config
 
@@ -12,6 +12,7 @@ The provider reuses the `GOOGLE_API_KEY` credential reference used by Leon's Gem
 |---|---|---|
 | `apiKey` | omitted | Literal Google API key. Prefer `apiKeyEnv` so no secret enters configuration. |
 | `apiKeyEnv` | `GOOGLE_API_KEY` | Credential reference resolved for each search. A missing value fails the call as `WEB_PROVIDER_CREDENTIAL_MISSING`. |
+| `apiKeyEnvFallbacks` | `[]` | Ordered compatibility references tried only after `apiKeyEnv`; duplicates are rejected and unrelated environment keys are ignored. |
 | `baseURL` | `https://generativelanguage.googleapis.com/v1beta` | Gemini API base; `/interactions` is appended. |
 | `model` | `gemini-3.6-flash` | Gemini model that receives the auxiliary search request. It must support Google Search grounding. |
 
@@ -20,10 +21,11 @@ The provider reuses the `GOOGLE_API_KEY` credential reference used by Leon's Gem
   name: '@deepseek-ai/dsh-web-search-google'
   config:
     apiKeyEnv: GOOGLE_API_KEY
+    apiKeyEnvFallbacks: []
     model: gemini-3.6-flash
 ```
 
-The plugin installs a `web-search-google` Settings section. Changes to its credential reference, endpoint, or model reach the next search without unregistering the provider.
+The plugin installs a `web-search-google` Settings section. Changes to its credential references, endpoint, or model reach the next search without unregistering the provider. Leon's Web bundle supplies `apiKeyEnv: GEMINI_API_KEY` plus `apiKeyEnvFallbacks: [GOOGLE_API_KEY]`; that compatibility alias is a deployment choice, not a hidden package default.
 
 ## Request and result mapping
 

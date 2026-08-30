@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-27-read-only-leon-doctor.md
-2026-08-27-read-only-leon-doctor.md: 09d03a6f2028793805fccb98ecd02e6e47a69328
-2026-08-27-read-only-leon-doctor.zh.md: 58e9bf89fc7187f5827dde468c1187418b684f03
+2026-08-27-read-only-leon-doctor.md: cca29c61234488035d49647cd7a71622b0a955e4
+2026-08-27-read-only-leon-doctor.zh.md: 3b61f3ed9cef86b67f50b75a886c3a28e77abb3a

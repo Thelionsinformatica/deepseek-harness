@@ -6,11 +6,11 @@ The dsh browser-surface bundle. [`cordis.patch.yml`](cordis.patch.yml) rides ove
 
 ## Model retry defaults
 
-The shipped local `ollama` route and loopback `freellmapi` gateway each allow one eligible retry after the initial request. Leon Automatic normally replaces an unavailable route before that backoff; the bounded retry remains for manual selection or when every configured replacement is unavailable. Settings-added pi-ai routes and manually mounted compatibility routes still use the shared bounded default of five retries when they omit `retryPolicy`; explicit provider policies always win.
+The shipped local `ollama` route and loopback `freellmapi` gateway each allow one eligible retry after the initial request. Leon Automatic replaces Ollama only for `TRANSPORT`, `TIMEOUT`, or `SERVER`; `UNKNOWN_MODEL`, `NO_ADAPTER`, and other configuration failures remain local and fail closed. The bounded retry remains for manual selection or when every configured replacement is unavailable. Settings-added pi-ai routes and manually mounted compatibility routes still use the shared bounded default of five retries when they omit `retryPolicy`; explicit provider policies always win.
 
 ## Leon capability composition
 
-The Web deployment mounts cited Google Search grounding, guarded public-page fetch, browser-zone time context, and durable Session-local reminders. The shipped Leon preset exposes search and fetch as native tools, adds the `leon-browser`, `leon-project-engineer`, and `leon-windows` skills to its on-demand catalog, and receives `schedule_create`, `schedule_list`, and `schedule_delete` from the host Schedule lifecycle.
+The Web deployment mounts cited Google Search grounding, guarded public-page fetch, browser-zone time context, and durable Session-local reminders. Its Google Search row resolves primary `GEMINI_API_KEY` and then the declared legacy `GOOGLE_API_KEY` reference, matching the Gemini model route without duplicating the secret. The shipped Leon preset exposes search and fetch as native tools, adds the `leon-browser`, `leon-project-engineer`, and `leon-windows` skills to its on-demand catalog, and receives `schedule_create`, `schedule_list`, and `schedule_delete` from the host Schedule lifecycle.
 
 `@playwright/cli` is a pinned runtime dependency rather than an ambient global command. When `surfaceContext` is true, this plugin publishes the trusted `DSH_NODE` and `DSH_PLAYWRIGHT_CLI` paths beside `DSH_WEB_URL`; the browser skill invokes those exact paths to open a headed Chrome session. Browser instructions are loaded only for matching tasks, avoiding a permanent MCP browser schema on every local-model request.
 

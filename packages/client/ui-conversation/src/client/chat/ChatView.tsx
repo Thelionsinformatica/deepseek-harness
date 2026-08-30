@@ -17,6 +17,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { ConversationTimelineSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import { Button, IconChevronDownOutline14, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps, RenderMessageImages } from '../contract/slots.ts'
+import type { ChatNode } from '../contract/chat-nodes.ts'
 import { PendingSteeringBubble } from './MessageItem.tsx'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
 import { formatRunDuration } from './message-chrome.ts'
@@ -157,10 +158,20 @@ function TurnStatus({ startTime, t }: {
  */
 export function ChatView({
   useSession, useSessions, useStore, renderSlot, sessionId, openFile, loadOlder, loadImage, inspectCall, chatScroll, forkAt,
-  fileMentions, t,
+  fileMentions, useTechnicalContextVisible, t,
 }: ChatViewSlotProps) {
   const order = useSession(s => s.chat.order)
   const nodeStore = useSession(s => s.chat.nodes)
+  const technicalContextVisible = useTechnicalContextVisible(value => value)
+  const visibleOrder = useMemo(
+    () => technicalContextVisible
+      ? order
+      : order.filter((nodeKey) => {
+        const node = nodeStore.get(nodeKey) as ChatNode | undefined
+        return node?.kind !== 'context' || node.data.provenance.role !== 'inject'
+      }),
+    [nodeStore, order, technicalContextVisible],
+  )
   const timeline = useSession(s => s.chat.timeline)
   const inbox = useSession(s => s.queue)
   // Workspace root off the session list row: path summaries display relative to it.
@@ -234,12 +245,12 @@ export function ChatView({
    *  scrolls the rest of the way to the floor). */
   const followSigRef = useRef<string | null>(null)
 
-  const firstKey = order[0]
+  const firstKey = visibleOrder[0]
   const firstSeq = firstKey === undefined ? null : nodeStore.get(firstKey)?.anchorSeq ?? null
-  const lastKey = order.at(-1) ?? null
+  const lastKey = visibleOrder.at(-1) ?? null
   const lastNode = lastKey === null ? undefined : nodeStore.get(lastKey)
   const lastSteeringId = pendingSteering[pendingSteering.length - 1]?.id ?? null
-  const followSig = `${openState}:${firstSeq}:${lastKey}:${order.length}:${running ? 1 : 0}:${lastSteeringId ?? ''}`
+  const followSig = `${openState}:${firstSeq}:${lastKey}:${visibleOrder.length}:${running ? 1 : 0}:${lastSteeringId ?? ''}`
 
   const toBottom = (el: HTMLElement): void => {
     anchorRef.current = null
@@ -429,7 +440,7 @@ export function ChatView({
               </button>
             </div>
           )}
-          {order.map(nodeKey => (
+          {visibleOrder.map(nodeKey => (
             <ChatNodeSeat
               key={nodeKey}
               nodeKey={nodeKey}

@@ -27,6 +27,8 @@ export interface GoalBarActions {
   onPause: () => Promise<GoalActionResult>
   /** Resume a paused goal. */
   onResume: () => Promise<GoalActionResult>
+  /** Add a bounded round allowance and resume a goal blocked by its round limit. */
+  onExtendAndResume: () => Promise<GoalActionResult>
   /** Clear the current goal (tombstone). */
   onClear: () => Promise<GoalActionResult>
 }

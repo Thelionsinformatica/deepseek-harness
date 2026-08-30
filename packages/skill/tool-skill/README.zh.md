@@ -16,6 +16,8 @@
 
 `catalogDescriptionMaxLength` 控制规范化后的目录描述，渲染时会对其执行 XML 转义。其默认值是 `500`，且必须是不小于 `3` 的整数，以便为截断省略号保留空间。[skill 目录热刷新 Agent Note](../../../.agents/notes/implemented/feature/2026-07-27-skill-catalog-hot-refresh.zh.md) 负责定义持久初始目录和替换目录的生命周期。
 
+`autoLoad` 是可选的部署配置，由 `{ name, contains[] }` 规则组成。插件会规范化 Unicode 宽度、大小写、空白和斜杠方向，并且只在用户直接输入中匹配这些字面片段。匹配后，它通过与显式 `/name` 手势相同的 `skill-invocation` 上下文注入当前完整 skill 正文。目录、历史、文档、工具结果和插件注入都不能触发规则。自动加载要求 skill 可由模型调用；显式 `/name` 仍遵循用户调用策略。空标记或非法 skill 名会使插件加载失败。
+
 ## 工具：`skill`
 
 | 参数 | 类型 | 说明 |
@@ -158,6 +160,20 @@ Load referenced resources only as needed.
 #### KV Cache 影响
 
 仅追加；注入落在该步骤的消息批次中、可重用请求前缀之后，不会使现有 KV Cache 条目失效。
+
+### 部署触发的自动加载
+
+#### 模型看到的内容
+
+当用户直接输入包含已配置的 `autoLoad.contains` 字面片段时，模型会收到与用户显式调用相同的完整 `<skill_content>` 块，并位于目录及其他后台注入之后。规范化后，Windows 与便携式斜杠形式会匹配同一片段。重复片段或同时使用 `/name` 时，该 skill 只注入一次。
+
+#### Token 影响
+
+每条匹配规则会把当前 skill 正文加入该步骤。部署应使用狭窄且有区分度的字面片段，避免无关回合承担或接收该 skill。
+
+#### KV Cache 影响
+
+在匹配步骤仅追加；之前可重用的提示词 token 保持不变。
 
 ## 已知限制与暂缓事项
 

@@ -42,7 +42,7 @@ complete 与 blocked 还接受完全一致的当前 Goal Round：来源为 goal 
     completionAuditorReportMaxCharacters: 6000
 ```
 
-`blockedAfterConsecutiveRounds` 必须是正的安全整数。它既提供模型自行报告阻塞的硬下限，也决定模型指引中指明的数值。当 `completionRequiresCompletedTodos` 为 true 时，只有当前 goal 已存在非空的 `todo_write` 列表且所有条目均为 `completed`，`complete` 才会被接受；为兼容既有组合，默认值为 false。
+`blockedAfterConsecutiveRounds` 必须是正的安全整数。它既提供模型自行报告阻塞的硬下限，也决定模型指引中指明的数值。当 `completionRequiresCompletedTodos` 为 true 时，只有当前 goal 已存在非空的 `todo_write` 列表且所有条目均为 `completed`，`complete` 才会被接受；列表未完成时，拒绝结果会返回完整规范列表，包括已完成条目，使重试能够保留每个内容字符串与相对顺序、更新状态并保留真正新发现的条目。为兼容既有组合，默认值为 false。
 
 空的 `completionAuditorProvider` 会禁用独立审核。非空值指定 `ctx.subagents` 上的一次性 provider；执行时缺失会以失败关闭。`completionAuditorModelProvider` 与 `completionAuditorModel` 必须同时配置，或者同时省略以继承执行器路由。其余正安全整数分别限制输出 token、同一父轮次中的启动次数和反馈字符数。审核器继承会话工作区与委派后的 sandbox／approval 策略；固定 persona 禁止修改源文件，工具过滤器移除第一方变更与递归编排工具。
 
@@ -57,7 +57,7 @@ complete 与 blocked 还接受完全一致的当前 Goal Round：来源为 goal 
 ##### Goal 策略
 
 ```markdown
-Use goal tools for one long-running completion objective in the current session. create_goal may infer goal intent from a direct human request in any language; do not create a goal for routine single-turn work. A deployment may create the goal automatically for an accepted implementation task, so call get_goal before create_goal or update_goal and copy its exact goal_id and revision. After session resume or fork, an active goal is disarmed: when a human asks to continue or resume in any wording or language, use update_goal action resume to rearm it. Mark complete only when the objective is actually achieved. Mark blocked only after the same blocking condition persists for at least 3 consecutive goal rounds, and report that concrete condition in blocked_reason; difficulty, uncertainty, or useful remaining work is not blocked. Completion is rejected until this goal has a non-empty todo_write list and every item is completed. A complete request starts an independent workspace audit. Rejection keeps the goal active and returns actionable findings; correct them and revalidate before requesting completion again.
+Use goal tools for one long-running completion objective in the current session. create_goal may infer goal intent from a direct human request in any language; do not create a goal for routine single-turn work. A deployment may create the goal automatically for an accepted implementation task, so call get_goal before create_goal or update_goal and copy its exact goal_id and revision. After session resume or fork, an active goal is disarmed: when a human asks to continue or resume in any wording or language, use update_goal action resume to rearm it. Mark complete only when the objective is actually achieved. Mark blocked only after the same blocking condition persists for at least 3 consecutive goal rounds, and report that concrete condition in blocked_reason; difficulty, uncertainty, or useful remaining work is not blocked. Completion is rejected until this goal has a non-empty todo_write list and every item is completed. An incomplete-list rejection returns the complete canonical list; preserve every content string and its relative order, update statuses, retain legitimate newly discovered items with todo_write, then retry completion. A complete request starts an independent workspace audit. Rejection keeps the goal active and returns actionable findings; correct them and revalidate before requesting completion again.
 ```
 
 #### Token 影响
@@ -72,11 +72,11 @@ Use goal tools for one long-running completion objective in the current session.
 
 #### 模型看到的内容
 
-生成的 [`get_goal`、`create_goal` 和 `update_goal` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-goal)。成功结果是紧凑 JSON。变更会追加 goal 领域的持久 `goal/change` 事件，而不会将模型上下文加入队列。结果中的 `activation` 是实时观察值，绝不会成为回放权限依据。
+生成的 [`get_goal`、`create_goal` 和 `update_goal` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-goal)。成功结果是紧凑 JSON。任务未完成而被拒绝的完成调用会包含完整规范 `todo_write` 列表。变更会追加 goal 领域的持久 `goal/change` 事件，而不会将模型上下文加入队列。结果中的 `activation` 是实时观察值，绝不会成为回放权限依据。
 
 #### Token 影响
 
-固定 schema 成本，加上每次调用的一条紧凑结果。持久变更不会增加单独的模型可见上下文。
+固定 schema 成本，加上每次调用的一条结果。成功结果很小；未完成任务的拒绝成本随当前列表增长。持久变更不会增加单独的模型可见上下文。
 
 #### KV Cache 影响
 

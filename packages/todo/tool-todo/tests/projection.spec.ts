@@ -114,6 +114,68 @@ describe('todos projection provider', () => {
     expect(cleared?.asOfSeq).toBe(session.seq - 1)
   })
 
+  it('keeps an unfinished goal plan visible across a direct-human resume message', async () => {
+    const bench = await harness(true)
+    const session = bench.session
+    seedMessage(session)
+    const goalId = 'projection-goal-resume'
+    ;(session.append as (type: string, data: unknown) => unknown)('goal/change', {
+      kind: 'goal/change',
+      version: 1,
+      operation: 'create',
+      goal: { id: goalId, revision: 1, objective: 'finish', phase: 'active', maxGoalRounds: 20 },
+      roundsStarted: 0,
+      createdAt: 1,
+      updatedAt: 1,
+    })
+    const list: TodoItem[] = [{ content: 'still required', status: 'in_progress' }]
+    session.append('todo/write', { todos: list })
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'continue' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    expect((await bench.tailProjections())?.values.todos).toEqual(list)
+
+    ;(session.append as (type: string, data: unknown) => unknown)('goal/change', {
+      kind: 'goal/change',
+      version: 1,
+      operation: 'complete',
+      goal: { id: goalId, revision: 2, objective: 'finish', phase: 'complete', maxGoalRounds: 20 },
+      roundsStarted: 1,
+      createdAt: 1,
+      updatedAt: 2,
+    })
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'start different work' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    expect((await bench.tailProjections())?.values.todos).toBeNull()
+  })
+
+  it('does not show the previous goal checklist on a newly created goal', async () => {
+    const bench = await harness(true)
+    const session = bench.session
+    seedMessage(session)
+    const appendGoal = (operation: string, id: string, revision: number, phase: string) => {
+      ;(session.append as (type: string, data: unknown) => unknown)('goal/change', {
+        kind: 'goal/change',
+        version: 1,
+        operation,
+        goal: { id, revision, objective: id, phase, maxGoalRounds: 20 },
+        roundsStarted: phase === 'complete' ? 1 : 0,
+        createdAt: 1,
+        updatedAt: revision,
+      })
+    }
+    appendGoal('create', 'first-goal', 1, 'active')
+    session.append('todo/write', { todos: [{ content: 'old task', status: 'completed' }] })
+    appendGoal('complete', 'first-goal', 2, 'complete')
+    expect((await bench.tailProjections())?.values.todos).toEqual([{ content: 'old task', status: 'completed' }])
+
+    appendGoal('create', 'second-goal', 1, 'active')
+    expect((await bench.tailProjections())?.values.todos).toBeNull()
+  })
+
   it('has no todos key when tool-todo is not composed', async () => {
     const bench = await harness(false)
     seedMessage(bench.session)

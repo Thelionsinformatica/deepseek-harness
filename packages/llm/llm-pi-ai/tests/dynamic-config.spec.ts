@@ -162,6 +162,31 @@ describe('request-level dynamic profiles', () => {
     expect(server.headers[1]?.authorization).toBe('Bearer pk-two')
   })
 
+  it('resolves a declared compatibility reference from the credential store without copying it', async () => {
+    vi.stubEnv('PI_PRIMARY_KEY', '')
+    const dir = await home()
+    await writeFile(
+      join(dir, '.credentials.yaml'),
+      'version: 1\nrefs:\n  PI_LEGACY_KEY: legacy-only\n',
+      { mode: 0o600 },
+    )
+    const server = await mockServer([{ events: textEvents }])
+    const ctx = await boot(dir, {
+      providers: {
+        deepseek: {
+          apiKeyEnv: 'PI_PRIMARY_KEY',
+          apiKeyEnvFallbacks: ['PI_LEGACY_KEY'],
+          baseURL: server.url,
+        },
+      },
+    })
+
+    await assemble(ctx, { provider: 'deepseek', model: 'deepseek-v4-flash', messages: [] })
+    expect(server.headers[0]?.authorization).toBe('Bearer legacy-only')
+    await expect(ctx.credentials.resolve(credentialRef('PI_PRIMARY_KEY'))).resolves.toBeUndefined()
+    await expect(ctx.credentials.resolve(credentialRef('PI_LEGACY_KEY'))).resolves.toMatchObject({ source: 'file' })
+  })
+
   it('re-registers routes in place when a captured retry policy changes', async () => {
     const dir = await home()
     const ctx = await boot(dir, { providers: { openai: {} } })

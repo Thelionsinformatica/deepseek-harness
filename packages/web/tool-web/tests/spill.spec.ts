@@ -34,15 +34,41 @@ let base: string
 let handler: Handler
 let spillRoot: string
 let ctx: Context
+let unregisterFetch: () => void
 
 const BODY = 'X'.repeat(4000) // formatted result is well over the policy cap
 const MAX_INLINE_BYTES = 1000 // leaves room for a head/tail preview beside the notice
+const PUBLIC_TEST_ADDRESS = { address: '93.184.216.34', family: 4 as const }
+
+/** Keep the provider's public-destination contract while redirecting test I/O to the fixture. */
+function localFetchNetwork(loopbackHostname: string) {
+  return {
+    resolve: async () => [PUBLIC_TEST_ADDRESS],
+    request: async (
+      url: URL,
+      _addresses: readonly { readonly address: string; readonly family: 4 | 6 }[],
+      options: { headers: Readonly<Record<string, string>>; signal: AbortSignal },
+    ) => {
+      const localUrl = new URL(url)
+      localUrl.hostname = loopbackHostname
+      return {
+        response: await fetch(localUrl, {
+          method: 'GET',
+          redirect: 'manual',
+          headers: options.headers,
+          signal: options.signal,
+        }),
+        release: async () => {},
+      }
+    },
+  }
+}
 
 beforeEach(async () => {
   handler = (_req, res) => { res.writeHead(200, { 'content-type': 'text/plain' }); res.end(BODY) }
   server = createServer((req, res) => { handler(req, res) })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
-  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  base = `http://public.test:${(server.address() as AddressInfo).port}`
   spillRoot = mkdtempSync(join(tmpdir(), 'dsh-spill-web-'))
 
   ctx = new Context()
@@ -51,13 +77,21 @@ beforeEach(async () => {
   await ctx.plugin(WebRuntime, { fetchProvider: WebFetchLocal.LOCAL_FETCH_PROVIDER_ID })
   // Provider cap generous so the tool returns a large formatted result; the
   // policy cap is what triggers the spill (the Agent Note's separation of concerns).
-  await ctx.plugin(WebFetchLocal, { maxBodyChars: 500_000 })
+  unregisterFetch = ctx.web.registerFetchProvider(new WebFetchLocal.HttpFetchProvider({
+    maxUrlLength: 2048,
+    maxResponseBytes: 5_000_000,
+    maxBodyChars: 500_000,
+    timeoutMs: 30_000,
+    maxRedirects: 5,
+    userAgent: 'spill-integration-test',
+  }, localFetchNetwork('127.0.0.1')))
   await ctx.plugin(LocalSpillStore, { root: spillRoot })
   await ctx.plugin(SpillPolicy, { maxInlineBytes: MAX_INLINE_BYTES })
   await ctx.plugin(ToolWeb)
 })
 
 afterEach(async () => {
+  unregisterFetch()
   await new Promise<void>(resolve => server.close(() => { resolve() }))
   rmSync(spillRoot, { recursive: true, force: true })
 })

@@ -10,7 +10,7 @@ LEON-ACCEPTANCE-7 is the executable product-acceptance reference for seven Leon 
 
 - Use Windows with `pwsh`; the UI Automation evidence is Windows-native and is skipped on other platforms.
 - Run Ollama on the literal loopback endpoint `http://127.0.0.1:11434`, or set `LEON_ACC_006_OLLAMA_URL` to an HTTP URL on `127.0.0.1` or `[::1]` without embedded credentials.
-- Make the exact Ollama model ids `qwen3.5:9b` and `ornith-1.5:9b` available. The evaluation does not substitute aliases or another quantization tag.
+- Make the exact Ollama model id `qwen3.5:9b` available. The evaluation does not substitute aliases or another quantization tag.
 - Install the repository dependencies before starting the evaluation.
 
 Confirm the local model ids before a run:
@@ -25,7 +25,7 @@ ollama list
 pnpm run test:leon-acceptance
 ```
 
-The coordinator executes the registered evidence three times with one Vitest worker and no file parallelism. Each repetition enables the real loopback-only Ollama benchmark, which runs 30 fixed PT-BR microtasks: 22 through `qwen3.5:9b` and eight through `ornith-1.5:9b`. The minimum evaluation therefore performs 90 local model inferences.
+The coordinator executes the registered evidence three times with one Vitest worker and no file parallelism. Each repetition enables the real loopback-only Ollama benchmark, which runs 30 fixed PT-BR microtasks through `qwen3.5:9b`. The minimum evaluation therefore performs 90 local model inferences.
 
 Use `--runs N` for at least three repetitions and `--output <path>` to select the aggregate report path:
 

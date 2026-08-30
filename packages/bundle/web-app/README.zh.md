@@ -6,11 +6,11 @@ dsh 浏览器表层组合包。[`cordis.patch.yml`](cordis.patch.yml) 叠加在 
 
 ## 模型重试默认值
 
-随附的本地 `ollama` 路由与回环 `freellmapi` 网关在首次请求后各最多进行一次符合条件的重试。Leon Automatic 通常会在进入该退避前替换不可用路由；这个有界重试保留给手动选择或所有已配置替代路由都不可用的情况。由 settings 新增的 pi-ai 路由与手动挂载的兼容路由在省略 `retryPolicy` 时仍使用共享的五次有界默认值；显式提供方策略始终优先。
+随附的本地 `ollama` 路由与回环 `freellmapi` 网关在首次请求后各最多进行一次符合条件的重试。Leon Automatic 仅因 `TRANSPORT`、`TIMEOUT` 或 `SERVER` 替换 Ollama；`UNKNOWN_MODEL`、`NO_ADAPTER` 及其他配置故障会留在本地并失败关闭。这个有界重试保留给手动选择或所有已配置替代路由都不可用的情况。由 settings 新增的 pi-ai 路由与手动挂载的兼容路由在省略 `retryPolicy` 时仍使用共享的五次有界默认值；显式提供方策略始终优先。
 
 ## Leon 能力组合
 
-Web 部署挂载带引用的 Google Search grounding、受保护的公共页面抓取、浏览器时区上下文与会话内持久提醒。出厂 Leon preset 将搜索与抓取公开为原生工具，把 `leon-browser`、`leon-project-engineer` 与 `leon-windows` 加入按需目录，并通过宿主 Schedule 生命周期获得 `schedule_create`、`schedule_list` 与 `schedule_delete`。
+Web 部署挂载带引用的 Google Search grounding、受保护的公共页面抓取、浏览器时区上下文与会话内持久提醒。Google Search 行先解析主引用 `GEMINI_API_KEY`，再解析明确声明的旧版 `GOOGLE_API_KEY` 引用，与 Gemini 模型路由保持一致且不复制机密。出厂 Leon preset 将搜索与抓取公开为原生工具，把 `leon-browser`、`leon-project-engineer` 与 `leon-windows` 加入按需目录，并通过宿主 Schedule 生命周期获得 `schedule_create`、`schedule_list` 与 `schedule_delete`。
 
 `@playwright/cli` 是固定版本的运行时依赖，而不是环境中的全局命令。当 `surfaceContext` 为 true 时，本插件除 `DSH_WEB_URL` 外还发布受信任的 `DSH_NODE` 与 `DSH_PLAYWRIGHT_CLI` 路径；浏览器技能调用这些精确路径来打开可见 Chrome 会话。浏览器指令只为匹配任务加载，避免在本地模型的每次请求中永久附带 MCP 浏览器工具 schema。
 

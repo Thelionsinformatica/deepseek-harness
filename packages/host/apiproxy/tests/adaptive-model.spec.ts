@@ -7,6 +7,7 @@ import {
 } from '../src/adaptive-model.ts'
 import {
   evaluateAdaptiveRoutingShadow,
+  inferAdaptiveShadowMinimumQuality,
   validateAdaptiveRoutingShadowConfig,
   type AdaptiveRoutingShadowConfig,
   type AdaptiveShadowCandidateFacts,
@@ -21,14 +22,14 @@ const config: AdaptiveRoutingConfig = {
   expertProvider: 'ollama',
   fastModel: 'qwen3.5:9b',
   mainModel: 'qwen3.5:9b',
-  expertModel: 'ornith-1.5:9b',
+  expertModel: 'qwen3.5:9b',
   fastReasoningEffort: 'off',
   mainReasoningEffort: 'medium',
   expertReasoningEffort: 'high',
   simpleMaxCharacters: 120,
   expertMinCharacters: 500,
   goalRoundTiers: [
-    { fromRound: 1, provider: 'ollama', model: 'ornith-1.5:9b', reasoningEffort: 'high' },
+    { fromRound: 1, provider: 'ollama', model: 'qwen3.5:9b', reasoningEffort: 'high' },
   ],
   failovers: [
     {
@@ -36,7 +37,7 @@ const config: AdaptiveRoutingConfig = {
       provider: 'omniroute',
       model: 'auto',
       residency: 'external',
-      failureCodes: ['TRANSPORT', 'TIMEOUT', 'SERVER', 'UNKNOWN_MODEL', 'NO_ADAPTER'],
+      failureCodes: ['TRANSPORT', 'TIMEOUT', 'SERVER'],
     },
     {
       fromProviders: ['omniroute'],
@@ -148,7 +149,7 @@ describe('chooseAdaptiveModel()', () => {
     { content: [{ type: 'image' as const, mediaType: 'image/png' as const, data: 'AQ==' }] },
   ])('uses the local specialist tier for complex or multimodal work', ({ content }) => {
     expect(chooseAdaptiveModel(config, { content, hasHistory: false }))
-      .toEqual({ provider: 'ollama', model: 'ornith-1.5:9b', reasoningEffort: 'high', tier: 'expert' })
+      .toEqual({ provider: 'ollama', model: 'qwen3.5:9b', reasoningEffort: 'high', tier: 'expert' })
   })
 
   it('treats a terse continuation as contextual only when history exists', () => {
@@ -161,21 +162,64 @@ describe('chooseAdaptiveModel()', () => {
     expect(chooseAdaptiveModel(config, {
       content: [{ type: 'text', text: `Implemente este projeto completo.\n${'requisito\n'.repeat(20)}` }],
       hasHistory: false,
-    })).toEqual({ provider: 'ollama', model: 'ornith-1.5:9b', reasoningEffort: 'high', tier: 'expert' })
+    })).toEqual({ provider: 'ollama', model: 'qwen3.5:9b', reasoningEffort: 'high', tier: 'expert' })
   })
 
   it('uses the highest eligible explicit goal-round tier', () => {
     expect(chooseAdaptiveModel(config, { content: [], hasHistory: true, goalRound: 1 }))
-      .toEqual({ provider: 'ollama', model: 'ornith-1.5:9b', reasoningEffort: 'high', tier: 'goal-round' })
+      .toEqual({ provider: 'ollama', model: 'qwen3.5:9b', reasoningEffort: 'high', tier: 'goal-round' })
     expect(chooseAdaptiveModel(config, { content: [], hasHistory: true, goalRound: 4 }))
-      .toEqual({ provider: 'ollama', model: 'ornith-1.5:9b', reasoningEffort: 'high', tier: 'goal-round' })
+      .toEqual({ provider: 'ollama', model: 'qwen3.5:9b', reasoningEffort: 'high', tier: 'goal-round' })
+  })
+
+  it('uses the strongest configured route for completion-evidence recovery', () => {
+    expect(chooseAdaptiveModel(config, {
+      content: [],
+      hasHistory: true,
+      recovery: 'completion-evidence',
+    })).toEqual({
+      provider: 'ollama',
+      model: 'qwen3.5:9b',
+      reasoningEffort: 'high',
+      tier: 'recovery',
+    })
+    const { expertModel: _expertModel, ...withoutExpertModel } = config
+    expect(chooseAdaptiveModel({
+      ...withoutExpertModel,
+      mainProvider: 'local-main',
+      mainModel: 'main',
+    }, {
+      content: [],
+      hasHistory: true,
+      recovery: 'completion-evidence',
+    })).toEqual({
+      provider: 'local-main',
+      model: 'main',
+      reasoningEffort: 'high',
+      tier: 'recovery',
+    })
+    const { expertReasoningEffort: _expertEffort, ...withoutExpertEffort } = withoutExpertModel
+    expect(chooseAdaptiveModel({
+      ...withoutExpertEffort,
+      mainProvider: 'local-main',
+      mainModel: 'main',
+    }, {
+      content: [],
+      hasHistory: true,
+      recovery: 'completion-evidence',
+    })).toEqual({
+      provider: 'local-main',
+      model: 'main',
+      reasoningEffort: 'medium',
+      tier: 'recovery',
+    })
   })
 
   it('selects only the explicitly configured expert provider for complex wording', () => {
     expect(chooseAdaptiveModel(config, {
       content: [{ type: 'text', text: 'Analise toda a arquitetura e resolva os problemas.' }],
       hasHistory: true,
-    })).toEqual({ provider: 'ollama', model: 'ornith-1.5:9b', reasoningEffort: 'high', tier: 'expert' })
+    })).toEqual({ provider: 'ollama', model: 'qwen3.5:9b', reasoningEffort: 'high', tier: 'expert' })
   })
 
   it('preserves provider defaults when tier efforts are not configured', () => {
@@ -232,8 +276,14 @@ describe('chooseAdaptiveFailover()', () => {
     })
   })
 
-  it('does not replace an ineligible failure or the final provider', () => {
-    expect(chooseAdaptiveFailover(config, { provider: 'ollama', failureCode: 'AUTH' })).toBeUndefined()
+  it.each(['AUTH', 'UNKNOWN_MODEL', 'NO_ADAPTER'])(
+    'fails closed instead of replacing an Ollama configuration error for %s',
+    (failureCode) => {
+      expect(chooseAdaptiveFailover(config, { provider: 'ollama', failureCode })).toBeUndefined()
+    },
+  )
+
+  it('does not replace the final provider or an unconfigured route', () => {
     expect(chooseAdaptiveFailover(config, { provider: 'openai', failureCode: 'TRANSPORT' })).toBeUndefined()
     const { failovers: _failovers, ...configWithoutFailover } = config
     expect(chooseAdaptiveFailover(configWithoutFailover, {
@@ -293,6 +343,21 @@ describe('adaptive routing configuration', () => {
 })
 
 describe('adaptive routing shadow preflight', () => {
+  it('does not mistake an always-visible tool catalog or the active model for expert task pressure', () => {
+    expect(inferAdaptiveShadowMinimumQuality(shadowConfig, {
+      estimatedInputTokens: 4000,
+      messageCount: 1,
+      toolCount: 48,
+      imageCount: 0,
+    })).toBe(1)
+    expect(inferAdaptiveShadowMinimumQuality(shadowConfig, {
+      estimatedInputTokens: 24000,
+      messageCount: 1,
+      toolCount: 0,
+      imageCount: 0,
+    })).toBe(3)
+  })
+
   it('recommends the cheapest capable local route and keeps external routes as fallback only', () => {
     const decision = evaluateAdaptiveRoutingShadow(shadowConfig, requestFacts(), [
       candidate('ollama', 'qwen'),

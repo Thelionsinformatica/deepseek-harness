@@ -66,6 +66,7 @@ interface DoctorEnvironment {
   readonly home: string
   readonly workspace: string
   readonly ollamaBaseUrl: string
+  readonly freeLlmApiBaseUrl: string
   readonly checkedAt: string
   path(path: string): Promise<PathProbe>
   http(url: string): Promise<HttpProbe>
@@ -73,7 +74,13 @@ interface DoctorEnvironment {
 }
 
 const HTTP_PREFIX_LIMIT = 64 * 1024
-const REQUIRED_LOCAL_MODELS = ['qwen3.5:9b', 'ornith-1.5:9b'] as const
+const REQUIRED_LOCAL_MODELS = ['qwen3.5:9b'] as const
+const FREELLMAPI_UNAVAILABLE_REASONS = new Map<string, string>([
+  ['no_upstreams_configured', 'nenhum provedor configurado'],
+  ['all_upstreams_rate_limited', 'todos os provedores estão sem cota disponível'],
+  ['all_upstreams_unhealthy', 'nenhum provedor está saudável'],
+  ['db_unreachable', 'banco de dados indisponível'],
+])
 
 /** Convert an arbitrary thrown value into a bounded diagnostic. */
 function errorMessage(error: unknown): string {
@@ -203,6 +210,7 @@ function realEnvironment(): DoctorEnvironment {
     home: resolveDshHome(),
     workspace: resolveDefaultWorkspace(),
     ollamaBaseUrl: ollama,
+    freeLlmApiBaseUrl: 'http://127.0.0.1:31415',
     checkedAt: new Date().toISOString(),
     path: probePath,
     http: probeHttp,
@@ -277,9 +285,47 @@ async function ollamaCheck(environment: DoctorEnvironment): Promise<DoctorCheck>
         details: missing.map(name => `modelo necessário ausente: ${name}`),
       }
     }
-    return { id: 'ollama', label: 'Ollama', status: 'ok', summary: `${names.length} modelo(s); Qwen e Ornith disponíveis` }
+    return { id: 'ollama', label: 'Ollama', status: 'ok', summary: `${names.length} modelo(s); Qwen automático disponível` }
   } catch (error) {
     return { id: 'ollama', label: 'Ollama', status: 'warning', summary: `indisponível em ${environment.ollamaBaseUrl}`, details: [errorMessage(error)] }
+  }
+}
+
+/** Inspect the loopback FreeLLMAPI router without sending a prompt or credential. */
+async function freeLlmApiCheck(environment: DoctorEnvironment): Promise<DoctorCheck> {
+  const url = `${environment.freeLlmApiBaseUrl}/readyz`
+  try {
+    const response = await environment.http(url)
+    let payload: { status?: unknown; ready_upstreams?: unknown; reason?: unknown }
+    try {
+      payload = JSON.parse(response.body) as { status?: unknown; ready_upstreams?: unknown; reason?: unknown }
+    } catch {
+      return { id: 'freellmapi', label: 'Roteador externo', status: 'failed', summary: 'a porta respondeu, mas não foi identificada como FreeLLMAPI' }
+    }
+    if (response.status === 503 && payload.status === 'unavailable' && typeof payload.reason === 'string') {
+      const reason = FREELLMAPI_UNAVAILABLE_REASONS.get(payload.reason)
+      if (reason === undefined) {
+        return { id: 'freellmapi', label: 'Roteador externo', status: 'failed', summary: 'a porta respondeu, mas não foi identificada como FreeLLMAPI' }
+      }
+      return { id: 'freellmapi', label: 'Roteador externo', status: 'warning', summary: `FreeLLMAPI ativo em ${environment.freeLlmApiBaseUrl}, mas ${reason}` }
+    }
+    if (response.status < 200 || response.status >= 300) {
+      return { id: 'freellmapi', label: 'Roteador externo', status: 'failed', summary: `a porta respondeu HTTP ${response.status}, mas não foi identificada como FreeLLMAPI` }
+    }
+    if (payload.status !== 'ok' || typeof payload.ready_upstreams !== 'number' || !Number.isInteger(payload.ready_upstreams) || payload.ready_upstreams < 0) {
+      return { id: 'freellmapi', label: 'Roteador externo', status: 'failed', summary: 'a porta respondeu, mas não foi identificada como FreeLLMAPI' }
+    }
+    if (payload.ready_upstreams === 0) {
+      return { id: 'freellmapi', label: 'Roteador externo', status: 'warning', summary: `FreeLLMAPI ativo em ${environment.freeLlmApiBaseUrl}, mas nenhum provedor está pronto` }
+    }
+    return {
+      id: 'freellmapi',
+      label: 'Roteador externo',
+      status: 'ok',
+      summary: `FreeLLMAPI ativo em ${environment.freeLlmApiBaseUrl}; ${payload.ready_upstreams} provedor(es) pronto(s)`,
+    }
+  } catch (error) {
+    return { id: 'freellmapi', label: 'Roteador externo', status: 'warning', summary: `FreeLLMAPI não está ativo em ${environment.freeLlmApiBaseUrl}`, details: [errorMessage(error)] }
   }
 }
 
@@ -335,12 +381,13 @@ export async function collectDoctorReport(
   const node: DoctorCheck = supportedNode(environment.nodeVersion)
     ? { id: 'node', label: 'Node.js', status: 'ok', summary: environment.nodeVersion }
     : { id: 'node', label: 'Node.js', status: 'failed', summary: `${environment.nodeVersion} não atende ^22.19 ou >=24` }
-  const [homeProbe, workspaceProbe, buildProbe, profile, ollama, web] = await Promise.all([
+  const [homeProbe, workspaceProbe, buildProbe, profile, ollama, freeLlmApi, web] = await Promise.all([
     environment.path(environment.home),
     environment.path(environment.workspace),
     environment.path(join(environment.packageRoot, 'lib', 'bin.js')),
     profileCheck(environment, options.profile),
     ollamaCheck(environment),
+    freeLlmApiCheck(environment),
     webCheck(environment, options.port),
   ])
   const home = directoryCheck('home', 'Dados do Leon', environment.home, homeProbe, 'warning')
@@ -348,7 +395,7 @@ export async function collectDoctorReport(
   const build: DoctorCheck = buildProbe.kind === 'file'
     ? { id: 'build', label: 'Aplicativo compilado', status: 'ok', summary: `versão ${environment.packageVersion}` }
     : { id: 'build', label: 'Aplicativo compilado', status: 'warning', summary: 'lib/bin.js ausente; execução a partir do código-fonte ainda pode funcionar' }
-  const checks = [node, powershellCheck(environment), home, workspace, profile, build, ollama, web]
+  const checks = [node, powershellCheck(environment), home, workspace, profile, build, ollama, freeLlmApi, web]
   return {
     schemaVersion: 1,
     product: 'Leon',

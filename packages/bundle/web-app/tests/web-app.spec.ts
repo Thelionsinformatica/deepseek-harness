@@ -98,7 +98,7 @@ interface BashContribution {
 }
 
 describe('web-app runtime glue', () => {
-  it('pins Leon Automatic to Qwen/Ornith locally with FreeLLMAPI, Gemini, and OpenAI fallbacks', () => {
+  it('pins Leon Automatic to Qwen locally with FreeLLMAPI, Gemini, and OpenAI fallbacks', () => {
     const patch = readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
     const start = patch.indexOf('    - id: api-gateway')
     const end = patch.indexOf('\n    - id:', start + 1)
@@ -110,10 +110,11 @@ describe('web-app runtime glue', () => {
     expect(gateway).toContain('fastModel: qwen3.5:9b')
     expect(gateway).toContain('mainModel: qwen3.5:9b')
     expect(patch).not.toContain('qwen3.5:4b')
-    expect(gateway).toContain('expertModel: ornith-1.5:9b')
+    expect(gateway).toContain('expertModel: qwen3.5:9b')
     expect(gateway).toContain('mainReasoningEffort: medium')
     expect(gateway).toContain('fromRound: 1')
-    expect(gateway).toContain('model: ornith-1.5:9b')
+    expect(gateway).toContain('model: qwen3.5:9b')
+    expect(gateway).not.toContain('ornith-1.5:9b')
     expect(gateway).toContain('fromProviders:')
     expect(gateway).toContain('- ollama')
     expect(gateway).toContain('provider: freellmapi')
@@ -121,11 +122,15 @@ describe('web-app runtime glue', () => {
     expect(gateway).toContain('provider: openai')
     expect(gateway).toContain('model: gemini-3.1-pro-preview-customtools')
     expect(gateway).toContain('model: gpt-5.6-luna')
+    expect(patch).toContain('apiKeyEnv: GEMINI_API_KEY')
+    expect(patch).toContain('apiKeyEnvFallbacks:')
+    expect(patch).toContain('- GOOGLE_API_KEY')
     expect(gateway).toContain('reasoningEffort: low')
     expect(gateway).not.toContain('qwen3.8-9b-distill-uncensored-heretic:latest')
     expect(gateway).not.toContain('deepseek-ai/deepseek-v4-flash-0731')
     expect(gateway).toContain('- TRANSPORT')
-    expect(gateway).toContain('policyVersion: leon-shadow-v1')
+    expect(gateway).not.toContain('- NO_ADAPTER')
+    expect(gateway).toContain('policyVersion: leon-shadow-v2')
     expect(gateway).toContain('externalPolicy: fallback-only')
     expect(gateway).toContain('residency: local')
     expect(gateway).toContain('residency: external')
@@ -135,6 +140,8 @@ describe('web-app runtime glue', () => {
     expect(patch).toContain("- id: lsp-stdio\n      name: '@deepseek-ai/dsh-lsp-stdio'")
     expect(patch).toContain('typescript-language-server/lib/cli.mjs')
     expect(patch).toContain('.tsx: typescriptreact')
+    expect(patch).toContain("path: !!js dshHomePath('storages/session-query.sqlite')")
+    expect(patch).toContain('openAt: first-search')
 
     const parsed = yaml.load(patch, { schema: entryListSchema })
     const rows = (parsed as { insert?: { id?: string; config?: Record<string, unknown> }[] }[])
@@ -142,9 +149,9 @@ describe('web-app runtime glue', () => {
     expect(rows.find(row => row.id === 'api-gateway')?.config).toMatchObject({
       adaptiveRouting: {
         expertProvider: 'ollama',
-        expertModel: 'ornith-1.5:9b',
+        expertModel: 'qwen3.5:9b',
         goalRoundTiers: [{
-          fromRound: 1, provider: 'ollama', model: 'ornith-1.5:9b', reasoningEffort: 'high',
+          fromRound: 1, provider: 'ollama', model: 'qwen3.5:9b', reasoningEffort: 'high',
         }],
         failovers: [
           {
@@ -152,7 +159,7 @@ describe('web-app runtime glue', () => {
             provider: 'freellmapi',
             model: 'auto',
             residency: 'external',
-            failureCodes: ['TRANSPORT', 'TIMEOUT', 'SERVER', 'UNKNOWN_MODEL', 'NO_ADAPTER'],
+            failureCodes: ['TRANSPORT', 'TIMEOUT', 'SERVER'],
           },
           {
             fromProviders: ['freellmapi'],
@@ -180,18 +187,19 @@ describe('web-app runtime glue', () => {
       }
     } | undefined)?.adaptiveRouting?.shadow
     expect(shadow).toMatchObject({
-      policyVersion: 'leon-shadow-v1',
+      policyVersion: 'leon-shadow-v2',
       externalPolicy: 'fallback-only',
     })
     expect(shadow?.routes).toEqual(expect.arrayContaining([
       expect.objectContaining({ provider: 'ollama', model: 'qwen3.5:9b', residency: 'local' }),
-      expect.objectContaining({ provider: 'ollama', model: 'ornith-1.5:9b', residency: 'local' }),
       expect.objectContaining({ provider: 'freellmapi', model: 'auto', residency: 'external' }),
       expect.objectContaining({ provider: 'google', model: 'gemini-3.1-pro-preview-customtools', residency: 'external' }),
       expect.objectContaining({ provider: 'openai', model: 'gpt-5.6-luna', residency: 'external' }),
     ]))
     expect(shadow?.routes).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ model: 'ornith-1.5:9b' }),
       expect.objectContaining({ model: 'qwen3.8-9b-distill-uncensored-heretic:latest' }),
+      expect.objectContaining({ model: 'qwen3.8-distill:9b-q8' }),
       expect.objectContaining({ provider: 'nvidia' }),
     ]))
     const prices = rows.find(row => row.id === 'session-stats')?.config?.prices as unknown[]
@@ -201,6 +209,10 @@ describe('web-app runtime glue', () => {
     })
     expect(prices).toContainEqual({
       provider: 'ollama', model: 'ornith-1.5:9b',
+      inputUsdPerMillion: 0, outputUsdPerMillion: 0,
+    })
+    expect(prices).toContainEqual({
+      provider: 'ollama', model: 'qwen3.8-distill:9b-q8',
       inputUsdPerMillion: 0, outputUsdPerMillion: 0,
     })
     expect(prices).toContainEqual({

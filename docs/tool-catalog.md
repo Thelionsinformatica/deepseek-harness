@@ -30,6 +30,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-goal` | `create_goal`, `get_goal`, `update_goal` | `ctx.tools`, `ctx.agents`, `ctx.goals`, `ctx.systemPrompt`, `a calling Agent in an authorized open turn` | `tool/call`, `goal/change for mutations`, `tool/result` | - | create, edit, pause, and resume require direct-human root authority; complete and blocked also accept the exact current goal round. The default blocked lower bound is three admitted rounds. |
 | `@deepseek-ai/dsh-schedule` | `schedule_create`, `schedule_delete`, `schedule_list` | `ctx.tools`, `ctx.sessions`, `Session persistence`, `a future live root Agent` | `tool/call`, `schedule/change create or delete`, `tool/result` | - | Registered only inside live root Agent scopes created after the opt-in Schedule plugin loads. Version 1 accepts after_seconds, explicit absolute at, and bounded fixed-rate every_seconds, and discloses session-local delivery; management reads and mutations require the shared Session persistence barrier. |
 | `@deepseek-ai/dsh-tool-lsp` | `lsp` | `ctx.tools`, `ctx.lsp`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | The lsp tool keeps provider selection and language-server subprocesses behind ctx.lsp, so its model-visible schema stays stable across providers. Requires a registered provider (e.g. `@deepseek-ai/dsh-lsp-stdio`) at runtime; without one, a query returns the structured `LSP_UNAVAILABLE` error rather than changing the schema. |
+| `@deepseek-ai/dsh-tool-knowledge-base` | `knowledge_search`, `knowledge_status` | `ctx.tools`, `ctx.systemPrompt`, `ctx.subprocess`, `an exact authorized .leon/knowledge root` | `tool/call`, `tool/result` | - | Both tools are read-only wrappers over a trusted local JSON helper with fixed argv and bounded output. An external-root deployment must pair them with an authorization guard; the Leon preset requires a direct-human exact target lock. |
 | `@deepseek-ai/dsh-tool-memory` | `memory_forget`, `memory_remember`, `memory_search`, `memory_update`, `personal_memory_forget`, `personal_memory_remember`, `personal_memory_search`, `personal_memory_update` | `ctx.tools`, `ctx.systemPrompt`, `ctx.memory`, `ctx.personalMemory`, `ctx.workspaceRegistry`, `a calling Agent with a registered workspace` | `tool/call`, `provider-owned durable workspace or personal memory for mutations`, `tool/result` | - | Workspace operations resolve the calling session cwd to a stable workspace id. Personal operations use an explicit owner partition independent from workspace identity. Writes require explicit retention policy guidance; corrections and deletion require the exact id and revision returned by search. |
 | `@deepseek-ai/dsh-tool-ralph` | `ralph` | `ctx.tools`, `ctx.workflowEngine`, `ctx.subagents`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents every fresh round)` | `tool/call`, `tool/result`, `workflow and child session events during execution` | - | A fixed foreground workflow starts one fresh structured child per round; the model selects only the immutable objective and an optional round cap. |
 | `@deepseek-ai/dsh-tool-skill` | `skill` | `ctx.tools`, `ctx.agents`, `ctx.skills` | `tool/call`, `tool/result`, `user/message replacement catalogs via agent.inject()` | - | - |
@@ -1207,6 +1208,63 @@ Source: [`packages/lsp/tool-lsp/src/index.ts`](../packages/lsp/tool-lsp/src/inde
 
 The lsp tool keeps provider selection and language-server subprocesses behind ctx.lsp, so its model-visible schema stays stable across providers. Requires a registered provider (e.g. `@deepseek-ai/dsh-lsp-stdio`) at runtime; without one, a query returns the structured `LSP_UNAVAILABLE` error rather than changing the schema.
 
+<a id="deepseek-aidsh-tool-knowledge-base"></a>
+
+## `@deepseek-ai/dsh-tool-knowledge-base`
+
+### `knowledge_search`
+
+Search the indexed wiki of one exact local .leon/knowledge root. Use instead of recursive glob/grep; never enumerates or returns the raw source directory.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "knowledge_root": {
+      "type": "string",
+      "description": "Exact absolute path ending in .leon/knowledge from the current direct user request."
+    },
+    "query": {
+      "type": "string",
+      "description": "Focused search phrase, 1-512 characters."
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Maximum results from 1-20. Defaults to 8."
+    }
+  },
+  "required": [
+    "knowledge_root",
+    "query"
+  ]
+}
+```
+
+Source: [`packages/knowledge/tool-knowledge-base/src/index.ts`](../packages/knowledge/tool-knowledge-base/src/index.ts)
+
+### `knowledge_status`
+
+Inspect one exact local .leon/knowledge root deterministically. Use before filesystem enumeration; returns verified source counts, states, and integrity issues without reading raw sources into model context.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "knowledge_root": {
+      "type": "string",
+      "description": "Exact absolute path ending in .leon/knowledge from the current direct user request."
+    }
+  },
+  "required": [
+    "knowledge_root"
+  ]
+}
+```
+
+Source: [`packages/knowledge/tool-knowledge-base/src/index.ts`](../packages/knowledge/tool-knowledge-base/src/index.ts)
+
+Both tools are read-only wrappers over a trusted local JSON helper with fixed argv and bounded output. An external-root deployment must pair them with an authorization guard; the Leon preset requires a direct-human exact target lock.
+
 <a id="deepseek-aidsh-tool-memory"></a>
 
 ## `@deepseek-ai/dsh-tool-memory`
@@ -1562,7 +1620,7 @@ Search prior events in one authorized session; the current session excludes the 
     },
     "event_types": {
       "type": "array",
-      "description": "Event types to include.",
+      "description": "Optional canonical event types to include (for example \"user/message\" or \"tool/call\").",
       "items": {
         "type": "string"
       }
@@ -1634,11 +1692,11 @@ Search prior sessions in the caller workspace and return the strongest matching 
     },
     "created_at_from": {
       "type": "string",
-      "description": "Inclusive timezone-qualified ISO 8601 creation-time lower bound."
+      "description": "Optional inclusive timezone-qualified ISO 8601 creation-time lower bound. Omit unless the user supplied a time constraint."
     },
     "created_at_to": {
       "type": "string",
-      "description": "Inclusive timezone-qualified ISO 8601 creation-time upper bound."
+      "description": "Optional inclusive timezone-qualified ISO 8601 creation-time upper bound. Omit unless the user supplied a time constraint."
     },
     "parent_session_ids": {
       "type": "array",
@@ -1680,7 +1738,7 @@ Search prior sessions in the caller workspace and return the strongest matching 
     },
     "event_types": {
       "type": "array",
-      "description": "Event types to include.",
+      "description": "Optional canonical event types to include (for example \"user/message\" or \"tool/call\"). Omit for broad history search.",
       "items": {
         "type": "string"
       }

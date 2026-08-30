@@ -6,6 +6,11 @@ import { join } from 'node:path'
 import { credentialKey, credentialRef } from '@deepseek-ai/dsh-credentials'
 import { LocalCredentialProvider } from '../src/index.ts'
 
+vi.mock('../src/windows-protection.ts', async importOriginal => ({
+  ...await importOriginal<typeof import('../src/windows-protection.ts')>(),
+  credentialProtectorForPlatform: () => undefined,
+}))
+
 // The atomic write is the gated asynchronous hold point inside a queued
 // write; gating it makes the dispose-versus-queued-write race fully
 // deterministic. The lock helper passes through so the gated operation still

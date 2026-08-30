@@ -16,7 +16,7 @@ The Web deployment keeps its current adaptive selection and failover behavior wh
 
 Candidate identity, residency, relative quality, deployment priority, cold-start TTFT baseline, and optional prices are explicit deployment policy. Context window, output allowance, and input modalities come from the registered adapter's exact-model metadata. Current request pressure comes from `ctx.tokenMeter` when mounted; a conservative structural estimate is used only in compositions without that service. The decision reserves output and tool-loop growth before comparing projected pressure to each context window.
 
-External routing policy is explicit. The shipped Leon configuration uses `fallback-only`: a capable local route suppresses external recommendations, but external candidates may be recommended when all local candidates fail capacity, modality, health, recent same-session capacity, or minimum-quality checks. Route priority preserves the intended order without embedding Leon model names in the policy implementation.
+External routing policy is explicit. The shipped Leon configuration uses `fallback-only`: a capable local route suppresses external recommendations, but external candidates may be recommended when all local candidates fail capacity, modality, health, recent same-session capacity, or minimum-quality checks. Under the [automatic-routing safety hold](../bug-fix/2026-08-28-leon-automatic-routing-safety-hold.md), policy revision `leon-shadow-v2` evaluates Qwen as its sole local candidate and keeps manual models outside observation. Route priority preserves the intended order without embedding Leon model names in the policy implementation.
 
 ## Audit and privacy contract
 

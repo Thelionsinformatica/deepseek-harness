@@ -2,9 +2,9 @@
 
 English | [中文](README.zh.md)
 
-A deterministic self-recovery guard for tool failures. It stores one atomic recovery cell per session and, after the same exact tool call fails twice with an equivalent failure, injects one logged recovery notice. If the model requests that unchanged call again, a monotonic tool guard denies it before dispatch. The durable cell survives session resume and provider/model changes; the model can continue immediately by changing the tool, arguments, or strategy.
+A deterministic self-recovery guard for repeated tool failures and terminal model responses with no final output. It stores one atomic tool-recovery cell per session and, after the same exact tool call fails twice with an equivalent failure, injects one logged recovery notice. If the model requests that unchanged call again, a monotonic tool guard denies it before dispatch. When final-response recovery is enabled, a response containing only reasoning or visually blank text receives a bounded logged same-turn continuation; a repeated non-response fails visibly instead of closing the turn as completed. The package schema defaults this capability off for compatibility, while the shared base deployment explicitly enables one recovery.
 
-This package complements [`repeat-tool-reminder`](../repeat-tool-reminder/README.md): successful identical calls receive advisory reminders there; failed and downstream-blocked calls are owned here. Decision record: [the tool failure recovery Agent Note](../../../.agents/notes/implemented/feature/2026-08-24-tool-failure-recovery-policy.md).
+This package complements [`repeat-tool-reminder`](../repeat-tool-reminder/README.md): successful identical calls receive advisory reminders there; failed and downstream-blocked calls are owned here. Decision records: [tool failure recovery](../../../.agents/notes/implemented/feature/2026-08-24-tool-failure-recovery-policy.md) and [Leon context continuity](../../../.agents/notes/implemented/bug-fix/2026-08-28-leon-context-continuity-and-target-preservation.md).
 
 ## Config
 
@@ -13,11 +13,12 @@ This package complements [`repeat-tool-reminder`](../repeat-tool-reminder/README
   name: '@deepseek-ai/dsh-failure-recovery-policy'
   config:
     maxEquivalentFailures: 2 # default; integer >= 2
+    maxNoFinalResponseRecoveries: 1 # deployment value; schema default 0; integer 0..3
     include: []              # tool-name patterns to track; empty means all tools
     exclude: []              # tool-name patterns to ignore
 ```
 
-`include` and `exclude` accept `*` wildcards. An invalid failure limit fails at plugin load instead of silently changing policy.
+`include` and `exclude` accept `*` wildcards. `maxNoFinalResponseRecoveries: 0` disables guided continuation and classifies the first missing final response as a visible error; values from 1 through 3 bound the extra same-route requests. Invalid limits fail at plugin load instead of silently changing policy.
 
 ## Failure identity and lifecycle
 
@@ -38,6 +39,12 @@ The current guard uses its established exact canonical arguments as both signatu
 After the configured number of equivalent failures, the plugin prepends a recovery message through `additionalContexts`. The agent loop records it as a plugin-sourced `user/message`, preserving the original `tool/result` and every downstream context. A later unchanged call is denied by `ctx.tools.guard()` before the tool implementation executes. The denied token is not counted as another failure, so the policy stays monotonic and does not flood history.
 
 Changing the tool or its arguments clears the lock by beginning a different chain. The guard does not ask the model to expose private reasoning; it asks for a different observable action or a conclusion from existing evidence.
+
+## Missing final response
+
+At `agent/turn-stopping`, the guard examines the latest assistant message in the open turn. Non-blank text, a tool call, or another terminal extension block completes normally. Reasoning plus whitespace or invisible Unicode format characters does not. A `max-tokens` finish remains a capacity outcome and is never continued blindly.
+
+While allowance remains, a missing final response queues a plugin-sourced next-step message on the same running agent and therefore preserves its current provider/model route. Each committed recovery message is counted from the current turn's durable log, so resume and concurrent listeners cannot reset the limit. Once the allowance is exhausted, the `llm/stream` wrapper converts another empty successful finish into the stable `NO_FINAL_RESPONSE` error finish. It still runs the surrounding stream and turn-stopping listeners, and the UI receives an explicit turn error rather than a false completed state.
 
 ## Model Experience
 
@@ -65,6 +72,26 @@ Zero tokens before the threshold. One compact notice is retained in that agent's
 
 Append-only: the recovery context follows the reusable request prefix and does not invalidate existing prefix-cache entries.
 
+### Final-response continuation
+
+#### What the model sees
+
+The next request receives the following exact continuation text:
+
+##### Continuation notice
+
+```markdown
+The previous model response stopped after internal reasoning or blank text without completing the task. Continue now: call the tools required to execute the pending work, or provide the final user-facing answer if no tool is needed. Do not repeat or restate the plan.
+```
+
+#### Token effect
+
+Zero tokens after a valid terminal response. Each permitted recovery adds one compact logged message and one additional model request; the configured limit bounds both.
+
+#### KV Cache effect
+
+Append-only: the continuation follows the response that lacked final output and preserves the existing request prefix.
+
 ## Known Limitations and Deferred Work
 
 - Detection is exact, not fuzzy; a meaningful argument change is intentionally allowed.
@@ -72,5 +99,6 @@ Append-only: the recovery context follows the reusable request prefix and does n
 - A pre-existing pre-execute denial already prevents dispatch; this policy observes the resulting failure but does not replace the earlier reason.
 - Nested Code Mode calls are excluded so a program controls its own internal retry policy.
 - The policy changes tool strategy, not model/provider routing; transport failover remains the router's responsibility.
+- Final-response continuation keeps the active route. It does not choose a stronger model or authorize an external provider.
 - Operation leases and uncertain-outcome records are available to effectful tool adapters, but this exact-failure guard does not reserve every tool call automatically.
 - The configured JSON domain backend coordinates one Leon host process. Cross-process visibility requires a backend with a shared atomic record primitive.

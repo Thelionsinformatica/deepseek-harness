@@ -36,7 +36,7 @@ describe('Leon project engineer assembled snapshot', () => {
 
       <available_skills>
       - \`leon-browser\`: Navegar, ler, testar e interagir com sites em uma janela visível do navegador. Use quando o usuário pedir para abrir uma página, acompanhar uma tarefa no navegador, preencher um formulário, testar uma interface web ou operar um site.
-      - \`leon-knowledge-base\`: Criar, alimentar, consultar e auditar a base de conhecimento persistente de um projeto. Carregue com a ferramenta \`skill\` usando o nome \`leon-knowledge-base\`; não chame esse nome como ferramenta. Use para guardar documentos, construir uma wiki, relacionar fontes, pesquisar conhecimento acumulado ou verificar a integridade da base.
+      - \`leon-knowledge-base\`: Consultar o que Leon aprendeu ou sabe, localizar \`.leon/knowledge\`, analisar documentos/pastas e manter uma wiki verificável. Carregue com a ferramenta \`skill\` usando \`leon-knowledge-base\`; não chame esse nome como ferramenta.
       - \`leon-project-engineer\`: Analisar, diagnosticar, corrigir, implementar e verificar mudanças em projetos de software. Use quando o usuário pedir auditoria técnica, correção de erro, refatoração, nova funcionalidade ou preparação de uma mudança para entrega.
       - \`leon-windows\`: Diagnosticar e operar o computador Windows com PowerShell, incluindo arquivos, processos, serviços, rede, aplicativos e ambiente local. Use quando o usuário pedir para verificar, configurar, abrir ou automatizar algo no próprio PC.
       </available_skills>

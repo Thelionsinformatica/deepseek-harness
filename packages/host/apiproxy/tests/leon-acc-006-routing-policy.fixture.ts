@@ -15,7 +15,7 @@ export interface LeonAcc006RoutingTask {
   hasHistory: boolean
   goalRound?: number
   expectedTier: AdaptiveRoutingDecision['tier']
-  expectedModel: 'qwen3.5:9b' | 'ornith-1.5:9b'
+  expectedModel: 'qwen3.5:9b'
 }
 
 /** Leon's shipped local thresholds and initial model roles, without failover execution. */
@@ -26,14 +26,14 @@ export const leonAcc006RoutingConfig: AdaptiveRoutingConfig = {
   expertProvider: 'ollama',
   fastModel: 'qwen3.5:9b',
   mainModel: 'qwen3.5:9b',
-  expertModel: 'ornith-1.5:9b',
+  expertModel: 'qwen3.5:9b',
   fastReasoningEffort: 'off',
   mainReasoningEffort: 'medium',
   expertReasoningEffort: 'high',
   simpleMaxCharacters: 280,
   expertMinCharacters: 700,
   goalRoundTiers: [
-    { fromRound: 1, provider: 'ollama', model: 'ornith-1.5:9b', reasoningEffort: 'high' },
+    { fromRound: 1, provider: 'ollama', model: 'qwen3.5:9b', reasoningEffort: 'high' },
   ],
 }
 
@@ -242,7 +242,7 @@ export const leonAcc006RoutingTasks = [
     content: [{ type: 'text', text: 'Faça uma auditoria completa deste projeto.' }],
     hasHistory: false,
     expectedTier: 'expert',
-    expectedModel: 'ornith-1.5:9b',
+    expectedModel: 'qwen3.5:9b',
   },
   {
     id: 'LEON-ACC-006-024',
@@ -250,7 +250,7 @@ export const leonAcc006RoutingTasks = [
     content: [{ type: 'text', text: 'Faça uma análise profunda do mecanismo de recuperação após falhas.' }],
     hasHistory: false,
     expectedTier: 'expert',
-    expectedModel: 'ornith-1.5:9b',
+    expectedModel: 'qwen3.5:9b',
   },
   {
     id: 'LEON-ACC-006-025',
@@ -258,7 +258,7 @@ export const leonAcc006RoutingTasks = [
     content: [{ type: 'text', text: 'Revise toda a arquitetura e apresente os principais riscos técnicos.' }],
     hasHistory: true,
     expectedTier: 'expert',
-    expectedModel: 'ornith-1.5:9b',
+    expectedModel: 'qwen3.5:9b',
   },
   {
     id: 'LEON-ACC-006-026',
@@ -266,7 +266,7 @@ export const leonAcc006RoutingTasks = [
     content: [{ type: 'text', text: 'Implemente o projeto completo com validação e testes automatizados.' }],
     hasHistory: false,
     expectedTier: 'expert',
-    expectedModel: 'ornith-1.5:9b',
+    expectedModel: 'qwen3.5:9b',
   },
   {
     id: 'LEON-ACC-006-027',
@@ -274,7 +274,7 @@ export const leonAcc006RoutingTasks = [
     content: [{ type: 'text', text: longTechnicalRequest }],
     hasHistory: false,
     expectedTier: 'expert',
-    expectedModel: 'ornith-1.5:9b',
+    expectedModel: 'qwen3.5:9b',
   },
   {
     id: 'LEON-ACC-006-028',
@@ -282,7 +282,7 @@ export const leonAcc006RoutingTasks = [
     content: [{ type: 'text', text: oversizedRequest }],
     hasHistory: false,
     expectedTier: 'expert',
-    expectedModel: 'ornith-1.5:9b',
+    expectedModel: 'qwen3.5:9b',
   },
   {
     id: 'LEON-ACC-006-029',
@@ -293,7 +293,7 @@ export const leonAcc006RoutingTasks = [
     ],
     hasHistory: false,
     expectedTier: 'expert',
-    expectedModel: 'ornith-1.5:9b',
+    expectedModel: 'qwen3.5:9b',
   },
   {
     id: 'LEON-ACC-006-030',
@@ -302,7 +302,7 @@ export const leonAcc006RoutingTasks = [
     hasHistory: true,
     goalRound: 1,
     expectedTier: 'goal-round',
-    expectedModel: 'ornith-1.5:9b',
+    expectedModel: 'qwen3.5:9b',
   },
 ] as const satisfies readonly LeonAcc006RoutingTask[]
 

@@ -8,6 +8,11 @@ import { createLaunchEnvironmentSnapshot, DSH_LAUNCH_ENVIRONMENT_KEY } from '@de
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { LocalCredentialProvider, resolveSpec } from '../src/index.ts'
 
+vi.mock('../src/windows-protection.ts', async importOriginal => ({
+  ...await importOriginal<typeof import('../src/windows-protection.ts')>(),
+  credentialProtectorForPlatform: () => undefined,
+}))
+
 /** Credential documents are seeded owner-only, exactly as the provider creates them. */
 function writeCredentials(file: string, text: string): Promise<void> {
   return writeFile(file, text, { mode: 0o600 })
@@ -243,21 +248,23 @@ describe('document validation', () => {
     ['the flat layout with a non-string key', '1: a\n', /pre-release flat layout/],
     ['the flat layout under document directives', '%YAML 1.2\n---\nDSH_CRED_TEST: a\n',
       /pre-release flat layout/],
-    ['a future version', 'version: 2\nrefs: {}\n', /this build reads version 1/],
-    ['an unknown top-level key', 'version: 1\nsecrets: {}\n', /unknown top-level key "secrets"/],
+    ['a future version', 'version: 3\nrefs: {}\n', /unsupported document version/],
+    ['a Windows-protected document without DPAPI', 'version: 2\nprotection: windows-dpapi-current-user\n'
+      + 'payload: c3ludGhldGlj\n', /protected for a Windows user/],
+    ['an unknown top-level key', 'version: 1\nsecrets: {}\n', /contains an unknown top-level key/],
     ['a non-mapping refs section', 'version: 1\nrefs: nope\n', /"refs" .* must be a mapping/],
     ['a key that is not a POSIX identifier', 'version: 1\nrefs:\n  not-a-ref: value\n', /credential ref/],
     ['a non-string value', 'version: 1\nrefs:\n  DSH_CRED_TEST: 123\n', /must be a string/],
     ['an empty value', 'version: 1\nrefs:\n  DSH_CRED_TEST: ""\n', /is empty/],
     ['a record key that is not scoped', 'version: 1\nrecords:\n  codex:\n    kind: grant\n    payload: 1\n',
-      /must be "<scope>\/<id>"/],
+      /invalid credential record key/],
     ['a record that is not a mapping', 'version: 1\nrecords:\n  llm-pi-ai/codex: token\n',
       /record "llm-pi-ai\/codex" .* must be a mapping/],
     ['a record with no kind', 'version: 1\nrecords:\n  llm-pi-ai/codex:\n    payload: 1\n', /has no kind/],
     ['a record with an unknown kind', 'version: 1\nrecords:\n  llm-pi-ai/codex:\n    kind: token\n',
-      /unknown kind "token"/],
+      /has an unknown kind/],
     ['a record with an unknown field', 'version: 1\nrecords:\n  llm-pi-ai/codex:\n    kind: grant\n'
-      + '    payload: 1\n    extra: 2\n', /unknown field "extra"/],
+      + '    payload: 1\n    extra: 2\n', /has an unknown field/],
     ['a grant with no payload', 'version: 1\nrecords:\n  llm-pi-ai/codex:\n    kind: grant\n', /has no payload/],
     // YAML spells values JSON has none for. The seam promises an owner its
     // payload comes back exactly as written, which a lossy round trip breaks.
@@ -300,6 +307,36 @@ describe('document validation', () => {
     expect(String(failure)).toMatch(/line 2, column 1/)
     expect(String(failure)).not.toContain(secret)
     expect((failure as Error).stack ?? '').not.toContain(secret)
+  })
+
+  it.each([
+    ['version', 'version: "sk-live-DIAGNOSTIC-SENTINEL"\nrefs: {}\n', /unsupported document version/],
+    ['record kind', 'version: 1\nrecords:\n  llm-pi-ai/codex:\n    kind: sk-live-DIAGNOSTIC-SENTINEL\n',
+      /has an unknown kind/],
+    ['top-level key', 'version: 1\nsk-live-DIAGNOSTIC-SENTINEL: {}\n', /unknown top-level key/],
+    ['record field', 'version: 1\nrecords:\n  llm-pi-ai/codex:\n    kind: grant\n    payload: 1\n'
+      + '    sk-live-DIAGNOSTIC-SENTINEL: true\n', /has an unknown field/],
+    ['reference key', 'version: 1\nrefs:\n  sk-live-DIAGNOSTIC-SENTINEL: value\n',
+      /invalid credential reference name/],
+    ['record key', 'version: 1\nrecords:\n  sk-live-DIAGNOSTIC-SENTINEL:\n    kind: grant\n    payload: 1\n',
+      /invalid credential record key/],
+    ['record env key', 'version: 1\nrecords:\n  llm-pi-ai/codex:\n    kind: api-key\n    env:\n'
+      + '      sk-live-DIAGNOSTIC-SENTINEL: value\n', /invalid credential reference name/],
+  ])('does not repeat an untrusted %s in its diagnostic', async (_case, text, message) => {
+    const dir = await tempDir()
+    const path = join(dir, '.credentials.yaml')
+    const sentinel = 'sk-live-DIAGNOSTIC-SENTINEL'
+    await writeCredentials(path, text)
+    let failure: unknown
+    try {
+      await new Context().plugin(LocalCredentialProvider, { path, watch: false })
+    } catch (error) {
+      failure = error
+    }
+
+    expect(String(failure)).toMatch(message)
+    expect(String(failure)).not.toContain(sentinel)
+    expect((failure as Error).stack ?? '').not.toContain(sentinel)
   })
 
   it('reads an empty document as an empty store', async () => {

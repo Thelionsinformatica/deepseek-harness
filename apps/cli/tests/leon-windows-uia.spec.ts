@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execa } from 'execa'
 import { afterEach, describe, expect, it } from 'vitest'
+import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 
 const script = fileURLToPath(new URL(
   '../config/agent-presets/leon/skills/leon-windows/scripts/uia.ps1',
@@ -12,6 +13,7 @@ const script = fileURLToPath(new URL(
 const testWindow = fileURLToPath(new URL('./fixtures/leon-windows-uia/test-window.ps1', import.meta.url))
 const temporaryDirectories: string[] = []
 const windowsDescribe = process.platform === 'win32' ? describe : describe.skip
+const pwshPath = resolvePwshPath()
 
 async function home(): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), 'leon-windows-uia-'))
@@ -20,7 +22,7 @@ async function home(): Promise<string> {
 }
 
 async function run(dshHome: string, args: string[]) {
-  const result = await execa('pwsh', [
+  const result = await execa(pwshPath, [
     '-NoLogo', '-NoProfile', '-NonInteractive', '-File', script, ...args,
   ], {
     env: { ...process.env, DSH_HOME: dshHome },
@@ -118,7 +120,7 @@ windowsDescribe('Leon Windows UI Automation connector', () => {
     const readyPath = join(dshHome, 'ready.txt')
     const screenshotPath = join(dshHome, 'window.png')
     const title = `Leon UIA Test ${Date.now()}`
-    const fixture = execa('pwsh', [
+    const fixture = execa(pwshPath, [
       '-NoLogo', '-NoProfile', '-STA', '-File', testWindow,
       '-MarkerPath', markerPath,
       '-ReadyPath', readyPath,
@@ -183,18 +185,18 @@ windowsDescribe('Leon Windows UI Automation connector', () => {
 
   it('changes only the exact inspected window when two accessible windows look identical', async () => {
     const dshHome = await home()
-    const title = `Leon UIA Duplicate ${Date.now()}`
+    const title = `Leon UIA “Duplicada” 🤖 ${Date.now()}`
     const targetMarker = join(dshHome, 'target-invoked.txt')
     const otherMarker = join(dshHome, 'other-invoked.txt')
     const targetReady = join(dshHome, 'target-ready.txt')
     const otherReady = join(dshHome, 'other-ready.txt')
-    const targetFixture = execa('pwsh', [
+    const targetFixture = execa(pwshPath, [
       '-NoLogo', '-NoProfile', '-STA', '-File', testWindow,
       '-MarkerPath', targetMarker,
       '-ReadyPath', targetReady,
       '-Title', title,
     ], { reject: false, windowsHide: true })
-    const otherFixture = execa('pwsh', [
+    const otherFixture = execa(pwshPath, [
       '-NoLogo', '-NoProfile', '-STA', '-File', testWindow,
       '-MarkerPath', otherMarker,
       '-ReadyPath', otherReady,

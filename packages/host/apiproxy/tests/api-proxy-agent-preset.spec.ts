@@ -9,11 +9,14 @@ import { mkdtempSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import AgentRegistry, { agentEvents, type AgentFactory } from '@deepseek-ai/dsh-agent'
+import AgentRegistry, { agentEvents, assembleContextFor, type AgentFactory } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
-import { createUserMessage, markAgentLoopRequest, type StreamChunk } from '@deepseek-ai/dsh-llm'
+import {
+  CallId, createToolResultMessage, createUserMessage, markAgentLoopRequest, ReasoningEffortId, type StreamChunk,
+} from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId, type Session } from '@deepseek-ai/dsh-session'
+import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import { RpcId, type RpcRequest } from '../src/api/rpc.ts'
 import type { HostFrame } from '../src/api/events.ts'
@@ -344,6 +347,100 @@ describe('agentPreset.list', () => {
 })
 
 describe('automatic model failover', () => {
+  it('uses the expert route for durable completion recovery but preserves manual selection', async () => {
+    const select = vi.fn((input: { recovery?: 'completion-evidence' }) => input.recovery === 'completion-evidence'
+      ? { provider: 'test', model: 'expert-model', reasoningEffort: ReasoningEffortId('high') }
+      : { provider: 'test', model: 'local-model', reasoningEffort: ReasoningEffortId('off') })
+    const { api, ctx } = await harness(undefined, undefined, {
+      defaults: { adaptiveModelSelection: select },
+    })
+    ctx.provide('llm', {
+      resolveCallConfig: (selection: { provider: string; model: string; reasoningEffort?: string }) =>
+        Promise.resolve(selection),
+    } as never)
+    await ctx.plugin(SystemPrompt, { persona: '' })
+    const sessionId = SessionId('completion-evidence-recovery')
+    await api.sessions.create(request({ sessionId }))
+    const agent = ctx.agents.get(sessionId)
+    if (agent === undefined) throw new Error('unreachable')
+    const recovery = createUserMessage({
+      content: [{ type: 'text', text: 'Verify the completion evidence.' }],
+      source: {
+        kind: 'plugin', plugin: 'completion-claim-policy', form: 'evidence-recovery',
+      } as never,
+    })
+    await ctx.systemPrompt.assemble(assembleContextFor(agent))
+    agent.session.append('turn/start', { turn: 1 })
+    agent.session.append('user/message', recovery, { surfaceOp: 'append' })
+
+    await expect(agentEvents(ctx, agent).waterfall('agent/request', {
+      turn: 1,
+      step: 0,
+      signal: new AbortController().signal,
+    }, () => Promise.resolve({ provider: 'test', model: 'test-model' }))).resolves.toMatchObject({
+      provider: 'test', model: 'expert-model', reasoningEffort: 'high',
+    })
+    expect(select).toHaveBeenLastCalledWith({
+      content: [], hasHistory: true, recovery: 'completion-evidence',
+    })
+
+    agent.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    await api.sessions.selectModel(request({ sessionId, provider: 'test', model: 'manual-model' }))
+    await ctx.systemPrompt.assemble(assembleContextFor(agent))
+    const selectionsBeforeManualRecovery = select.mock.calls.length
+    agent.session.append('turn/start', { turn: 2 })
+    agent.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'Verify again.' }],
+      source: {
+        kind: 'plugin', plugin: 'completion-claim-policy', form: 'evidence-recovery',
+      } as never,
+    }), { surfaceOp: 'append' })
+    await expect(agentEvents(ctx, agent).waterfall('agent/request', {
+      turn: 2,
+      step: 0,
+      signal: new AbortController().signal,
+    }, () => Promise.resolve({ provider: 'seed', model: 'seed' }))).resolves.toMatchObject({
+      provider: 'test', model: 'manual-model',
+    })
+    expect(select).toHaveBeenCalledTimes(selectionsBeforeManualRecovery)
+    await ctx.fiber.dispose()
+  })
+
+  async function activeExternalFailover(label: string) {
+    const { api, ctx } = await harness(undefined, undefined, {
+      defaults: {
+        adaptiveModelSelection: () => ({ provider: 'test', model: 'local-model' }),
+        adaptiveModelFailover: () => ({
+          provider: 'cloud', model: 'api-model', residency: 'external' as const,
+        }),
+      },
+    })
+    const resolveCallConfig = vi.fn((selection: { provider: string; model: string }) => Promise.resolve(selection))
+    ctx.provide('llm', { resolveCallConfig } as never)
+    const sessionId = SessionId(`active-external-${label}`)
+    await api.sessions.create(request({ sessionId }))
+    await api.sessions.selectModel(request({
+      sessionId, provider: 'test', model: 'test-model', automatic: true, externalFailoverConsent: true,
+    }))
+    const agent = ctx.agents.get(sessionId)
+    if (agent === undefined) throw new Error('unreachable')
+    agent.session.append('turn/start', { turn: 1 })
+    agent.session.append('step/start', { turn: 1, step: 0 })
+    await expect(agentEvents(ctx, agent).waterfall('agent/request-error', {
+      turn: 1,
+      step: 0,
+      provider: 'test',
+      failure: { code: 'TRANSPORT' as const, message: 'local connection refused' },
+      retryPolicy: undefined,
+      signal: new AbortController().signal,
+    }, () => Promise.resolve(undefined))).resolves.toEqual({ kind: 'retry' })
+    expect(resolveCallConfig).toHaveBeenLastCalledWith({
+      provider: 'cloud', model: 'api-model', residency: 'external',
+    })
+    resolveCallConfig.mockClear()
+    return { ctx, agent, resolveCallConfig }
+  }
+
   it('records a content-free shadow recommendation without changing the request or stream', async () => {
     const { api, ctx } = await harness(undefined, undefined, {
       defaults: {
@@ -440,13 +537,6 @@ describe('automatic model failover', () => {
     } as never)
     const sessionId = SessionId('automatic-failover')
     await api.sessions.create(request({ sessionId }))
-    expect(await api.sessions.selectModel(request({
-      sessionId,
-      provider: 'test',
-      model: 'test-model',
-      automatic: true,
-      externalFailoverConsent: true,
-    }))).toMatchObject({ result: { ok: true, value: { externalFailoverConsent: true } } })
     const agent = ctx.agents.get(sessionId)
     if (agent === undefined) throw new Error('unreachable')
     agent.session.append('user/message', createUserMessage({
@@ -462,6 +552,13 @@ describe('automatic model failover', () => {
       }],
       source: { kind: 'user' },
     }), { surfaceOp: 'append' })
+    expect(await api.sessions.selectModel(request({
+      sessionId,
+      provider: 'test',
+      model: 'test-model',
+      automatic: true,
+      externalFailoverConsent: true,
+    }))).toMatchObject({ result: { ok: true, value: { externalFailoverConsent: true } } })
     let downstreamCalls = 0
     const signal = new AbortController().signal
 
@@ -561,6 +658,344 @@ describe('automatic model failover', () => {
     expect(agent.session.events.at(-1)).toMatchObject({
       type: 'llm/failover',
       data: { to: { provider: 'cloud', model: 'api-model' } },
+    })
+    await ctx.fiber.dispose()
+  })
+
+  it.each([
+    { label: 'current session search', tool: 'current_session_search', arguments: '{"query":"customer"}' },
+    { label: 'session search', tool: 'session_search', arguments: '{"query":"customer"}' },
+    { label: 'workspace memory', tool: 'memory_search', arguments: '{"query":"decision"}' },
+    { label: 'personal memory', tool: 'personal_memory_search', arguments: '{"query":"preference"}' },
+    {
+      label: 'Leon knowledge helper',
+      tool: 'pwsh',
+      arguments: JSON.stringify({
+        command: 'node E:\\Computador\\leon-knowledge-base\\scripts\\knowledge.mjs search --workspace D:\\SampleWorkspace --query cliente',
+      }),
+    },
+  ])('requires fresh consent after $label returns local context and makes zero external route requests', async ({ tool, arguments: rawArguments }) => {
+    const { api, ctx } = await harness(undefined, undefined, {
+      defaults: {
+        adaptiveModelSelection: () => ({ provider: 'test', model: 'local-model' }),
+        adaptiveModelFailover: () => ({
+          provider: 'cloud', model: 'api-model', residency: 'external' as const,
+        }),
+      },
+    })
+    const resolveCallConfig = vi.fn((selection: { provider: string; model: string }) => Promise.resolve(selection))
+    ctx.provide('llm', { resolveCallConfig } as never)
+    const sessionId = SessionId(`protected-${tool}`)
+    await api.sessions.create(request({ sessionId }))
+    expect(await api.sessions.selectModel(request({
+      sessionId,
+      provider: 'test',
+      model: 'test-model',
+      automatic: true,
+      externalFailoverConsent: true,
+    }))).toMatchObject({ result: { ok: true, value: { externalFailoverConsent: true } } })
+    resolveCallConfig.mockClear()
+
+    const agent = ctx.agents.get(sessionId)
+    if (agent === undefined) throw new Error('unreachable')
+    const syntheticSecret = 'LEON_SYNTHETIC_SECRET_NEVER_EGRESS_7b31d9'
+    const callId = CallId(`protected-${tool}`)
+    agent.session.append('turn/start', { turn: 1 })
+    agent.session.append('step/start', { turn: 1, step: 0 })
+    agent.session.append('tool/call', {
+      turn: 1, step: 0, callId, name: tool, arguments: rawArguments,
+    })
+    agent.session.append('tool/result', {
+      turn: 1,
+      step: 0,
+      message: createToolResultMessage({
+        callId,
+        content: [{ type: 'text', text: syntheticSecret }],
+        isError: false,
+      }),
+    }, { surfaceOp: 'append' })
+    let downstreamCalls = 0
+
+    const denied = await agentEvents(ctx, agent).waterfall('agent/request-error', {
+      turn: 1,
+      step: 0,
+      provider: 'test',
+      failure: { code: 'TRANSPORT' as const, message: 'local connection refused' },
+      retryPolicy: undefined,
+      signal: new AbortController().signal,
+    }, () => {
+      downstreamCalls += 1
+      return Promise.resolve(undefined)
+    })
+
+    expect(denied).toBeUndefined()
+    expect(downstreamCalls).toBe(1)
+    expect(resolveCallConfig).not.toHaveBeenCalled()
+    expect(JSON.stringify(resolveCallConfig.mock.calls)).not.toContain(syntheticSecret)
+    expect(agent.session.events.some(event => event.type === 'llm/failover')).toBe(false)
+    await expect(agentEvents(ctx, agent).waterfall('agent/request', {
+      turn: 1,
+      step: 0,
+      signal: new AbortController().signal,
+    }, () => Promise.resolve({ provider: 'test', model: 'test-model' })))
+      .resolves.toMatchObject({ provider: 'test', model: 'test-model' })
+    await ctx.fiber.dispose()
+  })
+
+  it.each([
+    { label: 'current session search', tool: 'current_session_search', arguments: '{"query":"customer"}' },
+    { label: 'file read', tool: 'read', arguments: '{"file_path":"D:\\\\private.txt"}' },
+    { label: 'workspace grep', tool: 'grep', arguments: '{"pattern":"customer","path":"D:\\\\SampleWorkspace"}' },
+    { label: 'PowerShell output', tool: 'pwsh', arguments: '{"command":"Get-Content D:\\\\private.txt"}' },
+    { label: 'image read', tool: 'read_image', arguments: '{"file_path":"D:\\\\private.png"}' },
+    { label: 'desktop screenshot', tool: 'screenshot', arguments: '{}' },
+    { label: 'authenticated browser snapshot', tool: 'browser_snapshot', arguments: '{}' },
+    { label: 'subagent result', tool: 'subagent', arguments: '{"task":"inspect local project"}' },
+    { label: 'attachment reader', tool: 'attachment_read', arguments: '{"id":"local-1"}' },
+  ])('blocks the next already-active external step after $label returns local content', async ({ tool, arguments: rawArguments }) => {
+    const { ctx, agent, resolveCallConfig } = await activeExternalFailover(tool)
+
+    const syntheticSecret = `LEON_ACTIVE_ROUTE_SECRET_${tool}_NEVER_EGRESS`
+    const callId = CallId(`active-external-${tool}`)
+    agent.session.append('tool/call', {
+      turn: 1, step: 0, callId, name: tool, arguments: rawArguments,
+    })
+    agent.session.append('tool/result', {
+      turn: 1,
+      step: 0,
+      message: createToolResultMessage({
+        callId,
+        content: [{ type: 'text', text: syntheticSecret }],
+        isError: false,
+      }),
+    }, { surfaceOp: 'append' })
+
+    const nextStep = await agentEvents(ctx, agent).waterfall('agent/request', {
+      turn: 1,
+      step: 1,
+      signal: new AbortController().signal,
+    }, () => Promise.resolve({ provider: 'cloud', model: 'api-model' }))
+
+    expect(nextStep).toMatchObject({ provider: 'test', model: 'test-model' })
+    expect(resolveCallConfig).not.toHaveBeenCalled()
+    expect(JSON.stringify(resolveCallConfig.mock.calls)).not.toContain(syntheticSecret)
+    await ctx.fiber.dispose()
+  })
+
+  it('revalidates consent after asynchronous step assembly before dispatching an active external route', async () => {
+    const { ctx, agent, resolveCallConfig } = await activeExternalFailover('assembly-race')
+
+    const callId = CallId('active-external-assembly-race-read')
+    const syntheticSecret = 'LEON_ASSEMBLY_RACE_LOCAL_SECRET_NEVER_EGRESS'
+    const nextStep = await agentEvents(ctx, agent).waterfall('agent/request', {
+      turn: 1,
+      step: 1,
+      signal: new AbortController().signal,
+    }, async () => {
+      await Promise.resolve()
+      agent.session.append('tool/call', {
+        turn: 1, step: 0, callId, name: 'read', arguments: '{"file_path":"D:\\\\private.txt"}',
+      })
+      agent.session.append('tool/result', {
+        turn: 1,
+        step: 0,
+        message: createToolResultMessage({
+          callId,
+          content: [{ type: 'text', text: syntheticSecret }],
+          isError: false,
+        }),
+      }, { surfaceOp: 'append' })
+      return { provider: 'cloud', model: 'api-model' }
+    })
+
+    expect(nextStep).toMatchObject({ provider: 'test', model: 'test-model' })
+    expect(resolveCallConfig).not.toHaveBeenCalled()
+    expect(JSON.stringify(resolveCallConfig.mock.calls)).not.toContain(syntheticSecret)
+    await ctx.fiber.dispose()
+  })
+
+  it('invalidates an active external route when a new local image attachment enters the transcript', async () => {
+    const { ctx, agent, resolveCallConfig } = await activeExternalFailover('attachment')
+
+    agent.session.append('user/message', createUserMessage({
+      content: [{
+        type: 'image',
+        attachment: {
+          attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+          mediaType: 'image/png',
+          bytes: 68,
+          width: 1,
+          height: 1,
+          name: 'private-screenshot.png',
+        },
+      }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+
+    await expect(agentEvents(ctx, agent).waterfall('agent/request', {
+      turn: 1,
+      step: 1,
+      signal: new AbortController().signal,
+    }, () => Promise.resolve({ provider: 'cloud', model: 'api-model' })))
+      .resolves.toMatchObject({ provider: 'test', model: 'test-model' })
+    expect(resolveCallConfig).not.toHaveBeenCalled()
+    await ctx.fiber.dispose()
+  })
+
+  it('invalidates an active external route when a background subagent reports local findings', async () => {
+    const { ctx, agent, resolveCallConfig } = await activeExternalFailover('subagent-report')
+
+    const syntheticSecret = 'LEON_BACKGROUND_SUBAGENT_LOCAL_FINDING_NEVER_EGRESS'
+    agent.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: syntheticSecret }],
+      source: {
+        kind: 'subagent-report',
+        form: 'relay',
+        senderSessionId: SessionId('privacy-audit-child'),
+      },
+    }), { surfaceOp: 'append' })
+
+    await expect(agentEvents(ctx, agent).waterfall('agent/request', {
+      turn: 1,
+      step: 1,
+      signal: new AbortController().signal,
+    }, () => Promise.resolve({ provider: 'cloud', model: 'api-model' })))
+      .resolves.toMatchObject({ provider: 'test', model: 'test-model' })
+    expect(resolveCallConfig).not.toHaveBeenCalled()
+    expect(JSON.stringify(resolveCallConfig.mock.calls)).not.toContain(syntheticSecret)
+    await ctx.fiber.dispose()
+  })
+
+  it('keeps an already-active external route after a public web result only', async () => {
+    const { ctx, agent, resolveCallConfig } = await activeExternalFailover('public-web')
+
+    const callId = CallId('active-external-public-web')
+    agent.session.append('tool/call', {
+      turn: 1, step: 0, callId, name: 'web_search', arguments: '{"query":"public weather"}',
+    })
+    agent.session.append('tool/result', {
+      turn: 1,
+      step: 0,
+      message: createToolResultMessage({
+        callId,
+        content: [{ type: 'text', text: 'Public weather result from an open website.' }],
+        isError: false,
+      }),
+    }, { surfaceOp: 'append' })
+
+    await expect(agentEvents(ctx, agent).waterfall('agent/request', {
+      turn: 1,
+      step: 1,
+      signal: new AbortController().signal,
+    }, () => Promise.resolve({ provider: 'cloud', model: 'api-model' })))
+      .resolves.toMatchObject({ provider: 'cloud', model: 'api-model' })
+    expect(resolveCallConfig).not.toHaveBeenCalled()
+    await ctx.fiber.dispose()
+  })
+
+  it('invalidates earlier consent when automatic personal-memory recall enters the turn', async () => {
+    const { api, ctx } = await harness(undefined, undefined, {
+      defaults: {
+        adaptiveModelSelection: () => ({ provider: 'test', model: 'local-model' }),
+        adaptiveModelFailover: () => ({
+          provider: 'cloud', model: 'api-model', residency: 'external' as const,
+        }),
+      },
+    })
+    const resolveCallConfig = vi.fn((selection: { provider: string; model: string }) => Promise.resolve(selection))
+    ctx.provide('llm', { resolveCallConfig } as never)
+    const sessionId = SessionId('protected-automatic-recall')
+    await api.sessions.create(request({ sessionId }))
+    await api.sessions.selectModel(request({
+      sessionId,
+      provider: 'test',
+      model: 'test-model',
+      automatic: true,
+      externalFailoverConsent: true,
+    }))
+    resolveCallConfig.mockClear()
+    const agent = ctx.agents.get(sessionId)
+    if (agent === undefined) throw new Error('unreachable')
+    const syntheticSecret = 'LEON_SYNTHETIC_PERSONAL_MEMORY_125f06'
+    agent.session.append('turn/start', { turn: 1 })
+    agent.session.append('step/start', { turn: 1, step: 0 })
+    agent.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: syntheticSecret }],
+      source: {
+        kind: 'plugin',
+        plugin: 'tool-memory',
+        form: 'snapshot',
+        sections: [{ name: 'personal-memory:recall', text: syntheticSecret }],
+      },
+    }), { surfaceOp: 'append' })
+
+    const denied = await agentEvents(ctx, agent).waterfall('agent/request-error', {
+      turn: 1,
+      step: 0,
+      provider: 'test',
+      failure: { code: 'TRANSPORT' as const, message: 'local connection refused' },
+      retryPolicy: undefined,
+      signal: new AbortController().signal,
+    }, () => Promise.resolve(undefined))
+
+    expect(denied).toBeUndefined()
+    expect(resolveCallConfig).not.toHaveBeenCalled()
+    expect(JSON.stringify(resolveCallConfig.mock.calls)).not.toContain(syntheticSecret)
+    expect(agent.session.events.some(event => event.type === 'llm/failover')).toBe(false)
+    await ctx.fiber.dispose()
+  })
+
+  it('accepts a new explicit grant after the protected local result already exists', async () => {
+    const { api, ctx } = await harness(undefined, undefined, {
+      defaults: {
+        adaptiveModelSelection: () => ({ provider: 'test', model: 'local-model' }),
+        adaptiveModelFailover: () => ({
+          provider: 'cloud', model: 'api-model', residency: 'external' as const,
+        }),
+      },
+    })
+    const resolveCallConfig = vi.fn((selection: { provider: string; model: string }) => Promise.resolve(selection))
+    ctx.provide('llm', { resolveCallConfig } as never)
+    const sessionId = SessionId('protected-reconsent')
+    await api.sessions.create(request({ sessionId }))
+    const agent = ctx.agents.get(sessionId)
+    if (agent === undefined) throw new Error('unreachable')
+    const callId = CallId('protected-reconsent-call')
+    agent.session.append('turn/start', { turn: 1 })
+    agent.session.append('step/start', { turn: 1, step: 0 })
+    agent.session.append('tool/call', {
+      turn: 1, step: 0, callId, name: 'memory_search', arguments: '{"query":"decision"}',
+    })
+    agent.session.append('tool/result', {
+      turn: 1,
+      step: 0,
+      message: createToolResultMessage({
+        callId,
+        content: [{ type: 'text', text: 'LEON_SYNTHETIC_CONTEXT_COVERED_BY_NEW_GRANT' }],
+        isError: false,
+      }),
+    }, { surfaceOp: 'append' })
+    expect(await api.sessions.selectModel(request({
+      sessionId,
+      provider: 'test',
+      model: 'test-model',
+      automatic: true,
+      externalFailoverConsent: true,
+    }))).toMatchObject({ result: { ok: true, value: { externalFailoverConsent: true } } })
+    resolveCallConfig.mockClear()
+
+    const allowed = await agentEvents(ctx, agent).waterfall('agent/request-error', {
+      turn: 1,
+      step: 0,
+      provider: 'test',
+      failure: { code: 'TRANSPORT' as const, message: 'local connection refused' },
+      retryPolicy: undefined,
+      signal: new AbortController().signal,
+    }, () => Promise.resolve(undefined))
+
+    expect(allowed).toEqual({ kind: 'retry' })
+    expect(resolveCallConfig).toHaveBeenCalledWith({
+      provider: 'cloud', model: 'api-model', residency: 'external',
     })
     await ctx.fiber.dispose()
   })

@@ -856,20 +856,46 @@ describe('provider profile lifecycle', () => {
     expect(server.headers[0]?.authorization).toBe('Bearer custom-ref-key')
   })
 
+  it('resolves only the declared credential chain in primary-then-fallback order', async () => {
+    vi.stubEnv('PI_PRIMARY_REF_KEY', 'primary-key')
+    vi.stubEnv('PI_LEGACY_REF_KEY', 'legacy-key')
+    const primaryServer = await mockServer([{ events: textEvents }])
+    const primaryCtx = await harness(primaryServer.url, {
+      apiKeyEnv: 'PI_PRIMARY_REF_KEY',
+      apiKeyEnvFallbacks: ['PI_LEGACY_REF_KEY'],
+    })
+    await assemble(primaryCtx, { model: 'deepseek-v4-flash', messages: [] })
+    expect(primaryServer.headers[0]?.authorization).toBe('Bearer primary-key')
+
+    vi.stubEnv('PI_PRIMARY_REF_KEY', '')
+    const fallbackServer = await mockServer([{ events: textEvents }])
+    const fallbackCtx = await harness(fallbackServer.url, {
+      apiKeyEnv: 'PI_PRIMARY_REF_KEY',
+      apiKeyEnvFallbacks: ['PI_LEGACY_REF_KEY'],
+    })
+    await assemble(fallbackCtx, { model: 'deepseek-v4-flash', messages: [] })
+    expect(fallbackServer.headers[0]?.authorization).toBe('Bearer legacy-key')
+  })
+
   it('fails a named-but-missing apiKeyEnv instead of using another ambient key', async () => {
     // The exact confusion this guards: the named reference is empty while an
     // unrelated provider key sits in the environment. Deferring to pi-ai's own
     // discovery here would authenticate as another tenant.
     vi.stubEnv('PI_CUSTOM_REF_KEY', '')
+    vi.stubEnv('PI_LEGACY_REF_KEY', '')
     vi.stubEnv('DEEPSEEK_API_KEY', 'ambient-key')
     const server = await mockServer([{ events: textEvents }])
-    const ctx = await harness(server.url, { apiKey: undefined, apiKeyEnv: 'PI_CUSTOM_REF_KEY' })
+    const ctx = await harness(server.url, {
+      apiKey: undefined,
+      apiKeyEnv: 'PI_CUSTOM_REF_KEY',
+      apiKeyEnvFallbacks: ['PI_LEGACY_REF_KEY'],
+    })
     const first = await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
     expect(first.finish).toMatchObject({ kind: 'error', failure: { code: 'MISSING_CREDENTIAL' } })
     const second = await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
     expect(second.finish.kind).toBe('error')
     if (second.finish.kind !== 'error') throw new Error('expected an error finish')
-    expect(second.finish.failure.message).toMatch(/provider route "deepseek".*PI_CUSTOM_REF_KEY/s)
+    expect(second.finish.failure.message).toMatch(/provider route "deepseek".*PI_CUSTOM_REF_KEY.*PI_LEGACY_REF_KEY/s)
     expect(server.requests).toHaveLength(0)
   })
 
@@ -888,6 +914,12 @@ describe('provider profile lifecycle', () => {
     expect(() => resolveProfiles({ openai: { provider: 'openai' } as never })).toThrow(/moved to the providers dict key/)
     expect(() => resolveProfiles({ openai: { baseURL: '' } })).toThrow(/empty baseURL/)
     expect(() => resolveProfiles({ openai: { apiKeyEnv: 'not-a-var!' } })).toThrow(/must match/)
+    expect(() => resolveProfiles({ openai: { apiKeyEnv: 'PRIMARY_KEY', apiKeyEnvFallbacks: ['not-a-var!'] } }))
+      .toThrow(/must match/)
+    expect(() => resolveProfiles({ openai: { apiKeyEnvFallbacks: ['LEGACY_KEY'] } }))
+      .toThrow(/without apiKeyEnv/)
+    expect(() => resolveProfiles({ openai: { apiKeyEnv: 'PRIMARY_KEY', apiKeyEnvFallbacks: ['PRIMARY_KEY'] } }))
+      .toThrow(/repeats credential reference/)
     expect(() => resolveProfiles({ openai: { maxRequestImageBytes: 0 } })).toThrow(/maxRequestImageBytes/)
     expect(resolveProfiles({ openai: {} }).get('openai')?.maxRequestImageBytes)
       .toBe(DEFAULT_MAX_REQUEST_IMAGE_BYTES)

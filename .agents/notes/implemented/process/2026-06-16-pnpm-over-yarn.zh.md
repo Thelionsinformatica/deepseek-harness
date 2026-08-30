@@ -16,7 +16,9 @@ Status: implemented
 
 - **Workspaces** 从 `package.json` 的 `workspaces` 数组 + `.yarnrc.yml` 迁移到 `pnpm-workspace.yaml`（`vendor/*`、`packages/*`——同样的 glob；`examples/*` 保持非 workspace，与先前设置及 tsdown 的显式 glob 一致）。
 - **严格符号链接链接器**（pnpm 默认）取代 Yarn 的提升式 `node-modules` 链接器。我们刻意**不**添加 `node-linker=hoisted` / `shamefully-hoist` 逃生口：pnpm 的非扁平 `node_modules` 会使幻影依赖（引用未声明的传递依赖）明确报错，这对于一个以机械门禁为核心质量保障的仓库（见[机械质量门禁](2026-06-11-quality-gates.zh.md)）是一项*优势*。门禁套件（类型检查、lint、test、build、knip）是证明不存在此类幻影导入的安全网。
-- **构建脚本白名单。** pnpm 10+ 不运行依赖的生命周期脚本，除非将其加入白名单。`pnpm-workspace.yaml` 携带一份显式的 `allowBuilds` 映射（`esbuild`、`lefthook`、`@google/genai`、`protobufjs`）——与本仓库对模型/工具输出已有的供应链加固姿态一致，现在也应用于安装时的代码执行。`peerDependencyRules.allowedVersions.typescript: '>=5 <7'` 消除仓库内 TypeScript 的良性 peer 范围警告。
+- **构建脚本白名单。** pnpm 10+ 不运行依赖的生命周期脚本，除非将其加入白名单。`pnpm-workspace.yaml` 携带一份显式的 `allowBuilds` 映射，并拒绝所有未经审查的生命周期脚本——与本仓库对模型/工具输出已有的供应链加固姿态一致，现在也应用于安装时的代码执行。`peerDependencyRules.allowedVersions.typescript: '>=5 <7'` 消除仓库内 TypeScript 的良性 peer 范围警告。
+- **按安全公告范围限定的解析覆盖。** 当上游依赖尚不能选择已修复版本时，`pnpm-workspace.yaml` 会固定已修复的传递依赖版本。每项覆盖仅作用于易受攻击的版本范围：文件系统 MCP 的 `brace-expansion` 2.x 解析到 2.1.4；受影响的 Vite 5.x/6.x 版本解析到 6.4.3，因为更早版本缺少 Windows `server.fs.deny` 修复，其中包括 VitePress 1.6.4 声明的 Vite 5 依赖。Vitest 4.1.8 仍与 Vite 8.0.16 配对，因为其模块运行器必须执行仓库支持的 `import.meta.resolve` 路径；安全覆盖不会降级这个仅用于测试的 peer。每项跨主版本覆盖都必须通过冻结安装、受影响消费方的测试与构建，以及生产依赖和完整依赖两种 `pnpm audit` 检查；上游允许选择安全版本后即移除该覆盖。
+- **已修复的文档渲染器。** 根工作区与文档工作区都将 Mermaid 直接依赖固定为 11.16.1，同时把易受攻击的 DOMPurify 版本范围覆盖到 3.4.13。因此完整依赖审计保持干净，无需把仅影响文档工具的 CSS 注入、原型污染、XSS 或拒绝服务公告作为遗留债务接受。
 - **无 shell 的包管理器再进入。** 需要启动另一条 pnpm 命令的仓库脚本按文件形式解析 `npm_execpath`：`.js`、`.cjs` 和 `.mjs` 入口由当前 Node 可执行文件运行，原生及带 shebang 的可执行入口则直接运行。两条路径都不使用 shell，因此命令路径和参数在各平台上均保留字面内容。[原生 Windows 拉取请求作业](2026-08-08-native-windows-pull-request-ci.zh.md)会提供 `@pnpm/exe`，因此其完整清单会产生真实的 PE 入口集成信号。
 - **约束变为包管理器无关。** `yarn.config.cjs`（导入 `@yarnpkg/types`，使用 `Yarn.workspaces()` / `workspace.set()`）被 `scripts/check-workspace-constraints.ts` 取代——一个纯 tsx 脚本，通过 `pnpm run constraints` 运行。它在相同的 `vendor` + `packages` 范围上强制执行完全相同的不变式：每个包 `private: true`；`@deepseek-ai/dsh-*` 包将 `cordis` 同时声明为对等依赖（peer dependency）和 dev 依赖且范围一致、使用根 `package.json` 的版本、设置 `type: module`；vendor 包仅检查是否为私有。
 - 所有 CI、lefthook 钩子、`package.json` 脚本和文档中的 `yarn …` 动词变为 `pnpm …` / `pnpm run …`。`yarn.lock` → `pnpm-lock.yaml`（lockfile v9）。`.gitignore` 将 `.yarn/` 换为 `.pnpm-store/`。vendor README（如 `vendor/cordis/README.md`）按 Vendoring Policy 保持其上游 `yarn` 示例不变。
@@ -28,10 +30,14 @@ Status: implemented
 - **pnpm 搭配提升式链接器**——迁移更平滑，但放弃了幻影依赖安全性，而这正是迁移的核心正确性理由。
 - **始终通过 Node 运行 `npm_execpath`**——适用于 pnpm 的 JavaScript 分发，但会让 Node 尝试解析 `@pnpm/exe` 提供的 ELF、Mach-O 或 PE 可执行文件。
 - **通过 shell 运行再进入命令**——可接受更多启动器形式，但会改变每条子命令的引号、元字符展开、可执行文件解析和信号行为。
+- **等待上游 manifest 后再修复传递依赖安全公告**——即使已在本地验证兼容的修复版本，也会让已知高严重性依赖继续可达。
+- **运行 `pnpm audit --fix` 或广泛升级受影响的生态**——会将 lockfile 和兼容性范围扩展到安全公告之外；限定范围的覆盖更易审查和撤销。
 
 ## 后果
 
 约束检查失去了 Yarn 的自动**修复**能力（`workspace.set()` 能原地改写 manifest）；tsx 脚本仅做检查，不通过时以非零退出码和消息退出。这是可接受的：CI 从未运行过 `--fix`，且需要手动编辑的情况很少。贡献者现在为 pnpm 而非 Yarn 运行 `corepack enable`；`pnpm exec lefthook install` 取代 `yarn lefthook install`（`postinstall` 钩子仍会运行 `lefthook install`）。
+
+安全解析覆盖会带来手动移除责任，并可能有意跨越上游 semver 范围；受影响消费方的构建和聚焦测试提供兼容性证明。作为交换，在等待上游 manifest 跟进期间，高严重性安全公告不会继续保持可达。
 
 性能（迁移时在开发 NFS 文件系统上测量；运行次数为个位数的样本，方差大——仅供方向性参考，非基准测试套件）：
 

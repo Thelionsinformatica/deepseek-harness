@@ -307,6 +307,13 @@ describe('LocaleRuntime', () => {
       deleteConversation: 'Delete conversation',
       deleteDescription: 'Permanently delete “{name}” and its conversation history? This cannot be undone. Files in its workspace are not deleted, and personal memory is kept separately.',
       fork: 'Fork session',
+      todoDone: '{done} completed',
+      todoActive: '{active} in progress',
+      todoPending: '{pending} pending',
+      technicalContext: 'Technical context in chat',
+      technicalContextDescription: 'Show prompt preparation events such as system instructions, skills, and time',
+      hidden: 'Hidden',
+      shown: 'Shown',
     })
     const t = svc.bind('feature')
     expect(t('settings')).toBe('Configurações')
@@ -340,5 +347,13 @@ describe('LocaleRuntime', () => {
     expect(t('deleteDescription', { name: 'Plano' }))
       .toContain('a memória pessoal será preservada separadamente')
     expect(t('fork')).toBe('Ramificar sessão')
+    expect(t('todoDone', { done: 2 })).toBe('2 concluída(s)')
+    expect(t('todoActive', { active: 1 })).toBe('1 em andamento')
+    expect(t('todoPending', { pending: 3 })).toBe('3 pendente(s)')
+    expect(t('technicalContext')).toBe('Contexto técnico no chat')
+    expect(t('technicalContextDescription'))
+      .toBe('Mostrar a preparação interna do prompt, como instruções do sistema, habilidades e horário')
+    expect(t('hidden')).toBe('Oculto')
+    expect(t('shown')).toBe('Visível')
   })
 })

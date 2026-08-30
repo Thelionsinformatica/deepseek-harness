@@ -170,7 +170,7 @@ describe('goal-round outcome policy', () => {
     const orderedProtocol = [
       /<goal_round>\nObjective: "Ship verified support"\nRound: 3\/9/.source,
       /Before any write or edit/.source,
-      /Preserve the existing todo plan/.source,
+      /Preserve every existing todo content string/.source,
       /actual tool result/.source,
       /one managed background call containing only the server start command/.source,
       /separate foreground call/.source,

@@ -45,8 +45,8 @@ interface EventFilterInput {
 const sessionSearchParameters = {
   query: { type: 'string', required: true, description: 'Literal full-text query over prior session history.' },
   session_ids: { type: 'array', items: { type: 'string' }, description: 'Optional session ids to include.' },
-  created_at_from: { type: 'string', description: 'Inclusive timezone-qualified ISO 8601 creation-time lower bound.' },
-  created_at_to: { type: 'string', description: 'Inclusive timezone-qualified ISO 8601 creation-time upper bound.' },
+  created_at_from: { type: 'string', description: 'Optional inclusive timezone-qualified ISO 8601 creation-time lower bound. Omit unless the user supplied a time constraint.' },
+  created_at_to: { type: 'string', description: 'Optional inclusive timezone-qualified ISO 8601 creation-time upper bound. Omit unless the user supplied a time constraint.' },
   parent_session_ids: { type: 'array', items: { type: 'string' }, description: 'Optional direct parent session ids.' },
   include_root_sessions: { type: 'boolean', description: 'Include sessions with no parent in the parent filter.' },
   availability: {
@@ -58,7 +58,7 @@ const sessionSearchParameters = {
   event_seq_to: { type: 'integer', description: 'Inclusive event sequence upper bound.' },
   event_time_from: { type: 'string', description: 'Inclusive timezone-qualified ISO 8601 event-time lower bound.' },
   event_time_to: { type: 'string', description: 'Inclusive timezone-qualified ISO 8601 event-time upper bound.' },
-  event_types: { type: 'array', items: { type: 'string' }, description: 'Event types to include.' },
+  event_types: { type: 'array', items: { type: 'string' }, description: 'Optional canonical event types to include (for example "user/message" or "tool/call"). Omit for broad history search.' },
   event_surfaces: {
     type: 'array',
     items: { type: 'string', enum: ['current', 'shadowed', 'log-only'] },
@@ -73,12 +73,16 @@ const eventSearchParameters = {
   seq_to: { type: 'integer', description: 'Inclusive event sequence upper bound.' },
   time_from: { type: 'string', description: 'Inclusive timezone-qualified ISO 8601 event-time lower bound.' },
   time_to: { type: 'string', description: 'Inclusive timezone-qualified ISO 8601 event-time upper bound.' },
-  event_types: { type: 'array', items: { type: 'string' }, description: 'Event types to include.' },
+  event_types: { type: 'array', items: { type: 'string' }, description: 'Optional canonical event types to include (for example "user/message" or "tool/call").' },
   surfaces: {
     type: 'array',
     items: { type: 'string', enum: ['current', 'shadowed', 'log-only'] },
     description: 'Event surfaces to include.',
   },
+} as const
+
+const currentSessionSearchParameters = {
+  query: { type: 'string', required: true, description: 'Search earlier events.' },
 } as const
 
 const targetSessionParameter = {
@@ -114,6 +118,7 @@ function buildEventFilters(input: EventFilterInput): SessionEventMetadataFilter[
   if (time !== undefined) filters.push({ kind: 'time', ...time })
   if (input.eventTypes !== undefined) {
     assertNonEmptyArray('event_types', input.eventTypes)
+    for (const value of input.eventTypes) assertSessionEventType(value)
     filters.push({ kind: 'type', values: input.eventTypes as SessionEventType[] })
   }
   if (input.surfaces !== undefined) {
@@ -121,6 +126,18 @@ function buildEventFilters(input: EventFilterInput): SessionEventMetadataFilter[
     filters.push({ kind: 'surface', values: input.surfaces })
   }
   return filters
+}
+
+const SESSION_EVENT_TYPE = /^[a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9-]*$/u
+
+/** Reject invented labels while retaining namespaced events contributed by external plugins. */
+function assertSessionEventType(value: string): void {
+  if (!SESSION_EVENT_TYPE.test(value)) {
+    throw new SessionQueryError(
+      `event type "${value}" must use the canonical namespace/name form (for example "tool/call")`,
+      'SESSION_QUERY_INVALID_FILTER',
+    )
+  }
 }
 
 function normalizeQuery(value: string): string {
@@ -297,6 +314,7 @@ function assertNonEmptyArray(name: string, values: readonly unknown[]): void {
 export const toolInput = {
   sessionSearchParameters,
   eventSearchParameters,
+  currentSessionSearchParameters,
   targetSessionParameter,
   buildSessionFilters,
   materializeParentSessionIds,

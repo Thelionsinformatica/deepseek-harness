@@ -470,10 +470,21 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
   it('runs doctor from the published entry without initializing the selected profile', async () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-doctor-home-'))
     const workspace = mkdtempSync(join(tmpdir(), 'dsh-doctor-workspace-'))
+    const fetchPreload = join(home, 'doctor-fetch-preload.mjs')
+    writeFileSync(fetchPreload, [
+      'const originalFetch = globalThis.fetch',
+      'globalThis.fetch = (input, init) => {',
+      '  const url = input instanceof Request ? input.url : String(input)',
+      "  if (url.startsWith('http://127.0.0.1:31415/')) throw new TypeError('fixture unavailable')",
+      '  return originalFetch(input, init)',
+      '}',
+      '',
+    ].join('\n'))
     try {
       const result = await runBuiltBin(['doctor', '--port', '1', '--json'], {
         DSH_HOME: home,
         LEON_DEFAULT_WORKSPACE: workspace,
+        NODE_OPTIONS: `--import=${pathToFileURL(fetchPreload).href}`,
         OLLAMA_HOST: 'http://127.0.0.1:1',
       })
       expect(result.code, result.stderr).toBe(0)
@@ -489,6 +500,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
         expect.objectContaining({ id: 'workspace', status: 'ok' }),
         expect.objectContaining({ id: 'profile', status: 'warning' }),
         expect.objectContaining({ id: 'ollama', status: 'warning' }),
+        expect.objectContaining({ id: 'freellmapi', status: 'warning' }),
         expect.objectContaining({ id: 'web', status: 'warning' }),
       ]))
       expect(existsSync(join(home, 'profiles', 'web'))).toBe(false)

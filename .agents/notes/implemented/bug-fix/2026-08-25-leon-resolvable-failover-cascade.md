@@ -12,7 +12,7 @@ Leon Automatic could replace a failed provider only with the first configured ca
 
 The API proxy now resolves failover candidates as a bounded provider cascade. When an intermediate candidate cannot resolve, its provider becomes the failed edge for the next configured selection. A visited-provider set rejects cycles, and a 16-hop ceiling protects the recovery waterfall from a malformed policy that manufactures an unbounded chain. Only the final resolvable replacement is persisted as `llm/failover`; no request is dispatched to skipped candidates.
 
-The shipped Ollama and OmniRoute profiles each declare a normal retry policy with `maxRetries: 1`. Automatic mode still attempts cross-provider replacement before that policy. The single retry is a final bounded recovery for manual selection or for deployments where no configured replacement resolves. Settings-managed Gemini configuration and credentials remain unchanged.
+The shipped Ollama and FreeLLMAPI profiles each declare a normal retry policy with `maxRetries: 1`. Automatic mode still attempts cross-provider replacement before that policy. The single retry is a final bounded recovery for manual selection or for deployments where no configured replacement resolves. Direct Gemini generation and Google Web search both resolve the managed `GEMINI_API_KEY` reference, so one stored credential authorizes the two Google-backed routes without a duplicate settings-managed provider.
 
 ## Alternatives considered
 
@@ -28,4 +28,4 @@ Host integration tests prove that an unavailable intermediate adapter is skipped
 
 ## Consequences
 
-Leon Automatic can continue past an unavailable OmniRoute or direct provider adapter instead of becoming trapped behind it. The user still sees one durable route-change notice naming the route that actually assumed the request. If every configured replacement is unavailable, the original local or loopback route receives at most one eligible retry before the turn fails clearly. Cloud use remains limited to the deployment's explicit failover edges.
+Leon Automatic can continue past an unavailable FreeLLMAPI or direct provider adapter instead of becoming trapped behind it. The user still sees one durable route-change notice naming the route that actually assumed the request. If every configured replacement is unavailable, the original local or loopback route receives at most one eligible retry before the turn fails clearly. Cloud use remains limited to the deployment's explicit failover edges.

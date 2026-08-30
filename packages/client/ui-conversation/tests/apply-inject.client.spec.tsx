@@ -25,6 +25,7 @@ import type {
   ConversationSessionInjected, DetailsInjected,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { createChatStore } from '../src/client/stores.ts'
+import type { TechnicalContextRowInjected } from '../src/client/settings/TechnicalContextRow.tsx'
 
 // The service reads its initial locale from the browser; these specs assert
 // the shipped Chinese copy, so they state the browser they assume.
@@ -68,6 +69,7 @@ async function bench() {
   await runtime.root.declare({
     'conversation': { kind: 'single', scope: 'session-maybe' },
     'details': { kind: 'single', scope: 'session' },
+    'settings.general.item': { kind: 'list', scope: 'root' },
   }, (_p: { renderSlot?: unknown }) => null)
 
   const feature = await runtime.mount({ inject: [...inject], apply })
@@ -138,6 +140,15 @@ describe('conversation slot inject API', () => {
     expect(injected.views.list().map(v => v.id)).toEqual(['chat'])
 
     const chatView = b.chatViewApi(ROOT)
+    const contextRow = b.runtime.slots.entries('settings.general.item')
+      .find(entry => entry.options.id === 'technical-context')
+    const contextInjected = (contextRow?.inject as unknown as () => TechnicalContextRowInjected)()
+    expect(contextInjected.hooks.technicalContextVisible)
+      .toBe(chatView.injected.hooks.technicalContextVisible)
+    const chatSnapshot = chatView.instance.getSnapshot()
+    contextInjected.setTechnicalContextVisible(true)
+    expect(chatView.injected.hooks.technicalContextVisible.getSnapshot()).toBe(true)
+    expect(chatView.instance.getSnapshot()).toBe(chatSnapshot)
     chatView.injected.loadOlder()
     expect(b.sessionFake.loadOlder).toHaveBeenCalledTimes(1)
     chatView.injected.forkAt(17)

@@ -58,14 +58,28 @@ function catalogSourceEntries(
 }
 
 /** Model-facing skill catalog configuration. */
+export interface AutoLoadRule {
+  /** Exact available skill name to inject when a direct human message matches. */
+  name: string
+  /** Literal text fragments; slash direction, Unicode width, case, and whitespace are normalized. */
+  contains: string[]
+}
+
+/** Model-facing skill catalog configuration. */
 export interface Config {
   /** Maximum normalized description length rendered in the session catalog; minimum 3. */
   catalogDescriptionMaxLength?: number
+  /** Trusted deployment rules that inject a skill when direct human text contains one configured literal. */
+  autoLoad?: AutoLoadRule[]
 }
 
 /** Validate and default the model-facing skill catalog configuration. */
 export const Config: z<Config> = z.object({
   catalogDescriptionMaxLength: z.number().default(DEFAULT_CATALOG_DESCRIPTION_MAX_LENGTH),
+  autoLoad: z.array(z.object({
+    name: z.string().required(),
+    contains: z.array(z.string()).min(1).required(),
+  })).default([]),
 })
 
 /**
@@ -77,6 +91,7 @@ export const Config: z<Config> = z.object({
 export function apply(ctx: Context, config: Config = {}): void {
   const catalogDescriptionMaxLength = config.catalogDescriptionMaxLength ?? DEFAULT_CATALOG_DESCRIPTION_MAX_LENGTH
   assertPositiveInteger('catalogDescriptionMaxLength', catalogDescriptionMaxLength, 3)
+  const autoLoad = resolveAutoLoadRules(config.autoLoad ?? [])
 
   const skillTool = defineTool({
     name: 'skill',
@@ -180,7 +195,10 @@ export function apply(ctx: Context, config: Config = {}): void {
   ): Promise<PreStepDecision> => {
     const decision = await next()
     if (decision.kind === 'reject') return decision
-    const names = invokedSkillNames(messages)
+    const explicitNames = invokedSkillNames(messages)
+    const automaticNames = autoLoadedSkillNames(messages, autoLoad)
+      .filter(name => !explicitNames.includes(name))
+    const names = [...explicitNames, ...automaticNames]
     if (names.length === 0) return decision
     signal.throwIfAborted()
     const lookup = { cwd: agent.session.header.cwd, signal, scope: agent }
@@ -192,7 +210,8 @@ export function apply(ctx: Context, config: Config = {}): void {
       // gesture was never a claim this boundary recognizes. The check sits
       // on the loaded definition — the single lookup that produces what is
       // actually injected.
-      if (skill === undefined || !isUserInvocable(skill)) continue
+      const explicit = explicitNames.includes(name)
+      if (skill === undefined || !(explicit ? isUserInvocable(skill) : isModelInvocable(skill))) continue
       const source: SkillInvocationSource = { kind: 'skill-invocation', name, form: 'instructions' }
       injections.push(createUserMessage({
         content: [{ type: 'text', text: renderSkillContent(skill) }],
@@ -397,6 +416,63 @@ function assertPositiveInteger(name: string, value: number, minimum = 1): void {
   if (!Number.isInteger(value) || value < minimum) {
     throw new Error(`tool-skill: ${name} must be an integer greater than or equal to ${minimum}`)
   }
+}
+
+interface ResolvedAutoLoadRule {
+  readonly name: string
+  readonly contains: readonly string[]
+}
+
+/** Normalize only text-comparison aliases; the original user text is never rewritten or retained. */
+function normalizeAutoLoadText(value: string): string {
+  return value.normalize('NFKC').toLocaleLowerCase('en-US')
+    .replaceAll('\\', '/')
+    .replaceAll(/\s+/gu, ' ')
+    .trim()
+}
+
+/** Validate trusted deployment rules once so an empty marker cannot match every request. */
+function resolveAutoLoadRules(rules: readonly AutoLoadRule[]): ResolvedAutoLoadRule[] {
+  const resolved: ResolvedAutoLoadRule[] = []
+  for (const rule of rules) {
+    if (!isSkillName(rule.name)) {
+      throw new Error(`tool-skill: invalid autoLoad skill name "${rule.name}"`)
+    }
+    if (rule.contains.length === 0) {
+      throw new Error(`tool-skill: autoLoad rule for "${rule.name}" must contain at least one literal`)
+    }
+    const contains = [...new Set(rule.contains.map(normalizeAutoLoadText))]
+    if (contains.some(value => value.length === 0)) {
+      throw new Error(`tool-skill: autoLoad rule for "${rule.name}" contains a blank literal`)
+    }
+    resolved.push({ name: rule.name, contains })
+  }
+  return resolved
+}
+
+/**
+ * Skill names selected only from claimed direct-human text. Catalogs, history,
+ * tool results, documents, and injected contexts cannot activate a rule.
+ */
+function autoLoadedSkillNames(
+  messages: readonly UserMessage[],
+  rules: readonly ResolvedAutoLoadRule[],
+): string[] {
+  const directText: string[] = []
+  for (const message of messages) {
+    if ((message.source as { kind?: unknown }).kind !== 'user') continue
+    for (const block of message.content) {
+      if (block.type === 'text') directText.push(block.text)
+    }
+  }
+  if (directText.length === 0) return []
+  const normalized = normalizeAutoLoadText(directText.join('\n'))
+  const names: string[] = []
+  for (const rule of rules) {
+    if (!rule.contains.some(fragment => normalized.includes(fragment))) continue
+    if (!names.includes(rule.name)) names.push(rule.name)
+  }
+  return names
 }
 
 /**

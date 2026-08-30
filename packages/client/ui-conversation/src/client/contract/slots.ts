@@ -8,7 +8,7 @@ import type {
 import type {
   CommandNode, CompactionSummaryNode, ConversationSnapshot, ConversationTurnDataMap,
   ObservableSnapshot, PendingInteraction, PendingWait, SessionId, ToolCallBlock,
-  TurnLocation, WorkspaceId,
+  SnapshotStore, TurnLocation, WorkspaceId,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MessageId } from '@deepseek-ai/dsh-client-connection/client'
@@ -770,6 +770,10 @@ export interface ChatScrollPosition {
  * outside the view (layout orchestration; the session object layer).
  */
 export interface ChatViewInjected {
+  hooks: {
+    /** Whether diagnostic prompt-assembly messages appear in the transcript. */
+    technicalContextVisible: SnapshotStore<boolean>
+  }
   /** Selection write + details panel opening in one gesture (store action + layout orchestration). */
   openDetails: (target: SelectionTarget) => void
   /**
@@ -810,7 +814,7 @@ export interface ChatViewInjected {
 export type ChatViewSlotProps =
   PropsRuntime<'conversation.view'>
   & PropsRenderSlots<'conversation.chat.node' | 'conversation.message.images'>
-  & PropsStore<ChatStore> & ChatViewInjected & PropsLocale<'conversation'>
+  & PropsStore<ChatStore> & InjectFace<ChatViewInjected> & PropsLocale<'conversation'>
 
 /** Full props of the attachment plugin's composer entry. */
 export type ComposerAttachmentsProps =

@@ -16,7 +16,8 @@ A shipping web-tool deployment sets the provider backstop above the tool budget,
 
 ## Transport hygiene
 
-- Accepts only `http:` and `https:` URLs; rejects credentials in URLs (`WEB_BLOCKED_URL`) and over-long/malformed URLs (`WEB_INVALID_URL`).
+- Accepts only `http:` and `https:` URLs; rejects credentials and non-public destinations (`WEB_BLOCKED_URL`) plus over-long/malformed URLs (`WEB_INVALID_URL`). The non-public check covers localhost aliases, canonical and alternative IPv4 literals, IPv4-mapped and special-use IPv6, private, loopback, link-local, carrier-grade NAT, documentation, benchmark, multicast, and reserved ranges.
+- Resolves every hostname before connecting, rejects the complete answer when any address is non-public, and gives Undici only the validated address list. A fresh request-scoped dispatcher repeats validation for every redirect hop and cannot reuse a prior socket or perform an unvalidated second DNS lookup.
 - Enforces a max URL length, response byte cap (`WEB_FETCH_TOO_LARGE`), decoded body character cap, timeout (`WEB_FETCH_TIMEOUT`), and redirect hop cap.
 - Propagates the caller's abort signal (`WEB_ABORTED`) into the network request and the streaming read.
 - Follows only **same-origin** redirects; a cross-origin redirect fails with `WEB_REDIRECT_BLOCKED`, requiring a fresh tool call (the model of Claude Code's WebFetch).
@@ -46,6 +47,6 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 
 ## Known Limitations and Deferred Work
 
-- **SSRF / private-network protection is deferred** — no blocking of private, loopback, link-local, multicast, or otherwise non-public destinations, no DNS-resolve-then-validate, no per-hop re-validation (see [the web capability seam Agent Note](../../../.agents/notes/implemented/architecture/2026-06-24-web-capability-seam.md)). Until it lands, this provider is an SSRF primitive and **must not be enabled** in a deployment that can reach sensitive internal network targets.
+- **Public destinations only** — the SSRF policy has no bypass configuration. Workflows that intentionally access an intranet, loopback service, private address, or special-use network need a separately permissioned connector rather than this anonymous public-web provider (see [the network-pinning decision](../../../.agents/notes/implemented/bug-fix/2026-08-28-web-fetch-public-network-pinning.md)).
 - **Only textual content decodes** — html/xhtml and `text/*`-plus-JSON/XML families; a missing `Content-Type` or any binary type throws `WEB_UNSUPPORTED_CONTENT_TYPE`, and text-extractable PDF decoding is named deferred work.
 - **Charset comes only from the `Content-Type` header** (UTF-8 default) — an HTML `<meta charset>` declaration is ignored, and a declared-but-unrecognized charset label throws rather than falling back.

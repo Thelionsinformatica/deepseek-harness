@@ -14,11 +14,11 @@ import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent
  * tool/call + tool/result session events AND the todo/write event the tool
  * appends. Only the model is mocked; the tool and the session log are real.
  */
-async function harness(adapter: MockAdapter): Promise<Context> {
+async function harness(adapter: MockAdapter, preserveExistingItems = false): Promise<Context> {
   const ctx = new Context()
   await mountAgentLoopTestDependencies(ctx)
   await ctx.plugin(AgentLoop, { agents: [] })
-  await ctx.plugin(ToolTodo, { allowParallelInProgress: true, preserveExistingItems: false })
+  await ctx.plugin(ToolTodo, { allowParallelInProgress: true, preserveExistingItems })
   ctx.llm.registerAdapter(['mock'], adapter)
   return ctx
 }
@@ -96,6 +96,41 @@ describe('todo_write tool through the agent loop', () => {
     expect(findEvent(agent.session.events, 'todo/write', 'last').data.todos).toEqual([
       { content: 'step one', status: 'completed' },
       { content: 'step two', status: 'in_progress' },
+    ])
+  })
+
+  it('returns the exact preserved plan after an invalid replacement so the model can recover', async () => {
+    const original = [
+      { content: 'keep this exact task name', status: 'in_progress' },
+      { content: 'and this exact second task', status: 'pending' },
+      { content: 'do not omit the fourth item', status: 'pending' },
+      { content: 'retain completed evidence too', status: 'completed' },
+    ]
+    const adapter = new MockAdapter([
+      toolCallResponse('call-1', 'todo_write', { todos: original }),
+      toolCallResponse('call-2', 'todo_write', { todos: original.slice(0, 3) }),
+      toolCallResponse('call-3', 'todo_write', {
+        todos: original.map(todo => ({ ...todo, status: 'completed' })),
+      }),
+      textResponse('The authoritative plan is complete.'),
+    ])
+    const ctx = await harness(adapter, true)
+    const agent = ctx.agentLoop.create(SessionId('it-todo-read-recovery'), { provider: 'mock', model: 'mock' })
+
+    agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'complete a preserved two-step task' }],
+      source: { kind: 'user' },
+    }))
+    await waitForIdle(ctx, agent)
+
+    const rejectedResult = agent.session.events.filter(event => event.type === 'tool/result')[1]
+    expect(JSON.stringify(rejectedResult)).toContain('retain completed evidence too')
+    expect(JSON.stringify(rejectedResult)).toContain('retry with this canonical list intact and in order')
+    expect(findEvent(agent.session.events, 'todo/write', 'last').data.todos).toEqual([
+      { content: 'keep this exact task name', status: 'completed' },
+      { content: 'and this exact second task', status: 'completed' },
+      { content: 'do not omit the fourth item', status: 'completed' },
+      { content: 'retain completed evidence too', status: 'completed' },
     ])
   })
 })

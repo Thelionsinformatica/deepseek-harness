@@ -125,6 +125,29 @@ describe('shipped agent presets gate both shell tools by platform', () => {
     })
   })
 
+  it('pins Leon global completion claims to current-turn evidence', () => {
+    const entries: unknown = yaml.load(
+      readFileSync(join(presetRoot, 'leon', 'agent.cordis.yml'), 'utf8'),
+      { schema: entryListSchema },
+    )
+    if (!Array.isArray(entries)) throw new TypeError('preset leon must parse to an entry array')
+    const row = entries.find((entry): entry is Record<string, unknown> => (
+      typeof entry === 'object' && entry !== null
+      && (entry as Record<string, unknown>).id === 'completion-claim-policy'
+    ))
+    if (row === undefined) throw new TypeError('preset leon must mount completion-claim-policy')
+    expect(row).toMatchObject({
+      name: '@deepseek-ai/dsh-completion-claim-policy',
+      config: {
+        maxEvidenceRecoveries: 1,
+        maxRecoveryMessageBytes: 4096,
+        maxArtifactClaims: 32,
+        verifyAbsoluteArtifactClaims: true,
+        requireCurrentTurnEvidence: true,
+      },
+    })
+  })
+
   it.each(['standard', 'code', 'cordis', 'leon'])('preset %s gates its shell tool rows by platform', (preset) => {
     const entries: unknown = yaml.load(
       readFileSync(join(presetRoot, preset, 'agent.cordis.yml'), 'utf8'),

@@ -2,7 +2,7 @@
 // earlier build must survive the versioned-document change without a hand
 // edit, byte for byte, while everything the recognizer cannot prove flat
 // keeps the loud rejection local.spec exercises.
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -10,6 +10,11 @@ import { join } from 'node:path'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import { LocalCredentialProvider, renderFlatLayoutMigration } from '../src/index.ts'
+
+vi.mock('../src/windows-protection.ts', async importOriginal => ({
+  ...await importOriginal<typeof import('../src/windows-protection.ts')>(),
+  credentialProtectorForPlatform: () => undefined,
+}))
 
 /** Credential documents are seeded owner-only, exactly as the provider creates them. */
 function writeCredentials(file: string, text: string): Promise<void> {

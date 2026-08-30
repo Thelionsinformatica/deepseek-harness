@@ -44,8 +44,10 @@ flowchart LR
   cfg --> plugin_dsh_base_llm_pi_ai
   plugin_dsh_base_qwen3_5_9b["qwen3.5:9b<br/>Qwen 3.5 9B (Local)"]
   cfg --> plugin_dsh_base_qwen3_5_9b
-  plugin_dsh_base_ornith_1_5_9b["ornith-1.5:9b<br/>Ornith 1.5 9B (Local Specialist)"]
+  plugin_dsh_base_ornith_1_5_9b["ornith-1.5:9b<br/>Ornith 1.5 9B (Local Manual)"]
   cfg --> plugin_dsh_base_ornith_1_5_9b
+  plugin_dsh_base_qwen3_8_distill_9b_q8["qwen3.8-distill:9b-q8<br/>Qwen 3.8 9B Distill Q8 (Local Manual)"]
+  cfg --> plugin_dsh_base_qwen3_8_distill_9b_q8
   plugin_dsh_base_qwen3_8_9b_distill_uncensored_heretic_latest["qwen3.8-9b-distill-uncensored-heretic:latest<br/>Qwen 3.8 9B Heretic (Local Manual)"]
   cfg --> plugin_dsh_base_qwen3_8_9b_distill_uncensored_heretic_latest
   plugin_dsh_base_auto["auto<br/>FreeLLMAPI Automatic"]
@@ -208,7 +210,8 @@ flowchart LR
 | `credentials` | `@deepseek-ai/dsh-credentials-local` |
 | `llm-pi-ai` | `@deepseek-ai/dsh-llm-pi-ai` |
 | `qwen3.5:9b` | `Qwen 3.5 9B (Local)` |
-| `ornith-1.5:9b` | `Ornith 1.5 9B (Local Specialist)` |
+| `ornith-1.5:9b` | `Ornith 1.5 9B (Local Manual)` |
+| `qwen3.8-distill:9b-q8` | `Qwen 3.8 9B Distill Q8 (Local Manual)` |
 | `qwen3.8-9b-distill-uncensored-heretic:latest` | `Qwen 3.8 9B Heretic (Local Manual)` |
 | `auto` | `FreeLLMAPI Automatic` |
 | `gemini-3.1-pro-preview-customtools` | `Gemini 3.1 Pro Preview Custom Tools` |

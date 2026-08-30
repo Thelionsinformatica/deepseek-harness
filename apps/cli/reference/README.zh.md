@@ -42,9 +42,9 @@ dsh --profile web --patch ./extra.yml --dump-config
 
 ## 诊断
 
-`dsh doctor` 是不启动 profile 的只读启动器模式。它根据 `^22.19 || >=24` 检查当前 Node 版本，在 Windows 上要求 `pwsh`，检查已解析 Harness home 与默认 workspace 的读写权限，在所选 profile 存在时验证其 `package.json` 和 `cordis.patch.yml`，并探测已构建的 `lib/bin.js`。home 缺失、profile 尚未初始化、Web 进程停止、源码执行时构建产物缺失或 Ollama endpoint 不可用属于警告；运行时版本不受支持、workspace 无法访问、已安装 profile 不完整、Windows PowerShell 缺失，或预期 Web 端口由其他服务响应，则属于失败。
+`dsh doctor` 是不启动 profile 的只读启动器模式。它根据 `^22.19 || >=24` 检查当前 Node 版本，在 Windows 上要求 `pwsh`，检查已解析 Harness home 与默认 workspace 的读写权限，在所选 profile 存在时验证其 `package.json` 和 `cordis.patch.yml`，并探测已构建的 `lib/bin.js`。home 缺失、profile 尚未初始化、Web 或 FreeLLMAPI 进程停止、源码执行时构建产物缺失、Ollama endpoint 不可用，或 FreeLLMAPI 没有就绪上游，均属于警告；运行时版本不受支持、workspace 无法访问、已安装 profile 不完整、Windows PowerShell 缺失，或预期 endpoint 由其他服务响应，则属于失败。
 
-Ollama 探测只发送 `GET <OLLAMA_HOST-or-loopback>/api/tags`，限制保留的响应前缀，并报告 Leon Automatic 所需的 `qwen3.5:9b` 与 `ornith-1.5:9b` 是否存在。Web 探测向 `http://127.0.0.1:<port>/` 发送一次有界 GET，并通过返回页面的标题或 The Lions 品牌识别 Leon。两项请求都不发送提示词或凭据。该命令不会创建路径、初始化 profile、启动或停止服务、更改端口或尝试修复。
+Ollama 探测只发送 `GET <OLLAMA_HOST-or-loopback>/api/tags`，限制保留的响应前缀，并报告 Leon Automatic 所需的 `qwen3.5:9b` 是否存在。可手动选择的 Ornith 与 Qwen 3.8 模型不影响自动路由就绪状态。FreeLLMAPI 探测发送 `GET http://127.0.0.1:31415/readyz`，验证服务形状的响应，并报告就绪上游数量。Web 探测向 `http://127.0.0.1:<port>/` 发送一次有界 GET，并通过返回页面的标题或 The Lions 品牌识别 Leon。这些请求都不发送提示词或凭据。该命令不会创建路径、初始化 profile、启动或停止服务、更改端口或尝试修复。
 
 ```sh
 dsh doctor

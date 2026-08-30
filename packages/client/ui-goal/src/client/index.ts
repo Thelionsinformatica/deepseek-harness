@@ -4,7 +4,8 @@
  * arrives through `useProjection('goal')` (seeded by the history tail page,
  * updated by session/projection frames), so this plugin owns no store, no
  * refresh chain, and no event listener. The inject face carries only the
- * four mutation verbs through the generated Goal Remote API;
+ * five actions through the generated Goal Remote API; round-limit recovery
+ * composes an edit and resume using the edit acknowledgement's fresh CAS ref;
  * their CAS ref reads the session's current projected value at call time.
  * Goal creation stays on the /goal host command.
  */
@@ -18,10 +19,10 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: the `goal` SessionProjectionMap key merge (single source, the domain's pure outlet).
 import type { GoalProjection, GoalRef } from '@deepseek-ai/dsh-goal/client'
 import type { GoalActionResult, GoalBarActions } from './slots.ts'
-import { GoalDock } from './GoalBar.tsx'
+import { GoalDock, ROUND_LIMIT_EXTENSION } from './GoalBar.tsx'
 import { GoalCommandInputView } from './GoalCommandInputView.tsx'
 import { goalCommandInputDefinition } from './goal-command-input.ts'
-import { en, zh, type GoalKey } from './locales.ts'
+import { en, pt, zh, type GoalKey } from './locales.ts'
 
 export { GoalBar, GoalDock } from './GoalBar.tsx'
 export type { GoalActionResult, GoalBarActions } from './slots.ts'
@@ -46,7 +47,7 @@ export const inject = ['slots', 'sessions', 'remote', 'remote.goals', 'locale', 
  */
 export function apply(ctx: ClientContext): void {
   ctx.conversationEvents.register(goalCommandInputDefinition)
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-goal: dictionaries')
+  ctx.effect(() => ctx.locale.register(NS, { pt, zh, en }), 'ui-goal: dictionaries')
 
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node',
@@ -56,11 +57,16 @@ export function apply(ctx: ClientContext): void {
 
   const sessions = ctx.sessions
 
+  /** The current whole projection, read at action time. */
+  const projectionOf = (sessionId: SessionId): GoalProjection | undefined => {
+    const face = sessions.binding(sessionId)?.session.projections.faceOf('goal')
+    return face?.getSnapshot() as GoalProjection | null | undefined ?? undefined
+  }
+
   /** The session's current projected CAS ref, read at verb call time (no staleness fence: the RPC's CAS is the guard). */
   const refOf = (sessionId: SessionId): GoalRef | undefined => {
-    const face = sessions.binding(sessionId)?.session.projections.faceOf('goal')
-    const projection = face?.getSnapshot() as GoalProjection | null | undefined
-    if (projection == null) return undefined
+    const projection = projectionOf(sessionId)
+    if (projection === undefined) return undefined
     return { id: projection.goal.id, revision: projection.goal.revision }
   }
 
@@ -89,6 +95,21 @@ export function apply(ctx: ClientContext): void {
         const ref = refOf(sessionId)
         if (ref === undefined) return noCurrentGoal
         return await ctx.remote.goals.resume(sessionId, ref)
+      },
+      onExtendAndResume: async () => {
+        const projection = projectionOf(sessionId)
+        if (projection === undefined) return noCurrentGoal
+        const nextMaxGoalRounds = Math.max(projection.goal.maxGoalRounds, projection.roundsStarted)
+          + ROUND_LIMIT_EXTENSION
+        const edited = await ctx.remote.goals.edit(sessionId, {
+          id: projection.goal.id,
+          revision: projection.goal.revision,
+        }, { maxGoalRounds: nextMaxGoalRounds })
+        if (!edited.ok) return edited
+        return await ctx.remote.goals.resume(sessionId, {
+          id: edited.value.id,
+          revision: edited.value.revision,
+        })
       },
       onClear: async () => {
         const ref = refOf(sessionId)

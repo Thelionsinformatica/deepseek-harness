@@ -72,7 +72,7 @@ const DESCRIPTION_TAIL =
   + 'worked on now), `completed` (finished).'
 
 const DESCRIPTION_PRESERVE =
-  'Retain every existing todo with the exact same content and relative order on later calls. '
+  'Keep all prior todo text/order unchanged; '
   + 'Only update statuses or insert newly discovered work, and never move a completed item backward. '
 
 /**
@@ -82,20 +82,68 @@ const DESCRIPTION_PRESERVE =
  * @returns the composed tool description.
  */
 function describe(allowParallel: boolean, preserveExistingItems: boolean): string {
-  return DESCRIPTION_HEAD
+  return (preserveExistingItems ? DESCRIPTION_PRESERVE : '')
+    + DESCRIPTION_HEAD
     + (allowParallel ? DESCRIPTION_PARALLEL : DESCRIPTION_SINGLE)
-    + (preserveExistingItems ? DESCRIPTION_PRESERVE : '')
     + DESCRIPTION_TAIL
 }
 
-/** Return the standing list after the latest direct-human task boundary. */
-function currentTodos(events: readonly SessionEvent[]): TodoItem[] | null {
+interface GoalChangeLike {
+  operation: string
+  goal: { id: string; phase: string } | null
+}
+
+/** Read the optional goal event structurally without coupling the todo package to the goal package. */
+function asGoalChange(event: SessionEvent): GoalChangeLike | null {
+  const candidate = event as unknown as { type?: unknown; data?: unknown }
+  if (candidate.type !== 'goal/change' || typeof candidate.data !== 'object' || candidate.data === null) return null
+  const data = candidate.data as { operation?: unknown; goal?: unknown }
+  if (typeof data.operation !== 'string') return null
+  if (typeof data.goal !== 'object' || data.goal === null) {
+    return { operation: data.operation, goal: null }
+  }
+  const goal = data.goal as { id?: unknown; phase?: unknown }
+  if (typeof goal.id !== 'string' || typeof goal.phase !== 'string') {
+    return { operation: data.operation, goal: null }
+  }
+  return { operation: data.operation, goal: { id: goal.id, phase: goal.phase } }
+}
+
+/** Locate the current unfinished goal's create event, or no goal-owned plan boundary. */
+function openGoalCreateIndex(events: readonly SessionEvent[]): number | null {
+  let latest: GoalChangeLike | null = null
   for (let index = events.length - 1; index >= 0; index--) {
     const event = events[index]
-    if (event?.type === 'todo/write') return event.data.todos
-    if (event?.type === 'user/message' && event.data.source.kind === 'user') return null
+    if (event === undefined) continue
+    latest = asGoalChange(event)
+    if (latest !== null) break
+  }
+  if (latest === null || latest.operation === 'clear' || latest.goal === null || latest.goal.phase === 'complete') return null
+  for (let index = events.length - 1; index >= 0; index--) {
+    const event = events[index]
+    if (event === undefined) continue
+    const change = asGoalChange(event)
+    if (change?.operation === 'create' && change.goal?.id === latest.goal.id) return index
   }
   return null
+}
+
+/** Return the standing list within the unfinished goal or latest direct-human task boundary. */
+function currentTodos(events: readonly SessionEvent[]): TodoItem[] | null {
+  const goalBoundary = openGoalCreateIndex(events)
+  for (let index = events.length - 1; index >= 0; index--) {
+    if (goalBoundary !== null && index <= goalBoundary) return null
+    const event = events[index]
+    if (event?.type === 'todo/write') return event.data.todos
+    if (goalBoundary === null && event?.type === 'user/message' && event.data.source.kind === 'user') return null
+  }
+  return null
+}
+
+/** Recovery suffix shared by every preservation rejection. */
+function canonicalRetry(previous: readonly TodoItem[]): string {
+  return 'retry with this canonical list intact and in order; update statuses and retain any legitimate new items: '
+    + JSON.stringify(previous)
 }
 
 /** Enforce additive plan evolution without blocking newly discovered work. */
@@ -104,12 +152,18 @@ function preserveExistingTodos(previous: readonly TodoItem[], next: readonly Tod
   for (const existing of previous) {
     const found = next.slice(cursor).findIndex(candidate => candidate.content === existing.content)
     if (found < 0) {
-      throw new Error(`invalid todos: preserved plan must retain existing item ${JSON.stringify(existing.content)}`)
+      throw new Error(
+        `invalid todos: preserved plan must retain existing item ${JSON.stringify(existing.content)}; `
+        + canonicalRetry(previous),
+      )
     }
     cursor += found
     const candidate = next[cursor]
     if (existing.status === 'completed' && candidate?.status !== 'completed') {
-      throw new Error(`invalid todos: completed item cannot move backward ${JSON.stringify(existing.content)}`)
+      throw new Error(
+        `invalid todos: completed item cannot move backward ${JSON.stringify(existing.content)}; `
+        + canonicalRetry(previous),
+      )
     }
     cursor++
   }
@@ -157,6 +211,11 @@ const todosProjectionSchema: ZodType<TodoItem[] | null> = zod.union([
   zod.null(),
 ])
 
+const todoProjectionStateSchema = zod.object({
+  todos: todosProjectionSchema,
+  activeGoalId: zod.union([zod.string().min(1), zod.null()]),
+}).strict()
+
 /**
  * Register the `todo_write` tool on `ctx.tools` and, when the session-projection seam is composed,
  * the `todos` unit.
@@ -168,22 +227,35 @@ export function apply(ctx: Context, config: Config): void {
   const preserveItems = config.preserveExistingItems
   // The unit child activates only when a projection registry is composed
   // (headless assemblies without the seam stay unaffected). Standing-plan fold:
-  // latest whole todo/write list, cleared by the next direct-human message.
-  // Automatic goal-round messages keep the list because they continue the same
-  // objective; turn/end also keeps the finished checklist visible. Every other
-  // event returns the same state reference.
+  // latest whole todo/write list, cleared by the next direct-human message only
+  // when no durable unfinished goal owns it. Human resume messages and automatic
+  // goal rounds keep that goal's checklist. Terminal goal state releases ownership
+  // but leaves the checklist visible until the next human task. Every other event
+  // returns the same state reference.
   ctx.inject(['sessionProjections'], (projectionCtx) => {
-    projectionCtx.sessionProjections.register<'todos', TodoItem[] | null>({
+    projectionCtx.sessionProjections.register({
       key: 'todos',
-      stateSchema: todosProjectionSchema,
-      init: () => null,
+      stateSchema: todoProjectionStateSchema,
+      init: () => ({ todos: null, activeGoalId: null }),
       apply: (state, event) => {
-        if (event.type === 'todo/write') return event.data.todos
-        if (event.type === 'user/message' && event.data.source.kind === 'user') return null
+        const goalChange = asGoalChange(event)
+        if (goalChange !== null) {
+          const activeGoalId = goalChange.operation === 'clear' || goalChange.goal?.phase === 'complete'
+            ? null
+            : goalChange.goal?.id ?? null
+          if (goalChange.operation === 'create' && activeGoalId !== null && activeGoalId !== state.activeGoalId) {
+            return { todos: null, activeGoalId }
+          }
+          return activeGoalId === state.activeGoalId ? state : { ...state, activeGoalId }
+        }
+        if (event.type === 'todo/write') return { ...state, todos: event.data.todos }
+        if (event.type === 'user/message' && event.data.source.kind === 'user' && state.activeGoalId === null) {
+          return state.todos === null ? state : { ...state, todos: null }
+        }
         return state
       },
-      wire: { viewSchema: todosProjectionSchema, view: state => state },
-      stateVersion: 3,
+      wire: { viewSchema: todosProjectionSchema, view: state => state.todos },
+      stateVersion: 4,
     })
   })
   ctx.tools.register(defineTool({

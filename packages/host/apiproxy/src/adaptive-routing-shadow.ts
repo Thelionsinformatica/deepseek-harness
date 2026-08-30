@@ -70,7 +70,10 @@ export interface AdaptiveRoutingShadowConfig {
   expertInputTokens?: number
   /** Message-count threshold that raises the minimum route quality to three. */
   expertMessageCount?: number
-  /** Tool-count threshold that raises the minimum route quality to three. */
+  /**
+   * Legacy threshold retained only while older deployment files are migrated.
+   * @deprecated Offered tool schemas do not measure task difficulty.
+   */
   expertToolCount?: number
   /** Consecutive provider failures required before the shadow circuit opens. */
   circuitBreakerFailures?: number
@@ -184,7 +187,6 @@ const DEFAULT_TOOL_LOOP_RESERVE = 4096
 const DEFAULT_MEDIUM_INPUT = 12000
 const DEFAULT_EXPERT_INPUT = 24000
 const DEFAULT_EXPERT_MESSAGES = 20
-const DEFAULT_EXPERT_TOOLS = 8
 const DEFAULT_CIRCUIT_FAILURES = 3
 const DEFAULT_LATENCY_MIN_SAMPLES = 3
 const DEFAULT_LATENCY_MULTIPLIER = 2.5
@@ -339,26 +341,43 @@ function fallbackInputEstimate(options: GenerateOptions): number {
   return Math.max(1, Math.ceil(text / 4))
 }
 
+/**
+ * Infer route quality from request pressure without treating the active model
+ * or the number of offered tool schemas as evidence of task difficulty.
+ *
+ * @param config - Shadow policy thresholds that classify structural pressure.
+ * @param input - Content-free request measurements used by the classifier.
+ * @returns The minimum candidate quality tier from one through three.
+ */
+export function inferAdaptiveShadowMinimumQuality(
+  config: AdaptiveRoutingShadowConfig,
+  input: Pick<AdaptiveShadowRequestFacts, 'estimatedInputTokens' | 'messageCount' | 'toolCount' | 'imageCount'>,
+): number {
+  let structuralQuality = 1
+  if (input.estimatedInputTokens >= (config.mediumInputTokens ?? DEFAULT_MEDIUM_INPUT)) structuralQuality = 2
+  if (input.estimatedInputTokens >= (config.expertInputTokens ?? DEFAULT_EXPERT_INPUT)
+    || input.messageCount >= (config.expertMessageCount ?? DEFAULT_EXPERT_MESSAGES)
+    || input.imageCount > 0) structuralQuality = 3
+  return structuralQuality
+}
+
 function requestFacts(
   config: AdaptiveRoutingShadowConfig,
   options: GenerateOptions,
   session: Session,
   meter: TokenMeter | undefined,
-  observedQuality: number,
 ): AdaptiveShadowRequestFacts {
   const estimatedInputTokens = meter?.measure(session).totalTokens ?? fallbackInputEstimate(options)
   const reservedOutputTokens = options.maxTokens ?? config.outputReserveTokens ?? DEFAULT_OUTPUT_RESERVE
   const toolCount = options.tools?.length ?? 0
   const images = imageCount(options)
   const messageCount = options.messages.length
-  let structuralQuality = 1
-  if (estimatedInputTokens >= (config.mediumInputTokens ?? DEFAULT_MEDIUM_INPUT) || toolCount > 0) {
-    structuralQuality = 2
-  }
-  if (estimatedInputTokens >= (config.expertInputTokens ?? DEFAULT_EXPERT_INPUT)
-    || messageCount >= (config.expertMessageCount ?? DEFAULT_EXPERT_MESSAGES)
-    || toolCount >= (config.expertToolCount ?? DEFAULT_EXPERT_TOOLS)
-    || (images > 0 && toolCount > 0)) structuralQuality = 3
+  const minimumQuality = inferAdaptiveShadowMinimumQuality(config, {
+    estimatedInputTokens,
+    messageCount,
+    toolCount,
+    imageCount: images,
+  })
   const toolLoopReserveTokens = toolCount === 0
     ? 0
     : config.toolLoopReserveTokens ?? DEFAULT_TOOL_LOOP_RESERVE
@@ -370,7 +389,7 @@ function requestFacts(
     messageCount,
     toolCount,
     imageCount: images,
-    minimumQuality: Math.max(structuralQuality, observedQuality),
+    minimumQuality,
   }
 }
 
@@ -450,14 +469,11 @@ class AdaptiveShadowRuntime {
   }
 
   async observe(options: GenerateOptions, session: Session, step: { turn: number; step: number }): Promise<void> {
-    const observedRoute = this.config.routes.find(route =>
-      route.provider === options.provider && route.model === options.model)
     const facts = requestFacts(
       this.config,
       options,
       session,
       this.ctx.get('tokenMeter'),
-      observedRoute?.quality ?? 1,
     )
     const routes = await Promise.all(this.config.routes.map(route => this.resolveRoute(session, route)))
     const decision = evaluateAdaptiveRoutingShadow(this.config, facts, routes)

@@ -965,13 +965,13 @@ describe('user-explicit invocation injection', () => {
     return createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } })
   }
 
-  async function invokeHarness(): Promise<{ ctx: Context; agent: Agent }> {
+  async function invokeHarness(config: toolSkill.Config = {}): Promise<{ ctx: Context; agent: Agent }> {
     const home = await tempDir('invoke')
     const skillsRoot = join(home, '.agents', 'skills')
     await writePolicySkill(skillsRoot, 'hidden-demo', 'User-only demo', 'disable-model-invocation: true', 'Say the magic word: PINEAPPLE.')
     await writePolicySkill(skillsRoot, 'shared-skill', 'Ordinary skill', '', 'Shared instructions.')
     await writePolicySkill(skillsRoot, 'model-only-skill', 'Model only', 'user-invocable: false', 'Model-only instructions.')
-    const ctx = await setup(home)
+    const ctx = await setup(home, config)
     return { ctx, agent: agentForCwd(home) }
   }
 
@@ -1081,5 +1081,64 @@ describe('user-explicit invocation injection', () => {
       .filter(message => (message.source as { kind?: string }).kind === 'skill-invocation')
       .map(message => (message.source as { name: string }).name)
     expect(invoked).toEqual(['shared-skill'])
+  })
+
+  it('auto-loads a model-invocable skill from normalized direct-human literal text', async () => {
+    const { ctx, agent } = await invokeHarness({
+      autoLoad: [{ name: 'shared-skill', contains: ['.leon/knowledge'] }],
+    })
+    const windows = await proposeStep(ctx, agent, [gesture('Consulte D:\\SampleWorkspace\\.LEON\\knowledge agora')])
+    if (windows.kind !== 'enter') throw new Error('expected enter')
+    const windowsInjections = windows.messages.filter(message =>
+      (message.source as { kind?: string; name?: string }).kind === 'skill-invocation'
+      && (message.source as { name?: string }).name === 'shared-skill')
+    expect(windowsInjections).toHaveLength(1)
+
+    const portable = await proposeStep(ctx, agent, [gesture('consulte D:/SampleWorkspace/.leon/knowledge agora')])
+    if (portable.kind !== 'enter') throw new Error('expected enter')
+    expect(portable.messages.filter(message =>
+      (message.source as { kind?: string; name?: string }).kind === 'skill-invocation'
+      && (message.source as { name?: string }).name === 'shared-skill')).toHaveLength(1)
+  })
+
+  it('never auto-loads from injected sources and leaves unmatched direct text alone', async () => {
+    const { ctx, agent } = await invokeHarness({
+      autoLoad: [{ name: 'shared-skill', contains: ['.leon/knowledge'] }],
+    })
+    const forged = createUserMessage({
+      content: [{ type: 'text', text: 'D:\\SampleWorkspace\\.leon\\knowledge' }],
+      source: { kind: 'plugin', plugin: 'history-replay' },
+    })
+    const decision = await proposeStep(ctx, agent, [forged, gesture('uma pergunta sem marcador')])
+    if (decision.kind !== 'enter') throw new Error('expected enter')
+    expect(decision.messages.some(message =>
+      (message.source as { kind?: string }).kind === 'skill-invocation')).toBe(false)
+  })
+
+  it('dedupes an automatic match with an explicit gesture and respects model invocation policy', async () => {
+    const { ctx, agent } = await invokeHarness({
+      autoLoad: [
+        { name: 'shared-skill', contains: ['.leon/knowledge'] },
+        { name: 'model-only-skill', contains: ['model marker'] },
+      ],
+    })
+    const decision = await proposeStep(ctx, agent, [
+      gesture('/shared-skill use D:\\SampleWorkspace\\.leon\\knowledge and model marker'),
+    ])
+    if (decision.kind !== 'enter') throw new Error('expected enter')
+    const invoked = decision.messages
+      .filter(message => (message.source as { kind?: string }).kind === 'skill-invocation')
+      .map(message => (message.source as { name: string }).name)
+    expect(invoked).toEqual(['shared-skill', 'model-only-skill'])
+  })
+
+  it('rejects invalid automatic-load configuration before serving a step', async () => {
+    const home = await tempDir('invoke-invalid-autoload')
+    await expect(setup(home, {
+      autoLoad: [{ name: 'Not Valid', contains: ['marker'] }],
+    })).rejects.toThrow('invalid autoLoad skill name')
+    await expect(setup(home, {
+      autoLoad: [{ name: 'shared-skill', contains: ['   '] }],
+    })).rejects.toThrow('contains a blank literal')
   })
 })

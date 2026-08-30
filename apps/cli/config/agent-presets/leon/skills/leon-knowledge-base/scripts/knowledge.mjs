@@ -4,6 +4,7 @@ import {
   copyFile,
   lstat,
   mkdir,
+  open,
   readFile,
   readdir,
   realpath,
@@ -14,6 +15,14 @@ import { createHash } from 'node:crypto'
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 const MAX_SOURCE_BYTES = 25 * 1024 * 1024
+const DEFAULT_SEARCH_LIMIT = 8
+const MAX_SEARCH_LIMIT = 20
+const MAX_SEARCH_QUERY_CHARS = 512
+const MAX_SEARCH_ENTRIES = 2_000
+const MAX_SEARCH_FILE_BYTES = 1024 * 1024
+const MAX_SEARCH_SCAN_BYTES = 8 * 1024 * 1024
+const MAX_SEARCH_OUTPUT_BYTES = 32 * 1024
+const MAX_SEARCH_SNIPPET_CHARS = 360
 const TEXT_EXTENSIONS = new Set([
   '.csv', '.html', '.json', '.md', '.rst', '.text', '.toml', '.tsv', '.txt', '.xml', '.yaml', '.yml',
 ])
@@ -331,6 +340,255 @@ async function markdownFiles(directory) {
   return files
 }
 
+function searchLimit(value) {
+  if (value === undefined) return DEFAULT_SEARCH_LIMIT
+  if (!/^[1-9]\d*$/.test(value)) {
+    throw new KnowledgeError('INVALID_SEARCH_LIMIT', `--limit precisa ser um inteiro entre 1 e ${MAX_SEARCH_LIMIT}.`)
+  }
+  const limit = Number(value)
+  if (!Number.isSafeInteger(limit) || limit > MAX_SEARCH_LIMIT) {
+    throw new KnowledgeError('INVALID_SEARCH_LIMIT', `--limit precisa ser um inteiro entre 1 e ${MAX_SEARCH_LIMIT}.`)
+  }
+  return limit
+}
+
+function searchQuery(value) {
+  const query = value?.replace(/\s+/g, ' ').trim()
+  if (query === undefined || query === '') {
+    throw new KnowledgeError('SEARCH_QUERY_REQUIRED', 'Informe --query <texto>.')
+  }
+  if (query.length > MAX_SEARCH_QUERY_CHARS) {
+    throw new KnowledgeError(
+      'SEARCH_QUERY_TOO_LONG',
+      `A consulta excede o limite de ${MAX_SEARCH_QUERY_CHARS} caracteres.`,
+    )
+  }
+  return query
+}
+
+function normalizedSearchText(value) {
+  return value.normalize('NFKD').replace(/\p{M}/gu, '').toLocaleLowerCase('pt-BR')
+}
+
+const SEARCH_STOP_WORDS = new Set([
+  'a', 'ao', 'aos', 'as', 'com', 'como', 'da', 'das', 'de', 'do', 'dos', 'e',
+  'em', 'eu', 'ja', 'leon', 'me', 'na', 'nas', 'no', 'nos', 'o', 'os', 'ou',
+  'para', 'por', 'que', 'se', 'sem', 'sobre', 'um', 'uma', 'voce',
+])
+
+function queryTerms(query) {
+  const normalized = normalizedSearchText(query)
+  const candidates = normalized.split(/[^\p{L}\p{N}_-]+/u).filter(Boolean)
+  return {
+    normalized,
+    tokens: [...new Set(candidates.filter(token => (
+      !SEARCH_STOP_WORDS.has(token)
+      && (token.length >= 2 || /^\d+$/u.test(token))
+    )))],
+  }
+}
+
+function searchScore(path, content, terms) {
+  const normalizedPath = normalizedSearchText(path)
+  const normalizedContent = normalizedSearchText(content)
+  let score = 0
+  if (normalizedPath.includes(terms.normalized)) score += 240
+  if (normalizedContent.includes(terms.normalized)) score += 120
+  for (const token of terms.tokens) {
+    if (normalizedPath.includes(token)) score += 24
+    if (normalizedContent.includes(token)) score += 12
+  }
+  return score
+}
+
+function searchSnippet(content, terms) {
+  const compact = content.replace(/\s+/g, ' ').trim()
+  if (compact === '') return ''
+  const normalized = normalizedSearchText(compact)
+  const needles = [terms.normalized, ...terms.tokens]
+  let match = -1
+  for (const needle of needles) {
+    const candidate = normalized.indexOf(needle)
+    if (candidate !== -1 && (match === -1 || candidate < match)) match = candidate
+  }
+  const center = match === -1 ? 0 : match
+  const start = Math.max(0, center - Math.floor(MAX_SEARCH_SNIPPET_CHARS / 3))
+  const end = Math.min(compact.length, start + MAX_SEARCH_SNIPPET_CHARS)
+  return `${start > 0 ? '…' : ''}${compact.slice(start, end)}${end < compact.length ? '…' : ''}`
+}
+
+function searchTitle(content, path) {
+  const title = frontmatter(content).get('title')
+  if (typeof title === 'string' && title.trim() !== '') return title.replace(/\s+/g, ' ').trim().slice(0, 160)
+  const heading = /^#\s+(.+)$/m.exec(content)?.[1]
+  return (heading ?? basename(path, '.md')).replace(/\s+/g, ' ').trim().slice(0, 160)
+}
+
+async function boundedMarkdownFiles(root) {
+  const files = []
+  const directories = [root]
+  let entries = 0
+  let truncated = false
+
+  while (directories.length > 0 && !truncated) {
+    const directory = directories.shift()
+    const children = await readdir(directory, { withFileTypes: true })
+    children.sort((left, right) => left.name.localeCompare(right.name))
+    for (const entry of children) {
+      entries += 1
+      if (entries > MAX_SEARCH_ENTRIES) {
+        truncated = true
+        break
+      }
+      const path = join(directory, entry.name)
+      if (entry.isDirectory()) directories.push(path)
+      else if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) files.push(path)
+    }
+  }
+
+  return { files, entries: Math.min(entries, MAX_SEARCH_ENTRIES), truncated }
+}
+
+async function canonicalSearchRoot(root, expectedRelative) {
+  let canonical
+  try {
+    canonical = await realpath(join(root, ...expectedRelative.split('/')))
+  } catch {
+    throw new KnowledgeError('KNOWLEDGE_SEARCH_PATH_MISSING', `Caminho obrigatório ausente: ${expectedRelative}.`)
+  }
+  requireContained(
+    root,
+    canonical,
+    'KNOWLEDGE_SEARCH_PATH_ESCAPE',
+    `O caminho ${expectedRelative} aponta para fora da base de conhecimento.`,
+  )
+  if (portablePath(relative(root, canonical)) !== expectedRelative) {
+    throw new KnowledgeError(
+      'KNOWLEDGE_SEARCH_PATH_ESCAPE',
+      `O caminho ${expectedRelative} aponta para outra área da base de conhecimento.`,
+    )
+  }
+  return canonical
+}
+
+async function readSearchFile(context, path, allowedRoot, remainingBytes) {
+  let canonical
+  try {
+    canonical = await realpath(path)
+  } catch {
+    return { skipped: true, reason: 'missing' }
+  }
+  requireContained(
+    allowedRoot,
+    canonical,
+    'KNOWLEDGE_SEARCH_PATH_ESCAPE',
+    'Um arquivo de busca aponta para fora da área documental permitida.',
+  )
+  const handle = await open(canonical, 'r')
+  try {
+    const metadata = await handle.stat()
+    if (!metadata.isFile()) return { skipped: true, reason: 'not-file' }
+    if (metadata.size > MAX_SEARCH_FILE_BYTES) {
+      return { skipped: true, reason: 'file-byte-limit', bytes: metadata.size }
+    }
+    if (metadata.size > remainingBytes) {
+      return { skipped: true, reason: 'scan-byte-limit', bytes: metadata.size }
+    }
+    const buffer = Buffer.alloc(metadata.size)
+    let offset = 0
+    while (offset < buffer.length) {
+      const { bytesRead } = await handle.read(buffer, offset, buffer.length - offset, offset)
+      if (bytesRead === 0) break
+      offset += bytesRead
+    }
+    return {
+      skipped: false,
+      bytes: offset,
+      content: buffer.subarray(0, offset).toString('utf8'),
+      path: portablePath(relative(context.workspace, canonical)),
+      searchPath: portablePath(relative(context.root, canonical)),
+    }
+  } finally {
+    await handle.close()
+  }
+}
+
+async function search(workspaceOption, queryOption, limitOption) {
+  const context = await workspaceContext(workspaceOption)
+  const query = searchQuery(queryOption)
+  const limit = searchLimit(limitOption)
+  const terms = queryTerms(query)
+  const index = await canonicalSearchRoot(context.root, 'index.md')
+  const wiki = await canonicalSearchRoot(context.root, 'wiki')
+  const discovered = await boundedMarkdownFiles(wiki)
+  const candidates = [
+    { path: index, allowedRoot: context.root },
+    ...discovered.files.map(path => ({ path, allowedRoot: wiki })),
+  ]
+  const matches = []
+  let scannedBytes = 0
+  let scannedFiles = 0
+  let skippedFiles = 0
+
+  for (const candidate of candidates) {
+    const file = await readSearchFile(
+      context,
+      candidate.path,
+      candidate.allowedRoot,
+      MAX_SEARCH_SCAN_BYTES - scannedBytes,
+    )
+    if (file.skipped) {
+      skippedFiles += 1
+      continue
+    }
+    scannedBytes += file.bytes
+    scannedFiles += 1
+    const score = searchScore(file.searchPath, file.content, terms)
+    if (score === 0) continue
+    const status = frontmatter(file.content).get('status')
+    matches.push({
+      path: file.path,
+      title: searchTitle(file.content, file.path),
+      ...(typeof status === 'string' ? { status } : {}),
+      score,
+      snippet: searchSnippet(file.content, terms),
+    })
+  }
+
+  matches.sort((left, right) => right.score - left.score || left.path.localeCompare(right.path))
+  const results = []
+  let outputBytes = 2
+  for (const match of matches) {
+    if (results.length >= limit) break
+    const bytes = Buffer.byteLength(JSON.stringify(match), 'utf8') + (results.length === 0 ? 0 : 1)
+    if (outputBytes + bytes > MAX_SEARCH_OUTPUT_BYTES) continue
+    results.push(match)
+    outputBytes += bytes
+  }
+
+  return {
+    ok: true,
+    command: 'search',
+    query,
+    limit,
+    results,
+    omittedMatches: matches.length - results.length,
+    scan: {
+      files: scannedFiles,
+      bytes: scannedBytes,
+      skippedFiles,
+      discoveryTruncated: discovered.truncated,
+    },
+    limits: {
+      maxResults: MAX_SEARCH_LIMIT,
+      maxEntries: MAX_SEARCH_ENTRIES,
+      maxFileBytes: MAX_SEARCH_FILE_BYTES,
+      maxScanBytes: MAX_SEARCH_SCAN_BYTES,
+      maxOutputBytes: MAX_SEARCH_OUTPUT_BYTES,
+    },
+  }
+}
+
 async function lint(workspaceOption) {
   let context
   try {
@@ -437,9 +695,10 @@ async function main() {
   const workspace = options.get('workspace')
   if (command === 'init') return initialize(workspace)
   if (command === 'ingest') return ingest(workspace, options.get('source'), options.get('title'))
+  if (command === 'search') return search(workspace, options.get('query'), options.get('limit'))
   if (command === 'lint') return lint(workspace)
   if (command === 'status') return status(workspace)
-  throw new KnowledgeError('UNKNOWN_COMMAND', 'Use init, ingest, status ou lint.')
+  throw new KnowledgeError('UNKNOWN_COMMAND', 'Use init, ingest, search, status ou lint.')
 }
 
 try {

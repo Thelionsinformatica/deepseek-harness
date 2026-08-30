@@ -7,12 +7,10 @@
     "bwrap",
     "icacls",
     "musl-gcc",
-    "pwsh",
     "python3",
     "sandbox-exec",
     "tar",
-    "taskkill",
-    "where.exe"
+    "taskkill"
   ],
   "ignoreWorkspaces": [
     "vendor/*",
@@ -666,6 +664,7 @@
     "packages/bundle/web-app": {
       "ignoreDependencies": [
         "@deepseek-ai/.+",
+        "open",
         "typescript-language-server"
       ]
     }

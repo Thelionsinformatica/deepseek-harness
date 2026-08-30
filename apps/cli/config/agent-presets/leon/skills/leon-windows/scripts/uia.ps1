@@ -28,6 +28,9 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$utf8Output = [System.Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding = $utf8Output
+$OutputEncoding = $utf8Output
 $script:MutatingCommands = @('invoke', 'set-value', 'select', 'screenshot')
 $script:AuditTarget = [ordered]@{}
 

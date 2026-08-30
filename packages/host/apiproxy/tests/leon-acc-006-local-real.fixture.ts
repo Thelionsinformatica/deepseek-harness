@@ -8,7 +8,7 @@ export interface LeonAcc006LocalTask {
   hasHistory: boolean
   goalRound?: number
   expectedTier: AdaptiveRoutingDecision['tier']
-  expectedModel: 'qwen3.5:9b' | 'ornith-1.5:9b'
+  expectedModel: 'qwen3.5:9b'
   acceptedAnswers: readonly string[]
 }
 
@@ -252,7 +252,7 @@ export const leonAcc006LocalTasks = [
     prompt: 'Faça uma auditoria completa da lista A, B, A, C. Retorne no campo answer somente o item duplicado.',
     hasHistory: false,
     expectedTier: 'expert',
-    expectedModel: 'ornith-1.5:9b',
+    expectedModel: 'qwen3.5:9b',
     acceptedAnswers: ['a'],
   },
   {
@@ -261,7 +261,7 @@ export const leonAcc006LocalTasks = [
     prompt: 'Faça uma análise profunda da sequência 2, 4, 8, 16. Retorne no campo answer somente o próximo número.',
     hasHistory: false,
     expectedTier: 'expert',
-    expectedModel: 'ornith-1.5:9b',
+    expectedModel: 'qwen3.5:9b',
     acceptedAnswers: ['32'],
   },
   {
@@ -270,7 +270,7 @@ export const leonAcc006LocalTasks = [
     prompt: 'Revise toda a arquitetura formada pelos componentes interface, API e banco. Retorne no campo answer somente a quantidade de componentes.',
     hasHistory: true,
     expectedTier: 'expert',
-    expectedModel: 'ornith-1.5:9b',
+    expectedModel: 'qwen3.5:9b',
     acceptedAnswers: ['3'],
   },
   {
@@ -279,7 +279,7 @@ export const leonAcc006LocalTasks = [
     prompt: 'Considere um projeto completo dividido em MVP e melhorias futuras. Retorne no campo answer somente a etapa que deve vir primeiro: MVP.',
     hasHistory: false,
     expectedTier: 'expert',
-    expectedModel: 'ornith-1.5:9b',
+    expectedModel: 'qwen3.5:9b',
     acceptedAnswers: ['mvp'],
   },
   {
@@ -288,7 +288,7 @@ export const leonAcc006LocalTasks = [
     prompt: thirteenLinesPrompt,
     hasHistory: false,
     expectedTier: 'expert',
-    expectedModel: 'ornith-1.5:9b',
+    expectedModel: 'qwen3.5:9b',
     acceptedAnswers: ['13'],
   },
   {
@@ -297,7 +297,7 @@ export const leonAcc006LocalTasks = [
     prompt: expertLengthPrompt,
     hasHistory: false,
     expectedTier: 'expert',
-    expectedModel: 'ornith-1.5:9b',
+    expectedModel: 'qwen3.5:9b',
     acceptedAnswers: ['orion-28'],
   },
   {
@@ -306,7 +306,7 @@ export const leonAcc006LocalTasks = [
     prompt: 'Analise a segurança desta arquitetura em produção usando as portas 80 e 443. Retorne no campo answer somente a maior porta.',
     hasHistory: false,
     expectedTier: 'expert',
-    expectedModel: 'ornith-1.5:9b',
+    expectedModel: 'qwen3.5:9b',
     acceptedAnswers: ['443'],
   },
   {
@@ -316,7 +316,7 @@ export const leonAcc006LocalTasks = [
     hasHistory: true,
     goalRound: 1,
     expectedTier: 'goal-round',
-    expectedModel: 'ornith-1.5:9b',
+    expectedModel: 'qwen3.5:9b',
     acceptedAnswers: ['42'],
   },
 ] as const satisfies readonly LeonAcc006LocalTask[]

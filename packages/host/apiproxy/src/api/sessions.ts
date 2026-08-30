@@ -171,7 +171,9 @@ export interface SessionModels {
   automaticAvailable: boolean
   /**
    * Whether this process may send this session's automatic retry content to a
-   * failover route declared external. Omission from an older Host means false.
+   * failover route declared external. A protected local retrieval after the
+   * latest grant makes this false until the user grants consent again.
+   * Omission from an older Host means false.
    */
   externalFailoverConsent?: boolean
   /** Successfully loaded provider groups. */
@@ -315,14 +317,16 @@ export interface SessionsApi {
     automatic?: boolean
     /**
      * Explicitly permit this session's automatic retries to use configured
-     * external failovers. Omission and false deny external transmission.
+     * external failovers for the local results already present when this
+     * request commits. A later protected local retrieval requires a new grant.
+     * Omission and false deny external transmission.
      */
     externalFailoverConsent?: boolean
   }>):
   Promise<RpcResponse<{
     selected: ModelSelection
     automatic: boolean
-    /** Effective process-local consent; omitted only by older Hosts. */
+    /** Effective process-local consent covering every protected local result currently present. */
     externalFailoverConsent?: boolean
   }>>
 

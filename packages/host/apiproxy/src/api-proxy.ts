@@ -605,7 +605,12 @@ export interface ApiProxyDefaults {
   saveDefaultModelSelection?: (selection: ModelSelection) => Promise<void>
   /** Optional provider-neutral policy for prompts and automatic goal rounds. */
   adaptiveModelSelection?: (
-    input: { content: readonly PromptContentPart[]; hasHistory: boolean; goalRound?: number },
+    input: {
+      content: readonly PromptContentPart[]
+      hasHistory: boolean
+      goalRound?: number
+      recovery?: 'completion-evidence'
+    },
   ) => ModelSelection | undefined | Promise<ModelSelection | undefined>
   /** Optional replacement policy consulted before ordinary retries in automatic mode. */
   adaptiveModelFailover?: (
@@ -635,6 +640,182 @@ export interface ApiProxyDefaults {
 
 /** The tool/call payload fields the presenter path reads. */
 interface ToolCallData { callId: string; name: string; arguments: string }
+
+/** Public-only retrieval tools whose results do not consume local privacy consent. */
+const PUBLIC_CONTEXT_TOOLS = new Set(['web_search', 'web_fetch'])
+const COMPLETION_CLAIM_POLICY_PLUGIN = 'completion-claim-policy'
+const COMPLETION_EVIDENCE_RECOVERY_FORM = 'evidence-recovery'
+
+/** Whether one model-visible message requests completion-evidence recovery. */
+function isCompletionEvidenceRecovery(message: { readonly source: MessageSource }): boolean {
+  const source = message.source as { kind?: unknown; plugin?: unknown; form?: unknown }
+  return source.kind === 'plugin'
+    && source.plugin === COMPLETION_CLAIM_POLICY_PLUGIN
+    && source.form === COMPLETION_EVIDENCE_RECOVERY_FORM
+}
+
+/** Local retrieval tools whose successful output needs fresh, content-covering external consent. */
+const SENSITIVE_LOCAL_CONTEXT_TOOLS = new Set([
+  'bash',
+  'glob',
+  'grep',
+  'lsp',
+  'memory_search',
+  'personal_memory_search',
+  'pwsh',
+  'read',
+  'read_image',
+  'current_session_search',
+  'session_search',
+  'session_event_search',
+  'session_trace',
+  'session_event_trace',
+  'session_event_read',
+  'skill',
+])
+
+/** Automatic local-memory snapshots that enter the model-visible session surface. */
+const SENSITIVE_LOCAL_CONTEXT_SECTIONS = new Set(['memory:recall', 'personal-memory:recall'])
+
+interface SensitiveLocalContextResult {
+  seq: number
+  source: string
+}
+
+/** Names used by optional UI/browser integrations whose output may expose authenticated local state. */
+const LOCAL_UI_TOOL_TOKEN = /(?:^|[_-])(?:attachment|browser|computer|desktop|screen|screenshot)(?:$|[_-])/
+
+/** Whether an optional or provider-bound tool can return local UI, attachment, or delegated-agent context. */
+function isPotentialLocalContextTool(name: string): boolean {
+  const normalized = name.trim().toLowerCase()
+  if (normalized.startsWith('subagent')) return true
+  if (LOCAL_UI_TOOL_TOKEN.test(normalized)) return true
+  return normalized === 'capture_screen_context'
+    || normalized === 'read_thread'
+    || normalized === 'read_thread_terminal'
+    || normalized === 'view_image'
+}
+
+/** Normalize serialized tool arguments enough to recognize the deployment-owned knowledge paths on either OS. */
+function normalizedToolArguments(value: unknown): string {
+  const serialized: unknown = typeof value === 'string' ? value : JSON.stringify(value)
+  return typeof serialized === 'string'
+    ? serialized.replace(/[\\/]+/g, '/').toLowerCase()
+    : ''
+}
+
+/** Whether a tool call reads Leon's local knowledge base directly or through its shipped helper. */
+function accessesLeonKnowledge(argumentsValue: unknown): boolean {
+  const normalized = normalizedToolArguments(argumentsValue)
+  if (normalized.includes('.leon/knowledge')) return true
+  return normalized.includes('leon-knowledge-base')
+    && normalized.includes('knowledge.mjs')
+    && /(?:^|["'\s])search(?:$|["'\s])/.test(normalized)
+}
+
+/** Recognize the bounded JSON result emitted by `knowledge.mjs search`, including persistent-shell variable invocation. */
+function isLeonKnowledgeSearchResult(content: readonly ContentBlock[]): boolean {
+  for (const block of content) {
+    if (block.type !== 'text') continue
+    const start = block.text.indexOf('{')
+    const end = block.text.lastIndexOf('}')
+    if (start < 0 || end < start) continue
+    try {
+      const value = JSON.parse(block.text.slice(start, end + 1)) as unknown
+      if (typeof value !== 'object' || value === null || Array.isArray(value)) continue
+      const result = value as Record<string, unknown>
+      if (result.ok === true
+        && result.command === 'search'
+        && Array.isArray(result.results)
+        && typeof result.scan === 'object' && result.scan !== null
+        && typeof result.limits === 'object' && result.limits !== null) return true
+    } catch {
+      // Ordinary terminal output is not JSON and therefore not a knowledge-search result.
+    }
+  }
+  return false
+}
+
+/** Identify one successful local retrieval without inspecting or logging its private content. */
+function sensitiveLocalToolResult(
+  name: string,
+  argumentsValue: unknown,
+  content: readonly ContentBlock[],
+  isError: boolean,
+): string | undefined {
+  if (isError) return undefined
+  const normalizedName = name.trim().toLowerCase()
+  if (PUBLIC_CONTEXT_TOOLS.has(normalizedName)) return undefined
+  if (SENSITIVE_LOCAL_CONTEXT_TOOLS.has(normalizedName)) return normalizedName
+  if (contentHasImage(content)) return 'tool-image-output'
+  if (isPotentialLocalContextTool(normalizedName)) return normalizedName
+  if (accessesLeonKnowledge(argumentsValue) || isLeonKnowledgeSearchResult(content)) return 'leon-knowledge-base'
+  return undefined
+}
+
+/** Whether a model-visible injected message carries new local data after the user's consent watermark. */
+function sensitiveInjectedContext(event: Extract<SessionEvent, { type: 'user/message' }>): string | undefined {
+  if (contentHasImage(event.data.content)) return 'image-attachment'
+  const source = event.data.source
+  const kind = source.kind
+  if (kind === 'coordinator' || kind.startsWith('subagent')) return 'subagent-context'
+  if (source.kind !== 'plugin') return undefined
+  if (source.form === 'snapshot') {
+    if (source.sections.some(section => SENSITIVE_LOCAL_CONTEXT_SECTIONS.has(section.name))) {
+      return 'automatic-memory-recall'
+    }
+    const labels = [source.plugin, ...source.sections.map(section => section.name)].join('_').toLowerCase()
+    if (LOCAL_UI_TOOL_TOKEN.test(labels)) return 'local-ui-snapshot'
+  }
+  return undefined
+}
+
+/** Find the newest model-visible local retrieval that arrived after a consent watermark. */
+function sensitiveLocalContextAfter(
+  events: readonly SessionEvent[],
+  afterSeq: number,
+): SensitiveLocalContextResult | undefined {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index] as SessionEvent
+    if (event.seq <= afterSeq) break
+    if (event.type === 'user/message') {
+      const source = sensitiveInjectedContext(event)
+      if (source !== undefined) return { seq: event.seq, source }
+      continue
+    }
+    if (event.type === 'tool/result') {
+      const [result] = event.data.message.content
+      const callId = event.data.message.source.callId
+      let call: ToolCallData | undefined
+      for (let callIndex = index - 1; callIndex >= 0; callIndex -= 1) {
+        const candidate = events[callIndex] as SessionEvent
+        if (candidate.type !== 'tool/call' || candidate.data.callId !== callId) continue
+        call = candidate.data
+        break
+      }
+      if (call === undefined) continue
+      const source = sensitiveLocalToolResult(
+        call.name,
+        call.arguments,
+        result.content,
+        result.isError === true,
+      )
+      if (source !== undefined) return { seq: event.seq, source }
+      continue
+    }
+    if ((event.type as string) === 'tool/code-dispatch') {
+      const data = event.data as {
+        name: string
+        arguments: unknown
+        content: ContentBlock[]
+        isError: boolean
+      }
+      const source = sensitiveLocalToolResult(data.name, data.arguments, data.content, data.isError)
+      if (source !== undefined) return { seq: event.seq, source }
+    }
+  }
+  return undefined
+}
 /**
  * One outstanding approval question: the stable server-request id, the frame
  * material replayed to late mux subscribers, and the resolver that settles the
@@ -1106,11 +1287,17 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   const selections = new WeakMap<Agent, WebModelSelectionRef>()
   /** Process-local mode choice; automatic is the configured default. */
   const automaticSelections = new WeakMap<Agent, boolean>()
+  /** Automatic external route plus the last local route safe to resume when consent becomes stale. */
+  const activeExternalFailovers = new WeakMap<Agent, {
+    external: ModelSelection
+    localFallback: ModelSelection
+  }>()
   /**
    * Process-local, deny-by-default permission for automatic external retries.
-   * Restarting the Host or replacing the Agent revokes it.
+   * The event watermark limits one grant to local context already present;
+   * restarting the Host or replacing the Agent revokes it.
    */
-  const externalFailoverConsents = new WeakMap<Agent, boolean>()
+  const externalFailoverConsents = new WeakMap<Agent, { throughSeq: number }>()
   /**
    * Serializes `agentPreset.select` per session. Two concurrent selects both
    * pass the blank check, and the second `unmountPresetFor` then finds nothing
@@ -1214,6 +1401,25 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       assembled: undefined,
     }
     installModelSelection(agent.ctx, selection)
+    agent.ctx.on('system-prompt/assemble', async (_assembly, _context, next) => {
+      const nextStep = (agent as unknown as { inbox?: { nextStep: readonly UserMessage[] } }).inbox?.nextStep ?? []
+      if (!nextStep.some(isCompletionEvidenceRecovery)) return await next()
+      try {
+        const resolved = await resolveAdaptiveSelection(agent, {
+          content: [],
+          hasHistory: true,
+          recovery: 'completion-evidence',
+        })
+        if (resolved !== undefined) selection.current = resolved
+      } catch (error: unknown) {
+        ctx.logger.warn(
+          `api-proxy: completion-evidence model escalation failed before prompt assembly; preserving the current route: ${String(error)}`,
+        )
+      }
+      // This listener is prepended so installModelSelection snapshots the
+      // recovery route into both prompt variables and request routing.
+      return await next()
+    }, { prepend: true })
     selections.set(agent, selection)
     return selection
   }
@@ -1223,9 +1429,21 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     return automaticSelections.get(agent) ?? defaults.adaptiveModelSelection !== undefined
   }
 
-  /** Whether this session explicitly permitted automatic external retries in this Host process. */
+  /**
+   * Whether this session explicitly permitted automatic external retries for
+   * every protected local result currently present in its durable context.
+   */
   function externalFailoverConsented(agent: Agent): boolean {
-    return externalFailoverConsents.get(agent) ?? false
+    const consent = externalFailoverConsents.get(agent)
+    if (consent === undefined) return false
+    if (sensitiveLocalContextAfter(agent.session.events, consent.throughSeq) === undefined) return true
+    externalFailoverConsents.delete(agent)
+    return false
+  }
+
+  /** Provider/model identity equality for one process-local route marker. */
+  function sameRoute(left: ModelSelection | undefined, right: ModelSelection): boolean {
+    return left?.provider === right.provider && left.model === right.model
   }
 
   /** Positive goal round admitted inside the currently open turn, if any. */
@@ -1242,10 +1460,27 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     return undefined
   }
 
+  /** Whether the current durable turn contains the completion policy's recovery notice. */
+  function completionEvidenceRecoveryInTurn(agent: Agent, turn: number): boolean {
+    const start = agent.session.events.findLastIndex(
+      event => event.type === 'turn/start' && event.data.turn === turn,
+    )
+    if (start < 0) return false
+    return agent.session.events.slice(start + 1).some(event =>
+      event.type === 'user/message'
+      && isCompletionEvidenceRecovery(event.data),
+    )
+  }
+
   /** Resolve one adaptive proposal through the ordinary route availability boundary. */
   async function resolveAdaptiveSelection(
     agent: Agent,
-    input: { content: readonly PromptContentPart[]; hasHistory: boolean; goalRound?: number },
+    input: {
+      content: readonly PromptContentPart[]
+      hasHistory: boolean
+      goalRound?: number
+      recovery?: 'completion-evidence'
+    },
   ): Promise<ModelSelection | undefined> {
     const select = defaults.adaptiveModelSelection
     if (select === undefined || !automaticFor(agent)) return undefined
@@ -1315,7 +1550,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         if (proposed === undefined) return await next()
         if (proposed.residency === 'external' && !externalFailoverConsented(agent)) {
           ctx.logger.warn(
-            `api-proxy: automatic external failover to ${proposed.provider}/${proposed.model} denied; this session has no external failover consent`,
+            `api-proxy: automatic external failover to ${proposed.provider}/${proposed.model} denied; this session has no consent covering its current local context`,
           )
           return await next()
         }
@@ -1330,12 +1565,31 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         try {
           const resolvedCall = await ctx.llm.resolveCallConfig(proposed)
           if (signal.aborted) return
+          // Resolution may yield; a concurrent revocation or protected local
+          // result must still win before the external route is committed.
+          if (proposed.residency === 'external' && !externalFailoverConsented(agent)) {
+            ctx.logger.warn(
+              `api-proxy: automatic external failover to ${proposed.provider}/${proposed.model} denied; external consent changed during route resolution`,
+            )
+            return await next()
+          }
           const resolved: ModelSelection = {
             provider: resolvedCall.provider,
             model: resolvedCall.model,
             ...resolvedCall.reasoningEffort === undefined ? {} : { reasoningEffort: resolvedCall.reasoningEffort },
           }
           if (resolved.provider === from.provider && resolved.model === from.model) return await next()
+          if (proposed.residency === 'external') {
+            const active = activeExternalFailovers.get(agent)
+            activeExternalFailovers.set(agent, {
+              external: { ...resolved },
+              localFallback: active !== undefined && sameRoute(from, active.external)
+                ? { ...active.localFallback }
+                : { ...from },
+            })
+          } else {
+            activeExternalFailovers.delete(agent)
+          }
           agent.session.append('llm/failover', {
             turn,
             step,
@@ -1358,19 +1612,57 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       ctx.logger.warn('api-proxy: automatic model failover exceeded 16 hops; delegating to provider retry policy')
       return await next()
     }, { prepend: true })
+    agentCtx.on('agent/request', async ({ turn, step }, next) => {
+      const active = activeExternalFailovers.get(agent)
+      if (active === undefined) return await next()
+      const assembled = selection.assembled ?? selection.current
+      if (!sameRoute(assembled, active.external)) {
+        activeExternalFailovers.delete(agent)
+        return await next()
+      }
+      const resumeLocal = (base: Awaited<ReturnType<typeof next>>): Awaited<ReturnType<typeof next>> => {
+        // `agent/request` only assembles call configuration; the adapter has
+        // not received content yet. Override the already-active external route
+        // here and resume the last local route instead.
+        selection.current = { ...active.localFallback }
+        selection.assembled = { ...active.localFallback }
+        activeExternalFailovers.delete(agent)
+        ctx.logger.warn(
+          `api-proxy: blocked automatic external route ${active.external.provider}/${active.external.model} `
+          + `before turn ${turn} step ${step}; protected local context requires fresh consent`,
+        )
+        const { reasoningEffort: _externalEffort, ...withoutExternalEffort } = base
+        return {
+          ...withoutExternalEffort,
+          provider: active.localFallback.provider,
+          model: active.localFallback.model,
+          ...active.localFallback.reasoningEffort === undefined
+            ? {}
+            : { reasoningEffort: active.localFallback.reasoningEffort },
+        }
+      }
+
+      if (!externalFailoverConsented(agent)) return resumeLocal(await next())
+      const base = await next()
+      // Downstream route assembly may yield. Revalidate at the final
+      // synchronous boundary before the adapter can receive this step.
+      return externalFailoverConsented(agent) ? base : resumeLocal(base)
+    }, { prepend: true })
     agentCtx.on('agent/request', async ({ turn }, next) => {
-      const goalRound = goalRoundInTurn(agent, turn)
-      if (goalRound === undefined) return await next()
+      const recovery = completionEvidenceRecoveryInTurn(agent, turn)
+      const goalRound = recovery ? undefined : goalRoundInTurn(agent, turn)
+      if (!recovery && goalRound === undefined) return await next()
       try {
         const resolved = await resolveAdaptiveSelection(agent, {
           content: [],
           hasHistory: true,
-          goalRound,
+          ...recovery
+            ? { recovery: 'completion-evidence' as const }
+            : { goalRound: goalRound as number },
         })
         if (resolved === undefined) return await next()
-        // Goal-round escalation intentionally crosses the ordinary assembly
-        // snapshot: the continuation source becomes durable only after that
-        // assembly, while request routing is still safely replaceable here.
+        // Continuation escalation may become durable only after prompt
+        // assembly, so the request boundary is the final safe fallback.
         selection.current = resolved
         selection.assembled = resolved
         const base = await next()
@@ -1383,7 +1675,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         }
       } catch (error: unknown) {
         ctx.logger.warn(
-          `api-proxy: goal-round model escalation failed; preserving the current route: ${String(error)}`,
+          `api-proxy: ${recovery ? 'completion-evidence' : 'goal-round'} model escalation failed; preserving the current route: ${String(error)}`,
         )
         return await next()
       }
@@ -2685,8 +2977,18 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             }
             selectionFor(found.agent).current = selected
             automaticSelections.set(found.agent, automatic)
+            const activeExternal = activeExternalFailovers.get(found.agent)
+            if (!automatic || activeExternal === undefined || !sameRoute(selected, activeExternal.external)) {
+              activeExternalFailovers.delete(found.agent)
+            }
             const effectiveExternalFailoverConsent = automatic && externalFailoverConsent
-            externalFailoverConsents.set(found.agent, effectiveExternalFailoverConsent)
+            if (effectiveExternalFailoverConsent) {
+              externalFailoverConsents.set(found.agent, {
+                throughSeq: found.agent.session.events.at(-1)?.seq ?? -1,
+              })
+            } else {
+              externalFailoverConsents.delete(found.agent)
+            }
             if (!automatic) {
               try {
                 await defaults.saveDefaultModelSelection?.(selected)

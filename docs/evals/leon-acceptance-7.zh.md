@@ -10,7 +10,7 @@ LEON-ACCEPTANCE-7 是七项 Leon 能力的可执行产品验收参考：重启�
 
 - 使用带有 `pwsh` 的 Windows；UI Automation 证据是 Windows 原生能力，在其他平台会被跳过。
 - 在字面 loopback 端点 `http://127.0.0.1:11434` 上运行 Ollama，或者把 `LEON_ACC_006_OLLAMA_URL` 设为不含嵌入凭据、主机为 `127.0.0.1` 或 `[::1]` 的 HTTP URL。
-- 提供精确的 Ollama 模型 id `qwen3.5:9b` 与 `ornith-1.5:9b`。评估不会替换为别名或其他量化标签。
+- 提供精确的 Ollama 模型 id `qwen3.5:9b`。评估不会替换为别名或其他量化标签。
 - 开始评估前安装仓库依赖。
 
 运行前确认本地模型 id：
@@ -25,7 +25,7 @@ ollama list
 pnpm run test:leon-acceptance
 ```
 
-协调器使用一个 Vitest worker 且不启用文件并行，将注册证据执行三次。每次重复都会启用仅限真实 loopback 的 Ollama 基准，它运行 30 个固定 PT-BR 微任务：22 个使用 `qwen3.5:9b`，八个使用 `ornith-1.5:9b`。因此，最小评估会执行 90 次本地模型推理。
+协调器使用一个 Vitest worker 且不启用文件并行，将注册证据执行三次。每次重复都会启用仅限真实 loopback 的 Ollama 基准，它通过 `qwen3.5:9b` 运行 30 个固定 PT-BR 微任务。因此，最小评估会执行 90 次本地模型推理。
 
 使用 `--runs N` 可执行至少三次重复，使用 `--output <path>` 可选择聚合报告路径：
 

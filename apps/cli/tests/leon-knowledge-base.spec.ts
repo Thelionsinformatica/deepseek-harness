@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -61,6 +61,160 @@ describe('Leon knowledge base helper', () => {
     await expect(readFile(join(directory, '.leon', 'knowledge', 'index.md'), 'utf8'))
       .resolves.toContain('Manual da rede')
     expect((await run(['lint', '--workspace', directory])).body).toMatchObject({ ok: true, sources: 1, issues: [] })
+  })
+
+  it('searches only the bounded index and wiki surface with relative cited snippets', async () => {
+    const directory = await workspace()
+    await run(['init', '--workspace', directory])
+    const root = join(directory, '.leon', 'knowledge')
+    await writeFile(
+      join(root, 'wiki', 'concepts', 'alpha.md'),
+      '---\ntitle: "Conceito Alpha"\nstatus: active\n---\n\n# Alpha\n\nMARCADOR-CONSULTA-ALFA na VLAN 320.\n',
+      'utf8',
+    )
+    await writeFile(
+      join(root, 'wiki', 'entities', 'alpha.md'),
+      '# Entidade Alpha\n\nA entidade confirma MARCADOR-CONSULTA-ALFA.\n',
+      'utf8',
+    )
+    await writeFile(join(root, 'raw', 'excluded.md'), 'MARCADOR-RAW-EXCLUIDO', 'utf8')
+    await writeFile(join(root, 'log.md'), 'MARCADOR-LOG-EXCLUIDO', 'utf8')
+    await writeFile(join(root, 'schema.yml'), 'MARCADOR-SCHEMA-EXCLUIDO', 'utf8')
+
+    const found = await run([
+      'search',
+      '--workspace',
+      directory,
+      '--query',
+      'marcador consulta alfa',
+      '--limit',
+      '1',
+    ])
+
+    expect(found.exitCode).toBe(0)
+    expect(found.body).toMatchObject({
+      ok: true,
+      command: 'search',
+      query: 'marcador consulta alfa',
+      limit: 1,
+      omittedMatches: 1,
+      results: [{
+        path: '.leon/knowledge/wiki/concepts/alpha.md',
+        title: 'Conceito Alpha',
+        status: 'active',
+      }],
+      limits: {
+        maxResults: 20,
+        maxFileBytes: 1024 * 1024,
+        maxScanBytes: 8 * 1024 * 1024,
+        maxOutputBytes: 32 * 1024,
+      },
+    })
+    expect(JSON.stringify(found.body.results)).not.toContain(directory)
+    expect(JSON.stringify(found.body.results)).toContain('MARCADOR-CONSULTA-ALFA')
+
+    for (const query of ['MARCADOR-RAW-EXCLUIDO', 'MARCADOR-LOG-EXCLUIDO', 'MARCADOR-SCHEMA-EXCLUIDO']) {
+      const excluded = await run(['search', '--workspace', directory, '--query', query])
+      expect(excluded.body).toMatchObject({ ok: true, results: [] })
+    }
+  })
+
+  it('ignores common Portuguese words when ranking a natural-language recall query', async () => {
+    const directory = await workspace()
+    await run(['init', '--workspace', directory])
+    const concepts = join(directory, '.leon', 'knowledge', 'wiki', 'concepts')
+    await writeFile(
+      join(concepts, 'generic.md'),
+      '# Texto genérico\n\nO que já existe para o projeto e como usar.\n',
+      'utf8',
+    )
+    await writeFile(
+      join(concepts, 'learned.md'),
+      '# Aprendizado confirmado\n\nLeon aprendeu que a rede usa VLAN 320.\n',
+      'utf8',
+    )
+
+    const found = await run([
+      'search',
+      '--workspace',
+      directory,
+      '--query',
+      'o que Leon já aprendeu',
+    ])
+
+    expect(found.exitCode).toBe(0)
+    expect(found.body).toMatchObject({
+      ok: true,
+      results: [{ path: '.leon/knowledge/wiki/concepts/learned.md' }],
+    })
+    expect(JSON.stringify(found.body.results)).not.toContain('generic.md')
+  })
+
+  it('keeps searches inside one workspace and skips files beyond the byte budget', async () => {
+    const alpha = await workspace()
+    const beta = await workspace()
+    await run(['init', '--workspace', alpha])
+    await run(['init', '--workspace', beta])
+    const alphaWiki = join(alpha, '.leon', 'knowledge', 'wiki', 'concepts')
+    const betaWiki = join(beta, '.leon', 'knowledge', 'wiki', 'concepts')
+    await writeFile(join(alphaWiki, 'alpha.md'), '# Alpha\n\nSOMENTE-WORKSPACE-ALPHA.\n', 'utf8')
+    await writeFile(join(betaWiki, 'beta.md'), '# Beta\n\nSOMENTE-WORKSPACE-BETA.\n', 'utf8')
+    await writeFile(
+      join(alphaWiki, 'large.md'),
+      `# Grande\n\nMARCADOR-ARQUIVO-GRANDE\n${'x'.repeat(1024 * 1024)}`,
+      'utf8',
+    )
+
+    const crossWorkspace = await run([
+      'search',
+      '--workspace',
+      alpha,
+      '--query',
+      'SOMENTE-WORKSPACE-BETA',
+    ])
+    const oversized = await run([
+      'search',
+      '--workspace',
+      alpha,
+      '--query',
+      'MARCADOR-ARQUIVO-GRANDE',
+    ])
+
+    expect(crossWorkspace.body).toMatchObject({ ok: true, results: [] })
+    expect(oversized.body).toMatchObject({
+      ok: true,
+      results: [],
+      scan: { skippedFiles: 1 },
+    })
+  })
+
+  it('rejects invalid search inputs and a wiki root redirected outside the knowledge base', async () => {
+    const directory = await workspace()
+    const outside = await workspace()
+    await run(['init', '--workspace', directory])
+    await mkdir(outside, { recursive: true })
+    await writeFile(join(outside, 'outside.md'), '# Fora\n\nNÃO PODE SER CONSULTADO.\n', 'utf8')
+
+    const missingQuery = await run(['search', '--workspace', directory])
+    const invalidLimit = await run(['search', '--workspace', directory, '--query', 'teste', '--limit', '21'])
+    expect(missingQuery).toMatchObject({
+      exitCode: 1,
+      body: { ok: false, error: { code: 'SEARCH_QUERY_REQUIRED' } },
+    })
+    expect(invalidLimit).toMatchObject({
+      exitCode: 1,
+      body: { ok: false, error: { code: 'INVALID_SEARCH_LIMIT' } },
+    })
+
+    const wiki = join(directory, '.leon', 'knowledge', 'wiki')
+    await rm(wiki, { recursive: true, force: true })
+    await symlink(outside, wiki, process.platform === 'win32' ? 'junction' : 'dir')
+    const escaped = await run(['search', '--workspace', directory, '--query', 'consultado'])
+
+    expect(escaped).toMatchObject({
+      exitCode: 1,
+      body: { ok: false, error: { code: 'KNOWLEDGE_SEARCH_PATH_ESCAPE' } },
+    })
   })
 
   it('detects a modified raw source instead of accepting it as knowledge', async () => {

@@ -10,9 +10,9 @@ Leon 需要一个统一的支持入口，在 profile 启动前区分安装不完
 
 ## Decision
 
-启动器将 `dsh doctor` 作为无需启动 profile 的只读模式。它检查受支持的 Node 运行时、Windows 上的 PowerShell、Harness home 与 workspace 访问权限、已安装 profile 文件、已构建启动器、Ollama 模型目录，以及预期的回环 Web endpoint。每项网络探测都是不发送提示词或凭据的有界 GET；文件系统探测不会创建或修复路径。
+启动器将 `dsh doctor` 作为无需启动 profile 的只读模式。它检查受支持的 Node 运行时、Windows 上的 PowerShell、Harness home 与 workspace 访问权限、已安装 profile 文件、已构建启动器、Ollama 的自动 `qwen3.5:9b` 路由、回环 FreeLLMAPI 就绪 endpoint，以及预期的回环 Web endpoint。手动 Ollama 目录条目不影响自动路由就绪状态。每项网络探测都是不发送提示词或凭据的有界 GET；文件系统探测不会创建或修复路径。
 
-人类可读报告使用 PT-BR 状态行。JSON 报告采用 `schemaVersion: 1`、稳定检查 id 与脱敏摘要，不包含凭据值或文件内容。Web 进程已停止、Ollama 服务不可用、profile 尚未初始化或仅有源码构建等可恢复缺失属于警告，并以 0 退出。前置条件失败或非 Leon 服务占用预期 Web 端口时以 1 退出。
+人类可读报告使用 PT-BR 状态行。JSON 报告采用 `schemaVersion: 1`、稳定检查 id 与脱敏摘要，不包含凭据值或文件内容。Web 或 FreeLLMAPI 进程已停止、Ollama 服务不可用、FreeLLMAPI 没有就绪上游、profile 尚未初始化或仅有源码构建等可恢复缺失属于警告，并以 0 退出。前置条件失败或无关服务占用预期 endpoint 时以 1 退出。
 
 该命令检查就绪状态，但不负责安装、服务监督、备份、恢复或修复。这些操作可以使用 JSON 报告，而不改变诊断的只读行为。
 
@@ -22,7 +22,7 @@ Leon 需要一个统一的支持入口，在 profile 启动前区分安装不完
 
 **将诊断暴露为面向模型的工具。** 拒绝，因为安装恢复必须能在 agent 或模型提供方不可用时运行，并且模型介入会给确定性主机检查增加成本与权限。
 
-**探测每个已配置提供方和外部连接器。** 拒绝，因为健康请求可能跨越隐私或计费边界。首个版本只探测 Ollama 模型目录与回环 Web 页面；提供方验证保持显式并单独授权。
+**探测每个已配置提供方和外部连接器。** 拒绝，因为健康请求可能跨越隐私或计费边界。该命令只探测 Ollama 模型目录、FreeLLMAPI 回环就绪 endpoint 与回环 Web 页面，并且绝不提交推理请求。提供方凭据与生成验证保持显式并单独授权。
 
 ## Consequences
 

@@ -29,8 +29,7 @@ describe('LEON-ACC-006 — política inicial local, sem provar qualidade ou conc
 
     expect(decisions).toHaveLength(30)
     expect(new Set(decisions.map(decision => decision.provider))).toEqual(new Set(['ollama']))
-    expect(decisions.filter(decision => decision.model === 'qwen3.5:9b')).toHaveLength(22)
-    expect(decisions.filter(decision => decision.model === 'ornith-1.5:9b')).toHaveLength(8)
+    expect(decisions.filter(decision => decision.model === 'qwen3.5:9b')).toHaveLength(30)
   })
 
   it('prova que a sentinela offline reprova uma rota externa antes de qualquer adaptador', () => {

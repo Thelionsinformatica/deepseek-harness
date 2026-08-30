@@ -263,7 +263,9 @@ export function apply(ctx: Context, config: Config): void {
   ctx.systemPrompt.section({
     name: 'tool:jobs',
     order: 106,
-    text: 'Track every background job id you start. You are notified in-session when a job finishes — do not busy-poll or sleep on one; keep working on independent steps and do not duplicate a running job\'s work. Before giving a final answer, collect every still-relevant job with job_output (set wait: true only when you are genuinely blocked on it), and job_kill jobs that stopped mattering.',
+    text: 'Track background job ids. Completion is notified; do not busy-poll, sleep, or duplicate running work—continue '
+      + 'independent steps. Before final, collect relevant jobs with job_output (wait only when blocked) and use job_kill '
+      + 'for irrelevant jobs.',
   })
 
   // Use the exact lifecycle owner; reusable ids could resolve to a replacement.

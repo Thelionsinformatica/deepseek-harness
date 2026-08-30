@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-28-leon-context-continuity-and-target-preservation.md
-2026-08-28-leon-context-continuity-and-target-preservation.md: 33819405abc7522a76fd5b12b464b1fdbe3eccfa
-2026-08-28-leon-context-continuity-and-target-preservation.zh.md: 136ffbb2fa59fa4a69e578d8e752129a0093bca4
+2026-08-28-leon-context-continuity-and-target-preservation.md: 2ec663da93fb5d105e0a423366647bf26370ad07
+2026-08-28-leon-context-continuity-and-target-preservation.zh.md: d3681394c038c84a07a133d94220071c519d0ae2

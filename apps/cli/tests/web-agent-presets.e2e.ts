@@ -39,6 +39,18 @@ const MINIMAL_BASH_DESCRIPTION = `Run commands in a bash shell
 * To inspect a particular line range of a file, e.g. lines 10-25, try 'sed -n 10,25p /path/to/the/file'.
 * Please avoid commands that may produce a very large amount of output.
 * Please run long lived commands in the background, e.g. 'sleep 10 &' or start a server in the background.`
+const MINIMAL_PWSH_DESCRIPTION = `Run commands in a PowerShell shell
+* When invoking this tool, the contents of the "command" parameter does NOT need to be XML-escaped.
+* You don't have access to the internet via this tool.
+* State is persistent across command calls and discussions with the user.
+* Use native Windows paths (C:\\...) and $env:NAME variables; this is PowerShell, not bash.
+* Please avoid commands that may produce a very large amount of output.
+* Please run long lived commands in the background, e.g. 'Start-Job' or start a server with Start-Process.`
+const SHELL_TOOL = process.platform === 'win32' ? 'pwsh' : 'bash'
+const MINIMAL_SHELL_DESCRIPTION = process.platform === 'win32'
+  ? MINIMAL_PWSH_DESCRIPTION
+  : MINIMAL_BASH_DESCRIPTION
+const SCHEDULE_TOOLS = ['schedule_create', 'schedule_delete', 'schedule_list'] as const
 
 /**
  * Boot the shipped Web composition, minus the rows that would bind a port,
@@ -150,6 +162,9 @@ async function bootWeb(
 const toolNames = (ctx: Context, agent?: Agent): string[] =>
   ctx.tools.schemas(agent).map(schema => schema.name).sort()
 
+const withoutScheduleTools = (names: readonly string[]): string[] =>
+  names.filter(name => !SCHEDULE_TOOLS.includes(name as typeof SCHEDULE_TOOLS[number]))
+
 function toolParameterNames(ctx: Context, agent: Agent, toolName: string): string[] {
   const schema = ctx.tools.schemas(agent).find(tool => tool.name === toolName)
   if (schema === undefined) throw new Error(`missing tool schema ${toolName}`)
@@ -210,6 +225,7 @@ describe('the shipped Web composition', () => {
     if (projections === undefined) throw new Error('the Web composition must compose a projection registry')
     const handle = await ctx.agents.create({
       sessionId: SessionId('preset-minimal-meter'),
+      meta: { agentPreset: 'minimal' },
       setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'minimal').then(() => undefined),
     })
     try {
@@ -248,11 +264,11 @@ describe('the shipped Web composition', () => {
       // excluded for the reason the TUI composition e2e excludes them — they
       // depend on ripgrep being present on the machine.
       expect(toolNames(ctx, handle.agent).filter(name => name !== 'glob' && name !== 'grep')).toEqual([
-        'ask_user_question', 'bash', 'create_goal', 'edit', 'exit_plan_mode',
+        'ask_user_question', SHELL_TOOL, 'create_goal', 'edit', 'exit_plan_mode',
         'get_goal', 'interrupt_agent', 'job_kill', 'job_list', 'job_output', 'list_agents', 'ralph', 'read', 'read_image', 'send_message', 'skill',
-        'subagent', 'subagent_fork', 'todo_write', 'update_goal', 'web_search',
+        ...SCHEDULE_TOOLS, 'subagent', 'subagent_fork', 'todo_write', 'update_goal', 'web_search',
         'workflow', 'write',
-      ])
+      ].sort())
     } finally {
       await handle.dispose()
     }
@@ -261,6 +277,7 @@ describe('the shipped Web composition', () => {
   it('composes the exact RL prompt and two tools from `minimal`', async () => {
     const handle = await ctx.agents.create({
       sessionId: SessionId('preset-minimal'),
+      meta: { agentPreset: 'minimal' },
       setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'minimal').then(() => undefined),
     })
     try {
@@ -268,8 +285,8 @@ describe('the shipped Web composition', () => {
       expect(assembly.sections).toEqual([
         { name: 'deployment:persona', text: MINIMAL_PROMPT },
       ])
-      expect(assembly.tools.map(tool => tool.name)).toEqual(['bash', 'str_replace_editor'])
-      expect(assembly.tools.find(tool => tool.name === 'bash')?.description).toBe(MINIMAL_BASH_DESCRIPTION)
+      expect(assembly.tools.map(tool => tool.name)).toEqual([SHELL_TOOL, 'str_replace_editor'].sort())
+      expect(assembly.tools.find(tool => tool.name === SHELL_TOOL)?.description).toBe(MINIMAL_SHELL_DESCRIPTION)
       expect(JSON.stringify(assembly.tools.find(tool => tool.name === 'str_replace_editor')?.parameters))
         .toContain('Absolute path')
       expect(ctx.agentPresets.serviceFor(handle.agent, 'compaction')).toBeUndefined()
@@ -281,22 +298,30 @@ describe('the shipped Web composition', () => {
 
   it('keeps two differently composed sessions independent', async () => {
     const full = await ctx.agents.create({
-      sessionId: SessionId('preset-both-full'),
+      sessionId: SessionId(`preset-both-full-${randomUUID()}`),
+      meta: { agentPreset: 'standard' },
       setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'standard').then(() => undefined),
     })
-    const minimal = await ctx.agents.create({
-      sessionId: SessionId('preset-both-minimal'),
-      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'minimal').then(() => undefined),
-    })
     try {
-      expect(toolNames(ctx, minimal.agent)).toEqual(['bash', 'str_replace_editor'])
-      expect(toolNames(ctx, full.agent).length).toBeGreaterThan(10)
+      const minimal = await ctx.agents.create({
+        sessionId: SessionId(`preset-both-minimal-${randomUUID()}`),
+        meta: { agentPreset: 'minimal' },
+        setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'minimal').then(() => undefined),
+      })
+      let minimalDisposed = false
+      try {
+        expect(toolNames(ctx, minimal.agent)).toEqual([SHELL_TOOL, 'str_replace_editor'].sort())
+        expect(toolNames(ctx, full.agent).length).toBeGreaterThan(10)
 
-      await minimal.dispose()
+        await minimal.dispose()
+        minimalDisposed = true
 
-      // Tearing the minimal session down leaves the full one whole.
-      expect(toolNames(ctx, full.agent).length).toBeGreaterThan(10)
-      expect(toolNames(ctx)).toEqual([])
+        // Tearing the minimal session down leaves the full one whole.
+        expect(toolNames(ctx, full.agent).length).toBeGreaterThan(10)
+        expect(toolNames(ctx)).toEqual([])
+      } finally {
+        if (!minimalDisposed) await minimal.dispose()
+      }
     } finally {
       await full.dispose()
     }
@@ -315,7 +340,7 @@ describe('the shipped Web composition', () => {
         'cordis_define', 'cordis_run', 'cordis_stop', 'cordis_undefine',
       ]))
       // And it keeps the standard agent's own tools rather than replacing them.
-      expect(tools).toEqual(expect.arrayContaining(['bash', 'read', 'edit', 'skill']))
+      expect(tools).toEqual(expect.arrayContaining([SHELL_TOOL, 'read', 'edit', 'skill']))
       expect(tools).not.toContain('str_replace_editor')
 
       // The preset's own authoring skill registers into ITS layer of the host
@@ -330,32 +355,35 @@ describe('the shipped Web composition', () => {
 
   it('presents `code` as Code Mode without disturbing a native session beside it', async () => {
     const coded = await ctx.agents.create({
-      sessionId: SessionId('preset-code'),
+      sessionId: SessionId(`preset-code-${randomUUID()}`),
       setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'code').then(() => undefined),
     })
-    const native = await ctx.agents.create({
-      sessionId: SessionId('preset-code-native'),
-      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'standard').then(() => undefined),
-    })
     try {
-      // One tool reaches the MODEL: the transport. The registry's catalog for
-      // this agent is unchanged — a code mode collapses the presentation, not
-      // the capabilities — so the assembly is what carries the claim.
-      const assembly = await ctx.systemPrompt.assemble({ scope: coded.agent })
-      expect(assembly.tools.map(tool => tool.name)).toEqual(['run_code'])
-      expect(toolNames(ctx, coded.agent)).not.toContain('str_replace_editor')
-      const sdk = assembly.sections.find(section => section.name === 'tools:sdk')?.text ?? ''
-      expect(sdk).not.toContain('str_replace_editor')
-      expect(sdk).toContain('web_search')
+      const native = await ctx.agents.create({
+        sessionId: SessionId(`preset-code-native-${randomUUID()}`),
+        setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'standard').then(() => undefined),
+      })
+      try {
+        // One tool reaches the MODEL: the transport. The registry's catalog for
+        // this agent is unchanged — a code mode collapses the presentation, not
+        // the capabilities — so the assembly is what carries the claim.
+        const assembly = await ctx.systemPrompt.assemble({ scope: coded.agent })
+        expect(assembly.tools.map(tool => tool.name)).toEqual(['run_code'])
+        expect(toolNames(ctx, coded.agent)).not.toContain('str_replace_editor')
+        const sdk = assembly.sections.find(section => section.name === 'tools:sdk')?.text ?? ''
+        expect(sdk).not.toContain('str_replace_editor')
+        expect(sdk).toContain('web_search')
 
-      // The presentation is this agent's alone: the deployment default is
-      // native, and the session composed from `standard` still sees it.
-      const nativeAssembly = await ctx.systemPrompt.assemble({ scope: native.agent })
-      expect(nativeAssembly.tools.map(tool => tool.name)).toContain('bash')
-      expect(nativeAssembly.tools.map(tool => tool.name)).not.toContain('run_code')
-      expect(nativeAssembly.sections.some(section => section.name === 'tools:sdk')).toBe(false)
+        // The presentation is this agent's alone: the deployment default is
+        // native, and the session composed from `standard` still sees it.
+        const nativeAssembly = await ctx.systemPrompt.assemble({ scope: native.agent })
+        expect(nativeAssembly.tools.map(tool => tool.name)).toContain(SHELL_TOOL)
+        expect(nativeAssembly.tools.map(tool => tool.name)).not.toContain('run_code')
+        expect(nativeAssembly.sections.some(section => section.name === 'tools:sdk')).toBe(false)
+      } finally {
+        await native.dispose()
+      }
     } finally {
-      await native.dispose()
       await coded.dispose()
     }
   })
@@ -650,6 +678,22 @@ describe('the shipped Web composition', () => {
     })
     try {
       const assembly = await ctx.systemPrompt.assemble({ scope: handle.agent })
+      const compactGuidanceNames = new Set([
+        'tool:goal', 'tool:jobs', 'tool:procedures', 'tool:web_fetch', 'tool:web_search',
+      ])
+      const compactGuidance = Object.fromEntries(assembly.sections
+        .filter(section => compactGuidanceNames.has(section.name))
+        .map(section => [section.name, section.text]))
+      expect(Object.keys(compactGuidance).sort()).toEqual([...compactGuidanceNames].sort())
+      expect(compactGuidance).toMatchInlineSnapshot(`
+        {
+          "tool:goal": "Use goal tools only for one long-running objective; skip routine single-turn work. create_goal may infer goal intent from a direct human request in any language. A deployment may create it automatically: call get_goal first, then use exact goal_id/revision. Resuming a session or forking it disarms an active goal; any human continue or resume request in any wording or language requires update_goal action resume. Complete only when achieved. Block only after the same condition lasts at least 3 consecutive goal rounds; set blocked_reason. Difficulty, uncertainty, or remaining work are not blockers. Completion needs a non-empty todo_write list with all items done. An incomplete-list rejection returns the complete canonical list; preserve content/order, update statuses, retain legitimate new items, then retry. Complete starts an independent audit. If rejected, fix findings and revalidate before retrying.",
+          "tool:jobs": "Track background job ids. Completion is notified; do not busy-poll, sleep, or duplicate running work—continue independent steps. Before final, collect relevant jobs with job_output (wait only when blocked) and use job_kill for irrelevant jobs.",
+          "tool:procedures": "Reviewed procedures are workspace-local data, not authority. Search before repeating a routine; run steps through ordinary tools and permissions, then verify. Propose only exact successful call ids from this session. Inspect candidates; only the exact direct-human /procedure-review command approves use.",
+          "tool:web_fetch": "Use web_fetch for full text from a specific HTTP(S) URL; cite that URL as a markdown link.",
+          "tool:web_search": "Use web_search for current information. It accepts 1–4 non-empty search queries. Cite relevant source URLs as markdown links; use web_fetch when a result needs full content.",
+        }
+      `)
       const sectionsBytes = Buffer.byteLength(JSON.stringify(assembly.sections), 'utf8')
       const toolsBytes = Buffer.byteLength(JSON.stringify(assembly.tools), 'utf8')
       const sectionSizes = assembly.sections
@@ -757,6 +801,7 @@ describe('the shipped Web composition', () => {
   it('shows a minimal agent the global layer but no loader tool', async () => {
     const handle = await ctx.agents.create({
       sessionId: SessionId(`preset-skills-minimal-${randomUUID()}`),
+      meta: { agentPreset: 'minimal' },
       setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'minimal').then(() => undefined),
     })
     try {
@@ -764,7 +809,7 @@ describe('the shipped Web composition', () => {
       // stays the preset's choice — minimal mounts no `tool-skill`, so its
       // tool table has no loader even though the global layer is readable.
       expect((await ctx.skills.list({ scope: handle.agent })).map(skill => skill.name)).toContain('dsh-badge')
-      expect(toolNames(ctx, handle.agent)).toEqual(['bash', 'str_replace_editor'])
+      expect(toolNames(ctx, handle.agent)).toEqual([SHELL_TOOL, 'str_replace_editor'].sort())
     } finally {
       await handle.dispose()
     }
@@ -966,29 +1011,33 @@ describe('a switch survives the session', () => {
 
 describe('a forked session', () => {
   it('inherits the composition its seeded history was produced under', async () => {
+    const parentSessionId = SessionId(`preset-fork-parent-${randomUUID()}`)
     const parent = await ctx.agents.create({
-      sessionId: SessionId('preset-fork-parent'),
+      sessionId: parentSessionId,
       meta: { agentPreset: 'minimal' },
       setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'minimal').then(() => undefined),
     })
-    const inherited = resolveSessionPreset(parent.agent.session)
-    const child = await ctx.agents.create({
-      sessionId: SessionId('preset-fork-child'),
-      meta: {
-        parentSession: SessionId('preset-fork-parent'),
-        seedLength: 0,
-        ...inherited === undefined ? {} : { agentPreset: inherited },
-      },
-      setup: agentCtx => ctx.agentPresets.mount(agentCtx, inherited).then(() => undefined),
-    })
     try {
-      // Composing nothing would leave the child empty: this layer moved every
-      // model-facing row out of the host plane, so there is nothing to inherit
-      // for free any more.
-      expect(toolNames(ctx, child.agent)).toEqual(toolNames(ctx, parent.agent))
-      expect(toolNames(ctx, child.agent).length).toBeGreaterThan(0)
+      const inherited = resolveSessionPreset(parent.agent.session)
+      const child = await ctx.agents.create({
+        sessionId: SessionId(`preset-fork-child-${randomUUID()}`),
+        meta: {
+          parentSession: parentSessionId,
+          seedLength: 0,
+          ...inherited === undefined ? {} : { agentPreset: inherited },
+        },
+        setup: agentCtx => ctx.agentPresets.mount(agentCtx, inherited).then(() => undefined),
+      })
+      try {
+        // Composing nothing would leave the child empty: this layer moved every
+        // model-facing row out of the host plane, so there is nothing to inherit
+        // for free any more.
+        expect(toolNames(ctx, child.agent)).toEqual(toolNames(ctx, parent.agent))
+        expect(toolNames(ctx, child.agent).length).toBeGreaterThan(0)
+      } finally {
+        await child.dispose()
+      }
     } finally {
-      await child.dispose()
       await parent.dispose()
     }
   })
@@ -997,51 +1046,61 @@ describe('a forked session', () => {
 describe('a delegated child', () => {
   it('runs on the composition its parent runs on', async () => {
     const parent = await ctx.agents.create({
-      sessionId: SessionId('preset-child-parent'),
+      sessionId: SessionId(`preset-child-parent-${randomUUID()}`),
       meta: { agentPreset: 'standard' },
       setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'standard').then(() => undefined),
     })
-    // Exactly what an in-process subagent driver's creation window does.
-    const child = await parent.agent.ctx.agents.create({
-      sessionId: SessionId('preset-child'),
-      meta: childSessionMeta(parent.agent, 1, 0),
-      setup: (agentCtx) => {
-        applyChildComposition(agentCtx, parent.agent, {})
-      },
-    })
     try {
-      expect(toolNames(ctx, child.agent)).toEqual(toolNames(ctx, parent.agent))
-      // The shipped `standard` preset is the whole coding agent; an empty
-      // child here is the defect, and equality alone would not catch it.
-      expect(toolNames(ctx, child.agent)).toContain('bash')
-      expect(child.agent.session.header.agentPreset).toBe('standard')
+      // Exactly what an in-process subagent driver's creation window does.
+      const child = await parent.agent.ctx.agents.create({
+        sessionId: SessionId(`preset-child-${randomUUID()}`),
+        meta: childSessionMeta(parent.agent, 1, 0),
+        setup: (agentCtx) => {
+          applyChildComposition(agentCtx, parent.agent, {})
+        },
+      })
+      try {
+        expect(toolNames(ctx, child.agent)).toEqual(withoutScheduleTools(toolNames(ctx, parent.agent)))
+        expect(SCHEDULE_TOOLS.every(name => toolNames(ctx, parent.agent).includes(name))).toBe(true)
+        expect(SCHEDULE_TOOLS.some(name => toolNames(ctx, child.agent).includes(name))).toBe(false)
+        // The shipped `standard` preset is the whole coding agent; an empty
+        // child here is the defect, and equality alone would not catch it.
+        expect(toolNames(ctx, child.agent)).toContain(SHELL_TOOL)
+        expect(child.agent.session.header.agentPreset).toBe('standard')
+      } finally {
+        await child.dispose()
+      }
     } finally {
-      await child.dispose()
       await parent.dispose()
     }
   })
 
   it('follows a parent that switched preset while blank', async () => {
     const parent = await ctx.agents.create({
-      sessionId: SessionId('preset-child-switch-parent'),
+      sessionId: SessionId(`preset-child-switch-parent-${randomUUID()}`),
       meta: { agentPreset: 'standard' },
       setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'standard').then(() => undefined),
     })
-    await ctx.agentPresets.recompose(parent.agent.ctx, 'minimal')
-    const child = await parent.agent.ctx.agents.create({
-      sessionId: SessionId('preset-child-switch'),
-      meta: childSessionMeta(parent.agent, 1, 0),
-      setup: (agentCtx) => {
-        applyChildComposition(agentCtx, parent.agent, {})
-      },
-    })
     try {
-      // The live scope chain is the authority, not the parent's creation
-      // header — which still names `standard`.
-      expect(toolNames(ctx, child.agent)).toEqual(toolNames(ctx, parent.agent))
-      expect(child.agent.session.header.agentPreset).toBe('minimal')
+      await ctx.agentPresets.recompose(parent.agent.ctx, 'minimal')
+      const child = await parent.agent.ctx.agents.create({
+        sessionId: SessionId(`preset-child-switch-${randomUUID()}`),
+        meta: childSessionMeta(parent.agent, 1, 0),
+        setup: (agentCtx) => {
+          applyChildComposition(agentCtx, parent.agent, {})
+        },
+      })
+      try {
+        // The live scope chain is the authority, not the parent's creation
+        // header — which still names `standard`.
+        expect(toolNames(ctx, child.agent)).toEqual(withoutScheduleTools(toolNames(ctx, parent.agent)))
+        expect(SCHEDULE_TOOLS.every(name => toolNames(ctx, parent.agent).includes(name))).toBe(true)
+        expect(SCHEDULE_TOOLS.some(name => toolNames(ctx, child.agent).includes(name))).toBe(false)
+        expect(child.agent.session.header.agentPreset).toBe('minimal')
+      } finally {
+        await child.dispose()
+      }
     } finally {
-      await child.dispose()
       await parent.dispose()
     }
   })
@@ -1130,6 +1189,10 @@ describe('authoring a preset on the shipped composition', () => {
     }])
   })
 
+  afterAll(async () => {
+    await authorCtx?.fiber.dispose()
+  })
+
   it('refuses to copy over or delete a shipped preset', async () => {
     await expect(authorCtx.agentPresets.copy('minimal', 'standard')).rejects.toThrow(/already exists/)
     await expect(authorCtx.agentPresets.remove('standard')).rejects.toThrow(/ships with the deployment/)
@@ -1142,29 +1205,38 @@ describe('authoring a preset on the shipped composition', () => {
   })
 
   it('copies a shipped preset a session then really composes from', async () => {
-    await authorCtx.agentPresets.copy('minimal', 'my-agent', '我的模式')
-
-    // Round-trips through the roster as a `user` row carrying the given name
-    // and the source's description, over the source's own composition text.
-    const preset = await authorCtx.agentPresets.resolve('my-agent')
-    const source = await authorCtx.agentPresets.resolve('minimal')
-    expect(preset.trust).toBe('user')
-    expect(preset.name).toBe('我的模式')
-    expect(preset.description).toBe(source.description)
-    expect(await authorCtx.agentPresets.read('my-agent')).toBe(await authorCtx.agentPresets.read('minimal'))
-    // Owner-only, in an owner-only directory: a composition is executable
-    // configuration on a machine that may have other users.
-    expect((await stat(preset.path)).mode & 0o777).toBe(0o600)
-    const handle = await authorCtx.agents.create({
-      sessionId: SessionId('preset-authored'),
-      setup: agentCtx => authorCtx.agentPresets.mount(agentCtx, 'my-agent').then(() => undefined),
-    })
+    const id = `my-agent-${randomUUID()}`
+    await authorCtx.agentPresets.copy('minimal', id, '我的模式')
     try {
-      // The same tools the shipped `minimal` composes, from a directory copied
-      // through the service into a root outside the installed harness.
-      expect(toolNames(authorCtx, handle.agent)).toEqual(['bash', 'str_replace_editor'])
+      // Round-trips through the roster as a `user` row carrying the given name
+      // and the source's description, over the source's own composition text.
+      const preset = await authorCtx.agentPresets.resolve(id)
+      const source = await authorCtx.agentPresets.resolve('minimal')
+      expect(preset.trust).toBe('user')
+      expect(preset.name).toBe('我的模式')
+      expect(preset.description).toBe(source.description)
+      expect(await authorCtx.agentPresets.read(id)).toBe(await authorCtx.agentPresets.read('minimal'))
+      // POSIX modes have no faithful representation in Node's Windows stat;
+      // the package suite validates this owner-only contract where mode bits exist.
+      if (process.platform !== 'win32') {
+        expect((await stat(preset.path)).mode & 0o777).toBe(0o600)
+      }
+      const handle = await authorCtx.agents.create({
+        sessionId: SessionId(`preset-authored-${randomUUID()}`),
+        meta: { agentPreset: id },
+        setup: agentCtx => authorCtx.agentPresets.mount(agentCtx, id).then(() => undefined),
+      })
+      try {
+        // A copied preset is independently named and gets root-only reminder
+        // tools, while retaining the source composition's shell and editor.
+        expect(toolNames(authorCtx, handle.agent)).toEqual([
+          SHELL_TOOL, ...SCHEDULE_TOOLS, 'str_replace_editor',
+        ].sort())
+      } finally {
+        await handle.dispose()
+      }
     } finally {
-      await handle.dispose()
+      await authorCtx.agentPresets.remove(id)
     }
   })
 
@@ -1194,12 +1266,13 @@ describe('the default preset as a user setting', () => {
 
       const handle = await ctx.agents.create({
         sessionId: SessionId('preset-user-default'),
+        meta: { agentPreset: ctx.agentPresets.defaultId },
         setup: agentCtx => ctx.agentPresets.mount(agentCtx).then(() => undefined),
       })
       try {
         // `mount()` with no id resolves the effective default. Two tools, not
         // `standard`'s catalog: the setting decided the composition.
-        expect(toolNames(ctx, handle.agent)).toEqual(['bash', 'str_replace_editor'])
+        expect(toolNames(ctx, handle.agent)).toEqual([SHELL_TOOL, 'str_replace_editor'].sort())
       } finally {
         await handle.dispose()
       }

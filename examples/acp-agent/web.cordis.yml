@@ -1,8 +1,7 @@
-# Web-fetch composition for the web-fetch snapshot scenario: the web seam, the
-# real local HTTP fetch provider, the model-facing web tools (fetch only, so
-# the pinned header carries exactly the surface under test), and the loopback
-# fixture server the scenario prompt fetches — deterministic content, no
-# external network, in recording and replay alike.
+# Web-fetch composition for the web-fetch snapshot scenario: the web seam, a
+# test-only explicitly selected loopback connector, and the model-facing web
+# tools. Production's anonymous public-web provider intentionally has no
+# private-network bypass, so this deterministic fixture never weakens it.
 - id: base
   name: '@deepseek-ai/cordis-plugin-include'
   config:
@@ -11,8 +10,8 @@
       - insert:
           - id: web
             name: '@deepseek-ai/dsh-web'
-          - id: web-fetch-http
-            name: '@deepseek-ai/dsh-web-fetch-http'
+            config:
+              fetchProvider: snapshot-fixture
           - id: web-fetch-fixture
             name: './web-fetch-fixture-server.mjs'
           - id: tool-web

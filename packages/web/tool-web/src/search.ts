@@ -317,8 +317,8 @@ export function applyWebSearchTool(
     name: 'tool:web_search',
     order: 110,
     text: fetchEnabled
-      ? `Use the web_search tool to discover current information on the web. The required queries array accepts 1–${maxQueries} non-empty search queries; use a one-item array for a single search. It returns an optional answer plus a list of source URLs. Follow up with web_fetch when you need the full content of a specific result, and cite the relevant URLs as markdown links.`
-      : `Use the web_search tool to discover current information on the web. The required queries array accepts 1–${maxQueries} non-empty search queries; use a one-item array for a single search. It returns an optional answer plus a list of source URLs. Use the returned source snippets when available, and cite the relevant URLs as markdown links.`,
+      ? `Use web_search for current information. It accepts 1–${maxQueries} non-empty search queries. Cite relevant source URLs as markdown links; use web_fetch when a result needs full content.`
+      : `Use web_search for current information. It accepts 1–${maxQueries} non-empty search queries. Use the returned source snippets when available and cite relevant source URLs as markdown links.`,
   })
 
   ctx.tools.register(defineTool({

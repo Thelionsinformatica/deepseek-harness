@@ -35,3 +35,5 @@ The anonymous provider has no private-network bypass. Intentional intranet acces
 `WEB_BLOCKED_URL` covers literal and DNS-derived non-public destinations without disclosing the resolved private address. Public sites retain HTTP status, redirect, decoding, timeout, abort, and size-limit behavior through Undici.
 
 Tests pin alternative IPv4 forms, IPv4/IPv6 special ranges, mixed DNS results, malformed answers, connector address pinning, per-hop rebinding rejection, dispatcher cleanup, and the package's existing transport behavior. The policy is intentionally conservative: workflows for loopback, private, documentation, benchmark, transition, or reserved networks require another permissioned capability.
+
+The keyless ACP web-fetch snapshot therefore selects a separate test-only provider that accepts only its exact loopback fixture URL. It still exercises the real model-facing fetch tool and Markdown rendering without adding a private-network bypass to the production provider.

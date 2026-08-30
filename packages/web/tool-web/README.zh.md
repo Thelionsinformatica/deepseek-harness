@@ -48,29 +48,29 @@
 
 #### 模型看到的内容
 
-搜索与抓取分别贡献以下 web-search 和 web-fetch 指引。搜索会在注册时根据配置选用启用抓取或仅搜索的文本。scope 工具限制不会移除这些独立注册的区段。
+搜索与抓取分别贡献以下精简的 web-search 和 web-fetch 指引。搜索会在注册时根据配置选用启用抓取或仅搜索的文本；查询数量限制同时保留在指引和工具 schema 中。scope 工具限制不会移除这些独立注册的区段。
 
 ##### 启用抓取时的 Web 搜索指引
 
 ```markdown
-Use the web_search tool to discover current information on the web. The required queries array accepts 1–4 non-empty search queries; use a one-item array for a single search. It returns an optional answer plus a list of source URLs. Follow up with web_fetch when you need the full content of a specific result, and cite the relevant URLs as markdown links.
+Use web_search for current information. It accepts 1–4 non-empty search queries. Cite relevant source URLs as markdown links; use web_fetch when a result needs full content.
 ```
 
 ##### 仅搜索时的 Web 搜索指引
 
 ```markdown
-Use the web_search tool to discover current information on the web. The required queries array accepts 1–4 non-empty search queries; use a one-item array for a single search. It returns an optional answer plus a list of source URLs. Use the returned source snippets when available, and cite the relevant URLs as markdown links.
+Use web_search for current information. It accepts 1–4 non-empty search queries. Use the returned source snippets when available and cite relevant source URLs as markdown links.
 ```
 
 ##### Web 抓取指引
 
 ```markdown
-Use the web_fetch tool to retrieve the content of a specific HTTP(S) URL (for example a result from web_search). It returns the page content decoded to text. Cite the URL as a markdown link when you use its content.
+Use web_fetch for full text from a specific HTTP(S) URL; cite that URL as a markdown link.
 ```
 
 #### Token 影响
 
-每个通过配置启用的工具都会为每次请求增加固定的指引 token 开销，即使限制隐藏了其 schema。切换抓取状态或更改 `searchMaxQueries` 会改变搜索指引；切换抓取状态还会注册或移除抓取区段。
+每个通过配置启用的工具都会为每次请求增加固定的指引 token 开销，即使限制隐藏了其 schema。切换抓取状态会改变搜索指引并注册或移除抓取区段；`searchMaxQueries` 会改变指引和工具 schema。
 
 #### KV Cache 影响
 

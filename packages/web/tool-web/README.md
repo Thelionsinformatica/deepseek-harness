@@ -48,29 +48,29 @@ The tool never calls a provider's `available()` and never enumerates providers �
 
 #### What the model sees
 
-Search and fetch contribute the web-search and web-fetch guidance below. Search chooses its fetch-enabled or search-only text from config at registration time. A scoped tool restriction does not remove these independently registered sections.
+Search and fetch contribute the compact web-search and web-fetch guidance below. Search chooses its fetch-enabled or search-only text from config at registration time. Query limits remain both in the guidance and the tool schema. A scoped tool restriction does not remove these independently registered sections.
 
 ##### Web search guidance with fetch enabled
 
 ```markdown
-Use the web_search tool to discover current information on the web. The required queries array accepts 1–4 non-empty search queries; use a one-item array for a single search. It returns an optional answer plus a list of source URLs. Follow up with web_fetch when you need the full content of a specific result, and cite the relevant URLs as markdown links.
+Use web_search for current information. It accepts 1–4 non-empty search queries. Cite relevant source URLs as markdown links; use web_fetch when a result needs full content.
 ```
 
 ##### Web search-only guidance
 
 ```markdown
-Use the web_search tool to discover current information on the web. The required queries array accepts 1–4 non-empty search queries; use a one-item array for a single search. It returns an optional answer plus a list of source URLs. Use the returned source snippets when available, and cite the relevant URLs as markdown links.
+Use web_search for current information. It accepts 1–4 non-empty search queries. Use the returned source snippets when available and cite relevant source URLs as markdown links.
 ```
 
 ##### Web fetch guidance
 
 ```markdown
-Use the web_fetch tool to retrieve the content of a specific HTTP(S) URL (for example a result from web_search). It returns the page content decoded to text. Cite the URL as a markdown link when you use its content.
+Use web_fetch for full text from a specific HTTP(S) URL; cite that URL as a markdown link.
 ```
 
 #### Token effect
 
-Fixed guidance cost per request for each config-enabled tool, even when a restriction hides its schema. Toggling fetch or changing `searchMaxQueries` changes the search guidance; toggling fetch also registers or removes the fetch section.
+Fixed guidance cost per request for each config-enabled tool, even when a restriction hides its schema. Toggling fetch changes the search guidance and registers or removes the fetch section; `searchMaxQueries` changes the guidance and tool schema.
 
 #### KV Cache effect
 

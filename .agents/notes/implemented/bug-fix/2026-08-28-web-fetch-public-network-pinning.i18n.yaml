@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-28-web-fetch-public-network-pinning.md
-2026-08-28-web-fetch-public-network-pinning.md: 006b9958bf4f9fa714ea964e508a541427d79474
-2026-08-28-web-fetch-public-network-pinning.zh.md: 74c3cebf0173fb9dbeaa7e1ab917e0578fc3d248
+2026-08-28-web-fetch-public-network-pinning.md: 217e2d25f19666a8efd29ca49622ef539b83d579
+2026-08-28-web-fetch-public-network-pinning.zh.md: 4a18e40cfdce4c34b5541216ac4c2e93ca2f7a95

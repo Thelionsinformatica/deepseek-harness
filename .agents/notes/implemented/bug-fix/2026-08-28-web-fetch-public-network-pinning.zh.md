@@ -35,3 +35,5 @@ URL 检查在 WHATWG 规范化后拒绝 localhost 名称和非公开 IP 字面�
 `WEB_BLOCKED_URL` 同时覆盖字面量和 DNS 派生的非公开目的地，并且不泄露解析出的私有地址。公开站点继续通过 Undici 保留 HTTP 状态、重定向、解码、超时、abort 和大小限制行为。
 
 测试固定替代 IPv4 形式、IPv4/IPv6 特殊范围、混合 DNS 结果、格式错误的答案、connector 地址固定、逐跳 rebinding 拒绝、dispatcher 清理，以及该包原有的传输行为。该策略有意保持保守：回环、私有、文档、基准测试、过渡或保留网络的工作流需要另一个具有权限的能力。
+
+因此，无密钥 ACP web-fetch 快照会显式选择一个独立的测试专用提供方，并且只接受其精确的 loopback fixture URL。它仍会演练真实的模型侧 fetch 工具与 Markdown 渲染，同时不会给生产提供方增加私网绕过能力。

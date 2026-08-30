@@ -1,6 +1,6 @@
-# Keyless replay counterpart to web.cordis.yml: the web stack and loopback
-# fixture server stay real (the tool call re-executes the actual HTTP fetch and
-# markdown rendering); only the model adapter is replaced by replay.
+# Keyless replay counterpart to web.cordis.yml: the explicitly selected
+# test-only loopback connector and markdown rendering stay real; only the model
+# adapter is replaced by replay.
 - id: base
   name: '@deepseek-ai/cordis-plugin-include'
   config:
@@ -12,8 +12,8 @@
       - insert:
           - id: web
             name: '@deepseek-ai/dsh-web'
-          - id: web-fetch-http
-            name: '@deepseek-ai/dsh-web-fetch-http'
+            config:
+              fetchProvider: snapshot-fixture
           - id: web-fetch-fixture
             name: './web-fetch-fixture-server.mjs'
           - id: tool-web

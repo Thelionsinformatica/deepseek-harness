@@ -799,6 +799,7 @@ describe('official spawn projection', () => {
     expect(process.signalCode).toBe('SIGTERM')
     expect(process.outcome).toEqual({ exitCode: null, signal: 'SIGTERM' })
     expect(process.kill('SIGTERM')).toBe(false)
+    process.off('exit', exit)
   })
 
   it('emits spawn errors', async () => {

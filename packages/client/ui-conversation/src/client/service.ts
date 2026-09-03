@@ -158,7 +158,7 @@ export class ConversationController extends Service implements IConversation {
     const result = await session.prompt(content, mode, signal)
     if (!result.ok) return { kind: 'error' }
     this.releaseDraftImages(attachments)
-    return { kind: 'success' }
+    return { kind: 'success', messageId: result.value.messageId }
   }
 
   /**

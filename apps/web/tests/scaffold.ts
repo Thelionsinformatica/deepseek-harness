@@ -19,7 +19,8 @@
 // session-title-llm disabled (its fire-and-forget title call would race the
 // loop for the session's replay cursor); webserver pinned to port 0 with the
 // built dist; ordinary keyless modes omit llm-deepseek and fixture scenarios
-// add installLlmReplay on the settled root ctx
+// add installLlmReplay on the settled root ctx and pin the test-only default
+// to the exact provider/model catalog that replay publishes
 // (the plugin-row path discards the ReplayHandle; the direct install keeps
 // assertConsumed for the teardown fixture-consumption check).
 import { existsSync, readFileSync } from 'node:fs'
@@ -110,10 +111,11 @@ const SHIPPED_PRESET_DIR = join(REPO_ROOT, 'apps/cli/config/agent-presets')
 // catch-all would leave resolveModelInfo ambiguous and compaction-basic's
 // post-step pressure check would warn every step). The published
 // contextWindow keeps that pressure path provably inert for small fixtures.
+const REPLAY_SELECTION = { provider: 'deepseek-official', model: 'deepseek-v4-flash' } as const
 const REPLAY_PROVIDERS = [{
-  id: 'deepseek-official',
+  id: REPLAY_SELECTION.provider,
   name: 'DeepSeek',
-  models: [{ id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', contextWindow: 128_000 }],
+  models: [{ id: REPLAY_SELECTION.model, name: 'DeepSeek-V4-Flash', contextWindow: 128_000 }],
 }]
 
 function replayProviders(contextWindow: number | undefined): typeof REPLAY_PROVIDERS {
@@ -378,6 +380,19 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         includeUserRoot: false,
       },
     },
+    // The Leon production composition is local-first, but replay publishes
+    // only the recorded DeepSeek route. Pin fresh replay sessions to that
+    // route so the composer and Agent agree with the deterministic fixture;
+    // record mode and every production composition keep their own default.
+    ...mode !== 'record' && options.replayFixture !== undefined
+      ? [
+        { id: 'agent-default-model', config: REPLAY_SELECTION },
+        // Adaptive routing is a production policy. Letting it replace the
+        // recorded route with Ollama would bypass this scaffold's replay
+        // adapter and make keyless tests depend on a developer's local model.
+        { id: 'api-gateway', config: {} },
+      ]
+      : [],
     { id: 'session-persistence-jsonl', config: { root: persistenceRoot } },
     // Content search is enabled here although the shipped bundles default it
     // off (`openAt: never`, pinned by apps/cli/tests/lazy-search-startup):

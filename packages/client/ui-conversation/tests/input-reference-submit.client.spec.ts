@@ -181,6 +181,133 @@ describe('reference submission', () => {
 })
 
 describe('submit transaction hardening', () => {
+  it('settles and unlocks a tracked plain submit when the Host sink throws synchronously', async () => {
+    const sink = vi.fn<(
+      _text: string,
+      _imageIds: readonly DraftAttachmentId[],
+      _mode: 'queue' | 'steer',
+      _signal: AbortSignal,
+    ) => Promise<SubmitOutcome>>()
+      .mockImplementationOnce(() => { throw new Error('synchronous Host failure') })
+      .mockResolvedValueOnce({ kind: 'success' })
+    const shell = new SessionInputShell({
+      actx: {} as ClientContext,
+      defaultSink: sink,
+      commandImages,
+    })
+    shell.setDraft('retry after sync failure')
+
+    await expect(shell.submitTracked()).resolves.toEqual({
+      kind: 'error',
+      text: 'synchronous Host failure',
+    })
+    expect(shell.snapshot).toMatchObject({
+      phase: 'plain',
+      draft: 'retry after sync failure',
+    })
+    expect(shell.notices.getSnapshot()).toMatchObject({
+      level: 'error',
+      text: 'synchronous Host failure',
+    })
+
+    await expect(shell.submitTracked()).resolves.toEqual({ kind: 'success' })
+    expect(shell.snapshot.draft).toBe('')
+    expect(sink).toHaveBeenCalledTimes(2)
+  })
+
+  it('settles and unlocks a tracked reference submit when the Host sink throws synchronously', async () => {
+    const serializeReference = vi.fn(() => Promise.resolve(mention))
+    const sink = vi.fn<(
+      _text: string,
+      _imageIds: readonly DraftAttachmentId[],
+      _mode: 'queue' | 'steer',
+      _signal: AbortSignal,
+    ) => Promise<SubmitOutcome>>()
+      .mockImplementationOnce(() => { throw new Error('synchronous reference failure') })
+      .mockResolvedValueOnce({ kind: 'success' })
+    const inputTriggers = {
+      serializeReference,
+      track: vi.fn(),
+    } as unknown as InputTriggerController
+    const shell = new SessionInputShell({
+      actx: {} as ClientContext,
+      inputTriggers: () => inputTriggers,
+      defaultSink: sink,
+      commandImages,
+    })
+    chip(shell)
+
+    await expect(shell.submitTracked()).resolves.toEqual({
+      kind: 'error',
+      text: 'synchronous reference failure',
+    })
+    expect(shell.snapshot).toMatchObject({
+      phase: 'plain',
+      draft: '@Research ',
+      occurrences: [{ source: 'reference', ref: mention, label: 'Research' }],
+    })
+    expect(shell.notices.getSnapshot()).toMatchObject({
+      level: 'error',
+      text: 'synchronous reference failure',
+    })
+
+    await expect(shell.submitTracked()).resolves.toEqual({ kind: 'success' })
+    expect(shell.snapshot.draft).toBe('')
+    expect(shell.snapshot.occurrences).toEqual([])
+    expect(sink).toHaveBeenCalledTimes(2)
+    expect(serializeReference).toHaveBeenCalledTimes(2)
+  })
+
+  it('returns the durable Host message id to a tracked submitter', async () => {
+    const messageId = 'message-voice'
+    const shell = new SessionInputShell({
+      actx: {} as ClientContext,
+      defaultSink: () => Promise.resolve({ kind: 'success', messageId }),
+      commandImages,
+    })
+    shell.setDraft('continue por voz')
+
+    await expect(shell.submitTracked()).resolves.toEqual({ kind: 'success', messageId })
+    expect(shell.snapshot.draft).toBe('')
+  })
+
+  it('settles a tracked submit when its session is disposed mid-admission', async () => {
+    const shell = new SessionInputShell({
+      actx: {} as ClientContext,
+      defaultSink: () => new Promise<SubmitOutcome>(() => {}),
+      commandImages,
+    })
+    shell.setDraft('continue por voz')
+    const tracked = shell.submitTracked()
+
+    shell.dispose()
+
+    await expect(tracked).resolves.toEqual({ kind: 'error' })
+  })
+
+  it('aborts and settles an image-only tracked submit when its session is disposed', async () => {
+    let signal: AbortSignal | undefined
+    const shell = new SessionInputShell({
+      actx: {} as ClientContext,
+      defaultSink: (_text, _imageIds, _mode, received) => {
+        signal = received
+        return new Promise<SubmitOutcome>(() => {})
+      },
+      commandImages,
+    })
+    shell.addImages(['img-voice' as DraftAttachmentId])
+
+    const tracked = shell.submitTracked()
+    await vi.waitFor(() => { expect(signal).toBeDefined() })
+    expect(signal?.aborted).toBe(false)
+
+    shell.dispose()
+
+    expect(signal?.aborted).toBe(true)
+    await expect(tracked).resolves.toEqual({ kind: 'error' })
+    expect(shell.snapshot.imageIds).toEqual(['img-voice'])
+  })
+
   it('sends one image-only prompt per settlement, ignoring Enter during the round-trip', async () => {
     let settle!: (outcome: SubmitOutcome) => void
     const sink = vi.fn(() => new Promise<SubmitOutcome>((resolve) => { settle = resolve }))

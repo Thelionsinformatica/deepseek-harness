@@ -177,6 +177,8 @@ describe('goal-round outcome policy', () => {
       /server job output before changing ports/.source,
       /Never free a port/.source,
       /mark it complete/.source,
+      /update_goal with the exact current goal_id and revision and action complete/.source,
+      /does not change goal state and will not stop another round/.source,
     ].join('[\\s\\S]*')
     expect(block.text).toMatch(new RegExp(orderedProtocol))
   })
@@ -214,6 +216,18 @@ describe('automatic goal admission', () => {
     }])).toBe(false)
     expect(goalSession.shouldAutoStartGoal([{
       type: 'text',
+      text: 'Valide a ponte MCP deste projeto sem alterar nenhum arquivo do repositório.',
+    }])).toBe(false)
+    expect(goalSession.shouldAutoStartGoal([{
+      type: 'text',
+      text: 'Corrija somente o registro de evidência sem alterar o repositório.',
+    }])).toBe(false)
+    expect(goalSession.shouldAutoStartGoal([{
+      type: 'text',
+      text: 'Validate this project without modifying any repository files.',
+    }])).toBe(false)
+    expect(goalSession.shouldAutoStartGoal([{
+      type: 'text',
       text: 'Implemente o site e responda apenas quando terminar.',
     }])).toBe(true)
   })
@@ -227,6 +241,27 @@ describe('automatic goal admission', () => {
       content: [{
         type: 'text',
         text: 'Analise tecnicamente a arquitetura de um site. Para este teste, não altere arquivos nem use ferramentas; responda apenas: GEMINI LEON OK',
+      }],
+      source: { kind: 'user' },
+    }))
+    await test.agent.whenIdle()
+
+    expect(test.ctx.goals.get(test.agent)).toBeUndefined()
+    expect(test.adapter.requests).toHaveLength(1)
+  })
+
+  it('keeps a read-only MCP validation single-turn despite implementation vocabulary and length', async () => {
+    const test = await harness(
+      [textResponse('antigravity-mcp-001 2026-08-31T23:53:55.401Z')],
+      { driverConfig: { autoStartPresets: ['leon'] }, agentPreset: 'leon' },
+    )
+    test.agent.followup(createUserMessage({
+      content: [{
+        type: 'text',
+        text: 'Validação final da ponte MCP deste projeto, sem alterar nenhum arquivo do repositório. '
+          + 'Use obrigatoriamente get_assignment e list_events do servidor leon_agent_bridge, sem terminal. '
+          + 'Localize o evento mais recente cujo agent seja leon e responda somente com o assignmentId e o timestamp. '
+          + 'Não recrie, substitua ou modifique qualquer artefato do projeto durante esta validação.',
       }],
       source: { kind: 'user' },
     }))

@@ -97,7 +97,10 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
         return { rpcId: request.rpcId, result: { ok: true, value: { sessionId: 's-fork' as never } } }
       },
       async prompt(request) {
-        return { rpcId: request.rpcId, result: { ok: true, value: { accepted: true as const } } }
+        return {
+          rpcId: request.rpcId,
+          result: { ok: true, value: { accepted: true as const, messageId: 'message-1' as never } },
+        }
       },
       async attachment(request) {
         return {
@@ -365,7 +368,11 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
     })
     const renamed = await c.sessions.rename({ sessionId: 's' as never, title: 'named' })
     expect(renamed.result).toMatchObject({ ok: true, value: { title: 'named', seq: 0 } })
-    expect((await c.sessions.prompt({ sessionId: 's' as never, mode: 'queue', content: [{ type: 'text', text: 'x' }] })).result.ok).toBe(true)
+    expect((await c.sessions.prompt({
+      sessionId: 's' as never,
+      mode: 'queue',
+      content: [{ type: 'text', text: 'x' }],
+    })).result).toEqual({ ok: true, value: { accepted: true, messageId: 'message-1' } })
     expect((await c.sessions.attachment({ sessionId: 's' as never, attachmentId: 'a' as never })).result.ok).toBe(true)
     expect((await c.sessions.updateQueue({
       sessionId: 's' as never,

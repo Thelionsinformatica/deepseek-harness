@@ -27,6 +27,39 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+.endButton {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-label-secondary) 45%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.endButton:hover {
+  border-color: var(--dsw-alias-state-error-primary);
+  color: var(--dsw-alias-state-error-primary);
+  background: var(--dsw-alias-state-error-secondary);
+}
+
+.endButton:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+.endButton span {
+  display: block;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
 .button:focus-visible {
   outline: 2px solid var(--dsw-alias-state-business-primary);
   outline-offset: 2px;
@@ -38,12 +71,19 @@
 }
 
 .root[data-status='listening'] .button {
-  color: #fff;
+  color: var(--dsw-alias-label-primary-inverted);
   border-color: var(--dsw-alias-state-business-primary);
   background:
     linear-gradient(var(--dsw-alias-state-business-primary), var(--dsw-alias-state-business-primary)) padding-box,
     conic-gradient(var(--dsw-alias-state-success-primary) var(--voice-level), transparent 0) border-box;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent);
+}
+
+.root[data-playback='speaking'] .button {
+  color: var(--dsw-alias-state-success-primary);
+  border-color: var(--dsw-alias-state-success-primary);
+  background: var(--dsw-alias-state-success-tertiary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsw-alias-state-success-primary) 16%, transparent);
 }
 
 .root[data-status='captured'] .button,
@@ -89,6 +129,10 @@
   color: var(--dsw-alias-state-business-primary);
 }
 
+.root[data-playback='speaking'] .status {
+  color: var(--dsw-alias-state-success-primary);
+}
+
 .root[data-status='error'] .status {
   color: var(--dsw-alias-label-error);
 }
@@ -101,6 +145,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .button,
+  .endButton,
   .meter span {
     transition: none;
   }

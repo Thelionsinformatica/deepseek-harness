@@ -36,13 +36,14 @@ export interface ISession {
    * Send a prompt into the session.
    * @param content - text plus browser-owned temporary image uploads.
    * @param mode - 'queue' appends a turn; 'steer' interrupts the running one.
-   * @returns acceptance, or the business error (also mirrored into snapshot.promptError).
+   * @returns acceptance with the exact durable message identity, or the business error
+   * (also mirrored into snapshot.promptError).
    */
   prompt(
     content: PromptContentPart[],
     mode: 'queue' | 'steer',
     signal?: AbortSignal,
-  ): Promise<RpcResult<{ accepted: true }>>
+  ): Promise<RpcResult<{ accepted: true; messageId: MessageId }>>
   /**
    * Resolve one durable image referenced by this session.
    * @param attachmentId - opaque id found in the folded session log.

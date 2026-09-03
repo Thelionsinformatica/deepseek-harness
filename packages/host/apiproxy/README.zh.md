@@ -44,7 +44,7 @@ Settings 分节中的 `reasoningEffort` 在 agent-default-model 插件配置中�
 
 `adaptiveRouting.shadow` 是环绕精确且已冻结的 `llm/stream` 请求运行的被动第二代预检。它解析已注册模型的上下文、输出和模态能力，并结合当前 token-meter 压力、输出与工具循环预留量、部署质量与优先级、本地和外部策略、依据已配置价格得到的预计费用，以及进程内路由健康状态，随后追加仅写入日志的 `llm/routing-shadow` 建议。最低质量由请求压力与模态决定，不使用当前模型的目录质量，也不把每次请求都提供的工具 schema 数量当作任务难度。该事件只包含结构化计数、路由、有序拒绝原因、健康摘要和费用估计，绝不包含提示词、系统提示词、工具 schema、消息或凭据内容。上下文溢出和输出截断会作为同一会话的容量信号保留，而不会误算为提供方健康故障。观察器不改变真实 stream，也没有替换、重试、阻止或延迟模型的权限；手动模式会话不受观察。随附 Web 策略只把 Qwen 作为本地候选，把外部路由限制为仅回退使用，并记录建议是否会改变实际路由，以便在考虑任何后续强制模式之前先积累证据。
 
-`session.prompt` 和 `subagent.prompt` 接受可选的请求本地 `clientTimeZone` 来源信息。若提供该值，Host 会在进入 Agent 前校验 `UTC` 或 IANA Area/Location 并将其规范化；无效输入以 `invalid-time-zone` 拒绝，规范值则与 `rpcId` 一起记录在这条确切的 `user-rpc` 消息上。该值不属于 Session、连接、create、resume 或 fork 状态；非浏览器调用方可以省略它。
+`session.prompt` 和 `subagent.prompt` 接受可选的请求本地 `clientTimeZone` 来源信息。若提供该值，Host 会在进入 Agent 前校验 `UTC` 或 IANA Area/Location 并将其规范化；无效输入以 `invalid-time-zone` 拒绝，规范值则与 `rpcId` 一起记录在这条确切的 `user-rpc` 消息上。两个方法都会返回 Host 所接纳的那条确切持久用户消息的 `messageId`，供调用方将 RPC 与后续 inbox 及 Session 事件关联。该值不属于 Session、连接、create、resume 或 fork 状态；非浏览器调用方可以省略它。
 
 待处理的 queued 输入属于实时控制平面约定，而非对话历史。网关根据持久 `agent/inbox/spliced` 变更派生完整的 `next-turn` 队列，并在每次变更后及重连时广播权威 `session/queue` 快照；待处理的 `next-step` steering（中途引导）不进入此 Web 投影。在 `next-step` 内，用户来源的消息携带 `steering` placement，而注入上下文（审批通知、任务完成、附加快照）携带 `context`，领取前不对外呈现。面向单条消息的 `agent/inbox/inserted`、`claimed` 与 `discarded` 通知仍供生命周期观察方使用，但不用于构建队列视图。`session.updateQueue` 通过 `MessageId` 寻址单个项；编辑和移除经已挂载 Agent 的 `Inbox.splice()` 修改队列。认领操作的纯删除 splice 会在 pre-step 准入前赢得竞态，因此之后的操作返回 `queue-item-not-found`。`session.cancel` 仅中止活动轮次并保留待处理 inbox 工作；取消达到完全停稳且结束中的轮次完成 flush 后，AgentLoop 按 FIFO 顺序认领下一条可唤醒消息，浏览器绝不重发或提升它。队列操作绝不恢复冷会话，客户端也绝不根据轮次或状态事件推断某项已退出队列。
 

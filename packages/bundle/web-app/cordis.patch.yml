@@ -184,7 +184,27 @@
             inputUsdPerMillion: 0
             outputUsdPerMillion: 0
           - provider: ollama
+            model: qwen3.5:9b-q4_K_M
+            inputUsdPerMillion: 0
+            outputUsdPerMillion: 0
+          - provider: ollama
+            model: qwen3.5:9b-q6_K
+            inputUsdPerMillion: 0
+            outputUsdPerMillion: 0
+          - provider: ollama
             model: ornith-1.5:9b
+            inputUsdPerMillion: 0
+            outputUsdPerMillion: 0
+          - provider: ollama
+            model: ornith-1.5:9b-q6_K
+            inputUsdPerMillion: 0
+            outputUsdPerMillion: 0
+          - provider: ollama
+            model: llama3.1:8b-q6_K
+            inputUsdPerMillion: 0
+            outputUsdPerMillion: 0
+          - provider: ollama
+            model: mistral-nemo:12b-q4_K_M
             inputUsdPerMillion: 0
             outputUsdPerMillion: 0
           - provider: ollama
@@ -206,7 +226,7 @@
             outputUsdPerMillion: 1.20
             cacheReadUsdPerMillion: 0.02
           - provider: nvidia
-            model: deepseek-ai/deepseek-v4-flash-0731
+            model: moonshotai/kimi-k2.6
             inputUsdPerMillion: 0
             outputUsdPerMillion: 0
 
@@ -236,7 +256,7 @@
       config:
         # Leon Automatic keeps every local tier on Qwen while specialist models
         # remain manual pending long-autonomy evidence. Operational provider
-        # failures escalate through FreeLLMAPI -> Gemini -> OpenAI; unknown
+        # failures escalate through Gemini -> OpenAI; unknown
         # models and missing adapters fail closed as configuration errors.
         adaptiveRouting:
           provider: ollama
@@ -244,8 +264,12 @@
           mainProvider: ollama
           expertProvider: ollama
           fastModel: qwen3.5:9b
-          mainModel: qwen3.5:9b
-          expertModel: qwen3.5:9b
+          # Estrutura por esforço/complexidade:
+          # - tarefas curtas: qwen3.5 9b (rápido e estável)
+          # - tarefas de contexto e manutenção: qwen3.8-distill 9b-q8
+          # - tarefas de maior exigência: ornith 1.5 9b-q6_K
+          mainModel: qwen3.8-distill:9b-q8
+          expertModel: ornith-1.5:9b-q6_K
           fastReasoningEffort: 'off'
           mainReasoningEffort: medium
           expertReasoningEffort: high
@@ -255,19 +279,18 @@
             - fromRound: 1
               provider: ollama
               model: qwen3.5:9b
+              reasoningEffort: medium
+            - fromRound: 3
+              provider: ollama
+              model: qwen3.8-distill:9b-q8
+              reasoningEffort: high
+            - fromRound: 6
+              provider: ollama
+              model: ornith-1.5:9b-q6_K
               reasoningEffort: high
           failovers:
             - fromProviders:
                 - ollama
-              provider: freellmapi
-              model: auto
-              residency: external
-              failureCodes:
-                - TRANSPORT
-                - TIMEOUT
-                - SERVER
-            - fromProviders:
-                - freellmapi
               provider: google
               model: gemini-3.1-pro-preview-customtools
               residency: external
@@ -275,13 +298,6 @@
                 - TRANSPORT
                 - TIMEOUT
                 - SERVER
-                - RATE_LIMIT
-                - QUOTA
-                - EMPTY_RESPONSE
-                - AUTH
-                - INVALID_CREDENTIAL
-                - MISSING_CREDENTIAL
-                - UNKNOWN_MODEL
             - fromProviders:
                 - google
               provider: openai
@@ -324,12 +340,22 @@
                 coldStartTtftMs: 12000
                 inputUsdPerMillion: 0
                 outputUsdPerMillion: 0
-              - provider: freellmapi
-                model: auto
-                residency: external
-                quality: 3
-                priority: 30
-                coldStartTtftMs: 15000
+              - provider: ollama
+                model: qwen3.8-distill:9b-q8
+                residency: local
+                quality: 4
+                priority: 20
+                coldStartTtftMs: 14000
+                inputUsdPerMillion: 0
+                outputUsdPerMillion: 0
+              - provider: ollama
+                model: ornith-1.5:9b-q6_K
+                residency: local
+                quality: 4
+                priority: 25
+                coldStartTtftMs: 18000
+                inputUsdPerMillion: 0
+                outputUsdPerMillion: 0
               - provider: google
                 model: gemini-3.1-pro-preview-customtools
                 residency: external

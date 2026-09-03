@@ -185,13 +185,14 @@ export class Session implements SessionFace {
    * Send (queue/steer passed through 1:1); failures land in the snapshot's promptError.
    * @param content - text plus browser-owned temporary image uploads.
    * @param mode - queue appends after the current turn; steer interrupts it.
-   * @returns the prompt result (also mirrored into promptError on failure).
+   * @returns the prompt result with the exact durable message identity
+   * (also mirrored into promptError on failure).
    */
   async prompt(
     content: PromptContentPart[],
     mode: 'queue' | 'steer',
     signal?: AbortSignal,
-  ): Promise<RpcResult<{ accepted: true }>> {
+  ): Promise<RpcResult<{ accepted: true; messageId: MessageId }>> {
     this.promptError = null
     this.lastAgentError = null
     // Synchronous, before the first await: the blank → engaging edge must be
@@ -200,7 +201,7 @@ export class Session implements SessionFace {
     this.promptAttempted = true
     if (this.blankBit) this.firstPromptPendingTurn = true
     this.notifier.markDirty()
-    let result: RpcResult<{ accepted: true }>
+    let result: RpcResult<{ accepted: true; messageId: MessageId }>
     try {
       if (this.address === undefined) {
         result = (await this.api.sessions.prompt({
@@ -236,7 +237,9 @@ export class Session implements SessionFace {
               : []),
             clientTimeZone: resolvedClientTimeZone(),
           }, signal)).result
-          result = routed.ok ? { ok: true, value: { accepted: true } } : routed
+          result = routed.ok
+            ? { ok: true, value: { accepted: true, messageId: routed.value.messageId } }
+            : routed
         }
       }
     } catch (error) {

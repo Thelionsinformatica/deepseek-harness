@@ -45,6 +45,11 @@ export interface SessionInput extends InputTarget {
    */
   submit(mode?: InputSubmitMode): void
   /**
+   * The same transaction with a causal settlement receipt. Ordinary prompts
+   * return their durable Host message id; handled commands may succeed without one.
+   */
+  submitTracked(mode?: InputSubmitMode): Promise<SubmitOutcome>
+  /**
    * Surface a notice outside the machine's own effect stream: detached
    * command results and business notifications render through here.
    * Session-routed — resolving the facade via SessionInputResolver.for(actx) lands
@@ -81,6 +86,8 @@ export interface InputActions {
   pruneImages(ids: readonly DraftAttachmentId[]): void
   /** Enter submission (adjudication / claim transaction / default sink inside). */
   submit(): void
+  /** Enter submission and await the exact admission outcome. */
+  submitTracked(): Promise<SubmitOutcome>
 }
 
 /** One surfaced notice (command results, adjudication failures). seq keys re-render of repeats. */

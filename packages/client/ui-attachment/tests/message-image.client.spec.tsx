@@ -199,6 +199,7 @@ describe('ImageGallery', () => {
         removeImage: vi.fn(),
         pruneImages: vi.fn(),
         submit: vi.fn(),
+        submitTracked: vi.fn(async () => ({ kind: 'success' as const })),
       },
       images: [{ attachment }],
       loadImage,

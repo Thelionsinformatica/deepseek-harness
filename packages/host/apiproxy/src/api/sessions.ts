@@ -368,6 +368,7 @@ export interface SessionsApi {
 
   /**
    * Sends text and temporary image bytes to an ordinary session Agent after durable host admission.
+   * Success returns the identity of the exact durable user message admitted by the Host.
    * Browser callers attach their current IANA zone;
    * the Host validates, canonicalizes, and records it on that exact user message. Omission remains
    * valid for non-browser callers. Session-backed subagents reject with `agent-busy` and use
@@ -379,7 +380,11 @@ export interface SessionsApi {
     content: PromptContentPart[]
     clientTimeZone?: string
   }>):
-  Promise<RpcResponse<{ accepted: true; command?: { kind: 'success'; text?: string } }>>
+  Promise<RpcResponse<{
+    accepted: true
+    messageId: MessageId
+    command?: { kind: 'success'; text?: string }
+  }>>
 
   /** Reads one durable image after proving that this session's log references its id. */
   attachment(request: RpcRequest<{ sessionId: SessionId; attachmentId: AttachmentIdType }>):

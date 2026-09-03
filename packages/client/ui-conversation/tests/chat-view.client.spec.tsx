@@ -285,6 +285,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
       removeImage: () => {},
       pruneImages: () => {},
       submit: () => {},
+      submitTracked: async () => ({ kind: 'success' }),
     },
     useStore: bindSnapshotSelector(chat),
     useTechnicalContextVisible: bindSnapshotSelector(technicalContextVisible),

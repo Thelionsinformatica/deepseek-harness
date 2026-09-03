@@ -21,6 +21,7 @@ export type LlmRetryEventData =
     turn: number
     step: number
     provider: string
+    model?: string
     mode: 'normal'
     policyKey: string
     retry: number
@@ -34,6 +35,7 @@ export type LlmRetryEventData =
     turn: number
     step: number
     provider: string
+    model?: string
     mode: 'always'
     policyKey: string
     retry: number

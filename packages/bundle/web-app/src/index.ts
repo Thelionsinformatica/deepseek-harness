@@ -261,7 +261,7 @@ export function apply(ctx: Context, config: Config): void {
     scriptPath: fileURLToPath(new URL('../runtime/transcribe-local.py', import.meta.url)),
     maxBytes: config.voiceMaxBytes ?? 10 * 1024 * 1024,
     timeoutMs: config.voiceTimeoutMs ?? 45_000,
-  })
+  }, runtime.trustedHosts)
   if (config.surfaceContext) {
     const playwrightCli = resolvePlaywrightCli()
     ctx.inject(['systemPrompt'], (promptCtx) => {

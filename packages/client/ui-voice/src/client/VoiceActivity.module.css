@@ -1,0 +1,132 @@
+.root {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 84%, transparent);
+  color: var(--dsw-alias-label-primary);
+}
+
+.orb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.core,
+.ring {
+  position: absolute;
+  border-radius: 999px;
+}
+
+.core {
+  width: 9px;
+  height: 9px;
+  background: currentColor;
+  box-shadow: 0 0 12px color-mix(in srgb, currentColor 50%, transparent);
+}
+
+.ring {
+  inset: 2px;
+  border: 1px solid currentColor;
+  opacity: 0.4;
+}
+
+.copy {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.copy strong {
+  flex: none;
+  font-weight: 600;
+}
+
+.copy span {
+  overflow: hidden;
+  color: var(--dsw-alias-label-caption);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.root[data-state='requesting'] .orb,
+.root[data-state='processing'] .orb,
+.root[data-state='thinking'] .orb,
+.root[data-state='tool'] .orb {
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.root[data-state='listening'] .orb,
+.root[data-state='speaking'] .orb {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.root[data-state='approval'] .orb {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+.root[data-state='error'] .orb {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.root[data-state='interrupted'] .orb {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.root[data-state='requesting'] .ring,
+.root[data-state='processing'] .ring,
+.root[data-state='thinking'] .ring,
+.root[data-state='tool'] .ring,
+.root[data-state='listening'] .ring,
+.root[data-state='speaking'] .ring {
+  animation: voice-activity-pulse 1.4s ease-in-out infinite;
+}
+
+.root[data-state='listening'] .core {
+  animation: voice-activity-listen 700ms ease-in-out infinite alternate;
+}
+
+@keyframes voice-activity-pulse {
+  0%, 100% { transform: scale(0.72); opacity: 0.25; }
+  50% { transform: scale(1); opacity: 0.72; }
+}
+
+@keyframes voice-activity-listen {
+  from { transform: scale(0.78); }
+  to { transform: scale(1.22); }
+}
+
+@container (max-width: 660px) {
+  .root {
+    grid-template-columns: 24px minmax(0, 1fr);
+    padding-block: 6px;
+  }
+
+  .orb {
+    width: 24px;
+    height: 24px;
+  }
+
+  .copy {
+    display: grid;
+    gap: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ring,
+  .core {
+    animation: none !important;
+  }
+}

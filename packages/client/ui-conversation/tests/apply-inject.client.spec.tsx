@@ -41,7 +41,10 @@ function sessionFakeFor() {
   return {
     open: vi.fn(() => Promise.resolve()),
     loadOlder: vi.fn<ISession['loadOlder']>(() => Promise.resolve()),
-    prompt: vi.fn<ISession['prompt']>(() => Promise.resolve({ ok: true, value: { accepted: true } })),
+    prompt: vi.fn<ISession['prompt']>(() => Promise.resolve({
+      ok: true,
+      value: { accepted: true, messageId: 'message-1' as never },
+    })),
     cancel: vi.fn<ISession['cancel']>(() => Promise.resolve({ ok: true, value: { accepted: true } })),
   } satisfies SessionBehaviorOverrides
 }

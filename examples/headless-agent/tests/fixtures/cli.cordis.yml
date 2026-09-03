@@ -18,6 +18,7 @@
               model: cli-mock
               cwd: !!js process.cwd()
           workspaceContext: false
+          toolBash: !!js "process.platform === 'win32' ? false : {}"
           dshHome: './.dsh-home'
           skills:
             filesystem:
@@ -27,3 +28,17 @@
         name: '@deepseek-ai/dsh-session-persistence-jsonl'
         config:
           root: './.sessions'
+      - id: bash
+        disabled: !!js process.platform === 'win32'
+
+- id: pwsh
+  name: '@deepseek-ai/dsh-pwsh-local'
+  disabled: !!js process.platform !== 'win32'
+
+- id: shell-env
+  name: '@deepseek-ai/dsh-shell-env'
+  disabled: !!js process.platform !== 'win32'
+
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'

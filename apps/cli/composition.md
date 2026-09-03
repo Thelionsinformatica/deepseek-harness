@@ -44,8 +44,18 @@ flowchart LR
   cfg --> plugin_dsh_base_llm_pi_ai
   plugin_dsh_base_qwen3_5_9b["qwen3.5:9b<br/>Qwen 3.5 9B (Local)"]
   cfg --> plugin_dsh_base_qwen3_5_9b
+  plugin_dsh_base_qwen3_5_9b_q4_K_M["qwen3.5:9b-q4_K_M<br/>Qwen 3.5 9B Q4_K_M 64K (Local Manual)"]
+  cfg --> plugin_dsh_base_qwen3_5_9b_q4_K_M
+  plugin_dsh_base_qwen3_5_9b_q6_K["qwen3.5:9b-q6_K<br/>Qwen 3.5 9B Q6_K 64K (Local Manual)"]
+  cfg --> plugin_dsh_base_qwen3_5_9b_q6_K
   plugin_dsh_base_ornith_1_5_9b["ornith-1.5:9b<br/>Ornith 1.5 9B (Local Manual)"]
   cfg --> plugin_dsh_base_ornith_1_5_9b
+  plugin_dsh_base_ornith_1_5_9b_q6_K["ornith-1.5:9b-q6_K<br/>Ornith 1.5 9B Q6_K 64K (Local Manual)"]
+  cfg --> plugin_dsh_base_ornith_1_5_9b_q6_K
+  plugin_dsh_base_llama3_1_8b_q6_K["llama3.1:8b-q6_K<br/>Llama 3.1 8B Q6_K 64K (Local Manual)"]
+  cfg --> plugin_dsh_base_llama3_1_8b_q6_K
+  plugin_dsh_base_mistral_nemo_12b_q4_K_M["mistral-nemo:12b-q4_K_M<br/>Mistral Nemo 12B Q4_K_M 32K (Local Manual)"]
+  cfg --> plugin_dsh_base_mistral_nemo_12b_q4_K_M
   plugin_dsh_base_qwen3_8_distill_9b_q8["qwen3.8-distill:9b-q8<br/>Qwen 3.8 9B Distill Q8 (Local Manual)"]
   cfg --> plugin_dsh_base_qwen3_8_distill_9b_q8
   plugin_dsh_base_qwen3_8_9b_distill_uncensored_heretic_latest["qwen3.8-9b-distill-uncensored-heretic:latest<br/>Qwen 3.8 9B Heretic (Local Manual)"]
@@ -56,8 +66,16 @@ flowchart LR
   cfg --> plugin_dsh_base_gemini_3_1_pro_preview_customtools
   plugin_dsh_base_gpt_5_6_luna["gpt-5.6-luna<br/>GPT-5.6 Luna (Low)"]
   cfg --> plugin_dsh_base_gpt_5_6_luna
-  plugin_dsh_base_deepseek_ai_deepseek_v4_flash_0731["deepseek-ai/deepseek-v4-flash-0731<br/>DeepSeek V4 Flash 0731 (NVIDIA NIM Manual)"]
-  cfg --> plugin_dsh_base_deepseek_ai_deepseek_v4_flash_0731
+  plugin_dsh_base_moonshotai_kimi_k2_6["moonshotai/kimi-k2.6<br/>Kimi K2.6 (NVIDIA NIM)"]
+  cfg --> plugin_dsh_base_moonshotai_kimi_k2_6
+  plugin_dsh_base_kimi_k3["kimi-k3<br/>Kimi K3"]
+  cfg --> plugin_dsh_base_kimi_k3
+  plugin_dsh_base_kimi_k2_6["kimi-k2.6<br/>Kimi K2.6"]
+  cfg --> plugin_dsh_base_kimi_k2_6
+  plugin_dsh_base_kimi_k2_7_code_highspeed["kimi-k2.7-code-highspeed<br/>Kimi K2.7 Code Highspeed"]
+  cfg --> plugin_dsh_base_kimi_k2_7_code_highspeed
+  plugin_dsh_base_kimi_k2_7_code["kimi-k2.7-code<br/>Kimi K2.7 Code"]
+  cfg --> plugin_dsh_base_kimi_k2_7_code
   plugin_dsh_base_session_persistence_jsonl["session-persistence-jsonl<br/>@deepseek-ai/dsh-session-persistence-jsonl"]
   cfg --> plugin_dsh_base_session_persistence_jsonl
   plugin_dsh_base_storage["storage<br/>@deepseek-ai/dsh-storage"]
@@ -210,13 +228,22 @@ flowchart LR
 | `credentials` | `@deepseek-ai/dsh-credentials-local` |
 | `llm-pi-ai` | `@deepseek-ai/dsh-llm-pi-ai` |
 | `qwen3.5:9b` | `Qwen 3.5 9B (Local)` |
+| `qwen3.5:9b-q4_K_M` | `Qwen 3.5 9B Q4_K_M 64K (Local Manual)` |
+| `qwen3.5:9b-q6_K` | `Qwen 3.5 9B Q6_K 64K (Local Manual)` |
 | `ornith-1.5:9b` | `Ornith 1.5 9B (Local Manual)` |
+| `ornith-1.5:9b-q6_K` | `Ornith 1.5 9B Q6_K 64K (Local Manual)` |
+| `llama3.1:8b-q6_K` | `Llama 3.1 8B Q6_K 64K (Local Manual)` |
+| `mistral-nemo:12b-q4_K_M` | `Mistral Nemo 12B Q4_K_M 32K (Local Manual)` |
 | `qwen3.8-distill:9b-q8` | `Qwen 3.8 9B Distill Q8 (Local Manual)` |
 | `qwen3.8-9b-distill-uncensored-heretic:latest` | `Qwen 3.8 9B Heretic (Local Manual)` |
 | `auto` | `FreeLLMAPI Automatic` |
 | `gemini-3.1-pro-preview-customtools` | `Gemini 3.1 Pro Preview Custom Tools` |
 | `gpt-5.6-luna` | `GPT-5.6 Luna (Low)` |
-| `deepseek-ai/deepseek-v4-flash-0731` | `DeepSeek V4 Flash 0731 (NVIDIA NIM Manual)` |
+| `moonshotai/kimi-k2.6` | `Kimi K2.6 (NVIDIA NIM)` |
+| `kimi-k3` | `Kimi K3` |
+| `kimi-k2.6` | `Kimi K2.6` |
+| `kimi-k2.7-code-highspeed` | `Kimi K2.7 Code Highspeed` |
+| `kimi-k2.7-code` | `Kimi K2.7 Code` |
 | `session-persistence-jsonl` | `@deepseek-ai/dsh-session-persistence-jsonl` |
 | `storage` | `@deepseek-ai/dsh-storage` |
 | `storage-json` | `@deepseek-ai/dsh-storage-json` |

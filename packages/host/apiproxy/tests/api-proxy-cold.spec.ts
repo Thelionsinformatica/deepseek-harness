@@ -13,7 +13,7 @@ import SessionStore from '@deepseek-ai/dsh-session'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import { TypertLookupFailure } from '@deepseek-ai/dsh-typert-protocol'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
-import { createUserMessage, MessageId } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, MessageId, type UserMessage } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
@@ -597,7 +597,13 @@ describe('subagent ownership fence', () => {
       }],
       meta: { cwd: '/proj', parentSession: sid('session-source'), seedLength: 1 },
     })
-    const followup = vi.fn()
+    const followup = vi.fn((message: UserMessage) => {
+      session.append('agent/inbox/spliced', {
+        target: 'next-turn',
+        start: 0,
+        inserted: [message],
+      })
+    })
     const agent = { id: session.id, session, status: 'idle', ctx, followup } as unknown as Agent
     ctx.agents.register(agent)
     const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
@@ -609,6 +615,10 @@ describe('subagent ownership fence', () => {
     }))
     expect(response.result.ok).toBe(true)
     expect(followup).toHaveBeenCalledOnce()
+    if (!response.result.ok) throw new Error('prompt failed')
+    const admission = session.events.findLast(event => event.type === 'agent/inbox/spliced')
+    if (admission?.type !== 'agent/inbox/spliced') throw new Error('durable admission missing')
+    expect(response.result.value.messageId).toBe(admission.data.inserted[0]?.id)
   })
 
   it('canonicalizes a supplied browser zone on the exact prompt and rejects invalid names', async () => {

@@ -2,8 +2,8 @@
  * Real-composition guard for the dynamic-configuration chain: LlmRuntime,
  * settings-file, credentials-local, and llm-deepseek boot from a test-only
  * cordis.yml through the actual Loader + Include path, external edits of
- * settings.yaml and the credentials document hot-publish through their providers, and the very
- * next request carries the fresh base URL and credential. The same adapter
+ * settings.yaml and provider-managed credential updates hot-publish, and the
+ * very next request carries the fresh base URL and credential. The same adapter
  * composition without settings or credentials entries keeps entry-config
  * behavior — the documented optional-inject fallback.
  */
@@ -108,7 +108,7 @@ async function loadComposition(
 }
 
 describe('llm-deepseek real dynamic composition', () => {
-  it('boots from cordis.yml and routes the next request after external settings and credential edits', async () => {
+  it('boots from cordis.yml and routes the next request after external settings and provider credential edits', async () => {
     vi.stubEnv('DEEPSEEK_API_KEY', '')
     const serverA = await mockServer([{ kind: 'sse', events: textEvents }])
     const serverB = await mockServer([{ kind: 'sse', events: textEvents }])
@@ -119,12 +119,23 @@ describe('llm-deepseek real dynamic composition', () => {
     expect(serverA.headers[0]?.authorization).toBe('Bearer boot-key')
     expect(serverA.headers[0]?.['x-deepseek-harness-user-id']).toBe(getOrCreateAnonymousUserId())
 
-    // External edits, exactly as a user or the web UI would leave them on disk.
+    // The settings document remains intentionally externally editable.
     await writeFile(settingsPath, `llm-deepseek:\n  baseURL: ${serverB.url}\n`)
     await vi.waitFor(() => {
       expect((ctx.get('settings')!.get(NS) as { baseURL?: string }).baseURL).toBe(serverB.url)
     }, { timeout: 5000 })
-    await writeFile(credentialsPath, 'version: 1\nrefs:\n  DEEPSEEK_API_KEY: rotated-key\n', { mode: 0o600 })
+    // A separate provider is the user/Web UI writer. On Windows this preserves
+    // the DPAPI envelope instead of attempting a forbidden live plaintext
+    // downgrade; the active provider must still observe the external commit.
+    const writer = new Context()
+    const writerFiber = writer.plugin(LocalCredentialProvider, { path: credentialsPath, watch: false })
+    await writerFiber
+    try {
+      await writer.get('credentials')!.set(KEY_REF, 'rotated-key')
+    }
+    finally {
+      await writerFiber.dispose()
+    }
     await vi.waitFor(async () => {
       expect(await ctx.get('credentials')!.resolve(KEY_REF)).toEqual({ value: 'rotated-key', source: 'file' })
     }, { timeout: 5000 })

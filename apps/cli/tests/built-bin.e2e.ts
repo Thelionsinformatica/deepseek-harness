@@ -549,14 +549,32 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
     const archive = join(root, 'state.leon-backup')
     const target = join(root, 'restored')
     const passphrase = 'built-entry-secret-passphrase'
+    const offlineProbePreload = join(root, 'offline-probe-preload.mjs')
     mkdirSync(join(home, 'storages'), { recursive: true })
     mkdirSync(workspace)
     writeFileSync(join(home, 'settings.yaml'), 'persona: Leon\n')
     writeFileSync(join(home, '.credentials.yaml'), 'API_KEY=must-not-restore\n')
     writeFileSync(join(home, 'storages', 'memory_local.json'), '{"memories":["continue"]}\n')
+    // This case owns archive publication/restoration, not the separately unit-tested
+    // active/unknown port guard. Scope the offline observation to this child so a
+    // developer's real Leon on 3080 stays running and the runtime protection remains intact.
+    writeFileSync(offlineProbePreload, [
+      'const originalFetch = globalThis.fetch',
+      'globalThis.fetch = (input, init) => {',
+      '  const url = input instanceof Request ? input.url : String(input)',
+      "  if (url === 'http://127.0.0.1:3080/') {",
+      "    const error = new TypeError('fixture connection refused')",
+      "    error.cause = { code: 'ECONNREFUSED' }",
+      '    throw error',
+      '  }',
+      '  return originalFetch(input, init)',
+      '}',
+      '',
+    ].join('\n'))
     const environment = {
       DSH_HOME: home,
       LEON_DEFAULT_WORKSPACE: workspace,
+      NODE_OPTIONS: `--import=${pathToFileURL(offlineProbePreload).href}`,
       OLLAMA_HOST: 'http://127.0.0.1:1',
     }
     try {

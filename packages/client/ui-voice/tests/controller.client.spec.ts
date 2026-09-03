@@ -99,7 +99,7 @@ describe('VoiceCaptureController', () => {
 
   it('exposes only recognized text when an optional transcriber is installed', async () => {
     const capture = new FakeCapture()
-    const transcribe = vi.fn(async () => '  bom dia Leon  ')
+    const transcribe = vi.fn(async (_clip: VoiceAudioClip, _signal: AbortSignal) => '  bom dia Leon  ')
     const controller = new VoiceCaptureController(
       { begin: vi.fn(async () => capture) },
       { transcribe },
@@ -108,10 +108,37 @@ describe('VoiceCaptureController', () => {
     await controller.finish()
 
     expect(transcribe).toHaveBeenCalledOnce()
+    expect(transcribe.mock.calls[0]?.[1]).toBeInstanceOf(AbortSignal)
     expect(controller.getSnapshot()).toMatchObject({
       status: 'transcribed', transcript: 'bom dia Leon',
     })
     controller.acknowledgeTranscript('bom dia Leon')
     expect(controller.getSnapshot().status).toBe('idle')
+  })
+
+  it.each(['cancel', 'dispose'] as const)('aborts in-flight transcription on %s', async (action) => {
+    const capture = new FakeCapture()
+    let operationSignal!: AbortSignal
+    const transcribe = vi.fn((_clip: VoiceAudioClip, signal: AbortSignal) => {
+      operationSignal = signal
+      return new Promise<string>((_resolve, reject) => {
+        signal.addEventListener('abort', () => {
+          reject(signal.reason instanceof Error ? signal.reason : new Error('transcription aborted'))
+        }, { once: true })
+      })
+    })
+    const controller = new VoiceCaptureController(
+      { begin: vi.fn(async () => capture) },
+      { transcribe },
+    )
+    await controller.start()
+    const finishing = controller.finish()
+    await vi.advanceTimersByTimeAsync(0)
+
+    controller[action]()
+
+    expect(operationSignal.aborted).toBe(true)
+    await finishing
+    if (action === 'cancel') expect(controller.getSnapshot().status).toBe('idle')
   })
 })

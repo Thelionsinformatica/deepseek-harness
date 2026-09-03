@@ -44,8 +44,13 @@ export interface VoiceCaptureView {
   readonly error: VoiceCaptureErrorCode | null
 }
 
-/** Optional future provider: convert one local recording into draft text. */
-export type VoiceTranscriber = (clip: VoiceAudioClip) => Promise<string>
+/**
+ * Convert one local recording into draft text while observing controller cancellation.
+ * @param clip - Private recording owned by the current processing operation.
+ * @param signal - Aborted when capture is cancelled, its session changes, or the plugin is disposed.
+ * @returns Recognized text after the provider reaches quiescence.
+ */
+export type VoiceTranscriber = (clip: VoiceAudioClip, signal: AbortSignal) => Promise<string>
 
 /** Tunable policy with deterministic clocks for tests. */
 export interface VoiceCaptureControllerOptions {
@@ -65,6 +70,12 @@ const INITIAL_VIEW: VoiceCaptureView = Object.freeze({
   transcript: null,
   error: null,
 })
+
+/** One capture-finalization operation and its cooperative cancellation owner. */
+interface VoiceProcessing {
+  readonly controller: AbortController
+  readonly done: Promise<void>
+}
 
 /** Normalize browser exceptions without leaking device-specific text to copy. */
 function errorCode(error: unknown): VoiceCaptureErrorCode {
@@ -96,7 +107,7 @@ export class VoiceCaptureController implements HostObservable<VoiceCaptureView> 
   private speechSeen = false
   private silentSince: number | null = null
   private generation = 0
-  private finishPromise: Promise<void> | null = null
+  private processing: VoiceProcessing | null = null
   private disposed = false
 
   constructor(
@@ -124,6 +135,7 @@ export class VoiceCaptureController implements HostObservable<VoiceCaptureView> 
   async start(): Promise<void> {
     if (this.disposed || this.view.status === 'requesting'
       || this.view.status === 'listening' || this.view.status === 'processing') return
+    this.abortProcessing()
     const generation = ++this.generation
     this.publish({ ...INITIAL_VIEW, status: 'requesting' })
     try {
@@ -150,10 +162,11 @@ export class VoiceCaptureController implements HostObservable<VoiceCaptureView> 
 
   /** Stop normally, then optionally pass the private clip to a transcriber. */
   finish(): Promise<void> {
-    if (this.finishPromise !== null) return this.finishPromise
+    if (this.processing !== null) return this.processing.done
     const active = this.active
     if (active === null) return Promise.resolve()
     const generation = this.generation
+    const processingController = new AbortController()
     this.active = null
     this.clearPoll()
     this.publish({ ...this.view, status: 'processing', level: 0, error: null })
@@ -174,7 +187,7 @@ export class VoiceCaptureController implements HostObservable<VoiceCaptureView> 
           this.publish({ ...INITIAL_VIEW, status: 'captured', clip: summary })
           return
         }
-        const transcript = (await this.transcribe(clip)).trim()
+        const transcript = (await this.transcribe(clip, processingController.signal)).trim()
         // dispose()/cancel() may run while the provider promise waits.
         // oxlint-disable-next-line typescript/no-unnecessary-condition -- asynchronous lifetime guard.
         if (this.disposed || generation !== this.generation) return
@@ -193,17 +206,19 @@ export class VoiceCaptureController implements HostObservable<VoiceCaptureView> 
         this.publish({ ...INITIAL_VIEW, status: 'error', error: errorCode(error) })
       }
     }
-    const pending = settle().finally(() => {
-      if (this.finishPromise === pending) this.finishPromise = null
+    const done = settle().finally(() => {
+      if (this.processing?.controller === processingController) this.processing = null
     })
-    this.finishPromise = pending
-    return pending
+    const processing: VoiceProcessing = { controller: processingController, done }
+    this.processing = processing
+    return done
   }
 
   /** Cancel the active capture and return to the resting state. */
   cancel(): void {
     if (this.disposed) return
     this.generation += 1
+    this.abortProcessing()
     this.clearPoll()
     this.active?.cancel()
     this.active = null
@@ -224,10 +239,11 @@ export class VoiceCaptureController implements HostObservable<VoiceCaptureView> 
     if (this.disposed) return
     this.disposed = true
     this.generation += 1
+    this.listeners.clear()
+    this.abortProcessing()
     this.clearPoll()
     this.active?.cancel()
     this.active = null
-    this.listeners.clear()
   }
 
   /** Poll level and enforce silence / maximum-duration policy. */
@@ -264,6 +280,14 @@ export class VoiceCaptureController implements HostObservable<VoiceCaptureView> 
     if (this.poll === null) return
     clearInterval(this.poll)
     this.poll = null
+  }
+
+  /** Detach and abort the current processing operation before late callbacks can publish. */
+  private abortProcessing(): void {
+    const processing = this.processing
+    if (processing === null) return
+    this.processing = null
+    processing.controller.abort()
   }
 
   /** Replace the view and contain subscriber failures at the observable edge. */

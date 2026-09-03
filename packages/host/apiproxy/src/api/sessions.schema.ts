@@ -300,9 +300,10 @@ export const sessionPromptRequestSchema = z.object({
   clientTimeZone: z.string().optional(),
 }) as unknown as z.ZodType<RequestPayload<'session.prompt'>>
 
-/** session.prompt response value (the command slot appears only when the prompt dispatched a slash command). */
+/** session.prompt response value, carrying the exact durable user-message identity admitted by the Host. */
 export const sessionPromptValueSchema = z.object({
   accepted: z.literal(true),
+  messageId: messageIdSchema,
   command: z.object({
     kind: z.literal('success'),
     text: z.string().optional(),

@@ -28,6 +28,8 @@ import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { REPO_ROOT, connectFreshWorkspace, newEnglishPage, probeFreePort, requireDist, saveFailureShot } from './support.ts'
 
 const WEB_SURFACE_PROMPT = fileURLToPath(new URL('./snapshots/web-runtime-context/web-surface-prompt.expected.md', import.meta.url))
+const MOCK_DEEPSEEK_OVERLAY = fileURLToPath(new URL('./mock-deepseek.overlay.yml', import.meta.url))
+const CHILD_SHUTDOWN_GRACE_MS = 5_000
 
 function waitForReadyLine(child: ChildProcess): Promise<string> {
   return new Promise((resolveReady, reject) => {
@@ -48,6 +50,33 @@ function waitForReadyLine(child: ChildProcess): Promise<string> {
       reject(new Error(`dsh web exited early (code ${code}); output:\n${out}`))
     })
   })
+}
+
+function waitForChildClose(child: ChildProcess, timeoutMs: number): Promise<boolean> {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true)
+  return new Promise((resolveClose) => {
+    const onClose = (): void => {
+      clearTimeout(timer)
+      resolveClose(true)
+    }
+    const timer = setTimeout(() => {
+      child.off('close', onClose)
+      resolveClose(false)
+    }, timeoutMs)
+    timer.unref()
+    child.once('close', onClose)
+  })
+}
+
+async function stopChild(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return
+  const gracefulClose = waitForChildClose(child, CHILD_SHUTDOWN_GRACE_MS)
+  child.kill('SIGTERM')
+  if (await gracefulClose) return
+
+  const forcedClose = waitForChildClose(child, CHILD_SHUTDOWN_GRACE_MS)
+  if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+  if (!await forcedClose) throw new Error('dsh web did not close after SIGKILL')
 }
 
 async function rpc<T>(baseUrl: string, method: string, payload: unknown): Promise<T> {
@@ -226,7 +255,11 @@ describe('dsh web keyless CLI smoke', () => {
     const tsxLoader = pathToFileURL(createRequire(join(REPO_ROOT, 'package.json')).resolve('tsx')).href
     const child = spawn(
       process.execPath,
-      ['--import', tsxLoader, join(REPO_ROOT, 'apps/cli/src/bin.ts'), 'web', '--no-open', '--port', '0'],
+      [
+        '--import', tsxLoader, join(REPO_ROOT, 'apps/cli/src/bin.ts'), 'web',
+        '--patch', MOCK_DEEPSEEK_OVERLAY,
+        '--no-open', '--port', '0',
+      ],
       {
         cwd: workspace,
         env: {
@@ -243,7 +276,7 @@ describe('dsh web keyless CLI smoke', () => {
     try {
       const baseUrl = await waitForReadyLine(child)
       const created = await rpc<{ sessionId: string }>(baseUrl, 'session.create', {})
-      await rpc<{ accepted: true }>(baseUrl, 'session.prompt', {
+      await rpc<{ accepted: true; messageId: string }>(baseUrl, 'session.prompt', {
         sessionId: created.sessionId,
         mode: 'queue',
         content: [{ type: 'text', text: 'go' }],
@@ -285,11 +318,7 @@ describe('dsh web keyless CLI smoke', () => {
           ]
         `)
     } finally {
-      const closed = child.exitCode === null
-        ? new Promise<void>((resolveClose) => { child.once('close', () => { resolveClose() }) })
-        : Promise.resolve()
-      if (child.exitCode === null) child.kill('SIGTERM')
-      await closed
+      await stopChild(child)
       await new Promise<void>(resolveClose => provider.close(() => { resolveClose() }))
       rmSync(workspace, { recursive: true, force: true })
     }
@@ -339,7 +368,11 @@ describe('dsh web keyless CLI smoke', () => {
     const tsxLoader = pathToFileURL(createRequire(join(REPO_ROOT, 'package.json')).resolve('tsx')).href
     const child = spawn(
       process.execPath,
-      ['--import', tsxLoader, join(REPO_ROOT, 'apps/cli/src/bin.ts'), 'web', '--no-open', '--port', '0'],
+      [
+        '--import', tsxLoader, join(REPO_ROOT, 'apps/cli/src/bin.ts'), 'web',
+        '--patch', MOCK_DEEPSEEK_OVERLAY,
+        '--no-open', '--port', '0',
+      ],
       {
         cwd: workspace,
         env: {
@@ -355,7 +388,7 @@ describe('dsh web keyless CLI smoke', () => {
     try {
       const baseUrl = await waitForReadyLine(child)
       const created = await rpc<{ sessionId: string }>(baseUrl, 'session.create', {})
-      await rpc<{ accepted: true }>(baseUrl, 'session.prompt', {
+      await rpc<{ accepted: true; messageId: string }>(baseUrl, 'session.prompt', {
         sessionId: created.sessionId,
         mode: 'queue',
         content: [{ type: 'text', text: promptMarker }],
@@ -377,11 +410,7 @@ describe('dsh web keyless CLI smoke', () => {
       })
       expect(JSON.stringify(page.events)).toContain('WEB_RETRY_DISCARDED')
     } finally {
-      const closed = child.exitCode === null
-        ? new Promise<void>((resolveClose) => { child.once('close', () => { resolveClose() }) })
-        : Promise.resolve()
-      if (child.exitCode === null) child.kill('SIGTERM')
-      await closed
+      await stopChild(child)
       await new Promise<void>(resolveClose => provider.close(() => { resolveClose() }))
       rmSync(workspace, { recursive: true, force: true })
     }
@@ -421,7 +450,11 @@ describe('dsh web keyless CLI smoke', () => {
     const tsxLoader = pathToFileURL(createRequire(join(REPO_ROOT, 'package.json')).resolve('tsx')).href
     const child = spawn(
       process.execPath,
-      ['--import', tsxLoader, join(REPO_ROOT, 'apps/cli/src/bin.ts'), 'web', '--no-open', '--port', '0'],
+      [
+        '--import', tsxLoader, join(REPO_ROOT, 'apps/cli/src/bin.ts'), 'web',
+        '--patch', MOCK_DEEPSEEK_OVERLAY,
+        '--no-open', '--port', '0',
+      ],
       {
         cwd: workspace,
         env: {
@@ -439,7 +472,7 @@ describe('dsh web keyless CLI smoke', () => {
     try {
       const baseUrl = await waitForReadyLine(child)
       const created = await rpc<{ sessionId: string }>(baseUrl, 'session.create', {})
-      await rpc<{ accepted: true }>(baseUrl, 'session.prompt', {
+      await rpc<{ accepted: true; messageId: string }>(baseUrl, 'session.prompt', {
         sessionId: created.sessionId,
         mode: 'queue',
         content: [{ type: 'text', text: 'go' }],
@@ -455,11 +488,7 @@ describe('dsh web keyless CLI smoke', () => {
       expect(system?.content).toContain('## Writing code for run_code')
       expect(system?.content).toContain('declare const tools')
     } finally {
-      const closed = child.exitCode === null
-        ? new Promise<void>((resolveClose) => { child.once('close', () => { resolveClose() }) })
-        : Promise.resolve()
-      if (child.exitCode === null) child.kill('SIGTERM')
-      await closed
+      await stopChild(child)
       await new Promise<void>(resolveClose => provider.close(() => { resolveClose() }))
       rmSync(workspace, { recursive: true, force: true })
     }

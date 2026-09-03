@@ -78,12 +78,12 @@ const RESPONSE_ONLY_MARKER = /^(?:teste local:\s*)?(?:responda|diga)\s+(?:apenas
 /** Explicit read-only/no-tool constraints override incidental execution words elsewhere in the prompt. */
 const NON_EXECUTION_MARKER = new RegExp(
   String.raw`\b(?:${[
-    'n[aã]o (?:altere|modifique|edite) (?:arquivos?|nada)',
+    'n[aã]o (?:altere|modifique|edite)(?: nenhum(?:a)?| qualquer| o| a)? (?:arquivos?|reposit[oó]rio|nada)',
     'n[aã]o (?:use|utilize) ferramentas?',
-    'sem (?:alterar|modificar|editar) arquivos?',
-    'do not (?:modify|edit|change) (?:files?|anything)',
+    'sem (?:alterar|modificar|editar)(?: nenhum(?:a)?| qualquer| o| a)? (?:arquivos?|reposit[oó]rio)',
+    'do not (?:modify|edit|change)(?: any| the)? (?:files?|repository|anything)',
     'do not use tools?',
-    'without (?:modifying|editing|changing) files?',
+    'without (?:modifying|editing|changing)(?: any| the)? (?:files?|repository)',
   ].join('|')})\b`,
   'iu',
 )

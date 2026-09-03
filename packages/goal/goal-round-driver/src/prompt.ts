@@ -30,9 +30,13 @@ export function renderGoalRoundPrompt(goal: GoalView, round: number): ContentBlo
       + 'separate foreground call, then stop only that returned job. Never place the health check after the '
       + 'server start in the same command. If the HTTP check fails or the connection is refused, read the '
       + 'returned server job output before changing ports; its stderr is the primary runtime evidence. Never '
-      + 'free a port by terminating its existing owner; choose another port or report the conflict. Then read '
-      + 'the current goal, ensure every task is completed, and mark it complete. If work remains, leave the goal '
-      + 'active for the next round. Follow '
+      + 'free a port by terminating its existing owner; choose another port or report the conflict. Then call '
+      + 'get_goal. If completion policy requires a task list and none exists, create it with todo_write and complete '
+      + 'every item. When the objective and its verification are actually complete, mark it complete by calling '
+      + 'update_goal with the exact current goal_id and revision and action complete. A success heading, completion '
+      + 'claim, or final-looking answer does not change goal state and will not stop another round. If update_goal '
+      + 'rejects completion, address the returned requirement and retry only after new evidence. If work remains, '
+      + 'leave the goal active for the next round. Follow '
       + 'the configured goal-tool policy before reporting a blocker.\n'
       + '</goal_round>',
   }]

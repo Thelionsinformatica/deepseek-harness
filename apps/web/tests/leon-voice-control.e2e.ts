@@ -103,6 +103,11 @@ describe('web e2e: Leon voice control', () => {
       event.type === 'user/message'
       && JSON.stringify(event.data.content).includes('hello from Leon voice')
     ))), { timeout: 10_000 }).toBe(true)
+    const endLive = page.getByRole('button', { name: 'End voice conversation' })
+    await endLive.waitFor({ timeout: 10_000 })
+    await endLive.click()
+    await expect.poll(() => endLive.count()).toBe(0)
+    await page.locator('[data-voice-activity]').waitFor({ timeout: 10_000 })
     expect(await page.evaluate(() => (
       globalThis as typeof globalThis & { __leonVoiceTracksStopped?: number }
     ).__leonVoiceTracksStopped)).toBe(1)

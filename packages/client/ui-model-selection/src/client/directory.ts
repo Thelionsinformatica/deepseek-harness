@@ -114,8 +114,8 @@ export class ModelDirectory {
    */
   async select(
     selection: ModelSelection,
-    automatic = false,
-    externalFailoverConsent = false,
+    automatic: boolean = false,
+    externalFailoverConsent: boolean = false,
   ): Promise<void> {
     this.assertAvailable()
     const generation = ++this.generation

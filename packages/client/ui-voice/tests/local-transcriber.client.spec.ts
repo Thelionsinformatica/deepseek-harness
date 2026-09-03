@@ -18,12 +18,14 @@ describe('local voice transcriber', () => {
       headers: { 'content-type': 'application/json' },
     }))
     const transcribe = createLocalVoiceTranscriber(request)
+    const signal = new AbortController().signal
 
-    await expect(transcribe(clip)).resolves.toBe('bom dia Leon')
+    await expect(transcribe(clip, signal)).resolves.toBe('bom dia Leon')
     expect(request).toHaveBeenCalledWith(LOCAL_VOICE_TRANSCRIPTION_PATH, {
       method: 'POST',
       headers: { 'content-type': 'audio/webm;codecs=opus' },
       body: clip.blob,
+      signal,
     })
   })
 
@@ -39,6 +41,44 @@ describe('local voice transcriber', () => {
     }))
     const transcribe = createLocalVoiceTranscriber(request)
 
-    await expect(transcribe(clip)).rejects.toMatchObject({ name, message: 'offline worker failed' })
+    await expect(transcribe(clip, new AbortController().signal)).rejects.toMatchObject({
+      name,
+      message: 'offline worker failed',
+    })
+  })
+
+  it('forwards in-flight cancellation without normalizing its reason as a provider failure', async () => {
+    const request = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => (
+      new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal
+        if (signal === null || signal === undefined) throw new Error('missing request signal')
+        signal.addEventListener('abort', () => {
+          reject(signal.reason instanceof Error ? signal.reason : new Error('request aborted'))
+        }, { once: true })
+      })
+    ))
+    const transcribe = createLocalVoiceTranscriber(request)
+    const controller = new AbortController()
+    const pending = transcribe(clip, controller.signal)
+    const reason = new Error('session changed')
+
+    controller.abort(reason)
+
+    await expect(pending).rejects.toBe(reason)
+    expect(request.mock.calls[0]?.[1]?.signal).toBe(controller.signal)
+  })
+
+  it('rejects a late response after cancellation even when the request ignores its signal', async () => {
+    let answer!: (response: Response) => void
+    const request = vi.fn(() => new Promise<Response>((resolve) => { answer = resolve }))
+    const transcribe = createLocalVoiceTranscriber(request)
+    const controller = new AbortController()
+    const pending = transcribe(clip, controller.signal)
+    const reason = new Error('capture cancelled')
+
+    controller.abort(reason)
+    answer(new Response(JSON.stringify({ text: 'late text' }), { status: 200 }))
+
+    await expect(pending).rejects.toBe(reason)
   })
 })

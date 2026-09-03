@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { apply, inject } from '../src/client/index.ts'
+import { VoiceActivity } from '../src/client/VoiceActivity.tsx'
 import { VoiceControl } from '../src/client/VoiceControl.tsx'
 
 async function bench(declare = true) {
@@ -16,7 +17,10 @@ async function bench(declare = true) {
   } as never, () => null)
   const declareHole = () => slots.register({
     name: 'conversation',
-    children: { 'conversation.input.right': { kind: 'list', scope: 'session' } },
+    children: {
+      'conversation.input.right': { kind: 'list', scope: 'session' },
+      'conversation.composer.dock': { kind: 'list', scope: 'session' },
+    },
   } as never, () => null)
   const disposeHole = declare ? declareHole() : undefined
   return { ctx, slots, declareHole, disposeHole }
@@ -33,15 +37,20 @@ describe('ui-voice browser plugin', () => {
     await fiber.await()
     expect(b.slots.entries('conversation.input.right')).toHaveLength(1)
     expect(b.slots.entries('conversation.input.right')[0]?.component).toBe(VoiceControl)
+    expect(b.slots.entries('conversation.composer.dock')).toHaveLength(1)
+    expect(b.slots.entries('conversation.composer.dock')[0]?.component).toBe(VoiceActivity)
 
     b.disposeHole?.()
     expect(b.slots.entries('conversation.input.right')).toHaveLength(0)
+    expect(b.slots.entries('conversation.composer.dock')).toHaveLength(0)
     b.declareHole()
     await Promise.resolve()
     expect(b.slots.entries('conversation.input.right')).toHaveLength(1)
+    expect(b.slots.entries('conversation.composer.dock')).toHaveLength(1)
 
     await fiber.dispose()
     expect(b.slots.entries('conversation.input.right')).toHaveLength(0)
+    expect(b.slots.entries('conversation.composer.dock')).toHaveLength(0)
   })
 
   it('exposes a cold resource-free controller before the first click', async () => {

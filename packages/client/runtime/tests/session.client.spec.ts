@@ -456,7 +456,7 @@ describe('prompt and cancel errors', () => {
     const prompted = await session.prompt([{ type: 'text', text: '继续' }], 'queue')
     const cancelled = await session.cancel()
 
-    expect(prompted).toEqual({ ok: true, value: { accepted: true } })
+    expect(prompted).toEqual({ ok: true, value: { accepted: true, messageId: 'fake-message' } })
     expect(cancelled).toEqual({ ok: true, value: { accepted: true } })
     expect(api.callsOf('subagent.history')).toEqual([
       { parentSessionId: PARENT, childSessionId: SID, mode: 'continuable', maxMessages: 50 },
@@ -528,7 +528,10 @@ describe('prompt and cancel errors', () => {
     const inFlight = session.prompt([{ type: 'text', text: '要发的' }], 'queue')
     expect(session.getSnapshot().composerPhase).toBe('engaging')
     const result = await inFlight
-    expect(result.ok).toBe(true)
+    expect(result).toEqual({
+      ok: true,
+      value: { accepted: true, messageId: 'fake-prompt-message' },
+    })
     // Monotone: settlement alone does not step the phase anywhere.
     expect(session.getSnapshot().composerPhase).toBe('engaging')
     expect(api.callsOf('session.prompt')).toMatchObject([{

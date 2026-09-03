@@ -13,9 +13,11 @@ import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { LocalBashExecutor } from '@deepseek-ai/dsh-bash-local'
+import { PwshLocalExecutor } from '@deepseek-ai/dsh-pwsh-local'
 import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
+import * as ToolPwsh from '@deepseek-ai/dsh-tool-pwsh'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
 import { WorkerThreadCodeRuntime } from '@deepseek-ai/dsh-code-runtime-worker-thread'
 import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
@@ -35,6 +37,14 @@ import * as ToolCordis from '@deepseek-ai/dsh-tool-cordis'
 const PERSONA = 'You are a coding agent. You work by writing TypeScript programs for run_code: '
   + 'batch related tool work into one program and print or return ONLY the findings that matter.'
 const WORKSPACE_PROBE = 'dragonfruit-8675309'
+const WINDOWS = process.platform === 'win32'
+const SHELL_TOOL = WINDOWS ? 'pwsh' : 'bash'
+const SHELL_JOB_KIND = WINDOWS ? 'pwsh' : 'bash'
+const FIRST_SHELL_JOB_ID = `${SHELL_JOB_KIND}-1`
+const BACKGROUND_COMPLETION_COMMAND = WINDOWS
+  ? "Start-Sleep -Milliseconds 200; [Console]::WriteLine('background-complete')"
+  : "sleep 0.2; printf 'background-complete\\n'"
+const LONG_RUNNING_COMMAND = WINDOWS ? 'Start-Sleep -Seconds 10' : 'sleep 10'
 
 let ctx: Context | undefined
 let workdir: string | undefined
@@ -127,8 +137,13 @@ async function backgroundCodeModeHarness(cwd: string): Promise<Context> {
   await harness.plugin(ToolTasks, {})
   await harness.plugin(LocalSubprocessRuntime)
   await harness.plugin(BashEnvPlugin)
-  await harness.plugin(LocalBashExecutor, { cwd, timeoutMs: 30_000 })
-  await harness.plugin(ToolBash)
+  if (WINDOWS) {
+    await harness.plugin(PwshLocalExecutor, { cwd, timeoutMs: 30_000 })
+    await harness.plugin(ToolPwsh)
+  } else {
+    await harness.plugin(LocalBashExecutor, { cwd, timeoutMs: 30_000 })
+    await harness.plugin(ToolBash)
+  }
   return harness
 }
 
@@ -191,14 +206,14 @@ describe('Code Mode typed values: keyless real-worker contracts', () => {
     ctx = await backgroundCodeModeHarness(workdir)
 
     const jobId = completion(await runCode(ctx, `
-      const started = await tools.bash({
-        command: "sleep 0.2; printf 'background-complete\\n'",
+      const started = await tools.${SHELL_TOOL}({
+        command: ${JSON.stringify(BACKGROUND_COMPLETION_COMMAND)},
         description: 'Run completion marker in background',
         run_in_background: true,
       });
       return started.jobId;
     `))
-    expect(jobId).toBe('bash-1')
+    expect(jobId).toBe(FIRST_SHELL_JOB_ID)
 
     const polled = completion(await runCode(ctx, `
       return await tools.job_output({ job_id: ${JSON.stringify(jobId)}, wait: true, timeout_ms: 5000 });
@@ -206,7 +221,7 @@ describe('Code Mode typed values: keyless real-worker contracts', () => {
     if (typeof polled !== 'object' || polled === null || Array.isArray(polled)) throw new Error('invalid job_output completion')
     const taskOutput = polled as Record<string, unknown>
     expect(taskOutput.text).toContain('background-complete')
-    expect(taskOutput.job).toMatchObject({ id: jobId, kind: 'bash', status: 'completed' })
+    expect(taskOutput.job).toMatchObject({ id: jobId, kind: SHELL_JOB_KIND, status: 'completed' })
   }, 15_000)
 
   it('pre-abort spawns nothing; post-publication abort leaves job_kill as the cancellation owner', async () => {
@@ -216,14 +231,14 @@ describe('Code Mode typed values: keyless real-worker contracts', () => {
     const pre = new AbortController()
     pre.abort('pre-aborted')
     const preResult = await runCode(ctx, `
-      return await tools.bash({ command: 'sleep 10', description: 'Must never start', run_in_background: true });
+      return await tools.${SHELL_TOOL}({ command: ${JSON.stringify(LONG_RUNNING_COMMAND)}, description: 'Must never start', run_in_background: true });
     `, pre.signal)
     expect(preResult.isError).toBe(true)
     expect(ctx.jobs.list()).toEqual([])
 
     const afterPublication = new AbortController()
     const running = runCode(ctx, `
-      const started = await tools.bash({ command: 'sleep 10', description: 'Wait for explicit task kill', run_in_background: true });
+      const started = await tools.${SHELL_TOOL}({ command: ${JSON.stringify(LONG_RUNNING_COMMAND)}, description: 'Wait for explicit task kill', run_in_background: true });
       console.log(started.jobId);
       await new Promise(() => {});
     `, afterPublication.signal)
@@ -231,7 +246,7 @@ describe('Code Mode typed values: keyless real-worker contracts', () => {
       await new Promise(resolve => setTimeout(resolve, 10))
     }
     const job = ctx.jobs.list()[0]
-    expect(job).toMatchObject({ id: 'bash-1', status: 'running' })
+    expect(job).toMatchObject({ id: FIRST_SHELL_JOB_ID, status: 'running' })
     afterPublication.abort('outer-call-cancelled')
     expect((await running).isError).toBe(true)
     expect(ctx.jobs.list()[0]).toMatchObject({ id: job!.id, status: 'running' })
@@ -246,13 +261,13 @@ describe('Code Mode typed values: keyless real-worker contracts', () => {
     expect(settled).toMatchObject({ job: { id: job!.id, status: 'killed' } })
   }, 15_000)
 
-  it('keeps foreground bash coupled to the outer signal', async () => {
+  it('keeps foreground shell coupled to the outer signal', async () => {
     workdir = await mkdtemp(join(tmpdir(), 'dsh-code-mode-foreground-cancel-'))
     ctx = await backgroundCodeModeHarness(workdir)
     const controller = new AbortController()
     const startedAt = Date.now()
     const pending = runCode(ctx, `
-      return await tools.bash({ command: 'sleep 10', description: 'Run cancellable foreground command' });
+      return await tools.${SHELL_TOOL}({ command: ${JSON.stringify(LONG_RUNNING_COMMAND)}, description: 'Run cancellable foreground command' });
     `, controller.signal)
     setTimeout(() => { controller.abort('stop-foreground') }, 200)
     const result = await pending

@@ -234,6 +234,7 @@ describe('DetailsPanel web Output section', () => {
           removeImage: () => {},
           pruneImages: () => {},
           submit: () => {},
+          submitTracked: () => Promise.resolve({ kind: 'success' }),
         }}
         useProjection={(() => undefined)}
         useStore={bindSnapshotSelector(chat)}

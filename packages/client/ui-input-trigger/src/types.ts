@@ -97,10 +97,12 @@ export interface ReferenceInsert {
   readonly clipboardText: string
 }
 
-/** Settled result of a command submit transaction. */
+/** Settled result of a composer submit transaction. */
 export interface SubmitOutcome {
   readonly kind: 'success' | 'error'
   readonly text?: string
+  /** Durable Host identity when the submission admitted an ordinary user message. */
+  readonly messageId?: string
 }
 
 /**

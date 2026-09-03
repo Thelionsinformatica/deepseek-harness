@@ -35,23 +35,29 @@ export function createLocalVoiceTranscriber(
   request: typeof fetch = fetch,
   endpoint: string = LOCAL_VOICE_TRANSCRIPTION_PATH,
 ): VoiceTranscriber {
-  return async (clip: VoiceAudioClip): Promise<string> => {
+  return async (clip: VoiceAudioClip, signal: AbortSignal): Promise<string> => {
+    signal.throwIfAborted()
     let response: Response
     try {
       response = await request(endpoint, {
         method: 'POST',
         headers: { 'content-type': clip.mimeType },
         body: clip.blob,
+        signal,
       })
     } catch (error) {
+      signal.throwIfAborted()
       throw unavailable(error instanceof Error ? error.message : String(error))
     }
+    signal.throwIfAborted()
     let body: TranscriptionResponse
     try {
       body = await response.json() as TranscriptionResponse
     } catch {
+      signal.throwIfAborted()
       throw failed('The local transcriber returned invalid JSON.')
     }
+    signal.throwIfAborted()
     if (!response.ok) {
       const message = typeof body.error?.message === 'string'
         ? body.error.message

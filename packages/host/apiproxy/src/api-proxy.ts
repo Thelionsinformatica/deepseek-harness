@@ -3169,7 +3169,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           ...(canonicalTimeZone === undefined ? {} : { clientTimeZone: canonicalTimeZone }),
         }
         const hasImage = content.some(part => part.type === 'image')
-        const admit = async (): Promise<RpcResponse<{ accepted: true }>> => {
+        const admit = async (): Promise<RpcResponse<{ accepted: true; messageId: UserMessage['id'] }>> => {
           if (deletingSessions.has(sessionId) || deletedSessions.has(sessionId)) {
             return err(request, sessionDeletionError(sessionId))
           }
@@ -3226,6 +3226,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             }
             if (mode === 'steer') agent.steer(message)
             else agent.followup(message)
+            return ok(request, { accepted: true as const, messageId: message.id })
           } catch (error: unknown) {
             if (stagedMessageId !== undefined) {
               const pending = pendingAdaptiveSelections.get(agent)
@@ -3245,7 +3246,6 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
               details: { reason: String(error) },
             })
           }
-          return ok(request, { accepted: true as const })
         }
         return hasImage || automaticFor(agent) ? serializeImageAdmission(agent, admit) : admit()
       },

@@ -83,27 +83,35 @@ class BrowserActiveVoiceCapture implements ActiveVoiceCapture {
   }
 
   async finish(): Promise<VoiceAudioClip> {
-    if (this.cancelled) throw new Error('voice capture was cancelled')
-    if (this.recorder.state === 'recording') {
-      this.recorder.requestData()
-      this.recorder.stop()
+    try {
+      if (this.cancelled) throw new Error('voice capture was cancelled')
+      if (this.recorder.state === 'recording') {
+        this.recorder.requestData()
+        this.recorder.stop()
+      }
+      await this.stopped
+      const durationMs = Math.max(0, this.now() - this.startedAt)
+      const mimeType = this.recorder.mimeType || this.chunks[0]?.type || 'application/octet-stream'
+      const blob = new Blob(this.chunks, { type: mimeType })
+      return { blob, bytes: blob.size, durationMs, mimeType }
+    } finally {
+      this.release()
     }
-    await this.stopped
-    const durationMs = Math.max(0, this.now() - this.startedAt)
-    const mimeType = this.recorder.mimeType || this.chunks[0]?.type || 'application/octet-stream'
-    const blob = new Blob(this.chunks, { type: mimeType })
-    this.release()
-    return { blob, bytes: blob.size, durationMs, mimeType }
   }
 
   cancel(): void {
     if (this.cancelled) return
     this.cancelled = true
-    if (this.recorder.state === 'recording') this.recorder.stop()
-    this.release()
-    // A recorder error after cancellation is intentionally contained: no
-    // consumer remains to observe this recording.
-    void this.stopped.catch(() => undefined)
+    try {
+      if (this.recorder.state === 'recording') this.recorder.stop()
+    } catch {
+      // Cancellation is best effort, but resource release is unconditional.
+    } finally {
+      this.release()
+      // A recorder error after cancellation is intentionally contained: no
+      // consumer remains to observe this recording.
+      void this.stopped.catch(() => undefined)
+    }
   }
 
   private readonly onData = (event: BlobEvent): void => {
@@ -117,6 +125,10 @@ class BrowserActiveVoiceCapture implements ActiveVoiceCapture {
   private readonly onError = (event: Event): void => {
     const detail = (event as Event & { error?: DOMException }).error
     this.rejectStopped(detail ?? new Error('microphone recorder failed'))
+    this.release()
+    // The consumer may not call finish() after a spontaneous recorder error.
+    // Mark the rejection as observed while preserving it for a later await.
+    void this.stopped.catch(() => undefined)
   }
 
   /** Release every browser resource exactly once. */
@@ -124,8 +136,18 @@ class BrowserActiveVoiceCapture implements ActiveVoiceCapture {
     if (this.released) return
     this.released = true
     this.recorder.removeEventListener('dataavailable', this.onData)
-    this.source.disconnect()
-    for (const track of this.stream.getTracks()) track.stop()
+    try {
+      this.source.disconnect()
+    } catch {
+      // A broken Web Audio node must not keep the physical microphone alive.
+    }
+    for (const track of this.stream.getTracks()) {
+      try {
+        track.stop()
+      } catch {
+        // Continue releasing the remaining tracks and AudioContext.
+      }
+    }
     void this.context.close().catch(() => undefined)
   }
 }

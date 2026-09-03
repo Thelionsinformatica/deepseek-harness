@@ -81,7 +81,12 @@ describe('dsh-base bundle', () => {
           headers: { Authorization: 'Bearer ollama-local' },
           models: [
             { id: 'qwen3.5:9b' },
+            { id: 'qwen3.5:9b-q4_K_M' },
+            { id: 'qwen3.5:9b-q6_K' },
             { id: 'ornith-1.5:9b' },
+            { id: 'ornith-1.5:9b-q6_K' },
+            { id: 'llama3.1:8b-q6_K' },
+            { id: 'mistral-nemo:12b-q4_K_M' },
             { id: 'qwen3.8-distill:9b-q8' },
             { id: 'qwen3.8-9b-distill-uncensored-heretic:latest' },
           ],
@@ -107,7 +112,7 @@ describe('dsh-base bundle', () => {
           apiKeyEnv: 'NVIDIA_API_KEY',
           api: 'openai-completions',
           baseURL: 'https://integrate.api.nvidia.com/v1',
-          models: [{ id: 'deepseek-ai/deepseek-v4-flash-0731' }],
+          models: [{ id: 'moonshotai/kimi-k2.6' }],
         },
       },
     })

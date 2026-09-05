@@ -21,6 +21,24 @@ export interface AdaptiveGoalRoundTier {
   reasoningEffort?: string
 }
 
+/** One content-matched route used on initial turn admission, ahead of the fast/main/expert classifier. */
+export interface AdaptiveSpecialtyRoute {
+  /** Stable identifier for logs and config diffs; not shown to the model. */
+  id: string
+  /**
+   * First matching pattern against the prompt's joined text wins this route.
+   * A plain string is compiled case-insensitively with Unicode mode; a
+   * `RegExp` (from a config `!!js` literal) is used exactly as configured.
+   */
+  markers: (string | RegExp)[]
+  /** Registered provider route; defaults to `AdaptiveRoutingConfig.provider`. */
+  provider?: string
+  /** Provider-owned model id. */
+  model: string
+  /** Provider-owned reasoning effort. */
+  reasoningEffort?: string
+}
+
 /** Explicit provider replacement used when an automatic route is unavailable. */
 export interface AdaptiveFailoverConfig {
   /** Failed providers eligible for replacement. */
@@ -65,6 +83,8 @@ export interface AdaptiveRoutingConfig {
   expertMinCharacters?: number
   /** Ordered escalation policy; the highest eligible `fromRound` wins. */
   goalRoundTiers?: AdaptiveGoalRoundTier[]
+  /** Content-matched routes checked on initial admission, before fast/main/expert. First match wins. */
+  specialtyRoutes?: AdaptiveSpecialtyRoute[]
   /** Ordered replacements for unavailable automatic routes. First eligible route wins. */
   failovers?: AdaptiveFailoverConfig[]
   /** Passive preflight that records recommendations without changing the active route. */
@@ -87,7 +107,7 @@ export interface AdaptiveRoutingDecision {
   provider: string
   model: string
   reasoningEffort?: ReasoningEffortId
-  tier: 'fast' | 'main' | 'expert' | 'recovery' | 'goal-round' | 'failover'
+  tier: 'fast' | 'main' | 'expert' | 'recovery' | 'goal-round' | 'specialty' | 'failover'
 }
 
 /** Failover decision carrying the data-residency fact enforced by the Host. */
@@ -132,8 +152,13 @@ const CONTINUATION_MARKERS = /^(?:continue|continuar|pode continuar|prossiga|sig
  * Completion-evidence recovery bypasses prompt classification and uses the
  * expert route and effort, falling back to the main route only when no expert
  * model is configured.
- * A numbered goal round first consults the explicit escalation tiers. Every
- * selected route still passes through the Host's ordinary availability check.
+ * A numbered goal round first consults the explicit escalation tiers. On
+ * initial admission only (no goal round yet), configured specialty routes are
+ * checked next, ahead of the fast/main/expert classifier, so a recognized
+ * task shape (e.g. PowerShell automation, network device configuration) can
+ * pin a specific local model regardless of prompt length or difficulty
+ * markers. Every selected route still passes through the Host's ordinary
+ * availability check.
  * Everything else within the configured bound uses the fast model.
  * @param config - Explicit prompt tiers and optional goal-round escalation.
  * @param input - Prompt content and existing-session context.
@@ -175,6 +200,25 @@ export function chooseAdaptiveModel(
     .map(part => part.text)
     .join('\n')
     .trim()
+  // Specialty routes only apply to initial admission (goalRound is undefined
+  // here; an automatic continuation round already returned above). This keeps
+  // a specialty pinned to how the task started, matching the round-tier
+  // escalation's own existing scope, without adding new durable session state.
+  const specialty = goalRound === undefined
+    ? config.specialtyRoutes?.find(route => route.markers.some(
+      marker => (typeof marker === 'string' ? new RegExp(marker, 'iu') : marker).test(text),
+    ))
+    : undefined
+  if (specialty !== undefined) {
+    return {
+      provider: specialty.provider ?? config.provider,
+      model: specialty.model,
+      ...specialty.reasoningEffort === undefined
+        ? {}
+        : { reasoningEffort: ReasoningEffortId(specialty.reasoningEffort) },
+      tier: 'specialty',
+    }
+  }
   const max = config.simpleMaxCharacters ?? 280
   const expertMin = config.expertMinCharacters ?? 800
   const hasImage = input.content.some(part => part.type === 'image')

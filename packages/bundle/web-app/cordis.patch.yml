@@ -174,7 +174,7 @@
     # Gemini and OpenAI are the 2026-08-26 public Standard snapshots. Gemini's
     # flat estimate covers prompts up to 200k tokens; longer prompts use the
     # provider's higher tier. The configured NVIDIA prototype is a free hosted
-    # endpoint. FreeLLMAPI has no fixed estimate because its upstream varies.
+    # endpoint.
     - id: session-stats
       name: '@deepseek-ai/dsh-session-stats'
       config:
@@ -192,11 +192,11 @@
             inputUsdPerMillion: 0
             outputUsdPerMillion: 0
           - provider: ollama
-            model: ornith-1.5:9b
+            model: qwen3.5-uncensored:latest
             inputUsdPerMillion: 0
             outputUsdPerMillion: 0
           - provider: ollama
-            model: ornith-1.5:9b-q6_K
+            model: qwen3.5:2b
             inputUsdPerMillion: 0
             outputUsdPerMillion: 0
           - provider: ollama
@@ -204,11 +204,15 @@
             inputUsdPerMillion: 0
             outputUsdPerMillion: 0
           - provider: ollama
+            model: llama3.1-uncensored:latest
+            inputUsdPerMillion: 0
+            outputUsdPerMillion: 0
+          - provider: ollama
             model: mistral-nemo:12b-q4_K_M
             inputUsdPerMillion: 0
             outputUsdPerMillion: 0
           - provider: ollama
-            model: qwen3.8-distill:9b-q8
+            model: mistral-nemo-uncensored:latest
             inputUsdPerMillion: 0
             outputUsdPerMillion: 0
           - provider: ollama
@@ -227,6 +231,10 @@
             cacheReadUsdPerMillion: 0.02
           - provider: nvidia
             model: moonshotai/kimi-k2.6
+            inputUsdPerMillion: 0
+            outputUsdPerMillion: 0
+          - provider: openrouter
+            model: nvidia/nemotron-3.5-lightning:free
             inputUsdPerMillion: 0
             outputUsdPerMillion: 0
 
@@ -263,13 +271,21 @@
           fastProvider: ollama
           mainProvider: ollama
           expertProvider: ollama
-          fastModel: qwen3.5:9b
-          # Estrutura por esforço/complexidade:
+          # fastModel is qwen3.5:2b ("Rápido" in the local roster): short,
+          # self-contained prompts get the smallest/fastest local model rather
+          # than the 9B default.
+          fastModel: qwen3.5:2b
+          # Estrutura por esforço/complexidade (2026-09-05: mainModel/expertModel
+          # apontavam para qwen3.8-distill:9b-q8 e ornith-1.5:9b-q6_K, nenhum dos
+          # dois instalado no Ollama local — toda sessão do Leon Automático que
+          # passasse da rodada 3 falhava com 404 model-not-found. Repontado para
+          # dois modelos já declarados no catálogo e de fato instalados; o time
+          # atual de modelos locais é a linha uncensored ("sem censura"):
           # - tarefas curtas: qwen3.5 9b (rápido e estável)
-          # - tarefas de contexto e manutenção: qwen3.8-distill 9b-q8
-          # - tarefas de maior exigência: ornith 1.5 9b-q6_K
-          mainModel: qwen3.8-distill:9b-q8
-          expertModel: ornith-1.5:9b-q6_K
+          # - tarefas de contexto e manutenção: qwen3.8 9b distill uncensored (heretic)
+          # - tarefas de maior exigência: mistral-nemo 12b q4_K_M (maior modelo já catalogado)
+          mainModel: qwen3.8-9b-distill-uncensored-heretic:latest
+          expertModel: mistral-nemo:12b-q4_K_M
           fastReasoningEffort: 'off'
           mainReasoningEffort: medium
           expertReasoningEffort: high
@@ -282,12 +298,41 @@
               reasoningEffort: medium
             - fromRound: 3
               provider: ollama
-              model: qwen3.8-distill:9b-q8
+              model: qwen3.8-9b-distill-uncensored-heretic:latest
               reasoningEffort: high
             - fromRound: 6
               provider: ollama
-              model: ornith-1.5:9b-q6_K
+              model: mistral-nemo:12b-q4_K_M
               reasoningEffort: high
+          # Especialidade por tipo de tarefa (2026-09-05, roteamento por
+          # especialidade do elenco local de modelos uncensored). Reconhecida
+          # só na admissão inicial do turno, antes do classificador
+          # fast/main/expert; primeiro marcador que bater vence. Uma rodada
+          # automática de goal (goalRoundTiers acima) não passa por aqui — a
+          # especialidade não persiste entre rodadas por design.
+          specialtyRoutes:
+            - id: automacao
+              provider: ollama
+              model: qwen3.8-9b-distill-uncensored-heretic:latest
+              reasoningEffort: medium
+              markers: !!js >-
+                [/\bpowershell\b/iu, /\.ps1\b/iu, /\bcmdlet\b/iu, /\bagendador de tarefas\b/iu,
+                /\btask scheduler\b/iu, /\bautoma[cç][aã]o\b/iu]
+            - id: codigo-redes
+              provider: ollama
+              model: mistral-nemo-uncensored:latest
+              reasoningEffort: medium
+              markers: !!js >-
+                [/\bmikrotik\b/iu, /\brouteros\b/iu, /\bolt\b/iu, /\bvlan\b/iu, /\bfirewall\b/iu,
+                /\broteador(?:es)?\b/iu, /\bswitch(?:es)?\b/iu, /\bfun[cç][aã]o\b/iu, /\bclasse\b/iu,
+                /\bdebug\b/iu]
+            - id: documentos
+              provider: ollama
+              model: llama3.1-uncensored:latest
+              reasoningEffort: medium
+              markers: !!js >-
+                [/\bcontrato\b/iu, /\bcl[aá]usula\b/iu, /\bdocumento\b/iu, /\bjur[ií]dico\b/iu,
+                /\bredigir\b/iu, /\bof[ií]cio\b/iu]
           failovers:
             - fromProviders:
                 - ollama
@@ -341,7 +386,7 @@
                 inputUsdPerMillion: 0
                 outputUsdPerMillion: 0
               - provider: ollama
-                model: qwen3.8-distill:9b-q8
+                model: qwen3.8-9b-distill-uncensored-heretic:latest
                 residency: local
                 quality: 4
                 priority: 20
@@ -349,7 +394,7 @@
                 inputUsdPerMillion: 0
                 outputUsdPerMillion: 0
               - provider: ollama
-                model: ornith-1.5:9b-q6_K
+                model: mistral-nemo:12b-q4_K_M
                 residency: local
                 quality: 4
                 priority: 25

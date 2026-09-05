@@ -20,7 +20,7 @@ New Leon sessions use `E:/computador` as their Windows workspace root. `$LEON_DE
 
 ## Diagnosis
 
-`dsh doctor` checks the supported Node runtime, PowerShell on Windows, the Harness home, the selected installed profile, the default workspace, the built launcher, the configured Ollama endpoint and automatic-routing models, the loopback FreeLLMAPI router, and the expected Leon Web port. It performs read-only path probes and bounded GET requests; it never boots or initializes a profile, writes a repair, starts a service, sends a model prompt, or reads credential values. Warnings keep exit status 0, while an installation failure or an unrelated service occupying an expected endpoint exits 1. Use `--profile <name>`, `--port <port>`, or `--json` for support and installer automation; the [CLI behavior reference](reference/README.md#diagnosis) owns the exact report contract.
+`dsh doctor` checks the supported Node runtime, PowerShell on Windows, the Harness home, the selected installed profile, the default workspace, the built launcher, the configured Ollama endpoint and automatic-routing models, and the expected Leon Web port. It performs read-only path probes and bounded GET requests; it never boots or initializes a profile, writes a repair, starts a service, sends a model prompt, or reads credential values. Warnings keep exit status 0, while an installation failure or an unrelated service occupying an expected endpoint exits 1. Use `--profile <name>`, `--port <port>`, or `--json` for support and installer automation; the [CLI behavior reference](reference/README.md#diagnosis) owns the exact report contract.
 
 ## Encrypted recovery
 

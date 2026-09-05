@@ -172,6 +172,60 @@ describe('chooseAdaptiveModel()', () => {
       .toEqual({ provider: 'ollama', model: 'qwen3.5:9b', reasoningEffort: 'high', tier: 'goal-round' })
   })
 
+  it('matches a specialty route on initial admission ahead of the main/expert classifier', () => {
+    const withSpecialty: AdaptiveRoutingConfig = {
+      ...config,
+      specialtyRoutes: [
+        {
+          id: 'automacao',
+          provider: 'ollama',
+          model: 'heretic',
+          reasoningEffort: 'medium',
+          markers: [/\bpowershell\b/iu],
+        },
+        {
+          id: 'documentos',
+          model: 'llama-uncensored',
+          markers: [/\bcontrato\b/iu],
+        },
+      ],
+    }
+    expect(chooseAdaptiveModel(withSpecialty, {
+      content: [{ type: 'text', text: 'Corrija esta função em PowerShell que falha ao ler o registro.' }],
+      hasHistory: false,
+    })).toEqual({ provider: 'ollama', model: 'heretic', reasoningEffort: 'medium', tier: 'specialty' })
+    // A route without its own `provider` falls back to the config default.
+    expect(chooseAdaptiveModel(withSpecialty, {
+      content: [{ type: 'text', text: 'Revise a cláusula de rescisão deste contrato.' }],
+      hasHistory: false,
+    })).toEqual({ provider: 'ollama', model: 'llama-uncensored', tier: 'specialty' })
+  })
+
+  it('does not apply specialty routes to an automatic goal-round continuation', () => {
+    const withSpecialty: AdaptiveRoutingConfig = {
+      ...config,
+      specialtyRoutes: [{ id: 'automacao', model: 'heretic', markers: [/\bpowershell\b/iu] }],
+    }
+    // content is empty on a goal-round re-selection in the real caller, but
+    // even with matching text present the goal-round tier must still win.
+    expect(chooseAdaptiveModel(withSpecialty, {
+      content: [{ type: 'text', text: 'Continue o script PowerShell.' }],
+      hasHistory: true,
+      goalRound: 1,
+    })).toEqual({ provider: 'ollama', model: 'qwen3.5:9b', reasoningEffort: 'high', tier: 'goal-round' })
+  })
+
+  it('falls through to the ordinary classifier when no specialty route matches', () => {
+    const withSpecialty: AdaptiveRoutingConfig = {
+      ...config,
+      specialtyRoutes: [{ id: 'automacao', model: 'heretic', markers: [/\bpowershell\b/iu] }],
+    }
+    expect(chooseAdaptiveModel(withSpecialty, {
+      content: [{ type: 'text', text: 'Oi' }],
+      hasHistory: false,
+    })).toEqual({ provider: 'ollama', model: 'qwen3.5:9b', reasoningEffort: 'off', tier: 'fast' })
+  })
+
   it('uses the strongest configured route for completion-evidence recovery', () => {
     expect(chooseAdaptiveModel(config, {
       content: [],

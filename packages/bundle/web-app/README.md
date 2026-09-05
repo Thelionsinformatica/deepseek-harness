@@ -6,7 +6,7 @@ The dsh browser-surface bundle. [`cordis.patch.yml`](cordis.patch.yml) rides ove
 
 ## Model retry defaults
 
-The shipped local `ollama` route and loopback `freellmapi` gateway each allow one eligible retry after the initial request. Leon Automatic replaces Ollama only for `TRANSPORT`, `TIMEOUT`, or `SERVER`; `UNKNOWN_MODEL`, `NO_ADAPTER`, and other configuration failures remain local and fail closed. The bounded retry remains for manual selection or when every configured replacement is unavailable. Settings-added pi-ai routes and manually mounted compatibility routes still use the shared bounded default of five retries when they omit `retryPolicy`; explicit provider policies always win.
+The shipped local `ollama` route allows one eligible retry after the initial request. Leon Automatic replaces Ollama only for `TRANSPORT`, `TIMEOUT`, or `SERVER`; `UNKNOWN_MODEL`, `NO_ADAPTER`, and other configuration failures remain local and fail closed. The bounded retry remains for manual selection or when every configured replacement is unavailable. Settings-added pi-ai routes and manually mounted compatibility routes still use the shared bounded default of five retries when they omit `retryPolicy`; explicit provider policies always win.
 
 ## Leon capability composition
 

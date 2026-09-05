@@ -6,7 +6,7 @@ dsh 浏览器表层组合包。[`cordis.patch.yml`](cordis.patch.yml) 叠加在 
 
 ## 模型重试默认值
 
-随附的本地 `ollama` 路由与回环 `freellmapi` 网关在首次请求后各最多进行一次符合条件的重试。Leon Automatic 仅因 `TRANSPORT`、`TIMEOUT` 或 `SERVER` 替换 Ollama；`UNKNOWN_MODEL`、`NO_ADAPTER` 及其他配置故障会留在本地并失败关闭。这个有界重试保留给手动选择或所有已配置替代路由都不可用的情况。由 settings 新增的 pi-ai 路由与手动挂载的兼容路由在省略 `retryPolicy` 时仍使用共享的五次有界默认值；显式提供方策略始终优先。
+随附的本地 `ollama` 路由在首次请求后最多进行一次符合条件的重试。Leon Automatic 仅因 `TRANSPORT`、`TIMEOUT` 或 `SERVER` 替换 Ollama；`UNKNOWN_MODEL`、`NO_ADAPTER` 及其他配置故障会留在本地并失败关闭。这个有界重试保留给手动选择或所有已配置替代路由都不可用的情况。由 settings 新增的 pi-ai 路由与手动挂载的兼容路由在省略 `retryPolicy` 时仍使用共享的五次有界默认值；显式提供方策略始终优先。
 
 ## Leon 能力组合
 

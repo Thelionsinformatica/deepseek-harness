@@ -98,7 +98,7 @@ interface BashContribution {
 }
 
 describe('web-app runtime glue', () => {
-  it('pins Leon Automatic to Qwen locally with FreeLLMAPI, Gemini, and OpenAI fallbacks', () => {
+  it('pins Leon Automatic to Qwen locally with Gemini and OpenAI fallbacks', () => {
     const patch = readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
     const start = patch.indexOf('    - id: api-gateway')
     const end = patch.indexOf('\n    - id:', start + 1)
@@ -107,14 +107,14 @@ describe('web-app runtime glue', () => {
     expect(gateway).toContain('fastProvider: ollama')
     expect(gateway).toContain('mainProvider: ollama')
     expect(gateway).toContain('expertProvider: ollama')
-    expect(gateway).toContain('fastModel: qwen3.5:9b')
-    expect(gateway).toContain('mainModel: qwen3.8-distill:9b-q8')
+    expect(gateway).toContain('fastModel: qwen3.5:2b')
+    expect(gateway).toContain('mainModel: qwen3.8-9b-distill-uncensored-heretic:latest')
     expect(patch).not.toContain('qwen3.5:4b')
-    expect(gateway).toContain('expertModel: ornith-1.5:9b-q6_K')
+    expect(gateway).toContain('expertModel: mistral-nemo:12b-q4_K_M')
     expect(gateway).toContain('mainReasoningEffort: medium')
     expect(gateway).toContain('fromRound: 1')
     expect(gateway).toContain('model: qwen3.5:9b')
-    expect(patch).toContain('ornith-1.5:9b-q6_K')
+    expect(patch).toContain('mistral-nemo:12b-q4_K_M')
     expect(gateway).toContain('fromProviders:')
     expect(gateway).toContain('- ollama')
     expect(gateway).not.toContain('provider: freellmapi')
@@ -127,10 +127,15 @@ describe('web-app runtime glue', () => {
     expect(patch).toContain('- GOOGLE_API_KEY')
     expect(gateway).toContain('reasoningEffort: low')
     expect(gateway).toContain('fromRound: 3')
-    expect(gateway).toContain('qwen3.8-distill:9b-q8')
+    expect(gateway).toContain('qwen3.8-9b-distill-uncensored-heretic:latest')
     expect(gateway).toContain('fromRound: 6')
-    expect(gateway).toContain('ornith-1.5:9b-q6_K')
-    expect(gateway).not.toContain('qwen3.8-9b-distill-uncensored-heretic:latest')
+    expect(gateway).toContain('mistral-nemo:12b-q4_K_M')
+    expect(gateway).toContain('specialtyRoutes:')
+    expect(gateway).toContain('id: automacao')
+    expect(gateway).toContain('id: codigo-redes')
+    expect(gateway).toContain('id: documentos')
+    expect(gateway).toContain('model: mistral-nemo-uncensored:latest')
+    expect(gateway).toContain('model: llama3.1-uncensored:latest')
     expect(gateway).not.toContain('deepseek-ai/deepseek-v4-flash-0731')
     expect(gateway).toContain('- TRANSPORT')
     expect(gateway).not.toContain('- NO_ADAPTER')
@@ -153,16 +158,16 @@ describe('web-app runtime glue', () => {
     expect(rows.find(row => row.id === 'api-gateway')?.config).toMatchObject({
       adaptiveRouting: {
         expertProvider: 'ollama',
-        expertModel: 'ornith-1.5:9b-q6_K',
+        expertModel: 'mistral-nemo:12b-q4_K_M',
         goalRoundTiers: [
           {
             fromRound: 1, provider: 'ollama', model: 'qwen3.5:9b', reasoningEffort: 'medium',
           },
           {
-            fromRound: 3, provider: 'ollama', model: 'qwen3.8-distill:9b-q8', reasoningEffort: 'high',
+            fromRound: 3, provider: 'ollama', model: 'qwen3.8-9b-distill-uncensored-heretic:latest', reasoningEffort: 'high',
           },
           {
-            fromRound: 6, provider: 'ollama', model: 'ornith-1.5:9b-q6_K', reasoningEffort: 'high',
+            fromRound: 6, provider: 'ollama', model: 'mistral-nemo:12b-q4_K_M', reasoningEffort: 'high',
           },
         ],
         failovers: [
@@ -198,8 +203,8 @@ describe('web-app runtime glue', () => {
     })
     expect(shadow?.routes).toEqual(expect.arrayContaining([
       expect.objectContaining({ provider: 'ollama', model: 'qwen3.5:9b', residency: 'local' }),
-      expect.objectContaining({ provider: 'ollama', model: 'qwen3.8-distill:9b-q8', residency: 'local' }),
-      expect.objectContaining({ provider: 'ollama', model: 'ornith-1.5:9b-q6_K', residency: 'local' }),
+      expect.objectContaining({ provider: 'ollama', model: 'qwen3.8-9b-distill-uncensored-heretic:latest', residency: 'local' }),
+      expect.objectContaining({ provider: 'ollama', model: 'mistral-nemo:12b-q4_K_M', residency: 'local' }),
       expect.objectContaining({ provider: 'google', model: 'gemini-3.1-pro-preview-customtools', residency: 'external' }),
       expect.objectContaining({ provider: 'openai', model: 'gpt-5.6-luna', residency: 'external' }),
     ]))
@@ -208,11 +213,12 @@ describe('web-app runtime glue', () => {
       'qwen3.5:9b',
       'qwen3.5:9b-q4_K_M',
       'qwen3.5:9b-q6_K',
-      'ornith-1.5:9b',
-      'ornith-1.5:9b-q6_K',
+      'qwen3.5-uncensored:latest',
+      'qwen3.5:2b',
       'llama3.1:8b-q6_K',
+      'llama3.1-uncensored:latest',
       'mistral-nemo:12b-q4_K_M',
-      'qwen3.8-distill:9b-q8',
+      'mistral-nemo-uncensored:latest',
       'qwen3.8-9b-distill-uncensored-heretic:latest',
     ]
     for (const model of localModels) {
@@ -227,6 +233,10 @@ describe('web-app runtime glue', () => {
       cacheReadUsdPerMillion: 0.2,
     })
     expect(prices).not.toContainEqual(expect.objectContaining({ provider: 'freellmapi' }))
+    expect(prices).toContainEqual({
+      provider: 'openrouter', model: 'nvidia/nemotron-3.5-lightning:free',
+      inputUsdPerMillion: 0, outputUsdPerMillion: 0,
+    })
     expect(prices).toContainEqual({
       provider: 'openai', model: 'gpt-5.6-luna',
       inputUsdPerMillion: 0.2, outputUsdPerMillion: 1.2,

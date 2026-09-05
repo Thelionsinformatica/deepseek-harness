@@ -19,7 +19,7 @@ const DEFAULT_OUTPUT = '.artifacts/leon-acceptance-7/latest.json'
 const REQUIRED_RUNS = 3
 const EXTERNAL_CREDENTIAL_KEYS = [
   'DEEPSEEK_API_KEY',
-  'FREELLMAPI_API_KEY',
+  'OPENROUTER_API_KEY',
   'GEMINI_API_KEY',
   'GOOGLE_API_KEY',
   'NVIDIA_API_KEY',

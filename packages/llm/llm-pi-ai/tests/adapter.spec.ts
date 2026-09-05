@@ -108,7 +108,7 @@ describe('PiAiAdapter provider routing', () => {
       headers: { 'x-omniroute-response-cost': '0.0000000015' },
       commentsBeforeDone: ['x-omniroute-response-cost=0.0000000035'],
     }])
-    const adapter = adapterOf({ freellmapi: {
+    const adapter = adapterOf({ openrouter: {
       api: 'openai-completions',
       apiKeyEnv: 'PI_TEST_KEY',
       baseURL: server.url,
@@ -116,7 +116,7 @@ describe('PiAiAdapter provider routing', () => {
     } })
 
     const chunks = []
-    for await (const chunk of adapter.stream({ provider: 'freellmapi', model: 'auto', messages: [] })) {
+    for await (const chunk of adapter.stream({ provider: 'openrouter', model: 'auto', messages: [] })) {
       chunks.push(chunk)
     }
 

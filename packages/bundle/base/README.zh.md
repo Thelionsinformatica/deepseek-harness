@@ -10,7 +10,7 @@ patch 在自身上按平台门控两个 shell 栈：`bash-sandbox`/`tool-bash` �
 
 base 组合包为后备沙箱策略与沙箱文件系统解析同一个部署 workspace。Leon 在 Windows 上的默认值是 `E:/computador`；环境覆盖值与非 Windows 后备值由 [`resolveDefaultWorkspace()`](../../util/home-paths/README.zh.md)负责。每个会话自身的 workspace 根目录在请求时仍会覆盖这个部署后备值。
 
-Leon Automatic 的所有本地层级都使用 `ollama/qwen3.5:9b`，只为复杂工作与目标轮次提高其推理强度。`ollama/ornith-1.5:9b`、`ollama/qwen3.8-distill:9b-q8` 与 `ollama/qwen3.8-9b-distill-uncensored-heretic:latest` 仅供显式手动选择；两个 Qwen 3.8 路由都公布配置的 16k 上下文限制。Ollama 运行故障可以进入有界的 `freellmapi/auto` → `google/gemini-3.1-pro-preview-customtools` → 低推理强度 `openai/gpt-5.6-luna` 链，而 `UNKNOWN_MODEL` 与 `NO_ADAPTER` 会失败关闭，不会把错误配置的请求外传。`nvidia/deepseek-ai/deepseek-v4-flash-0731` 同样仅供手动使用。这些路由都不会改变 Leon 的身份，且所有外部凭据始终保存在 credential 服务中。Gemini 路由先解析 `GEMINI_API_KEY`，再解析旧版 `GOOGLE_API_KEY` 引用；它不会复制机密，也不会读取未声明的 ambient 密钥。DeepSeek 自有 provider 与搜索适配器仅保留为兼容包，不挂载到模型目录。基础组合禁用面向模型的 Web 搜索与抓取；部署必须显式挂载 provider 与对应工具，本地上下文才可能因检索而离开本机。
+Leon Automatic 的快速层级使用 `ollama/qwen3.5:9b`；随着目标轮次与复杂度上升，自动升级到目标轮次 3 起的 `ollama/qwen3.8-9b-distill-uncensored-heretic:latest`，再到轮次 6 起的 `ollama/mistral-nemo:12b-q4_K_M`（2026-09-05 更新：此前的 `mainModel`/`expertModel` 组合 `ollama/ornith-1.5:9b-q6_K` 与 `ollama/qwen3.8-distill:9b-q8` 指向本机从未拉取过的 Ollama 标签，会话一旦到达第 3 轮就会 404；两者已从目录中移除）。`ollama/qwen3.8-9b-distill-uncensored-heretic:latest` 公布配置的 16k 上下文限制。Ollama 运行故障可以进入有界的 `google/gemini-3.1-pro-preview-customtools` → 低推理强度 `openai/gpt-5.6-luna` 链，而 `UNKNOWN_MODEL` 与 `NO_ADAPTER` 会失败关闭，不会把错误配置的请求外传。`nvidia/deepseek-ai/deepseek-v4-flash-0731` 与 `openrouter/nvidia/nemotron-3.5-lightning:free` 同样仅供手动使用。这些路由都不会改变 Leon 的身份，且所有外部凭据始终保存在 credential 服务中。Gemini 路由先解析 `GEMINI_API_KEY`，再解析旧版 `GOOGLE_API_KEY` 引用；它不会复制机密，也不会读取未声明的 ambient 密钥。DeepSeek 自有 provider 与搜索适配器仅保留为兼容包，不挂载到模型目录。基础组合禁用面向模型的 Web 搜索与抓取；部署必须显式挂载 provider 与对应工具，本地上下文才可能因检索而离开本机。
 
 在 Windows 上，启动器设置 `LEON_OPENCODE_ENABLED=1` 后，该组合包可以通过通用 ACP subagent provider 公开一个项目范围的 `opencode` 委派工具。启动器只能在验证 `E:/computador/.leon` 下的可执行文件与隔离配置后设置该开关，因此缺失的可选运行时不会阻止 Leon 启动。子进程以 Ornith 作为主要编程模型、Qwen 作为小模型，只继承所选 workspace 路径，并仅把最终文本返回给 Leon。其配置把文件操作限制在该 workspace 内，并拒绝 commit、push、hard reset、递归删除、外部目录访问及嵌套 Agent。
 
@@ -26,7 +26,7 @@ Leon Automatic 的所有本地层级都使用 `ollama/qwen3.5:9b`，只为复杂
 
 - **patch 会替换整行 `config`**：profile 覆盖必须重述该行需要保留的每个字段；不存在深度合并层。
 - **自动本地路由要求 Ollama 与 Qwen**：回环端点为 `http://127.0.0.1:11434/v1`，安装程序必须确保 `qwen3.5:9b` 可用。手动路由只在用户选择它们时才是必需项。
-- **FreeLLMAPI 是独立的回环服务**：Leon 的 Windows 安装使用 `http://127.0.0.1:31415/v1`，以避开系统保留的 3001 端口；该路由使用 `FREELLMAPI_API_KEY`。生产启动会把服务绑定到 `127.0.0.1`，并继续明确配置上游密钥来源与预算策略。
+- **OpenRouter 是手动的外部路由，不是本地服务**：请求发往 `https://openrouter.ai/api/v1`，通过 `apiKeyEnv` 读取 `OPENROUTER_API_KEY`；本机不安装、不启动、也不健康检查它（2026-09-05：取代了此前的本地回环 FreeLLMAPI 网关及其生命周期脚本）。
 - **OpenCode 是由安装程序持有、显式启用的 Windows 运行时**：默认命令与配置位于 `E:/computador/.leon` 下；部署环境变量可以覆盖这些路径，且只有启动器验证完成后设置 `LEON_OPENCODE_ENABLED=1` 才会启用该提供方。运行时缺失、无效或宿主不是 Windows 时，提供方保持禁用且不会阻塞 Leon 启动。
 - **Web 检索需要显式 profile 覆盖**：基础组合挂载提供方中立的 seam，但既不启用搜索提供方，也不启用面向模型的 Web 工具。只启用提供方而不启用工具，或只启用工具而没有可用提供方，都属于不完整的部署配置。
 - **Windows 的临时目录授权是按会话的私有子目录**——`workspace-write` 把写入限制在工作区与会话自己的 temp 子目录（`<temp>\dsh-<hash>`，受限子进程的 TMP/TEMP 被改写）；`read-only` 不授予任何临时目录写入权限。见 `@deepseek-ai/dsh-sandbox-windows-acl`。

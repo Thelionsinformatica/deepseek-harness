@@ -335,7 +335,7 @@ describe('LocaleRuntime', () => {
     expect(t('retryingCloud')).toBe('Tentando novamente com o modelo')
     expect(t('retryDelay')).toBe('Espera para nova tentativa: ')
     expect(t('failureReason')).toBe('Motivo da falha: ')
-    expect(t('failoverTitle', { provider: 'FreeLLMAPI' })).toBe('FreeLLMAPI indisponível')
+    expect(t('failoverTitle', { provider: 'OpenRouter' })).toBe('OpenRouter indisponível')
     expect(t('failoverDetail', { fromModel: 'auto', model: 'Gemini 3.6 Flash' }))
       .toBe('Leon mudou automaticamente de auto para Gemini 3.6 Flash pelo fallback configurado.')
     expect(t('quotaTitle', { provider: 'google' })).toBe('google está sem créditos disponíveis')

@@ -500,7 +500,6 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
         expect.objectContaining({ id: 'workspace', status: 'ok' }),
         expect.objectContaining({ id: 'profile', status: 'warning' }),
         expect.objectContaining({ id: 'ollama', status: 'warning' }),
-        expect.objectContaining({ id: 'freellmapi', status: 'warning' }),
         expect.objectContaining({ id: 'web', status: 'warning' }),
       ]))
       expect(existsSync(join(home, 'profiles', 'web'))).toBe(false)

@@ -105,6 +105,13 @@ export class ApiProxyService extends Service implements ApiProxy {
         model: z.string().required(),
         reasoningEffort: z.string(),
       })).default([]),
+      specialtyRoutes: z.array(z.object({
+        id: z.string().min(1).required(),
+        markers: z.array(z.regExp('iu')).min(1).required(),
+        provider: z.string(),
+        model: z.string().required(),
+        reasoningEffort: z.string(),
+      })).default([]),
       failovers: z.array(z.object({
         fromProviders: z.array(z.string().min(1)).min(1),
         provider: z.string().min(1).required(),

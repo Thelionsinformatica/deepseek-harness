@@ -22,7 +22,7 @@
 
 ## 诊断
 
-`dsh doctor` 检查受支持的 Node 运行时、Windows 上的 PowerShell、Harness home、选中的已安装 profile、默认 workspace、已构建启动器、配置的 Ollama endpoint 与自动路由模型、回环 FreeLLMAPI 路由器，以及预期的 Leon Web 端口。该命令只执行只读路径探测和有界 GET 请求；不会启动或初始化 profile、写入修复、启动服务、发送模型提示词或读取凭据值。警告保持退出状态 0；安装失败或预期 endpoint 被无关服务占用时以 1 退出。支持与安装程序自动化可使用 `--profile <name>`、`--port <port>` 或 `--json`；确切报告约定以 [CLI 行为参考](reference/README.zh.md#diagnosis)为准。
+`dsh doctor` 检查受支持的 Node 运行时、Windows 上的 PowerShell、Harness home、选中的已安装 profile、默认 workspace、已构建启动器、配置的 Ollama endpoint 与自动路由模型，以及预期的 Leon Web 端口。该命令只执行只读路径探测和有界 GET 请求；不会启动或初始化 profile、写入修复、启动服务、发送模型提示词或读取凭据值。警告保持退出状态 0；安装失败或预期 endpoint 被无关服务占用时以 1 退出。支持与安装程序自动化可使用 `--profile <name>`、`--port <port>` 或 `--json`；确切报告约定以 [CLI 行为参考](reference/README.zh.md#diagnosis)为准。
 
 <a id="encrypted-recovery"></a>
 

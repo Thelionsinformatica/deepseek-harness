@@ -8,6 +8,12 @@
 
 ## 所有权与隔离
 
+### 可移植连续性
+
+`MemoryContinuityDomainSource` 提供域名、版本、表名和本地谱系记录的可迭代集合。`MemoryContinuityDomainTarget` 将相同域名和版本绑定到调用方拥有的 KvTable。`MemoryContinuitySnapshot` 包含 schema 版本、导出时间戳、格式、带校验和的域和整体校验和。`MemoryContinuityImportResult` 返回导入及跳过计数，以及由调用方负责持久化的日志条目。
+
+[连续性包](../../packages/memory/memory-continuity/README.zh.md) 在写入前验证所有目标，并有条件地插入缺失 ID。存储失败可能保留先前已提交的写入；这是可重试的恢复，不是全局事务。
+
 每个操作都携带包含稳定 `WorkspaceId` 的 `MemoryScope`。原始目录路径绝不会成为所有权键。本地提供方在每次查找中都包含该作用域，并且会针对属于其他工作区的记录特意返回 `MEMORY_NOT_FOUND`，因此搜索结果与错误详情都不会泄露跨工作区数据。
 
 `MemorySource` 记录显式创建事实的会话。这是来源信息而非所有权：workspace 仍是 `ctx.memory` 的隔离边界。
@@ -203,6 +209,33 @@ async recordCandidate(record: MemoryCandidateRecord): Promise<void>
 ```
 
 Source: [`packages/memory/tool-memory/src/review.ts`](../../packages/memory/tool-memory/src/review.ts)
+
+<a id="ctxmemorycontinuity--memorycontinuityprovider"></a>
+
+### `ctx.memoryContinuity` — `MemoryContinuityProvider`
+
+Provider-neutral exporter for local memory lineage.
+
+```ts cordis-catalog
+/**
+ * Build a snapshot without mutating the source tables; invalid records throw.
+ * @param domains - Caller-selected domains and their complete records.
+ * @param options - Optional timestamp; defaults to the current time.
+ * @returns A checksummed snapshot; journal persistence remains caller-owned.
+ */
+export(domains: readonly MemoryContinuityDomainSource[], options: { readonly exportedAt?: string } = {}): MemoryContinuitySnapshot
+
+/**
+ * Validate every destination before writing, then atomically insert only missing ids.
+ * Storage failures may leave earlier writes committed; repeating the same import skips them.
+ * @param snapshot - Snapshot with valid checksums and local memory records.
+ * @param targets - Destination tables with matching domain names and versions.
+ * @returns Import counters and a journal entry that the caller must persist.
+ */
+async import( snapshot: MemoryContinuitySnapshot, targets: readonly MemoryContinuityDomainTarget[], ): Promise<MemoryContinuityImportResult>
+```
+
+Source: [`packages/memory/memory-continuity/src/index.ts`](../../packages/memory/memory-continuity/src/index.ts)
 
 <a id="ctxpersonalmemory--personalmemoryruntime"></a>
 

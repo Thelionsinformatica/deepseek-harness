@@ -743,6 +743,26 @@ Source: [`packages/core/session/src/types.ts:254`](../packages/core/session/src/
 
 Source: [`packages/subagent/subagent/src/descriptor.ts:37`](../packages/subagent/subagent/src/descriptor.ts)
 
+### `task/*`
+
+<a id="taskvalidation--log-only"></a>
+
+#### `task/validation` — log-only
+
+```ts persistence-catalog
+/** Exact-output decision; does not assert general correctness or retract streamed text. */
+'task/validation': {
+  messageId: MessageId
+  responseId: MessageId
+  turn: number
+  attempt: number
+  status: 'passed' | 'retry' | 'failed'
+  reason: 'matched' | 'output-mismatch' | 'read-missing'
+}
+```
+
+Source: [`packages/guard/completion-claim-policy/src/task-acceptance.ts:36`](../packages/guard/completion-claim-policy/src/task-acceptance.ts)
+
 ### `team/*`
 
 <a id="teammember--log-only"></a>
@@ -756,7 +776,7 @@ Source: [`packages/subagent/subagent/src/descriptor.ts:37`](../packages/subagent
 
 Types: [TeamId](subsystems/agent-team.md) · [TeamMemberSnapshot](subsystems/agent-team.md)
 
-Source: [`packages/experimental/agent-team/src/types.ts:206`](../packages/experimental/agent-team/src/types.ts)
+Source: [`packages/experimental/agent-team/src/types.ts:208`](../packages/experimental/agent-team/src/types.ts)
 
 <a id="teammessagedelivered--log-only"></a>
 
@@ -774,7 +794,7 @@ Source: [`packages/experimental/agent-team/src/types.ts:206`](../packages/experi
 
 Types: [TeamId](subsystems/agent-team.md) · [TeamMessageId](subsystems/agent-team.md)
 
-Source: [`packages/experimental/agent-team/src/types.ts:212`](../packages/experimental/agent-team/src/types.ts)
+Source: [`packages/experimental/agent-team/src/types.ts:214`](../packages/experimental/agent-team/src/types.ts)
 
 <a id="teammessagequeued--log-only"></a>
 
@@ -787,7 +807,7 @@ Source: [`packages/experimental/agent-team/src/types.ts:212`](../packages/experi
 
 Types: [TeamId](subsystems/agent-team.md) · [TeamMessageSnapshot](subsystems/agent-team.md)
 
-Source: [`packages/experimental/agent-team/src/types.ts:210`](../packages/experimental/agent-team/src/types.ts)
+Source: [`packages/experimental/agent-team/src/types.ts:212`](../packages/experimental/agent-team/src/types.ts)
 
 <a id="teamtask--log-only"></a>
 
@@ -800,7 +820,7 @@ Source: [`packages/experimental/agent-team/src/types.ts:210`](../packages/experi
 
 Types: [TeamId](subsystems/agent-team.md) · [TeamTaskSnapshot](subsystems/agent-team.md)
 
-Source: [`packages/experimental/agent-team/src/types.ts:208`](../packages/experimental/agent-team/src/types.ts)
+Source: [`packages/experimental/agent-team/src/types.ts:210`](../packages/experimental/agent-team/src/types.ts)
 
 ### `todo/*`
 
@@ -1027,6 +1047,17 @@ Source: [`packages/core/session/src/types.ts:243`](../packages/core/session/src/
 Source: [`packages/core/session/src/types.ts:264`](../packages/core/session/src/types.ts)
 
 ### `web/*`
+
+<a id="webaccess--log-only"></a>
+
+#### `web/access` — log-only
+
+```ts persistence-catalog
+/** Complete post-change state of the explicit native web-access grant. */
+'web/access': WebAccessProjection
+```
+
+Source: [`packages/web/web-access/src/index.ts:39`](../packages/web/web-access/src/index.ts)
 
 <a id="webdeepseek-search-llm-request--log-only"></a>
 

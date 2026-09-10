@@ -109,8 +109,8 @@ describe('Leon Work dashboard', () => {
     expect(metric('Em andamento').textContent).toContain('1')
     expect(metric('Aguardando você').textContent).toContain('1')
     expect(metric('Concluídas').textContent).toContain('1')
-    expect(metric('API acumulada').textContent).toContain('US$0.0011')
-    expect(metric('API acumulada').textContent).toContain('1 chamadas com preço')
+    expect(metric('API estimada').textContent).toContain('US$0.0011')
+    expect(metric('API estimada').textContent).toContain('1 chamadas com preço; não é a fatura')
 
     const recent = within(screen.getByRole('heading', { name: 'Trabalhos recentes' }).parentElement!)
     expect(recent.getAllByRole('button').map(button => button.textContent)).toEqual([
@@ -140,7 +140,7 @@ describe('Leon Work dashboard', () => {
     mount()
     expect(screen.getByText('Suas conversas aparecerão aqui depois da primeira tarefa.')).toBeTruthy()
     expect(metric('Projetos').textContent).toContain('0')
-    expect(metric('API acumulada').textContent).toContain('US$0.00')
+    expect(metric('API estimada').textContent).toContain('US$0.00')
   })
 
   it('warns when a model usage route has no configured price', () => {
@@ -154,7 +154,7 @@ describe('Leon Work dashboard', () => {
       },
     })
     mount({ sessions: [unpriced] })
-    expect(metric('API acumulada').textContent).toContain('2 chamadas ainda sem preço')
+    expect(metric('API estimada').textContent).toContain('Parcial: 2 chamadas ainda sem preço')
   })
 
   it('keeps archived and subagent calls in billing while hiding their navigation rows', () => {
@@ -171,7 +171,7 @@ describe('Leon Work dashboard', () => {
     })
     mount({ sessions: [archived, child], archived: [archived.id] })
 
-    expect(metric('API acumulada').textContent).toContain('US$2.00')
+    expect(metric('API estimada').textContent).toContain('US$2.00')
     expect(screen.queryByText('Arquivada com custo')).toBeNull()
     expect(screen.queryByText('Subagente com custo')).toBeNull()
   })

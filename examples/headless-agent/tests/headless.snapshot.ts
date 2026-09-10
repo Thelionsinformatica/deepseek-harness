@@ -681,6 +681,59 @@ describe('headless stream-json snapshots', () => {
     expect(normalized).toBe(await readFile(advancedStreamExpected, 'utf8'))
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
+  it('persists mission STOP through the optional real Loader entry', async () => {
+    let record: JsonObject | undefined
+    const result = await runLoaderSmoke({
+      label: 'Mission control snapshot', tempDirPrefix: 'headless-mission-control-',
+      binScript, libBinScript: binScript, configPath: teamConfigPath,
+      binArgs: [teamConfigPath, 'Exercise the host mission controls.'], tsconfigPath,
+      processTimeoutMs: 60_000, env: { DSH_SNAPSHOT: 'team', DSH_TEAM_MISSION_CONTROL: '1' },
+      inspect: async (cwd) => {
+        const raw = await readFile(join(cwd, '.mission-control', 'leon_collective.json'), 'utf8').catch(() => undefined)
+        if (raw === undefined) return
+        const data = JSON.parse(raw) as JsonObject
+        const tables = data.tables as JsonObject
+        record = Object.values(tables.missions as JsonObject)[0] as JsonObject
+      },
+    })
+    expect(result.stderr).toBe('')
+    expect(result.stdout).toContain('MISSION_STOP_PERSISTED')
+    expect(record).toMatchObject({ state: 'cancelled', calls: 1, maxCalls: 2, revision: 3,
+      criteria: 'Persistent STOP and bounded calls' })
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
+  it('rejects model completion without host review in the real Team composition', async () => {
+    let projection: unknown
+    const result = await runLoaderSmoke({
+      label: 'Team completion review snapshot',
+      tempDirPrefix: 'headless-team-review-',
+      binScript,
+      libBinScript: binScript,
+      configPath: teamConfigPath,
+      binArgs: [teamConfigPath, 'Use Agent Teams to investigate; completion requires evidence review.'],
+      tsconfigPath,
+      processTimeoutMs: 60_000,
+      env: { DSH_SNAPSHOT: 'team', DSH_TEAM_COMPLETION_REVIEW: '1' },
+      inspect: async (cwd) => {
+        const logs = await persistedLogs(cwd)
+        const parent = logs.find(log => typeof log.header.parentSession !== 'string')
+        if (parent === undefined) throw new Error('Missing Team root')
+        const rows = parseJsonl(parent.content)
+        const tasks = rows.filter(row => row.type === 'team/task')
+          .map(row => (row.data as JsonObject).task as JsonObject)
+        projection = {
+          states: tasks.map(task => ({ revision: task.revision, status: task.status })),
+          rejected: rows.some(row => row.type === 'tool/result' && JSON.stringify(row).includes('TEAM_TASK_REVIEW_REQUIRED')),
+        }
+      },
+    })
+    expect(result.stderr).toBe('')
+    expect(projection).toEqual({
+      states: [{ revision: 1, status: 'pending' }, { revision: 2, status: 'in_progress' }],
+      rejected: true,
+    })
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
   it('runs a keyless Agent Team with peer mail, dependent tasks, waiting, and Lead aggregation', async () => {
     let projection: unknown
     const result = await runLoaderSmoke({

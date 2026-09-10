@@ -8,6 +8,7 @@
     "src"
   ],
   "references": [
+    { "path": "../../guard/completion-claim-policy" },
     {
       "path": "../../goal/goal"
     },

@@ -446,6 +446,38 @@ describe('paging', () => {
 })
 
 describe('prompt and cancel errors', () => {
+  it('forwards exact criteria once without adding the expected answer to prompt content', async () => {
+    const { api, session } = makeSession()
+    const content = [{ type: 'text' as const, text: 'Leia o codigo do arquivo.' }]
+    const acceptance = { expectedText: '  CANARY\n', maxRecoveries: 1, requiredReadPath: 'C:\\test\\code.txt' }
+    await session.prompt(content, 'queue', undefined, acceptance)
+    await session.prompt([{ type: 'text', text: 'Proxima tarefa' }], 'queue')
+    const calls = api.callsOf('session.prompt')
+    expect(calls[0]).toMatchObject({ content, acceptance })
+    expect(calls[1]).not.toHaveProperty('acceptance')
+  })
+
+  it.each(['continuable', 'one-shot'] as const)('refuses criteria on a %s child without sending an unvalidated prompt', async (mode) => {
+    const api = new FakeApiClient()
+    const session = new Session(SID, api, fakeRemote(), {
+      address: { parentSessionId: PARENT, childSessionId: SID, mode },
+      parentAvailable: true,
+    })
+    const result = await session.prompt([{ type: 'text', text: 'Verificar' }], 'queue', undefined, { expectedText: 'OK', maxRecoveries: 0 })
+    expect(result).toMatchObject({ ok: false, error: { code: 'bad-request' } })
+    expect(session.getSnapshot().promptError).toMatchObject({ op: 'send', error: { code: 'bad-request' } })
+    expect(api.callsOf('subagent.prompt')).toEqual([])
+    expect(api.callsOf('session.prompt')).toEqual([])
+  })
+
+  it('retains a host acceptance rejection as promptError', async () => {
+    const { api, session } = makeSession()
+    api.onPrompt = () => Promise.resolve(err({ code: 'agent-busy', message: 'Task requires idle agent', details: { reason: 'TASK_ACCEPTANCE_REQUIRES_IDLE' } }))
+    const result = await session.prompt([{ type: 'text', text: 'Verificar' }], 'queue', undefined, { expectedText: 'OK', maxRecoveries: 1 })
+    expect(result.ok).toBe(false)
+    expect(session.getSnapshot().promptError).toMatchObject({ error: { details: { reason: 'TASK_ACCEPTANCE_REQUIRES_IDLE' } } })
+  })
+
   it('routes an addressed child through non-activating history, continuation prompt, and interrupt only', async () => {
     const api = new FakeApiClient()
     const session = new Session(SID, api, fakeRemote(), {

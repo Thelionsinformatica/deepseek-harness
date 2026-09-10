@@ -125,6 +125,12 @@
     - id: web-fetch-http
       name: '@deepseek-ai/dsh-web-fetch-http'
 
+    # Explicit, durable per-session user consent for only the native public
+    # web_search and web_fetch executors. It does not change file, shell,
+    # browser automation, credential, or global approval permissions.
+    - id: web-access
+      name: '@deepseek-ai/dsh-web-access'
+
     # Browser Session export: `/export` command plus the shared download dialog.
     - id: session-log-download
       name: '@deepseek-ai/dsh-session-log-export'
@@ -253,9 +259,18 @@
     - id: directory-picker
       name: '@deepseek-ai/dsh-host-directory-picker-auto'
 
-    # Read-only projection of current Loader entries for trusted client RPCs.
+    # Plugin Center: reads every Loader entry but only exposes process-local
+    # toggles for these two optional public-Web providers. Core, security, and
+    # transport plugins remain protected; every unlisted entry requires a
+    # reviewed configuration change and restart.
     - id: plugin-inventory
       name: '@deepseek-ai/dsh-host-plugin-inventory'
+      config:
+        liveToggleEntries:
+          - id: web-search-google
+            moduleName: '@deepseek-ai/dsh-web-search-google'
+          - id: web-fetch-http
+            moduleName: '@deepseek-ai/dsh-web-fetch-http'
 
     # The API gateway: the transport-agnostic dispatch face every client shape
     # shares. The base layer's agent-default-model service owns the default model.
@@ -622,6 +637,10 @@
     # Plan control: the composer plan seat over the plan projection + /plan channel.
     - id: ui-plan
       name: '@deepseek-ai/dsh-client-ui-plan'
+
+    # Explicit on/off control for the native public Web grant in this session.
+    - id: ui-web-access
+      name: '@deepseek-ai/dsh-client-ui-web-access'
 
     - id: ui-user-questions
       name: '@deepseek-ai/dsh-client-ui-user-questions'

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-07-pause-reservation-race.md
+2026-09-07-pause-reservation-race.md: 1621f82b37c1e3e92fdc0af748162e0320b024a2
+2026-09-07-pause-reservation-race.zh.md: b7b5c9eb125e43cbe10276c2d695a616271c2be9

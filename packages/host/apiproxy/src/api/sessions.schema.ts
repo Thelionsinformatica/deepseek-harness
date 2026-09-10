@@ -293,11 +293,26 @@ export const promptContentPartSchema = z.discriminatedUnion('type', [
 ])
 
 /** session.prompt request payload, including optional browser-local request provenance. */
+export const taskAcceptanceRequestSchema = z.object({
+  expectedText: z.string().min(1).max(4096).optional(),
+  arithmeticTests: z.array(z.object({
+    a: z.number().min(-1_000_000).max(1_000_000),
+    b: z.number().min(-1_000_000).max(1_000_000),
+    expected: z.number().min(-1_000_000).max(1_000_000),
+  }).strict()).min(1).max(8).optional(),
+  maxRecoveries: z.number().int().min(0).max(3),
+  requiredReadPath: z.string().min(1).max(4096).optional(),
+  readOnly: z.boolean().optional(),
+}).strict().refine(value => (value.expectedText !== undefined) !== (value.arithmeticTests !== undefined))
+  .refine(value => value.arithmeticTests === undefined || value.readOnly === true)
+
+/** Prompt acceptance is optional and validated independently for direct callers too. */
 export const sessionPromptRequestSchema = z.object({
   sessionId: sessionIdSchema,
   mode: z.union([z.literal('queue'), z.literal('steer')]),
   content: z.array(promptContentPartSchema),
   clientTimeZone: z.string().optional(),
+  acceptance: taskAcceptanceRequestSchema.optional(),
 }) as unknown as z.ZodType<RequestPayload<'session.prompt'>>
 
 /** session.prompt response value, carrying the exact durable user-message identity admitted by the Host. */

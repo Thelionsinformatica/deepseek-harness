@@ -36,6 +36,13 @@ function session(overrides: Partial<ConversationSnapshot> = {}): ConversationSna
 }
 
 describe('VoiceActivity', () => {
+  it('does not report ready when the conversation history cannot open', () => {
+    expect(deriveVoiceActivity(session({
+      openError: { code: 'internal', message: 'Unsupported session event', details: {} },
+    }), capture, playback)).toMatchObject({ state: 'error', errorSource: 'session' })
+    expect(deriveVoiceActivity(session(), capture, playback).state).toBe('idle')
+  })
+
   it('prioritizes approval, tool, and thinking from authoritative session facts', () => {
     expect(deriveVoiceActivity(session({ running: true }), capture, playback).state).toBe('thinking')
     expect(deriveVoiceActivity(session({

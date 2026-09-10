@@ -2,13 +2,15 @@
 
 English | [中文](README.zh.md)
 
-Read-only **Plugin list** tab for Web Settings. The browser plugin registers one localized `settings.plugins.tab` contribution with id `all`; the Plugins section owns the navigation entry and tab chrome. It performs no Remote read during plugin activation. Selecting the tab for the first time mounts it and lazily calls `ctx.remote.pluginInventory.list()` through [`api-remotes`](../../api/remotes/README.md).
+The **Plugin Center** tab for Web Settings. The browser plugin registers one localized `settings.plugins.tab` contribution with id `all`; the Plugins section owns its navigation entry and tab chrome. It performs no Remote read during plugin activation. Selecting the tab mounts it and lazily calls `ctx.remote.pluginInventory.list()` through [`api-remotes`](../../api/remotes/README.md).
 
-The tab renders a searchable two-column catalog of compact disclosure cards. Each collapsed card uses the short module name as its title and a small effective-enablement tag; enabled entries also show a colored root-fiber status dot. Expanding one card reveals its Loader-tree entry id without a redundant field label, followed by the effective configuration and, for enabled entries, Cordis status. Disabled entries omit the redundant unmounted runtime state. The entry id remains the React key, disclosure identity, detail value, and an additional search target; it is never classified by string shape. Loading, empty, no-match, and generic failure states stay local to the mounted component, and a failed read can be retried without exposing transport details. The registration uses `ctx.slots.inject()`, so it follows late tab declaration, redeclaration, locale changes, and teardown without importing the section owner.
+The tab renders a searchable two-column catalog of compact disclosure cards. A card shows a short module name, effective status, Fiber status when enabled, safe category and summary, plus its management classification: `live-toggle`, `restart-required`, or `protected`. Expanded details show the Loader entry id, purpose, capabilities, effective status, runtime state, and the non-secret management reason. Search also matches the summary and capabilities. It never renders raw configuration, source paths, credentials, cookies, or tokens.
+
+Only a Host-returned `live-toggle` card displays an action. The action calls `setEnabled` for that exact entry and replaces local state only with the Host response; it is disabled while the request is in flight and a failure shows generic UI copy rather than transport details. Restart-required and protected entries have no mutation control. The registration uses `ctx.slots.inject()`, so it follows late tab declaration, redeclaration, locale changes, and teardown without importing the section owner.
 
 ## Model Experience
 
-None, as this package only visualizes a Host-owned deployment snapshot in browser Settings and registers nothing model-facing.
+None, as this package visualizes a Host-owned deployment snapshot in browser Settings and registers nothing model-facing.
 
 #### KV Cache effect
 
@@ -17,4 +19,5 @@ None; this package neither assembles nor sends a provider request.
 ## Known Limitations and Deferred Work
 
 - **One snapshot per Settings mount or retry** — the tab does not subscribe to Loader changes or automatically refetch after reconnect; switching tabs preserves the current snapshot, while reopening Settings obtains a new one.
-- **Read-only Loader view** — local search does not add provenance, current-browser activation diagnosis, grouping by source, or plugin mutation controls.
+- **Runtime control is intentionally narrow** — the interface cannot persist a choice, edit configuration, add or remove entries, or offer a switch for any Host classification other than `live-toggle`.
+- **Metadata is diagnostic, not provenance** — category, capability, and summary labels are safe operational descriptions, not a claim about the original bundle or configuration source.

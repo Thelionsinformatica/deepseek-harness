@@ -1,0 +1,7 @@
+# Trusted callers attach exact-output criteria; ordinary messages stay unchanged.
+- id: base
+  name: '@deepseek-ai/cordis-plugin-include'
+  config:
+    path: ./cordis.yml
+- id: task-acceptance
+  name: '@deepseek-ai/dsh-completion-claim-policy'

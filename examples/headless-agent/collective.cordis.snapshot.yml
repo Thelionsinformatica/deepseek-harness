@@ -1,0 +1,11 @@
+- id: collective
+  name: '@deepseek-ai/cordis-plugin-include'
+  config:
+    path: ./collective.cordis.yml
+    patches:
+      - id: local-adapter
+        name: '@deepseek-ai/dsh-llm-pi-ai'
+        disabled: true
+      - insert:
+          - id: fixture
+            name: './tests/fixtures/collective-llm.mjs'

@@ -10,6 +10,7 @@ import type {
 // Value import from the inline-safe wire layer (not the connection plugin):
 // plugin-to-plugin value imports are a bundle purity error.
 import { transportError } from '@deepseek-ai/dsh-host-apiproxy/api'
+import type { RequestPayload } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { SessionFace } from '../contract/session.ts'
 import { ConversationNodeAssembler } from './conversation-assembler.ts'
 import type { ConversationRuntime } from './conversation-assembler.ts'
@@ -185,6 +186,8 @@ export class Session implements SessionFace {
    * Send (queue/steer passed through 1:1); failures land in the snapshot's promptError.
    * @param content - text plus browser-owned temporary image uploads.
    * @param mode - queue appends after the current turn; steer interrupts it.
+   * @param signal - optional admission cancellation.
+   * @param acceptance - explicit root-session criteria, never persisted as a session default or sent to child transports.
    * @returns the prompt result with the exact durable message identity
    * (also mirrored into promptError on failure).
    */
@@ -192,6 +195,7 @@ export class Session implements SessionFace {
     content: PromptContentPart[],
     mode: 'queue' | 'steer',
     signal?: AbortSignal,
+    acceptance?: RequestPayload<'session.prompt'>['acceptance'],
   ): Promise<RpcResult<{ accepted: true; messageId: MessageId }>> {
     this.promptError = null
     this.lastAgentError = null
@@ -209,7 +213,17 @@ export class Session implements SessionFace {
           mode,
           content,
           clientTimeZone: resolvedClientTimeZone(),
+          ...(acceptance === undefined ? {} : { acceptance }),
         }, signal)).result
+      } else if (acceptance !== undefined) {
+        result = {
+          ok: false,
+          error: {
+            code: 'bad-request',
+            message: 'Task acceptance is unavailable for subagent prompts.',
+            details: { issues: [{ code: 'custom', path: ['acceptance'], message: 'Use a root session with task acceptance enabled.' }] },
+          },
+        }
       } else if (this.address.mode === 'one-shot') {
         result = {
           ok: false,

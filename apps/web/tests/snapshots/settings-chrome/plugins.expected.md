@@ -1,6 +1,7 @@
 - listitem:
-  - button "ui-settings, 已挂载, 已启用":
+  - button "ui-settings, 已挂载, 已启用, 需重启":
     - strong: ui-settings
+    - text: Contributes a browser interface surface to Leon Web.
     - img "已挂载"
-    - text: 已启用
+    - text: 已启用 需重启
     - img

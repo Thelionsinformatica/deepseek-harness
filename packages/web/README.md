@@ -12,6 +12,7 @@ This family provides provider-neutral web search and fetch operations plus the m
 | [`web-search-deepseek/`](web-search-deepseek/README.md) | Provides native DeepSeek web search | registers on `ctx.web` |
 | [`web-search-google/`](web-search-google/README.md) | Provides cited Google Search grounding through Gemini | registers on `ctx.web` |
 | [`web-fetch-http/`](web-fetch-http/README.md) | Fetches public HTTP and HTTPS resources | registers on `ctx.web` |
+| [`web-access/`](web-access/README.md) | Records a narrow explicit per-session grant for native public Web tools | `ctx.webAccess` |
 | [`tool-web/`](tool-web/README.md) | Exposes web search and fetch to the model | registers on `ctx.tools` |
 
 The [web capability decision](../../.agents/notes/implemented/architecture/2026-06-24-web-capability-seam.md) records why search and fetch share one provider-selection service.

@@ -76,6 +76,10 @@ interface TeamTaskSnapshot {
 
 `foldTeam()` 把一个 Root Session 回放成每个 Team 操作所读取的 roster、任务板与 queued-minus-delivered mailbox。它按 `TeamId` 选取记录，因此普通 fork 继承的 event 保留 ancestor id，绝不会进入新 Root 的状态。Session event 的 `seq` 与 `time` 继续负责顺序和时间记录，Team snapshot 不再重复保存它们。roster 与 task 读取以 view 形式到达调用方，附带 owner name、readiness 与 write-scope 警告，而 pending 邮件仅供投递与恢复内部使用。包 [README](../../packages/experimental/agent-team/README.zh.md)负责 operation、authorization、recovery 和限制行为。
 
+## 宿主完成审核
+
+`TeamCompletionReviewer` 接收确切的调用方、根 Agent 和独立的当前 `TeamTaskSnapshot`，返回 `Promise<boolean>`。启用 `completionRequiresReview` 时，任务板在串行修订检查内要求宿主唯一可释放注册的批准。宿主审核器负责证据新鲜度和执行时限；不得修改同一 Team。注册不会跨重启保留，撤销会使进行中的批准失效。正常默认不要求审核。参见[包约定](../../packages/experimental/agent-team/README.zh.md)。
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -97,6 +101,14 @@ Agent Teams service backed by the exact live Lead Session log.
  * @returns its root, Team identity, role, and model-facing name.
  */
 membership(agent: Agent): TeamMembership
+
+/**
+ * Register the sole trusted completion reviewer; models cannot register one through Team tools.
+ * The owner must verify current evidence and policy on every call, including after restart.
+ * @param reviewer - bounded host verifier; must not call a Team mutation while holding its transaction.
+ * @returns disposer; disposal during a pending review also rejects that completion.
+ */
+registerCompletionReviewer(reviewer: TeamCompletionReviewer): () => void
 
 /**
  * List the runtime-enriched roster visible to one Team member.
@@ -180,4 +192,84 @@ tryMembership(agent: Agent): TeamMembership | undefined
 Types: [Agent](core.zh.md)
 
 Source: [`packages/experimental/agent-team/src/index.ts`](../../packages/experimental/agent-team/src/index.ts)
+
+<a id="ctxteammissions--teammissioncontrol"></a>
+
+### `ctx.teamMissions` — `TeamMissionControl`
+
+Host-only state transitions and atomic reservations; not a model-facing authorization API.
+
+```ts cordis-catalog
+/**
+ * Start one host-authorized mission; a root can never reset its consumed budget.
+ * @param caller - exact live Lead; caller authentication remains the host entry's responsibility.
+ * @param objective - authorized outcome, not a worker instruction.
+ * @param criteria - frozen acceptance text; cannot be edited through this API.
+ * @returns durable initial record; duplicate starts reject.
+ */
+async start(caller: Agent, objective: string, criteria: string): Promise<TeamMissionRecord>
+
+/**
+ * Read detached control state without exposing another configured workspace.
+ * @param caller - exact live Lead.
+ * @returns current durable control state.
+ */
+get(caller: Agent): TeamMissionRecord
+
+/**
+ * Persist pause, terminal STOP, or an explicit resume from paused only.
+ * This transition does not itself cancel an in-flight model or subprocess.
+ * @param caller - exact live Lead used by the authenticated host control.
+ * @param revision - observed revision for pause/resume; terminal STOP uses the latest committed record.
+ * @param action - host control action; cancelled missions cannot resume.
+ * @returns committed record, without resetting deadline, criteria or counters.
+ */
+async transition(caller: Agent, revision: number, action: 'pause' | 'stop' | 'resume'): Promise<TeamMissionRecord>
+
+/**
+ * Durably spend one attempt before dispatch; failed calls are not refunded.
+ * @param caller - exact Lead selected by the runtime's mission resolver.
+ * @returns committed reservation number; paused, cancelled, expired or exhausted missions reject.
+ */
+async reserveCall(caller: Agent): Promise<number>
+
+/**
+ * Commit a host-verified outcome without granting a model an approval tool.
+ * @param caller - exact live Lead controlled by the host runner.
+ * @param verify - trusted verifier of current artifacts and native task evidence.
+ * @returns committed outcome; verifier exceptions pause without approval or budget renewal, and concurrent controls win.
+ */
+async finish(caller: Agent, verify: () => Promise<{ passed: boolean; summary: string }>): Promise<TeamMissionRecord>
+
+/** Reject future control calls when the plugin begins disposal. */
+close(): void
+```
+
+Types: [Agent](core.zh.md)
+
+Source: [`packages/experimental/agent-team/src/mission-control.ts`](../../packages/experimental/agent-team/src/mission-control.ts)
+
+<a id="team-mission-events"></a>
+
+### `team-mission/*` events
+
+<a id="team-missionchanged--parallel"></a>
+
+#### `team-mission/changed` — parallel
+
+Notification after a durable mission control transition commits.
+
+```ts cordis-catalog
+/**
+ * Notification after a durable mission control transition commits.
+ * @param lead - exact authorized root Agent.
+ * @param record - detached committed record, not a second source of truth.
+ * @mode parallel
+ */
+'team-mission/changed'(lead: Agent, record: TeamMissionRecord): Promise<void>
+```
+
+Types: [Agent](core.zh.md)
+
+Source: [`packages/experimental/agent-team/src/mission-control.ts`](../../packages/experimental/agent-team/src/mission-control.ts)
 <!-- END GENERATED cordis-surface -->

@@ -1,0 +1,32 @@
+- id: reserved-collective
+  name: '@deepseek-ai/cordis-plugin-include'
+  config:
+    path: ./collective.cordis.yml
+    patches:
+      - id: local-adapter
+        name: '@deepseek-ai/dsh-llm-pi-ai'
+        disabled: true
+      - insert:
+          - id: fixture
+            name: './tests/fixtures/collective-llm.mjs'
+      - id: execution
+        config:
+          provider: collective-local
+          model: qwen3.5:4b
+          maxOutputTokens: 2048
+          queueTimeoutMs: 120000
+          turnStepLimit: 8
+          reviewReserve: { calls: 47, reviewerName: checker }
+          allowedTools:
+            - spawn_teammate
+            - send_message
+            - followup_task
+            - list_agents
+            - wait_agent
+            - team_task_get
+            - team_task_list
+            - mission_task
+            - mission_task_complete
+            - mission_inspect
+            - mission_verify
+            - mission_patch

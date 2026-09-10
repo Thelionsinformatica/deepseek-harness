@@ -1,0 +1,184 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`outbound web approval through the runnable headless example > logs one-shot consent and contacts providers only for approved calls 1`] = `
+{
+  "outbound": [
+    {
+      "operation": "search",
+      "query": "public topic",
+    },
+    {
+      "operation": "fetch",
+      "url": "https://example.test/public",
+    },
+  ],
+  "transcript": [
+    {
+      "arguments": "{"queries":["PRIVATE_CANARY"]}",
+      "callId": "search-denied",
+      "name": "web_search",
+      "type": "tool/call",
+    },
+    {
+      "callId": "search-denied",
+      "reason": "Autorizar o envio das consultas abaixo ao provedor de pesquisa? Confira se contêm dados privados. A autorização vale somente para esta chamada.
+
+{
+  "queries": [
+    "PRIVATE_CANARY"
+  ]
+}",
+      "tool": "web_search",
+      "type": "approval/asked",
+    },
+    {
+      "outcome": "rejected",
+      "type": "approval/decided",
+    },
+    {
+      "content": [
+        {
+          "text": "Error: Saída web bloqueada: aprovação não concedida (rejected). Não tente enviar os mesmos dados por outra ferramenta.",
+          "type": "text",
+        },
+      ],
+      "isError": true,
+      "type": "tool/result",
+    },
+    {
+      "arguments": "{"queries":["public topic"]}",
+      "callId": "search-allowed",
+      "name": "web_search",
+      "type": "tool/call",
+    },
+    {
+      "callId": "search-allowed",
+      "reason": "Autorizar o envio das consultas abaixo ao provedor de pesquisa? Confira se contêm dados privados. A autorização vale somente para esta chamada.
+
+{
+  "queries": [
+    "public topic"
+  ]
+}",
+      "tool": "web_search",
+      "type": "approval/asked",
+    },
+    {
+      "outcome": "allowed-once",
+      "type": "approval/decided",
+    },
+    {
+      "content": [
+        {
+          "text": "No results found.
+
+Cite the relevant URLs above as markdown links in your answer.",
+          "type": "text",
+        },
+      ],
+      "isError": false,
+      "type": "tool/result",
+    },
+    {
+      "arguments": "{"url":"https://example.test/?private=PRIVATE_CANARY"}",
+      "callId": "fetch-denied",
+      "name": "web_fetch",
+      "type": "tool/call",
+    },
+    {
+      "callId": "fetch-denied",
+      "reason": "Autorizar o envio da URL abaixo ao provedor de acesso web e ao site de destino? Confira o endereço completo, inclusive parâmetros que possam conter dados privados. A autorização vale somente para esta chamada.
+
+{
+  "url": "https://example.test/?private=PRIVATE_CANARY"
+}",
+      "tool": "web_fetch",
+      "type": "approval/asked",
+    },
+    {
+      "outcome": "rejected",
+      "type": "approval/decided",
+    },
+    {
+      "content": [
+        {
+          "text": "Error: Saída web bloqueada: aprovação não concedida (rejected). Não tente enviar os mesmos dados por outra ferramenta.",
+          "type": "text",
+        },
+      ],
+      "isError": true,
+      "type": "tool/result",
+    },
+    {
+      "arguments": "{"url":"https://example.test/public"}",
+      "callId": "fetch-allowed",
+      "name": "web_fetch",
+      "type": "tool/call",
+    },
+    {
+      "callId": "fetch-allowed",
+      "reason": "Autorizar o envio da URL abaixo ao provedor de acesso web e ao site de destino? Confira o endereço completo, inclusive parâmetros que possam conter dados privados. A autorização vale somente para esta chamada.
+
+{
+  "url": "https://example.test/public"
+}",
+      "tool": "web_fetch",
+      "type": "approval/asked",
+    },
+    {
+      "outcome": "allowed-once",
+      "type": "approval/decided",
+    },
+    {
+      "content": [
+        {
+          "text": "Fetched https://example.test/public (HTTP 200)
+
+PUBLIC_FIXTURE",
+          "type": "text",
+        },
+      ],
+      "isError": false,
+      "type": "tool/result",
+    },
+    {
+      "arguments": "{"queries":["public topic"]}",
+      "callId": "search-repeat",
+      "name": "web_search",
+      "type": "tool/call",
+    },
+    {
+      "callId": "search-repeat",
+      "reason": "Autorizar o envio das consultas abaixo ao provedor de pesquisa? Confira se contêm dados privados. A autorização vale somente para esta chamada.
+
+{
+  "queries": [
+    "public topic"
+  ]
+}",
+      "tool": "web_search",
+      "type": "approval/asked",
+    },
+    {
+      "outcome": "unavailable",
+      "type": "approval/decided",
+    },
+    {
+      "content": [
+        {
+          "text": "Error: Saída web bloqueada: aprovação não concedida (unavailable). Não tente enviar os mesmos dados por outra ferramenta.",
+          "type": "text",
+        },
+      ],
+      "isError": true,
+      "type": "tool/result",
+    },
+    {
+      "reason": {
+        "kind": "completed",
+      },
+      "type": "turn/end",
+    },
+  ],
+}
+`;

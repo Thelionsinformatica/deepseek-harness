@@ -271,9 +271,6 @@
       "project": [
         "src/**/*.ts",
         "tests/**/*.ts"
-      ],
-      "ignoreDependencies": [
-        "typescript-language-server"
       ]
     },
     "packages/sandbox/sandbox-local": {

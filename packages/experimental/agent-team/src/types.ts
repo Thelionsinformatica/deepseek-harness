@@ -123,6 +123,8 @@ declare module '@deepseek-ai/dsh-llm' {
 
 /** Team-service deployment limits. */
 export interface Config {
+  /** Reject completion unless the host's registered reviewer approves the current revision. */
+  readonly completionRequiresReview?: boolean
   /** Maximum immutable teammate names retained by one Team. */
   readonly maxMembers?: number
   /** Maximum non-deleted tasks retained by one Team. */

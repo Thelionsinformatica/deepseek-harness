@@ -51,13 +51,13 @@ async function setup(script: ConstructorParameters<typeof MockAdapter>[0], legac
   await ctx.plugin(SubagentService)
   if (legacyControl) await ctx.plugin(ToolSubagentControl)
   await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
-  await ctx.plugin(SubagentFork, { providerName: 'fork' })
+  const forkFiber = await ctx.plugin(SubagentFork, { providerName: 'fork' })
   await ctx.plugin(TeamService)
   const fiber = await ctx.plugin(toolTeam)
   const adapter = new MockAdapter(script)
   ctx.llm.registerAdapter(['mock'], adapter)
   const lead = ctx.agentLoop.create(SessionId('tool-team-lead'), { provider: 'mock', model: 'mock' })
-  return { ctx, lead, fiber }
+  return { ctx, lead, fiber, forkFiber }
 }
 
 function execute(
@@ -111,6 +111,20 @@ async function waitNoAgent(ctx: Context, id: SessionId): Promise<void> {
 }
 
 describe('dsh-tool-team', () => {
+  it('refreshes available creation modes when a provider is removed', async () => {
+    const { ctx, lead, forkFiber } = await setup([])
+    await forkFiber.dispose()
+    const assembled = await assembly(ctx, lead)
+    const spawnSchema = assembled.tools.find(tool => tool.name === 'spawn_teammate')
+    expect(JSON.stringify(spawnSchema)).toContain('Available modes: fresh.')
+    expect(JSON.stringify(spawnSchema)).not.toContain('Available modes: fresh, fork.')
+    const result = await execute(ctx, lead, 'spawn_teammate', {
+      name: 'unavailable', description: 'test', prompt: 'test', context: 'fork',
+    })
+    expect(result.isError).toBe(true)
+    expect(ctx.agentTeams.listMembers(lead)).toHaveLength(1)
+  })
+
   it('installs the complete scoped schema and shared-checkout policy for roots and teammates', async () => {
     const { ctx, lead } = await setup(['hang'])
     const leadAssembly = await assembly(ctx, lead)
@@ -423,7 +437,7 @@ describe('dsh-tool-team', () => {
     expect(text(result)).toContain('unknown tool "list_agents"')
     expect('default' in toolTeam).toBe(false)
     expect(toolTeam.name).toBe('tool-agent-team')
-    expect(toolTeam.inject).toEqual(['agents', 'agentTeams', 'tools', 'systemPrompt'])
+    expect(toolTeam.inject).toEqual(['agents', 'agentTeams', 'tools', 'systemPrompt', 'subagents'])
   })
 
   it('uses configured fresh and fork provider names', async () => {

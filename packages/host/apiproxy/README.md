@@ -2,6 +2,14 @@
 
 English | [中文](README.zh.md)
 
+## Explicit task acceptance
+
+`acceptance.arithmeticTests` is an alternative to `expectedText`, not an additional condition. The host requires `readOnly: true`, one to eight strict `{ a, b, expected }` objects and finite numbers in [-1,000,000, 1,000,000]. The native policy owns the restricted arithmetic grammar and correction diagnostics; no executable validator or shell command is accepted.
+
+Optional `acceptance.readOnly: true` forwards a per-turn read/glob/grep-only restriction to the native executor guard; it does not infer permissions from natural-language instructions.
+
+`session.prompt` accepts optional `acceptance: { expectedText, maxRecoveries, requiredReadPath? }` only for an idle agent in `queue` mode with an empty inbox and its native task-acceptance policy mounted. The host validates bounded input, serializes admission, and preserves request provenance. Invalid input or a missing policy is rejected; a busy agent is not given a task with ambiguous criteria. Preset providers must isolate `taskAcceptance` and are resolved through the preset service scope. Criteria do not grant tool access or outbound consent. See [exact task acceptance](../../guard/completion-claim-policy/README.md) for hashing, recovery, and validation limits. A chat criterion editor is not provided.
+
 The API gateway shared by every client consists of the TypeScript API contract (`src/api/`, zero Node dependencies, importable from the browser), the fetch carrier pair (`src/fetch/`: `toFetchHandler` on the host side, `AbstractApiClient` plus platform subclasses on the client side), and the host-side implementation (`src/api-proxy.ts`: `createApiProxy` plus the default-exported `ApiProxyService` gateway plugin — config `{nativeOpen?, sessionExportCompressionLevel?, coldBlankProbeMaxBytes?, adaptiveRouting?}`, provides `ctx.apiProxy`). This package registers no routes; carriers such as HTTP wrap `ctx.apiProxy` themselves. The shipped Web composition lives in [`packages/bundle/web-app/cordis.patch.yml`](../../bundle/web-app/cordis.patch.yml), while its default Agent model selection belongs to [`@deepseek-ai/dsh-agent-default-model`](../../core/agent-default-model/README.md) in the base bundle.
 
 `ApiProxyService` assigns `resolveDefaultWorkspace()` to a Web session created without an explicit workspace. The Leon Windows default is `E:/computador`; deployment environment overrides and non-Windows behavior are owned by [`dsh-home-paths`](../../util/home-paths/README.md). An explicit workspace selected in the client remains authoritative.
@@ -19,6 +27,8 @@ The section's `reasoningEffort` has no counterpart in the agent-default-model pl
 The stored selection is independent of catalog membership. A default naming an unavailable provider still reaches `session.models` as the session's `current`, allowing the selector to request a replacement instead of silently choosing another model. Conversely, an adapter may serve a model that its catalog does not advertise.
 
 ## Contract layer (`/api`)
+
+Successful results from unclassified tools, including persistent terminal reads and custom integrations, invalidate earlier automatic external-failover consent. Only the explicitly public `web_search` and `web_fetch` results retain that grant. This conservative classification may require extra consent for harmless custom tools; it does not authorize their own networking or manual external model use.
 
 Wire messages form a four-quadrant discriminated union — who initiates × request/response — decoupled from the physical channel: `ClientRequest` (POST `/api/<method>` body), `ServerResponse` (that POST's response body), `ServerRequest` (SSE frame), `ClientResponse` (POST `/api/respond` body). Responses always echo the matching request's `rpcId` and never mint a new one. Method parameter/return structures live only in the domain interface signatures (`SessionsApi`, `HostApi`, `EventsApi`); `RpcMethodMap` registers the methods and every other position derives via `RequestPayload<K>`/`ResponseValue<K>`. Zod schemas anchor `satisfies z.ZodType<Wire<T>>` and parse at two levels: envelope first, business payload second, dispatched per method. Business errors ride `RpcResult`'s error branch (`RpcErrorDetailsMap` closes the code set); HTTP status expresses only the carrier. Every `/api` POST must declare the `application/json` media type — anything else is refused with 415 before dispatch, so cross-site "simple" requests (which browsers send without a CORS preflight) can never execute a side-effectful method blind.
 

@@ -316,6 +316,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'its root, Team identity, role, and model-facing name.',
       },
       {
+        signature: 'registerCompletionReviewer(reviewer: TeamCompletionReviewer): () => void',
+        description: 'Register the sole trusted completion reviewer; models cannot register one through Team tools. The owner must verify current evidence and policy on every call, including after restart.',
+        parameters: [{ name: 'reviewer', description: 'bounded host verifier; must not call a Team mutation while holding its transaction.' }],
+        returns: 'disposer; disposal during a pending review also rejects that completion.',
+      },
+      {
         signature: 'listMembers(agent: Agent): TeamMemberView[]',
         description: 'List the runtime-enriched roster visible to one Team member.',
         parameters: [{ name: 'agent', description: 'exact live Team member.' }],
@@ -1164,6 +1170,30 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Record one immutable human decision and optionally persist an authorized candidate.',
         parameters: [{ name: 'request', description: 'session authorization anchor, candidate id, and decision.' }],
         returns: 'the reviewed projection or an explicit business failure.',
+      },
+    ],
+  },
+  {
+    key: 'memoryContinuity',
+    summary: 'Provider-neutral exporter for local memory lineage.',
+    description: 'Provider-neutral exporter for local memory lineage.',
+    methods: [
+      {
+        signature: 'readonly id: string = \'memory-continuity\'',
+        description: 'Stable provider identifier for caller-owned registries.',
+        parameters: [],
+      },
+      {
+        signature: 'export(domains: readonly MemoryContinuityDomainSource[], options: { readonly exportedAt?: string } = {}): MemoryContinuitySnapshot',
+        description: 'Build a snapshot without mutating the source tables; invalid records throw.',
+        parameters: [{ name: 'domains', description: 'Caller-selected domains and their complete records.' }, { name: 'options', description: 'Optional timestamp; defaults to the current time.' }],
+        returns: 'A checksummed snapshot; journal persistence remains caller-owned.',
+      },
+      {
+        signature: 'async import( snapshot: MemoryContinuitySnapshot, targets: readonly MemoryContinuityDomainTarget[], ): Promise<MemoryContinuityImportResult>',
+        description: 'Validate every destination before writing, then atomically insert only missing ids. Storage failures may leave earlier writes committed; repeating the same import skips them.',
+        parameters: [{ name: 'snapshot', description: 'Snapshot with valid checksums and local memory records.' }, { name: 'targets', description: 'Destination tables with matching domain names and versions.' }],
+        returns: 'Import counters and a journal entry that the caller must persist.',
       },
     ],
   },
@@ -2169,6 +2199,48 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'teamMissions',
+    summary: 'Host-only state transitions and atomic reservations; not a model-facing authorization API.',
+    description: 'Host-only state transitions and atomic reservations; not a model-facing authorization API.',
+    methods: [
+      {
+        signature: 'async start(caller: Agent, objective: string, criteria: string): Promise<TeamMissionRecord>',
+        description: 'Start one host-authorized mission; a root can never reset its consumed budget.',
+        parameters: [{ name: 'caller', description: 'exact live Lead; caller authentication remains the host entry\'s responsibility.' }, { name: 'objective', description: 'authorized outcome, not a worker instruction.' }, { name: 'criteria', description: 'frozen acceptance text; cannot be edited through this API.' }],
+        returns: 'durable initial record; duplicate starts reject.',
+      },
+      {
+        signature: 'get(caller: Agent): TeamMissionRecord',
+        description: 'Read detached control state without exposing another configured workspace.',
+        parameters: [{ name: 'caller', description: 'exact live Lead.' }],
+        returns: 'current durable control state.',
+      },
+      {
+        signature: 'async transition(caller: Agent, revision: number, action: \'pause\' | \'stop\' | \'resume\'): Promise<TeamMissionRecord>',
+        description: 'Persist pause, terminal STOP, or an explicit resume from paused only. This transition does not itself cancel an in-flight model or subprocess.',
+        parameters: [{ name: 'caller', description: 'exact live Lead used by the authenticated host control.' }, { name: 'revision', description: 'observed revision for pause/resume; terminal STOP uses the latest committed record.' }, { name: 'action', description: 'host control action; cancelled missions cannot resume.' }],
+        returns: 'committed record, without resetting deadline, criteria or counters.',
+      },
+      {
+        signature: 'async reserveCall(caller: Agent): Promise<number>',
+        description: 'Durably spend one attempt before dispatch; failed calls are not refunded.',
+        parameters: [{ name: 'caller', description: 'exact Lead selected by the runtime\'s mission resolver.' }],
+        returns: 'committed reservation number; paused, cancelled, expired or exhausted missions reject.',
+      },
+      {
+        signature: 'async finish(caller: Agent, verify: () => Promise<{ passed: boolean; summary: string }>): Promise<TeamMissionRecord>',
+        description: 'Commit a host-verified outcome without granting a model an approval tool.',
+        parameters: [{ name: 'caller', description: 'exact live Lead controlled by the host runner.' }, { name: 'verify', description: 'trusted verifier of current artifacts and native task evidence.' }],
+        returns: 'committed outcome; verifier exceptions pause without approval or budget renewal, and concurrent controls win.',
+      },
+      {
+        signature: 'close(): void',
+        description: 'Reject future control calls when the plugin begins disposal.',
+        parameters: [],
+      },
+    ],
+  },
+  {
     key: 'terminals',
     summary: 'In-process registry for replaceable PTY backends and exact-Agent sessions.',
     description: 'In-process registry for replaceable PTY backends and exact-Agent sessions.',
@@ -2561,8 +2633,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: 'async create(path: string, title?: string): Promise<Workspace>',
-        description: 'Create or reuse a workspace for an existing directory. The path is canonicalized through `fs.realpath`; a nonexistent path rejects with the original error and a non-directory rejects. Repeated calls for the same canonical path return the existing entity without changing its title. A newly created workspace is prepended to the durable registry order. Different canonical paths may share a display title.',
-        parameters: [{ name: 'path', description: 'Existing directory to own, in any path spelling.' }, { name: 'title', description: 'Display title used only when a new record is created.' }],
+        description: 'Create or reuse a workspace for an existing directory. The fully qualified path is canonicalized through `fs.realpath`; a relative, nonexistent, or non-directory path rejects. Repeated calls for the same canonical path return the existing entity without changing its title. A newly created workspace is prepended to the durable registry order. Different canonical paths may share a display title.',
+        parameters: [{ name: 'path', description: 'Existing directory to own, in a fully qualified path spelling.' }, { name: 'title', description: 'Display title used only when a new record is created.' }],
         returns: 'the existing or newly durable workspace.',
       },
       {
@@ -2614,7 +2686,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: 'async resolveByPath(path: string): Promise<Workspace | undefined>',
         description: 'Resolve by canonical directory path without creating or mutating a workspace. A missing path rejects during `realpath`; an existing unowned directory returns `undefined`.',
-        parameters: [{ name: 'path', description: 'Existing directory path in any spelling.' }],
+        parameters: [{ name: 'path', description: 'Existing directory path in a fully qualified spelling.' }],
         returns: 'the workspace owning the canonical path, when one exists.',
       },
     ],
@@ -3038,6 +3110,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'Emitted when any prompt provider changes.',
     description: 'Emitted when any prompt provider changes. This registry notification is unfiltered because a global change affects every scope.',
     parameters: [],
+  },
+  {
+    name: 'team-mission/changed',
+    mode: 'parallel',
+    signature: '\'team-mission/changed\'(lead: Agent, record: TeamMissionRecord): Promise<void>',
+    summary: 'Notification after a durable mission control transition commits.',
+    description: 'Notification after a durable mission control transition commits.',
+    parameters: [{ name: 'lead', description: 'exact authorized root Agent.' }, { name: 'record', description: 'detached committed record, not a second source of truth.' }],
   },
   {
     name: 'tools/change',
@@ -3964,6 +4044,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export class LlmRuntime extends Service {\n    constructor(ctx: Context);\n    registerAdapter(providers: string[], adapter: LlmAdapter): AdapterRegistrationHandle;\n    listProviders(): LlmProviderInfo[];\n    registerConfigurableProviders(entries: readonly LlmConfigurableProvider[]): DirectoryRegistrationHandle;\n    listConfigurableProviders(): LlmConfigurableProvider[];\n    registerModelDiscovery(settingsNs: string, discover: (request: LlmModelDiscoveryRequest) => Promise<readonly LlmDiscoveredModel[]>): () => void;\n    async discoverModels(settingsNs: string, request: LlmModelDiscoveryRequest): Promise<LlmDiscoveredModel[]>;\n    providerRetryPolicy(provider: string): ResolvedRetryPolicy;\n    async listModels(provider: string): Promise<LlmModelInfo[]>;\n    async resolveModelInfo(provider: string, model: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async resolveCallConfig(config: LlmCallConfig, signal?: AbortSignal): Promise<LlmCallConfig>;\n    async prepareCall(config: LlmCallConfig, signal?: AbortSignal): Promise<PreparedLlmCall>;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
   },
   {
+    name: 'LocalMemoryRecord',
+    declaration: 'export interface LocalMemoryRecord extends LocalMemoryVersion {\n    readonly workspaceId: WorkspaceIdentity;\n    readonly history?: readonly LocalMemoryVersion[];\n}',
+  },
+  {
+    name: 'LocalMemoryVersion',
+    declaration: 'export interface LocalMemoryVersion {\n    readonly content: string;\n    readonly revision: number;\n    readonly source: {\n        readonly kind: \'session\';\n        readonly sessionId: SessionIdentity;\n    };\n    readonly importance?: number;\n    readonly confidence?: number;\n    readonly validation?: MemoryValidation;\n    readonly schemaVersion: MemoryRecordSchemaVersion;\n    readonly validFrom?: string;\n    readonly validUntil?: string;\n    readonly expiresAt?: string;\n    readonly supersedes?: MemoryRef;\n    readonly supersededBy?: MemoryRef;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
     name: 'LocalSemanticSearchEvent',
     declaration: 'export interface LocalSemanticSearchEvent {\n    readonly schemaVersion: 1;\n    readonly workspaceId: MemorySearchRequest[\'scope\'][\'workspaceId\'];\n    readonly mode: \'hybrid\' | \'lexical-fallback\';\n    readonly model: string;\n    readonly candidateCount: number;\n    readonly embeddedCount: number;\n    readonly cacheHitCount: number;\n    readonly resultCount: number;\n    readonly durationMs: number;\n    readonly fallbackCode?: SemanticFallbackCode;\n}',
   },
@@ -4194,6 +4282,30 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'MemoryCandidateSensitivity',
     declaration: 'export type MemoryCandidateSensitivity = \'none\' | \'review\' | \'blocked\';',
+  },
+  {
+    name: 'MemoryContinuityDomainSnapshot',
+    declaration: 'export interface MemoryContinuityDomainSnapshot {\n    readonly name: string;\n    readonly version: number;\n    readonly table: string;\n    readonly records: ReadonlyArray<readonly [\n        MemoryIdentity,\n        LocalMemoryRecord\n    ]>;\n    readonly checksum: string;\n}',
+  },
+  {
+    name: 'MemoryContinuityDomainSource',
+    declaration: 'export interface MemoryContinuityDomainSource {\n    readonly name: string;\n    readonly version: number;\n    readonly table: string;\n    readonly records: Iterable<readonly [\n        MemoryIdentity,\n        LocalMemoryRecord\n    ]>;\n}',
+  },
+  {
+    name: 'MemoryContinuityDomainTarget',
+    declaration: 'export interface MemoryContinuityDomainTarget {\n    readonly name: string;\n    readonly version: number;\n    readonly table: KvTable<MemoryIdentity, LocalMemoryRecord>;\n}',
+  },
+  {
+    name: 'MemoryContinuityImportResult',
+    declaration: 'export interface MemoryContinuityImportResult {\n    readonly imported: number;\n    readonly skippedExisting: number;\n    readonly journalEntry: MemoryContinuityJournalEntry;\n}',
+  },
+  {
+    name: 'MemoryContinuityJournalEntry',
+    declaration: 'export interface MemoryContinuityJournalEntry {\n    readonly journalId: string;\n    readonly schemaVersion: typeof MEMORY_CONTINUITY_SCHEMA_VERSION;\n    readonly recordedAt: string;\n    readonly operation: \'export\' | \'import\';\n    readonly domains: readonly string[];\n    readonly recordCount: number;\n    readonly checksum: string;\n    readonly provenance: {\n        readonly reason?: string;\n        readonly source?: string;\n    };\n}',
+  },
+  {
+    name: 'MemoryContinuitySnapshot',
+    declaration: 'export interface MemoryContinuitySnapshot {\n    readonly schemaVersion: typeof MEMORY_CONTINUITY_SCHEMA_VERSION;\n    readonly exportedAt: string;\n    readonly format: \'dsh-memory-continuity/json\';\n    readonly domains: readonly MemoryContinuityDomainSnapshot[];\n    readonly checksum: string;\n}',
   },
   {
     name: 'MemoryCreateRequest',
@@ -5360,6 +5472,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type TableValueOf<S extends DomainSpec, N extends keyof S[\'tables\']> = S[\'tables\'][N] extends DomainTableSpec<string, infer V> ? V : never;',
   },
   {
+    name: 'TeamCompletionReviewer',
+    declaration: 'export type TeamCompletionReviewer = (caller: Agent, root: Agent, task: TeamTaskSnapshot) => Promise<boolean>;',
+  },
+  {
     name: 'TeamId',
     declaration: 'export type TeamId = Branded<\'TeamId\'>;',
   },
@@ -5376,12 +5492,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type TeamMessageId = Branded<\'TeamMessageId\'>;',
   },
   {
+    name: 'TeamMissionRecord',
+    declaration: 'export type TeamMissionRecord = z.infer<typeof missionRecord>;',
+  },
+  {
     name: 'TeamTaskAction',
     declaration: 'export type TeamTaskAction = \'claim\' | \'release\' | \'edit\' | \'set_dependencies\' | \'complete\' | \'reopen\' | \'reassign\' | \'delete\';',
   },
   {
     name: 'TeamTaskId',
     declaration: 'export type TeamTaskId = Branded<\'TeamTaskId\'>;',
+  },
+  {
+    name: 'TeamTaskSnapshot',
+    declaration: 'export interface TeamTaskSnapshot {\n    readonly id: TeamTaskId;\n    readonly revision: number;\n    readonly subject: string;\n    readonly description: string;\n    readonly status: TeamTaskStatus;\n    readonly ownerId?: SessionId;\n    readonly blockedBy: TeamTaskId[];\n    readonly writeScopes: string[];\n}',
   },
   {
     name: 'TeamTaskStatus',

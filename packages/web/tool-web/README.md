@@ -13,7 +13,7 @@ Each tool is registered independently; a product that wants only one disables th
 | `web_search` | `queries` (required string[]) | Discovery. Returns an optional answer plus source URLs. It runs one to `searchMaxQueries` distinct searches concurrently and merges their sources in round-robin order before applying the combined `searchMaxResults` cap. A one-item array performs one search. Exact duplicate queries run once. Any failed search aborts the remaining batch, which settles before the call returns an error. Neither bound is model-facing. |
 | `web_fetch` | `url` (string) | Retrieves a specific URL. HTML bodies are rendered to markdown (turndown with GFM tables/strikethrough); text bodies pass through. A non-2xx status is reported, not an error. The tool-call timeout is deployment policy (`dsh-tool-call-timeout-policy`), not a model argument. |
 
-Both tools opt into concurrent scheduling because provider reads return content without mutating parent-agent state.
+Both tools opt into concurrent scheduling in `allow` mode. In `ask` mode, the agent schedules calls serially so interactive approvals do not overlap; an approved multi-query search still fans out concurrently.
 
 The normalized service results are also the canonical tool values: `WebSearchResult` and `WebFetchResult`. Native renderers preserve the answer/source and fetched-body text below; provider search/body caps remain acquisition limits rather than presentation-only truncation.
 
@@ -21,6 +21,7 @@ The normalized service results are also the canonical tool values: `WebSearchRes
 
 | Key | Default | Meaning |
 |---|---|---|
+| `egressPolicy` | `allow` | `ask` requires a fresh audited approval before each outbound tool call unless the same session holds an explicit `dsh-web-access` grant; `allow` adds no web-specific approval. The Leon preset selects `ask`. |
 | `search` | `true` | Register `web_search`. |
 | `fetch` | `true` | Register `web_fetch`. |
 | `searchMaxResults` | `8` | Upper bound on sources returned by one `web_search` call (the seam truncates each provider list; the tool also caps a combined multi-query list). |
@@ -37,6 +38,8 @@ The normalized service results are also the canonical tool values: `WebSearchRes
 ```
 
 ## Stable registration
+
+With `egressPolicy: ask`, the executor validates arguments, then requests `ctx.approval` before calling `ctx.web` unless the active agent session's [`dsh-web-access`](../web-access/README.md) projection explicitly reports enabled. That separate, durable session decision applies only to these native public tools and is immediately revoked by `/web off`; it does not change the global approval policy or authorize other network paths. Without that session grant, only `allowed-once` proceeds. The request includes the complete queries or URL as plain JSON, plus the tool name and call id; this remains inspectable even when a client only renders shell arguments from the paired call. It duplicates those already-logged arguments in the local approval audit, not the session history or local file contents. Every later ungranted call, even an identical request or another call from the same agent, requires its own decision. Missing approval service or agent fails closed with `WEB_APPROVAL_REQUIRED`; refusal, cancellation, or unavailable answering yields `WEB_APPROVAL_DENIED`. A session with approval policy `never` rejects unless its user deliberately enabled this narrow Web grant. An abort prevents provider dispatch even if a late answer grants access. The cooperative tool timeout includes the approval wait.
 
 Tool registration follows product **enablement**, not backend availability. A tool stays visible even when its selected provider is missing, misconfigured, ambiguous, or temporarily unavailable; the seam resolves the provider at execution time and execution fails with a structured `WebError` (e.g. `WEB_PROVIDER_UNAVAILABLE`, `WEB_PROVIDER_AMBIGUOUS`), which `ToolRuntime.execute()` turns into an error tool result the model can read and hooks/UI can route on. This keeps the model schema stable without making plugin load order, credential state, or HMR timing part of the model-facing contract. To remove a web tool entirely, disable it here in config.
 
@@ -146,9 +149,23 @@ Only the failing call adds these retained tokens.
 
 Append-only; newly visible content follows the reusable request prefix and does not invalidate existing KV-cache entries.
 
+### Outbound consent
+
+#### What the model sees
+
+An unapproved call produces `Error: Saída web bloqueada: aprovação não concedida (<outcome>). Não tente enviar os mesmos dados por outra ferramenta.` Missing approval routing produces `Error: Saída web bloqueada: não há canal de aprovação associado a esta chamada.` Caller cancellation or a tool deadline may replace that result with the executor's cancellation or timeout diagnostic. Successful result formatting and tool schemas are unchanged.
+
+#### Token effect
+
+Only a rejected call's retained error adds model tokens. Approval questions and decisions are audit events, not additional model input.
+
+#### KV Cache effect
+
+Append-only result changes; the approval policy adds no system-prompt section.
+
 ## Known Limitations and Deferred Work
 
 - **There is no batch-wide native-search counter** — `searchMaxQueries` bounds `ctx.web.search` calls, but a provider may perform several native searches inside each call. For example, a model-backed provider configured with `maxUses` can permit up to `searchMaxQueries × maxUses` native searches; `searchMaxResults` limits only the combined sources returned to the caller. Deployments control cost through these independent consumer and provider settings because the generic seam does not know provider-internal search units.
 - **HTML→markdown conversion degrades on inputs GFM cannot safely represent** — [turndown](https://github.com/mixmark-io/turndown) (with GFM tables/strikethrough) converts at most `fetchMaxOutputChars` source characters through a real DOM. A conservative 512-level lexical guard passes deeply or ambiguously nested bodies through as raw HTML, conversion exceptions do the same, and table `colspan` is ignored because GFM has no spanning-cell representation; these bounds avoid blocking the event loop or expanding output from an untrusted numeric attribute ([archived dependency decision](../../../.agents/notes/archived/simplification/2026-07-26-turndown-for-tool-web-html-markdown.md)).
 - **The model-facing API is minimal by design, with promotions deferred** — `max_results` stays a config bound (not a model argument), and `web_fetch` takes only `url` (no `format`/`prompt`/LLM-summarization mode); both are named later steps in [the seam Agent Note](../../../.agents/notes/implemented/architecture/2026-06-24-web-capability-seam.md).
-- **No web-specific permission policy** — both tools execute without requesting `ctx.approval`; a deployment that needs confirmation must add a `tools/pre-execute` policy, and the package does not define persistent URL/domain grants.
+- **Consent is not data-loss prevention or network isolation** — one-shot approval and the explicit per-session [`dsh-web-access`](../web-access/README.md) bypass cover only these native tools, not direct `ctx.web` callers, shell, browser, MCP, model-provider traffic, or trusted plugins replacing execution. They do not classify secrets, grant domains, constrain custom providers, or prevent a user from approving private data. Provider SSRF and redirect controls remain independently required. The [outbound consent decision](../../../.agents/notes/implemented/feature/2026-09-04-web-tool-outbound-consent.md) defines the base policy.

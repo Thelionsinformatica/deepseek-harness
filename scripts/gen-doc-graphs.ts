@@ -98,6 +98,13 @@ const GROUP_ORDER = [
 
 const SERVICE_ROLES: ServiceRole[] = [
   {
+    key: 'memoryContinuity',
+    pkg: 'memory-continuity',
+    title: 'Portable local memory restore',
+    mode: 'core',
+    note: 'Exports lineage snapshots and restores missing records to caller-supplied tables; journal persistence remains caller-owned.',
+  },
+  {
     key: 'attachments',
     pkg: 'attachment',
     title: 'Durable binary attachment storage',
@@ -527,6 +534,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     mode: 'core',
     consumers: ['tool-agent-team'],
     note: 'Owns the implicit-root roster, durable peer mailbox, shared task DAG, and continuable-child lifecycle; tool-agent-team contributes the scoped model policy and controls.',
+  },
+  {
+    key: 'teamMissions',
+    pkg: 'agent-team',
+    title: 'Optional Team mission control',
+    mode: 'core',
+    consumers: [],
+    note: 'Host-only durable mission scope, terminal STOP and atomic attempt ledger; model dispatch and cancellation enforcement are not wired by this entry.',
   },
   {
     key: 'jobs',

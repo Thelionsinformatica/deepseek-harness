@@ -8,6 +8,12 @@ Design records: [provider-neutral workspace memory](../../.agents/notes/implemen
 
 ## Ownership and isolation
 
+### Portable continuity
+
+`MemoryContinuityDomainSource` supplies a domain name, version, table name and iterable of local lineage records. `MemoryContinuityDomainTarget` binds the same domain name and version to a caller-owned KvTable. `MemoryContinuitySnapshot` contains the schema version, export timestamp, format, checksummed domains and overall checksum. `MemoryContinuityImportResult` returns imported/skipped counters and a journal entry whose persistence belongs to the caller.
+
+The [continuity package](../../packages/memory/memory-continuity/README.md) validates all destinations before writing and conditionally inserts missing IDs. Storage failure can leave earlier writes committed; this is a retryable restore, not a global transaction.
+
 Every operation carries a `MemoryScope` containing a stable `WorkspaceId`. Raw directory paths are never ownership keys. The local provider includes that scope in every lookup and deliberately returns `MEMORY_NOT_FOUND` for a record owned by another workspace, so neither search results nor error details reveal cross-workspace data.
 
 `MemorySource` records the session that explicitly created a fact. This is provenance, not ownership: the workspace remains the isolation boundary for `ctx.memory`.
@@ -203,6 +209,33 @@ async recordCandidate(record: MemoryCandidateRecord): Promise<void>
 ```
 
 Source: [`packages/memory/tool-memory/src/review.ts`](../../packages/memory/tool-memory/src/review.ts)
+
+<a id="ctxmemorycontinuity--memorycontinuityprovider"></a>
+
+### `ctx.memoryContinuity` — `MemoryContinuityProvider`
+
+Provider-neutral exporter for local memory lineage.
+
+```ts cordis-catalog
+/**
+ * Build a snapshot without mutating the source tables; invalid records throw.
+ * @param domains - Caller-selected domains and their complete records.
+ * @param options - Optional timestamp; defaults to the current time.
+ * @returns A checksummed snapshot; journal persistence remains caller-owned.
+ */
+export(domains: readonly MemoryContinuityDomainSource[], options: { readonly exportedAt?: string } = {}): MemoryContinuitySnapshot
+
+/**
+ * Validate every destination before writing, then atomically insert only missing ids.
+ * Storage failures may leave earlier writes committed; repeating the same import skips them.
+ * @param snapshot - Snapshot with valid checksums and local memory records.
+ * @param targets - Destination tables with matching domain names and versions.
+ * @returns Import counters and a journal entry that the caller must persist.
+ */
+async import( snapshot: MemoryContinuitySnapshot, targets: readonly MemoryContinuityDomainTarget[], ): Promise<MemoryContinuityImportResult>
+```
+
+Source: [`packages/memory/memory-continuity/src/index.ts`](../../packages/memory/memory-continuity/src/index.ts)
 
 <a id="ctxpersonalmemory--personalmemoryruntime"></a>
 

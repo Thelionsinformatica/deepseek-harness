@@ -1,0 +1,101 @@
+# Explicit laboratory only: no settings, credentials, filesystem, shell, web, workflow or memory tools.
+- id: spine
+  name: '@deepseek-ai/dsh-agent-spine-demo'
+  config:
+    agents: []
+    workspaceContext: false
+    skills: { enabled: false }
+    toolBash: false
+    toolJobs: false
+    goals: false
+    maxParallelToolCalls: 1
+    includeRuntimeContext: true
+    persona: |
+      Você é Leon, coordenador de uma missão local autorizada. Use dois trabalhadores com sessões distintas.
+      Investiguem uma importação repetida que duplica registros. O workspace contém somente uma política de demonstração.
+      O primeiro trabalhador inspeciona as fontes; o segundo executa o verificador e usa a descoberta do primeiro.
+      Compartilhem evidências por followup_task. Trabalhadores iniciam sua tarefa com mission_task phase=start.
+      Antes de concluir cada tarefa, use mission_inspect ou mission_verify para registrar evidência atual.
+      Somente Leon pode mission_patch, usando o digest observado. Não há shell nem acesso a outros arquivos.
+      Após a correção, peça verificação ao segundo trabalhador. Não declare sucesso sem mission_verify aprovado.
+      Aguarde trabalhadores ativos usando wait_agent; followup_task desperta os inativos.
+      Limite total de 48 chamadas de modelo. Responda brevemente em português.
+      O nome de destino do coordenador é exatamente lead, não Leon. Trabalhadores não podem usar mission_patch.
+      Lead: crie checker primeiro e researcher depois. Cada trabalhador cria e assume a própria tarefa; não assuma tarefas deles.
+      Researcher: mission_task start, mission_inspect, followup_task checker com descoberta e digest, mission_task complete e encerre.
+      Checker: mission_task start, mission_verify, envie resultado e digest para lead e encerre enquanto aguarda correção.
+      Lead: ao receber falha, aplique mission_patch mode=upsert com digest observado; followup_task checker para verificar novamente.
+      Checker: após correção execute mission_verify, conclua sua tarefa e informe lead. Não crie ciclos de mensagens nem espere correção usando ferramentas repetidamente.
+      Use os esquemas das ferramentas: complete exige revisão atual. Antes de parar, Lead confira as duas tarefas concluídas.
+- id: persistence
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config: { root: './sessions', compression: none }
+- id: projection
+  name: '@deepseek-ai/dsh-session-projection'
+- id: subagents
+  name: '@deepseek-ai/dsh-subagent'
+- id: spawn
+  name: '@deepseek-ai/dsh-subagent-spawn-in-process'
+  config: { providerName: spawn }
+- id: team
+  name: '@deepseek-ai/dsh-experimental-agent-team'
+  config: { maxMembers: 2, maxTasks: 2, maxMessageBytes: 4096, completionRequiresReview: true }
+- id: team-tools
+  name: '@deepseek-ai/dsh-experimental-tool-agent-team'
+  config: { freshProvider: spawn }
+- id: storage
+  name: '@deepseek-ai/dsh-storage'
+- id: json
+  name: '@deepseek-ai/dsh-storage-json'
+  config: { root: './control' }
+- id: domain
+  name: '@deepseek-ai/dsh-storage-domain'
+  config: { backend: json }
+- id: control
+  name: '@deepseek-ai/dsh-experimental-agent-team/mission-control'
+  config:
+    domainName: leon_collective
+    owner: local-lab-owner
+    workspace: !!js process.cwd()
+    maxCalls: 48
+    durationMs: 900000
+- id: execution
+  name: '@deepseek-ai/dsh-experimental-agent-team/execution'
+  config:
+    provider: collective-local
+    model: qwen3.5:4b
+    maxOutputTokens: 2048
+    queueTimeoutMs: 120000
+    turnStepLimit: 8
+    allowedTools:
+      - spawn_teammate
+      - send_message
+      - followup_task
+      - list_agents
+      - wait_agent
+      - team_task_get
+      - team_task_list
+      - mission_task
+      - mission_task_complete
+      - mission_inspect
+      - mission_verify
+      - mission_patch
+- id: import-lab
+  name: '@deepseek-ai/dsh-experimental-agent-team/import-lab'
+  config: { workspace: !!js process.cwd() }
+- id: local-adapter
+  name: '@deepseek-ai/dsh-llm-pi-ai'
+  config:
+    providers:
+      collective-local:
+        apiKeyEnv: LEON_COLLECTIVE_LOCAL_TOKEN
+        api: openai-completions
+        baseURL: http://127.0.0.1:8097/v1
+        retryPolicy: { mode: normal, maxRetries: 0 }
+        timeoutMs: 120000
+        streamIdleTimeoutMs: 120000
+        models:
+          - id: qwen3.5:4b
+            contextWindow: 32768
+            maxTokens: 2048
+            input: [text]

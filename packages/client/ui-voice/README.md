@@ -12,6 +12,8 @@ A voice-submitted prompt enqueues exactly one causal spoken reply after the corr
 
 Selecting the microphone while Leon speaks cancels only audio and opens a new capture without cancelling the agent or its tools. A live voice session reopens the microphone after a spoken or intentionally silent answer finishes and exposes a separate end control that stops capture and playback without stopping the task. Speech captured while the agent is working enters the ordinary queue. Automatic sending is allowed only when the composer was empty and unchanged when capture began; typed text, attachments, references, and slash commands keep the transcript in the draft for review. Pending approvals/questions and non-plain composer transactions remain blocking boundaries, so voice cannot bypass explicit human interaction. Ending live mode or switching Sessions invalidates late Host receipts, and an admitted message that does not reach the Chat projection within 30 seconds ends voice mode without cancelling its task.
 
+History-opening errors take precedence over the ready indicator. The HUD uses the existing conversation error without weakening persistence validation.
+
 ## Model Experience
 
 None, as voice capture, playback, and the activity HUD register no model-facing tool or prompt; recognized text enters the existing user-message pipeline, leaving the configured router fully responsible for local versus API selection.

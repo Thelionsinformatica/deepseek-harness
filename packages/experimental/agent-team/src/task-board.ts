@@ -33,10 +33,12 @@ export class TeamTaskBoard {
   /**
    * @param journal - authoritative Lead-log transaction owner.
    * @param maxTasks - maximum non-deleted tasks retained by one Team.
+   * @param reviewCompletion - host review inside the serialized update, before completion is appended.
    */
   constructor(
     private readonly journal: TeamJournal,
     private readonly maxTasks: number,
+    private readonly reviewCompletion: (caller: Agent, root: Agent, task: TeamTaskSnapshot) => Promise<void>,
   ) {}
 
   /**
@@ -166,6 +168,7 @@ export class TeamTaskBoard {
         case 'complete':
           authorizeOwner()
           if (current.status !== 'in_progress') throw new TeamError('only an in-progress task can complete', 'TEAM_TASK_INVALID_TRANSITION')
+          await this.reviewCompletion(caller, root, structuredClone(current))
           next = { ...current, status: 'completed' }
           break
         case 'reopen':

@@ -6,6 +6,8 @@ This reference defines a final-turn evidence policy for strong **global** comple
 
 ## Config
 
+Acceptance decisions declare `task/validation` on the owning session types module and enter the generated persistence vocabulary, so restored logs retain their validation evidence.
+
 ```yaml
 - id: completion-claim-policy
   name: '@deepseek-ai/dsh-completion-claim-policy'
@@ -45,6 +47,28 @@ A later successful result for the same exact operation supersedes its earlier fa
 When gaps remain and recovery budget is available, `agent/turn-stopping` steers one attributed plugin message into the same turn. The complete UTF-8 message, including framing and truncation marker, stays within `maxRecoveryMessageBytes`. The initial assistant claim may already have reached the transcript before this hook runs; the policy prevents it from remaining the definitive turn ending by requiring a corrected continuation. The continuation may finish the work and verify it, or replace the claim with an honest partial or blocked report.
 
 If the model repeats a strong unsupported claim after the configured allowance, the listener throws `HarnessError` with code `COMPLETION_EVIDENCE_UNSATISFIED`. With zero recoveries, the first unsupported claim ends the turn as an error after its assistant message has been logged.
+
+## Exact task acceptance
+
+As an alternative to an exact answer, pass `undefined` for `expectedText` and supply `arithmeticTests: [{ a, b, expected }]` with `readOnly: true`. Supply exactly one criterion type. The restricted numeric protocol accepts one to eight examples with finite values of magnitude at most 1,000,000. Output is one line of at most 80 characters: `return` followed by two operands named `a` or `b` and one `+`, `-`, `*` or `/` operator. No constants, parentheses, calls or arbitrary Python are interpreted. Results use finite JavaScript numeric arithmetic with exact equality; passing examples is not a proof for all inputs. Equivalent expressions can pass without a reference-answer hash. A mismatch remains `output-mismatch`; the same bounded turn recovery includes measured examples in a logged user message. A successful evaluation still requires any designated read. Test values are not secret storage and may enter model context during correction.
+
+Functional recovery uses `A resposta não passou na validação desta tarefa. Resultado dos testes: `, the bounded test diagnostic, and ` Corrija o problema observado e devolva somente a linha return completa. Não altere arquivos.` A missing read adds ` A leitura obrigatória do arquivo ainda não foi comprovada.` Numeric diagnostics contain at most eight rows of `a`, `b`, `expected`, `actual` and `passed`; non-finite results are `não finito`. Unsupported output receives `Formato inválido. Use uma única linha return com dois operandos a ou b e uma operação +, -, * ou /. Sem explicação, cercas, chamadas ou comandos.` This is a narrow validator, not a general project-test runner.
+
+The optional `readOnly: true` criterion restricts the admitted turn to `read`, `glob` and `grep` through the executor's monotonic guard. Other tools, including shell, delegation and unknown tools, are denied before their bodies run, even during recovery. The restriction comes from trusted task metadata, not prose or tool output, and expires with the turn. This is not filesystem containment: trusted plugins, background jobs and direct non-tool I/O remain outside this guard. The plugin requires `tools`. Stable denial: `Esta tarefa permite somente leitura: use read, glob ou grep. Não execute alterações, terminal ou delegação.`
+
+Trusted same-process callers can submit `createAcceptanceTask(content, expectedText, { maxRecoveries, requiredReadPath? })` through the normal agent inbox when this plugin is mounted. The message source persists a versioned SHA-256 digest of the exact UTF-8 answer, a zero-to-three correction allowance, and an optional absolute path requiring a successful `read` in the same turn. Do not use secrets: low-entropy answer hashes are guessable. No expected answer is added to the model prompt.
+
+Acceptance applies only to the identified task's admitted turn, independently of global-claim wording. Multiple user messages in that turn fail with `TASK_ACCEPTANCE_AMBIGUOUS`. Each final response produces one `task/validation` decision correlated with task and response message ids: `passed`, `retry`, or `failed`. Repeating a decision for the same response cannot reset the recovery allowance. A mismatch after the allowance ends the turn with `TASK_ACCEPTANCE_UNSATISFIED`; ordinary messages remain unvalidated, not implicitly approved.
+
+Exact-task recovery appends this fixed model-visible text, retaining the existing prompt prefix and adding one bounded instruction per correction:
+
+```text
+A resposta não passou na validação objetiva desta tarefa. Releia o pedido atual e, se necessário, o arquivo indicado nele. Confira o conteúdo e o formato solicitados. Responda com o valor integral solicitado, sem herdar limites de formato de tarefas anteriores. Se o pedido exigir apenas o valor, não acrescente introdução, explicação, rótulos, negrito ou cercas de código. Preserve a unidade completa pedida: uma linha de código não é apenas sua expressão. Use JSON ou outro formato quando o pedido o exigir. Não altere arquivos para satisfazer a validação.
+```
+
+The correction uses existing evidence-recovery provenance; configured adaptive routing may select its recovery route. This plugin neither authorizes external transmission nor grants tools or filesystem access. Criterion and decision records use the session log, not process-local counters. Readers unaware of the required `task/validation` event must refuse that log. Runtime invariants check task/response correlation and monotonic attempt numbers.
+
+The native API is opt-in. The host's `session.prompt` accepts explicit criteria only for idle, empty-inbox queue admission with this policy mounted; no chat criterion editor is provided. It is not a general semantic validator. The trusted caller owns the expected answer and path; the successful-read check establishes tool execution, not an independent hash of file contents. Browser presentation, process-crash recovery, cancellation, and SDK event projections require integration verification before deployment.
 
 ## Model Experience
 

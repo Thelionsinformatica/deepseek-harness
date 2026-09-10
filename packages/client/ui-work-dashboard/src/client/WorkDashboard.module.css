@@ -80,14 +80,14 @@
 
 .metrics {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 8px;
 }
 
 .metric {
   position: relative;
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr;
   gap: 2px 8px;
   min-width: 0;
   padding: 12px;
@@ -120,17 +120,13 @@
 }
 
 .metricLabel {
-  overflow: hidden;
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
   line-height: 18px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .metricValue {
-  grid-row: 1 / span 2;
-  grid-column: 2;
   color: var(--dsw-alias-label-primary);
   font-size: 24px;
   line-height: 30px;
@@ -138,12 +134,10 @@
 }
 
 .metricDetail {
-  overflow: hidden;
   color: var(--dsw-alias-label-caption);
   font-size: 10px;
   line-height: 16px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .lower {

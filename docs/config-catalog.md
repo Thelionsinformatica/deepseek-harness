@@ -550,6 +550,8 @@ Source: [`packages/compaction/compaction-tool-result-pruner/src/types.ts:4`](../
 
 ## `@deepseek-ai/dsh-completion-claim-policy`
 
+Requires: `tools`
+
 ```ts config-catalog
 /** Deployment policy for evidence recovery at the final turn boundary. */
 export interface Config {
@@ -566,7 +568,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/guard/completion-claim-policy/src/index.ts:37`](../packages/guard/completion-claim-policy/src/index.ts)
+Source: [`packages/guard/completion-claim-policy/src/index.ts:43`](../packages/guard/completion-claim-policy/src/index.ts)
 
 <a id="deepseek-aidsh-cordis-host-runner"></a>
 
@@ -631,6 +633,8 @@ Requires: `agents` · `sessions` · `sessionPersistence` · `subagents`
 ```ts config-catalog
 /** Team-service deployment limits. */
 export interface Config {
+  /** Reject completion unless the host's registered reviewer approves the current revision. */
+  readonly completionRequiresReview?: boolean
   /** Maximum immutable teammate names retained by one Team. */
   readonly maxMembers?: number
   /** Maximum non-deleted tasks retained by one Team. */
@@ -957,8 +961,14 @@ export interface AdaptiveRoutingConfig {
   simpleMaxCharacters?: number
   /** Minimum normalized text length promoted from main to expert effort. */
   expertMinCharacters?: number
+  /** Whether prompt size alone may promote a request to the expert tier. */
+  expertBySize?: boolean
+  /** Explicit image-capable route, selected before specialty and goal-round rules. */
+  visionRoute?: Omit<AdaptiveGoalRoundTier, 'fromRound'> | undefined
   /** Ordered escalation policy; the highest eligible `fromRound` wins. */
   goalRoundTiers?: AdaptiveGoalRoundTier[]
+  /** Content-matched routes checked on initial admission, before fast/main/expert. First match wins. */
+  specialtyRoutes?: AdaptiveSpecialtyRoute[]
   /** Ordered replacements for unavailable automatic routes. First eligible route wins. */
   failovers?: AdaptiveFailoverConfig[]
   /** Passive preflight that records recommendations without changing the active route. */
@@ -971,6 +981,24 @@ export interface AdaptiveGoalRoundTier {
   fromRound: number
   /** Registered provider route. */
   provider: string
+  /** Provider-owned model id. */
+  model: string
+  /** Provider-owned reasoning effort. */
+  reasoningEffort?: string
+}
+
+/** One content-matched route used on initial turn admission, ahead of the fast/main/expert classifier. */
+export interface AdaptiveSpecialtyRoute {
+  /** Stable identifier for logs and config diffs; not shown to the model. */
+  id: string
+  /**
+   * First matching pattern against the prompt's joined text wins this route.
+   * A plain string is compiled case-insensitively with Unicode mode; a
+   * `RegExp` (from a config `!!js` literal) is used exactly as configured.
+   */
+  markers: (string | RegExp)[]
+  /** Registered provider route; defaults to `AdaptiveRoutingConfig.provider`. */
+  provider?: string
   /** Provider-owned model id. */
   model: string
   /** Provider-owned reasoning effort. */
@@ -3390,6 +3418,8 @@ Requires: `tools` · `web` · `systemPrompt`
 ```ts config-catalog
 /** Plugin config: which web tools to register, search bounds, per-tool budgets, and the fetch output cap. */
 export interface Config {
+  /** Ask once per outbound tool call, or allow without a web-specific approval. */
+  egressPolicy?: 'ask' | 'allow'
   /** Register `web_search`. Defaults to true. */
   search?: boolean
   /** Register `web_fetch`. Defaults to true. */
@@ -3781,6 +3811,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-host-plugin-inventory` — requires `loader` ([`packages/host/plugin-inventory/src/index.ts`](../packages/host/plugin-inventory/src/index.ts))
 - `@deepseek-ai/dsh-llm` ([`packages/llm/llm/src/index.ts`](../packages/llm/llm/src/index.ts))
 - `@deepseek-ai/dsh-lsp` ([`packages/lsp/lsp/src/index.ts`](../packages/lsp/lsp/src/index.ts))
+- `@deepseek-ai/dsh-memory-continuity` ([`packages/memory/memory-continuity/src/index.ts`](../packages/memory/memory-continuity/src/index.ts))
 - `@deepseek-ai/dsh-schedule` — requires `agents` · `sessions` · `tools` · `sessionPersistence` ([`packages/schedule/schedule/src/index.ts`](../packages/schedule/schedule/src/index.ts))
 - `@deepseek-ai/dsh-session` ([`packages/core/session/src/index.ts`](../packages/core/session/src/index.ts))
 - `@deepseek-ai/dsh-session-checkpoint-policy` — requires `llm` · `sessionPersistence` · `sessions` · `tools` ([`packages/session/session-checkpoint-policy/src/index.ts`](../packages/session/session-checkpoint-policy/src/index.ts))

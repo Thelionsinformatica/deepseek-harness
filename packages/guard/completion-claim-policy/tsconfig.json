@@ -8,6 +8,8 @@
     "src"
   ],
   "references": [
+    { "path": "../../core/tools" },
+    { "path": "../../core/session" },
     {
       "path": "../../../vendor/cosmokit"
     },

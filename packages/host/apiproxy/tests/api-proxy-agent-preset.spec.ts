@@ -663,6 +663,8 @@ describe('automatic model failover', () => {
   })
 
   it.each([
+    { label: 'persistent terminal', tool: 'terminal_read', arguments: '{"sessionId":"private-terminal"}' },
+    { label: 'unknown integration', tool: 'crm_query', arguments: '{}' },
     { label: 'current session search', tool: 'current_session_search', arguments: '{"query":"customer"}' },
     { label: 'session search', tool: 'session_search', arguments: '{"query":"customer"}' },
     { label: 'workspace memory', tool: 'memory_search', arguments: '{"query":"decision"}' },
@@ -743,6 +745,8 @@ describe('automatic model failover', () => {
   })
 
   it.each([
+    { label: 'persistent terminal', tool: 'terminal_read', arguments: '{"sessionId":"private-terminal"}' },
+    { label: 'unknown integration', tool: 'crm_query', arguments: '{}' },
     { label: 'current session search', tool: 'current_session_search', arguments: '{"query":"customer"}' },
     { label: 'file read', tool: 'read', arguments: '{"file_path":"D:\\\\private.txt"}' },
     { label: 'workspace grep', tool: 'grep', arguments: '{"pattern":"customer","path":"D:\\\\SampleWorkspace"}' },

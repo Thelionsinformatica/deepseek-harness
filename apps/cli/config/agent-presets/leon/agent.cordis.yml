@@ -160,6 +160,8 @@
 # same-turn correction keeps it from becoming Leon's definitive answer.
 - id: completion-claim-policy
   name: '@deepseek-ai/dsh-completion-claim-policy'
+  isolate:
+    taskAcceptance: true
   config:
     maxEvidenceRecoveries: 1
     maxRecoveryMessageBytes: 4096
@@ -433,6 +435,7 @@
 - id: tool-web
   name: '@deepseek-ai/dsh-tool-web'
   config:
+    egressPolicy: ask
     fetch: true
     searchTimeoutMs: 60000
 

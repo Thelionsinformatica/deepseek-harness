@@ -87,9 +87,17 @@ interface RestoreInvocation {
   passphraseStdin: boolean
 }
 
+/** Run a collective multi-agent mission orchestrated by Leon Executive and Blackboard DAG. */
+export interface CollectiveInvocation {
+  mode: 'collective'
+  mission?: string
+  dryRun: boolean
+  json: boolean
+}
+
 /** The resolved `dsh` invocation. Help, version, and errors exit inside {@link parseDshArgs}. */
 export type DshInvocation = ProfileInvocation | DumpConfigInvocation | PluginInvocation
-  | DoctorInvocation | BackupInvocation | RestoreInvocation
+  | DoctorInvocation | BackupInvocation | RestoreInvocation | CollectiveInvocation
 
 /** Launcher flags shared by the default command and the `web` alias. */
 interface BootOptions {
@@ -308,6 +316,21 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
         json: options.json === true,
         confirmStopped: options.confirmStopped === true,
         passphraseStdin: options.passphraseStdin === true,
+      }
+    })
+
+  const collective = program.command('collective').description('run a collaborative multi-agent mission orchestrated by Leon Executive and Blackboard DAG')
+  collective
+    .argument('[mission...]', 'the mission statement or objective for the collective team')
+    .option('--dry-run', 'plan and decompose into blackboard DAG without executing worker agents')
+    .option('--json', 'emit machine-readable JSON summary of the DAG and post-mortem')
+    .action((missionParts: string[], options: { dryRun?: boolean; json?: boolean }) => {
+      rejectParentOptions('collective')
+      resolved = {
+        mode: 'collective',
+        ...missionParts.length > 0 ? { mission: missionParts.join(' ') } : {},
+        dryRun: options.dryRun === true,
+        json: options.json === true,
       }
     })
 

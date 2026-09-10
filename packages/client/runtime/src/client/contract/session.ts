@@ -12,6 +12,7 @@ import type {
   MessageId, PromptContentPart, QueueAction, RpcResult, SessionId,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import type { RequestPayload } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { ConversationSnapshot } from '../sessions/conversation.ts'
 import type { ObservableSnapshot } from './store.ts'
 
@@ -36,6 +37,8 @@ export interface ISession {
    * Send a prompt into the session.
    * @param content - text plus browser-owned temporary image uploads.
    * @param mode - 'queue' appends a turn; 'steer' interrupts the running one.
+   * @param signal - optional admission cancellation.
+   * @param acceptance - explicit, non-secret criteria for this root-session prompt only; unsupported child targets fail locally.
    * @returns acceptance with the exact durable message identity, or the business error
    * (also mirrored into snapshot.promptError).
    */
@@ -43,6 +46,7 @@ export interface ISession {
     content: PromptContentPart[],
     mode: 'queue' | 'steer',
     signal?: AbortSignal,
+    acceptance?: RequestPayload<'session.prompt'>['acceptance'],
   ): Promise<RpcResult<{ accepted: true; messageId: MessageId }>>
   /**
    * Resolve one durable image referenced by this session.

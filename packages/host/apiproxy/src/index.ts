@@ -99,6 +99,12 @@ export class ApiProxyService extends Service implements ApiProxy {
       expertReasoningEffort: z.string(),
       simpleMaxCharacters: z.natural().min(1).default(280),
       expertMinCharacters: z.natural().min(1).default(800),
+      expertBySize: z.boolean().default(true),
+      visionRoute: z.union([z.object({
+        provider: z.string().min(1).required(),
+        model: z.string().min(1).required(),
+        reasoningEffort: z.string(),
+      }), z.const(undefined)]),
       goalRoundTiers: z.array(z.object({
         fromRound: z.number().step(1).min(1).required(),
         provider: z.string().required(),

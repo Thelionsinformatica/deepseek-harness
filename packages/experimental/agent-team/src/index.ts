@@ -22,6 +22,7 @@ import type {
   SpawnTeammateResult,
   TeamMemberView,
   TeamTaskView,
+  TeamTaskSnapshot,
   TeamWaitResult,
   UpdateTeamTaskRequest,
 } from './types.ts'
@@ -31,6 +32,26 @@ export type { TeamMembership } from './roster.ts'
 export { TeamId, TeamMessageId, TeamTaskId } from './types.ts'
 export { TeamError } from './error.ts'
 export { foldTeam } from './fold.ts'
+export type {
+  BlackboardFinding,
+  BlackboardSnapshot,
+  BlackboardTask,
+  BlackboardTaskStatus,
+  CreateTaskParams,
+} from './blackboard.ts'
+export { LeonBlackboard } from './blackboard.ts'
+export type { DecomposedTaskSpec, MissionStrategy } from './executive.ts'
+export { LEON_EXECUTIVE_SYSTEM_PROMPT, LeonExecutive } from './executive.ts'
+export type { CoordinatorInsight } from './coordinator-evolution.ts'
+export {
+  CoordinatorEvolution,
+  formatPostMortemMarkdown,
+  generatePostMortem,
+  persistInsight,
+} from './coordinator-evolution.ts'
+
+/** Host-owned evidence check, called under the task transaction; it must not mutate this Team. */
+export type TeamCompletionReviewer = (caller: Agent, root: Agent, task: TeamTaskSnapshot) => Promise<boolean>
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -57,6 +78,7 @@ export class TeamService extends Service {
   static inject = ['agents', 'sessions', 'sessionPersistence', 'subagents']
 
   static Config: z<Config> = z.object({
+    completionRequiresReview: z.boolean().default(false),
     maxMembers: z.number().step(1).min(1).default(DEFAULT_MAX_MEMBERS),
     maxTasks: z.number().step(1).min(1).default(DEFAULT_MAX_TASKS),
     maxPendingMessagesPerMember: z.number().step(1).min(1).default(DEFAULT_MAX_PENDING_MESSAGES),
@@ -73,10 +95,12 @@ export class TeamService extends Service {
   private readonly roster: TeamRoster
   private readonly mailbox: TeamMailbox
   private readonly tasks: TeamTaskBoard
+  private readonly completionReview: { registration: { reviewer: TeamCompletionReviewer } | undefined } = { registration: undefined }
 
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'agentTeams')
     this.config = {
+      completionRequiresReview: config.completionRequiresReview ?? false,
       maxMembers: positiveLimit('maxMembers', config.maxMembers ?? DEFAULT_MAX_MEMBERS),
       maxTasks: positiveLimit('maxTasks', config.maxTasks ?? DEFAULT_MAX_TASKS),
       maxPendingMessagesPerMember: positiveLimit(
@@ -102,7 +126,14 @@ export class TeamService extends Service {
       this.config.maxPendingMessagesPerMember,
       this.config.maxMessageBytes,
     )
-    this.tasks = new TeamTaskBoard(this.journal, this.config.maxTasks)
+    this.tasks = new TeamTaskBoard(this.journal, this.config.maxTasks, async (caller, root, task) => {
+      if (!this.config.completionRequiresReview) return
+      const registration = this.completionReview.registration
+      if (registration === undefined || !await registration.reviewer(caller, root, task)
+        || this.completionReview.registration !== registration) {
+        throw new TeamError('Current task revision requires host evidence review', 'TEAM_TASK_REVIEW_REQUIRED')
+      }
+    })
 
     ctx.on('session/event', (session, event) => { this.mailbox.observeSessionEvent(session, event) })
     ctx.on('agent/session-start', ({ agent }) => { this.scheduleRecovery(agent) })
@@ -121,6 +152,23 @@ export class TeamService extends Service {
    */
   membership(agent: Agent): TeamMembership {
     return this.roster.membership(agent)
+  }
+
+  /**
+   * Register the sole trusted completion reviewer; models cannot register one through Team tools.
+   * The owner must verify current evidence and policy on every call, including after restart.
+   * @param reviewer - bounded host verifier; must not call a Team mutation while holding its transaction.
+   * @returns disposer; disposal during a pending review also rejects that completion.
+   */
+  registerCompletionReviewer(reviewer: TeamCompletionReviewer): () => void {
+    if (this.completionReview.registration !== undefined) {
+      throw new TeamError('A completion reviewer is already registered', 'TEAM_REVIEWER_CONFLICT')
+    }
+    const registration = { reviewer }
+    this.completionReview.registration = registration
+    return () => {
+      if (this.completionReview.registration === registration) this.completionReview.registration = undefined
+    }
   }
 
   /**

@@ -81,6 +81,10 @@ export interface AdaptiveRoutingConfig {
   simpleMaxCharacters?: number
   /** Minimum normalized text length promoted from main to expert effort. */
   expertMinCharacters?: number
+  /** Whether prompt size alone may promote a request to the expert tier. */
+  expertBySize?: boolean
+  /** Explicit image-capable route, selected before specialty and goal-round rules. */
+  visionRoute?: Omit<AdaptiveGoalRoundTier, 'fromRound'> | undefined
   /** Ordered escalation policy; the highest eligible `fromRound` wins. */
   goalRoundTiers?: AdaptiveGoalRoundTier[]
   /** Content-matched routes checked on initial admission, before fast/main/expert. First match wins. */
@@ -94,6 +98,8 @@ export interface AdaptiveRoutingConfig {
 /** Prompt facts available before the durable user message is admitted. */
 export interface AdaptiveRoutingInput {
   content: readonly PromptContentPart[]
+  /** Conservatively retains visual capability while the session contains image history. */
+  hasImageHistory?: boolean
   /** Whether the session already contains a completed or open turn. */
   hasHistory: boolean
   /** Positive automatic goal round currently entering a model request. */
@@ -146,9 +152,11 @@ const CONTINUATION_MARKERS = /^(?:continue|continuar|pode continuar|prossiga|sig
  *
  * Multi-line work, code/technical markers, longer prompts and terse
  * continuation instructions in an established session use the main model.
- * Images, very large structured prompts and explicit high-complexity markers
+ * An explicit vision route precedes recovery, goal and specialty selection for images.
+ * Without that route, images, large structured prompts and high-complexity markers
  * use the optional expert model (or only raise main-model effort when no
  * separate expert model is configured).
+ * Setting expertBySize to false prevents length or line count alone from selecting expert.
  * Completion-evidence recovery bypasses prompt classification and uses the
  * expert route and effort, falling back to the main route only when no expert
  * model is configured.
@@ -168,6 +176,17 @@ export function chooseAdaptiveModel(
   config: AdaptiveRoutingConfig,
   input: AdaptiveRoutingInput,
 ): AdaptiveRoutingDecision {
+  if ((input.hasImageHistory === true || input.content.some(part => part.type === 'image'))
+    && config.visionRoute !== undefined) {
+    const route = config.visionRoute
+    return {
+      provider: route.provider,
+      model: route.model,
+      ...route.reasoningEffort === undefined
+        ? {} : { reasoningEffort: ReasoningEffortId(route.reasoningEffort) },
+      tier: 'expert',
+    }
+  }
   if (input.recovery === 'completion-evidence') {
     const reasoningEffort = config.expertReasoningEffort ?? config.mainReasoningEffort
     return {
@@ -234,8 +253,7 @@ export function chooseAdaptiveModel(
   const expertEnabled = config.expertModel !== undefined || config.expertReasoningEffort !== undefined
   const expert = complex && expertEnabled
     && (hasImage
-      || text.length >= expertMin
-      || lineCount > 12
+      || (config.expertBySize !== false && (text.length >= expertMin || lineCount > 12))
       || explicitExpert)
   const reasoningEffort = expert
     ? config.expertReasoningEffort

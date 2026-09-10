@@ -62,6 +62,11 @@ switch (invocation.mode) {
     process.exitCode = await runRestore(invocation, readVersion())
     break
   }
+  case 'collective': {
+    const { runCollective } = await import('./collective-cli.ts')
+    process.exitCode = await runCollective(invocation)
+    break
+  }
   default:
     invocation satisfies never
     throw new Error(`dsh: unhandled invocation mode ${JSON.stringify(invocation)}`)

@@ -2,6 +2,14 @@
 
 [English](README.md) | 中文
 
+## 显式任务验收
+
+`acceptance.arithmeticTests` 是 `expectedText` 的替代条件，不可同时提供。宿主要求 `readOnly: true`、一至八个严格的 `{ a, b, expected }` 对象，以及范围 [-1,000,000, 1,000,000] 内的有限数值。受限运算语法和纠正诊断由原生策略负责；不接受可执行验证器或终端命令。
+
+可选的 `acceptance.readOnly: true` 将本轮仅允许 read/glob/grep 的限制传递给原生执行器守卫；不会从自然语言指令推断权限。
+
+`session.prompt` 接受可选的 `acceptance: { expectedText, maxRecoveries, requiredReadPath? }`，仅适用于 `queue` 模式下空闲且收件箱为空、已挂载原生任务验收策略的 agent。宿主验证有界输入、串行化接纳并保留请求来源。无效输入或缺少策略会被拒绝；忙碌 agent 不会收到条件归属不明确的任务。预设提供方必须隔离 `taskAcceptance`，并通过预设服务作用域解析。条件不授予工具访问权限或外发许可。哈希、纠正及验证限制见[精确任务验收](../../guard/completion-claim-policy/README.zh.md)。未提供聊天条件编辑器。
+
 所有客户端共用的 API 网关由三部分组成：TypeScript API 约定（`src/api/`，不依赖 Node，可从浏览器导入）、fetch 载体对（`src/fetch/`：宿主侧的 `toFetchHandler`，以及客户端侧的 `AbstractApiClient` 与平台子类）和宿主侧实现（`src/api-proxy.ts`：`createApiProxy` 加上默认导出的 `ApiProxyService` 网关插件，其配置为 `{nativeOpen?, sessionExportCompressionLevel?, coldBlankProbeMaxBytes?, adaptiveRouting?}`，提供 `ctx.apiProxy`）。该包不注册任何路由；HTTP 等载体自行包装 `ctx.apiProxy`。随发行版交付的 Web 组合位于 [`packages/bundle/web-app/cordis.patch.yml`](../../bundle/web-app/cordis.patch.yml)，其默认 Agent（智能体）模型选择属于 base 组合包中的 [`@deepseek-ai/dsh-agent-default-model`](../../core/agent-default-model/README.zh.md)。
 
 Web 会话创建时如未显式指定 workspace，`ApiProxyService` 会为其分配 `resolveDefaultWorkspace()`。Leon 在 Windows 上的默认值是 `E:/computador`；部署环境覆盖值与非 Windows 行为由 [`dsh-home-paths`](../../util/home-paths/README.zh.md)负责。客户端显式选择的 workspace 始终具有最终效力。
@@ -19,6 +27,8 @@ Settings 分节中的 `reasoningEffort` 在 agent-default-model 插件配置中�
 存储的选择独立于目录成员关系。默认值指向不可用的提供方时，它仍会作为会话的 `current` 送到 `session.models`，让选择器请求用户重新选择，而不是静默选用其他模型。反过来，适配器也可以服务其目录中未公布的模型。
 
 ## 约定层（`/api`）
+
+未分类工具的成功结果，包括持久终端读取和自定义集成，会撤销之前的自动外部故障切换许可。只有明确标为公开的 `web_search` 和 `web_fetch` 结果保留该许可。这种保守分类可能让无害的自定义工具也需要额外同意；它不授权这些工具自身的联网或手动使用外部模型。
 
 协议消息组成一个四象限可辨识联合：发起方 × 请求／响应，与物理通道解耦。四种消息分别是 `ClientRequest`（POST `/api/<method>` 的请求体）、`ServerResponse`（该 POST 的响应体）、`ServerRequest`（SSE（Server-Sent Events）帧）和 `ClientResponse`（POST `/api/respond` 的请求体）。响应始终回显对应请求的 `rpcId`，绝不签发新值。方法的参数与返回值结构只存在于领域接口签名（`SessionsApi`、`HostApi`、`EventsApi`）中；`RpcMethodMap` 注册方法，其他所有位置均通过 `RequestPayload<K>`／`ResponseValue<K>` 派生。Zod schema 以 `satisfies z.ZodType<Wire<T>>` 锚定类型，并分两层解析：先解析信封，再解析业务载荷，随后按方法分发。业务错误由 `RpcResult` 的错误分支承载（`RpcErrorDetailsMap` 封闭错误码集合）；HTTP 状态只表达载体层结果。每个 `/api` POST 都必须声明 `application/json` 媒体类型——否则在分发前即以 415 拒绝，因此跨站「简单请求」（浏览器不经 CORS 预检就会发出）永远无法盲目执行有副作用的方法。
 

@@ -1,0 +1,19 @@
+# Outbound web consent example. Without an interactive answerer every request
+# fails closed; the snapshot supplies only the model, provider, and user responses.
+- id: base
+  name: '@deepseek-ai/cordis-plugin-include'
+  config:
+    path: ./cordis.yml
+
+- id: approval
+  name: '@deepseek-ai/dsh-user-approval'
+  config:
+    policy: ask
+
+- id: web
+  name: '@deepseek-ai/dsh-web'
+
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    egressPolicy: ask

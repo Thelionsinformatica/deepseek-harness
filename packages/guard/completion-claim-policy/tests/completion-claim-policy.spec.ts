@@ -9,19 +9,24 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { CallId, createUserMessage, HarnessError } from '@deepseek-ai/dsh-llm'
-import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
+import { KNOWN_SESSION_EVENT_TYPES, SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { defineContentToolFixture, defineTool } from '@deepseek-ai/dsh-tools'
 import * as CompletionClaimPolicy from '@deepseek-ai/dsh-completion-claim-policy'
 import {
   COMPLETION_EVIDENCE_UNSATISFIED,
   isStrongGlobalCompletionClaim,
   type Config,
+  createAcceptanceTask,
 } from '@deepseek-ai/dsh-completion-claim-policy'
 import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 
 interface Harness {
   ctx: Context
 }
+
+it('includes acceptance decisions in the durable event vocabulary', () => {
+  expect(KNOWN_SESSION_EVENT_TYPES.has('task/validation')).toBe(true)
+})
 
 /** Mount the real loop with tools that expose success, failure, todos, and terminal metadata. */
 async function harness(
@@ -125,6 +130,170 @@ function recoveries(agent: Agent): SessionEvent<'user/message'>[] {
     && event.data.source.plugin === 'completion-claim-policy'
     && event.data.source.form === 'evidence-recovery')
 }
+
+describe('explicit task acceptance', () => {
+  it('recovers using numeric counterexamples in the same turn and accepts an equivalent expression', async () => {
+    const { ctx } = await harness()
+    const adapter = new MockAdapter([textResponse('return a - b'), textResponse('return b + a')])
+    ctx.llm.registerAdapter(['mock'], adapter)
+    const agent = ctx.agentLoop.create(SessionId('functional-native'), { provider: 'mock', model: 'mock' })
+    const idle = waitForIdle(ctx, agent)
+    agent.followup(createAcceptanceTask([{ type: 'text', text: 'Return the sum expression.' }], undefined,
+      { maxRecoveries: 1, readOnly: true, arithmeticTests: [{ a: 2, b: 3, expected: 5 }] }))
+    await idle
+    expect(agent.session.events.filter(e => e.type === 'task/validation').map(e => e.data.status)).toEqual(['retry', 'passed'])
+    expect(agent.session.events.filter(e => e.type === 'turn/end')).toHaveLength(1)
+    const correction = JSON.stringify(recoveries(agent))
+    expect(correction).toContain('actual')
+    expect(correction).toContain('-1')
+    expect(correction).not.toContain('return a + b')
+    expect(correction).not.toContain('return b + a')
+    await ctx.fiber.dispose()
+  })
+
+  it('rejects mixed exact and functional criteria and functional tasks without read-only enforcement', () => {
+    const arithmeticTests = [{ a: 2, b: 3, expected: 5 }]
+    expect(() => createAcceptanceTask([], 'return a+b', { maxRecoveries: 1, readOnly: true, arithmeticTests })).toThrow('Invalid persisted')
+    expect(() => createAcceptanceTask([], undefined, { maxRecoveries: 1, arithmeticTests })).toThrow('Invalid persisted')
+    expect(() => createAcceptanceTask([], undefined, { maxRecoveries: 1 })).toThrow('Invalid persisted')
+  })
+
+  it('ends a persistently wrong functional answer without a third attempt', async () => {
+    const { ctx } = await harness()
+    ctx.on('agent/error', () => {})
+    const adapter = new MockAdapter([textResponse('return a - b'), textResponse('return a - b')])
+    ctx.llm.registerAdapter(['mock'], adapter)
+    const agent = ctx.agentLoop.create(SessionId('functional-exhausted'), { provider: 'mock', model: 'mock' })
+    const idle = waitForIdle(ctx, agent)
+    agent.followup(createAcceptanceTask([{ type: 'text', text: 'Return the sum expression.' }], undefined,
+      { maxRecoveries: 1, readOnly: true, arithmeticTests: [{ a: 2, b: 3, expected: 5 }] }))
+    await idle
+    expect(adapter.requests).toHaveLength(2)
+    expect(agent.session.events.filter(e => e.type === 'task/validation').map(e => e.data.status)).toEqual(['retry', 'failed'])
+    expect(agent.session.events.findLast(e => e.type === 'turn/end')).toMatchObject({ data: { reason: { kind: 'error' } } })
+    await ctx.fiber.dispose()
+  })
+
+  it.each(['write', 'edit', 'pwsh', 'subagent', 'future_tool'])('denies %s before its body in a read-only task, without leaking into the next turn', async (name) => {
+    const { ctx } = await harness()
+    let calls = 0
+    ctx.tools.register(defineContentToolFixture({ name, description: 'mutation probe', parameters: {},
+      async execute() { calls++; return [{ type: 'text', text: 'executed' }] },
+    }))
+    ctx.llm.registerAdapter(['mock'], new MockAdapter([
+      toolCallResponse('denied', name, {}), textResponse('ok'),
+      toolCallResponse('allowed', name, {}), textResponse('done'),
+    ]))
+    const agent = ctx.agentLoop.create(SessionId(`read-only-${name}`), { provider: 'mock', model: 'mock' })
+    let idle = waitForIdle(ctx, agent)
+    agent.followup(createAcceptanceTask([{ type: 'text', text: 'Read only.' }], 'ok', { maxRecoveries: 0, readOnly: true }))
+    await idle
+    expect(calls).toBe(0)
+    expect(JSON.stringify(agent.session.events)).toContain('Esta tarefa permite somente leitura')
+    idle = waitForIdle(ctx, agent)
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Ordinary task.' }], source: { kind: 'user' } }))
+    await idle
+    expect(calls).toBe(1)
+    await ctx.fiber.dispose()
+  })
+
+  it('corrects a truncated answer inside one native turn and persists both decisions', async () => {
+    const { ctx } = await harness()
+    const adapter = new MockAdapter([textResponse('7F3D'), textResponse('LEON-CPP-7F3D-9206')])
+    ctx.llm.registerAdapter(['mock'], adapter)
+    const agent = ctx.agentLoop.create(SessionId('exact-native'), { provider: 'mock', model: 'mock' })
+    const message = createAcceptanceTask([{ type: 'text', text: 'Return the whole code.' }], 'LEON-CPP-7F3D-9206', { maxRecoveries: 1 })
+    const idle = waitForIdle(ctx, agent)
+    agent.followup(message)
+    await idle
+    const decisions = agent.session.events.filter(e => e.type === 'task/validation')
+    expect(decisions.map(e => e.data.status)).toEqual(['retry', 'passed'])
+    expect(decisions.map(e => e.data.attempt)).toEqual([1, 2])
+    expect(decisions.every(e => e.data.messageId === message.id && e.data.turn === 1)).toBe(true)
+    expect(agent.session.events.filter(e => e.type === 'turn/end')).toHaveLength(1)
+    expect(JSON.stringify(adapter.requests[1]!.messages)).toContain('valor integral')
+    expect(JSON.stringify(adapter.requests[1]!.messages)).toContain('não acrescente introdução')
+    expect(JSON.stringify(adapter.requests[1]!.messages)).toContain('Preserve a unidade completa pedida')
+    expect(JSON.stringify(adapter.requests[1]!.messages)).toContain('Use JSON ou outro formato quando o pedido o exigir')
+    expect(JSON.stringify(adapter.requests[0]!.messages)).not.toContain('LEON-CPP-7F3D-9206')
+    await ctx.fiber.dispose()
+  })
+
+  it('ends as an error after its bounded correction is exhausted', async () => {
+    const { ctx } = await harness()
+    const errors: unknown[] = []
+    ctx.on('agent/error', ({ error }) => void errors.push(error))
+    const adapter = new MockAdapter([textResponse('short'), textResponse('short')])
+    ctx.llm.registerAdapter(['mock'], adapter)
+    const agent = ctx.agentLoop.create(SessionId('exact-exhausted'), { provider: 'mock', model: 'mock' })
+    const idle = waitForIdle(ctx, agent)
+    agent.followup(createAcceptanceTask([{ type: 'text', text: 'Return the code.' }], 'full-code', { maxRecoveries: 1 }))
+    await idle
+    expect(adapter.requests).toHaveLength(2)
+    expect(agent.session.events.filter(e => e.type === 'task/validation').map(e => e.data.status)).toEqual(['retry', 'failed'])
+    expect(agent.session.events.findLast(e => e.type === 'turn/end')).toMatchObject({ data: { reason: { kind: 'error' } } })
+    expect(errors.some(e => e instanceof HarnessError && e.code === 'TASK_ACCEPTANCE_UNSATISFIED')).toBe(true)
+    await ctx.fiber.dispose()
+  })
+
+  it('requires the designated read even when the text matches', async () => {
+    const { ctx } = await harness()
+    ctx.on('agent/error', () => {})
+    ctx.llm.registerAdapter(['mock'], new MockAdapter([textResponse('full-code')]))
+    const agent = ctx.agentLoop.create(SessionId('exact-read-missing'), { provider: 'mock', model: 'mock' })
+    const idle = waitForIdle(ctx, agent)
+    agent.followup(createAcceptanceTask([{ type: 'text', text: 'Read the file.' }], 'full-code', { maxRecoveries: 0, requiredReadPath: '/fixture.txt' }))
+    await idle
+    expect(agent.session.events.findLast(e => e.type === 'task/validation')).toMatchObject({ data: { status: 'failed', reason: 'read-missing' } })
+    await ctx.fiber.dispose()
+  })
+
+  it('does not carry a completed criterion into the next ordinary task', async () => {
+    const { ctx } = await harness()
+    ctx.llm.registerAdapter(['mock'], new MockAdapter([textResponse('full-code'), textResponse('ordinary answer')]))
+    const agent = ctx.agentLoop.create(SessionId('exact-isolation'), { provider: 'mock', model: 'mock' })
+    let idle = waitForIdle(ctx, agent)
+    agent.followup(createAcceptanceTask([{ type: 'text', text: 'Return the code.' }], 'full-code', { maxRecoveries: 0 }))
+    await idle
+    idle = waitForIdle(ctx, agent)
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Another task.' }], source: { kind: 'user' } }))
+    await idle
+    expect(agent.session.events.filter(e => e.type === 'task/validation')).toHaveLength(1)
+    expect(agent.session.events.findLast(e => e.type === 'turn/end')).toMatchObject({ data: { turn: 2, reason: { kind: 'completed' } } })
+    await ctx.fiber.dispose()
+  })
+
+  it.each([-1, 4, 0.5])('rejects an invalid recovery budget %s', (maxRecoveries) => {
+    expect(() => createAcceptanceTask([], 'answer', { maxRecoveries })).toThrow('Invalid persisted task acceptance criteria')
+  })
+
+  it.each([
+    { path: '/fixture.txt', failed: false, expected: 'passed' },
+    { path: '/wrong.txt', failed: false, expected: 'failed' },
+    { path: '/fixture.txt', failed: true, expected: 'failed' },
+  ])('checks read provenance $path (failed=$failed)', async ({ path, failed, expected }) => {
+    const { ctx } = await harness()
+    ctx.on('agent/error', () => {})
+    ctx.tools.register(defineContentToolFixture({
+      name: 'read', description: 'Synthetic read result',
+      parameters: { file_path: { type: 'string', required: true } },
+      async execute() {
+        if (failed) throw new HarnessError('Denied', 'READ_DENIED')
+        return [{ type: 'text', text: 'full-code' }]
+      },
+    }))
+    ctx.llm.registerAdapter(['mock'], new MockAdapter([
+      toolCallResponse('read-1', 'read', { file_path: path }),
+      textResponse('full-code'),
+    ]))
+    const agent = ctx.agentLoop.create(SessionId(`read-${expected}-${failed}`), { provider: 'mock', model: 'mock' })
+    const idle = waitForIdle(ctx, agent)
+    agent.followup(createAcceptanceTask([{ type: 'text', text: 'Read /fixture.txt.' }], 'full-code', { maxRecoveries: 0, requiredReadPath: '/fixture.txt' }))
+    await idle
+    expect(agent.session.events.findLast(e => e.type === 'task/validation')).toMatchObject({ data: { status: expected } })
+    await ctx.fiber.dispose()
+  })
+})
 
 describe('strong global claim classifier', () => {
   it.each([

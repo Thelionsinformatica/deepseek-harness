@@ -3,6 +3,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-subagent'
 import { TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team'
 import type { TeamMemberView } from '@deepseek-ai/dsh-experimental-agent-team'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -11,7 +12,7 @@ import type { InferValue, ValueSchemaSpec } from '@deepseek-ai/dsh-tools'
 /** Cordis plugin name. */
 export const name = 'tool-agent-team'
 /** Services required by the Team tool plugin. */
-export const inject = ['agents', 'agentTeams', 'tools', 'systemPrompt']
+export const inject = ['agents', 'agentTeams', 'tools', 'systemPrompt', 'subagents']
 
 /** Tool routing configuration. */
 export interface Config {
@@ -170,7 +171,11 @@ function install(agent: Agent, ctx: Context, config: Required<Config>): () => vo
       },
     }))
 
-    register(scoped.tools.register(defineTool({
+    const contexts: Array<'fresh' | 'fork'> = []
+    if (ctx.subagents.getProvider(config.freshProvider)?.prepareContinuable !== undefined) contexts.push('fresh')
+    if (ctx.subagents.getProvider(config.forkProvider)?.prepareContinuable !== undefined) contexts.push('fork')
+    const defaultContext = contexts[0]
+    if (defaultContext !== undefined) register(scoped.tools.register(defineTool({
       name: 'spawn_teammate',
       description: 'Create one named, durable teammate. Only the Team Lead may call this tool.',
       parameters: {
@@ -179,14 +184,14 @@ function install(agent: Agent, ctx: Context, config: Required<Config>): () => vo
         prompt: { type: 'string', required: true, description: 'Complete initial task for the teammate.' },
         context: {
           type: 'string',
-          enum: ['fresh', 'fork'],
-          description: 'fresh starts without Lead history; fork inherits completed Lead turns. Defaults to fresh.',
+          enum: contexts,
+          description: `Available modes: ${contexts.join(', ')}. fresh starts without Lead history; fork inherits completed Lead turns. Defaults to ${contexts[0]}.`,
         },
       },
       output: jsonOutput(SPAWN_VALUE_SCHEMA),
       async execute(args, exec) {
         const agent = callingAgent(exec.agent, 'spawn_teammate')
-        const context = args.context ?? 'fresh'
+        const context = args.context ?? defaultContext
         return await ctx.agentTeams.spawnTeammate(agent, {
           name: args.name,
           description: args.description,
@@ -406,6 +411,13 @@ export function apply(ctx: Context, config: Config = {}): void {
     installed.set(agent, install(agent, ctx, resolved))
   }
   for (const agent of ctx.agents.list()) maybeInstall(agent)
+  const refresh = (): void => {
+    for (const dispose of installed.values()) dispose()
+    installed.clear()
+    for (const agent of ctx.agents.list()) maybeInstall(agent)
+  }
+  ctx.on('subagent/provider-added', refresh)
+  ctx.on('subagent/provider-removed', refresh)
   ctx.on('agent/created', ({ agent }) => { maybeInstall(agent) })
   ctx.on('agent/disposed', ({ agent }) => {
     installed.get(agent)?.()

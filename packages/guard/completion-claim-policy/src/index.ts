@@ -12,6 +12,9 @@ import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, HarnessError } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import { installTaskAcceptance } from './task-acceptance.ts'
+export { createAcceptanceTask } from './task-acceptance.ts'
+export type { ExactTaskAcceptance } from './task-acceptance.ts'
 
 /** Durable provenance of one bounded evidence-correction message. */
 export interface CompletionEvidenceSource {
@@ -29,6 +32,9 @@ declare module '@deepseek-ai/dsh-llm' {
 
 /** Cordis plugin name used in configuration and durable message provenance. */
 export const name = 'completion-claim-policy'
+
+/** The executor guard must exist before accepting restricted tasks. */
+export const inject = ['tools']
 
 /** Stable machine-routable code for a repeated unsupported global completion claim. */
 export const COMPLETION_EVIDENCE_UNSATISFIED = 'COMPLETION_EVIDENCE_UNSATISFIED'
@@ -509,6 +515,7 @@ export function apply(ctx: Context, config: Config): void {
   const verifyAbsoluteArtifactClaims = config.verifyAbsoluteArtifactClaims ?? false
   const requireCurrentTurnEvidence = config.requireCurrentTurnEvidence ?? false
 
+  installTaskAcceptance(ctx)
   ctx.on('agent/turn-stopping', ({ agent, turn }): void => {
     const evidence = inspectTurn(
       agent,

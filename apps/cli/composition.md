@@ -42,26 +42,28 @@ flowchart LR
   cfg --> plugin_dsh_base_credentials
   plugin_dsh_base_llm_pi_ai["llm-pi-ai<br/>@deepseek-ai/dsh-llm-pi-ai"]
   cfg --> plugin_dsh_base_llm_pi_ai
-  plugin_dsh_base_qwen3_5_9b["qwen3.5:9b<br/>Qwen 3.5 9B (Local)"]
+  plugin_dsh_base_qwen3_5_9b["qwen3.5:9b<br/>🗄️ Reserva — Qwen 3.5 9B (Local)"]
   cfg --> plugin_dsh_base_qwen3_5_9b
-  plugin_dsh_base_qwen3_5_9b_q4_K_M["qwen3.5:9b-q4_K_M<br/>Qwen 3.5 9B Q4_K_M 64K (Local Manual)"]
+  plugin_dsh_base_qwen3_5_9b_q4_K_M["qwen3.5:9b-q4_K_M<br/>🗄️ Reserva — Qwen 3.5 9B Q4_K_M 64K (Local Manual)"]
   cfg --> plugin_dsh_base_qwen3_5_9b_q4_K_M
-  plugin_dsh_base_qwen3_5_9b_q6_K["qwen3.5:9b-q6_K<br/>Qwen 3.5 9B Q6_K 64K (Local Manual)"]
+  plugin_dsh_base_qwen3_5_9b_q6_K["qwen3.5:9b-q6_K<br/>🗄️ Reserva — Qwen 3.5 9B Q6_K 64K (Local Manual)"]
   cfg --> plugin_dsh_base_qwen3_5_9b_q6_K
-  plugin_dsh_base_ornith_1_5_9b["ornith-1.5:9b<br/>Ornith 1.5 9B (Local Manual)"]
-  cfg --> plugin_dsh_base_ornith_1_5_9b
-  plugin_dsh_base_ornith_1_5_9b_q6_K["ornith-1.5:9b-q6_K<br/>Ornith 1.5 9B Q6_K 64K (Local Manual)"]
-  cfg --> plugin_dsh_base_ornith_1_5_9b_q6_K
-  plugin_dsh_base_llama3_1_8b_q6_K["llama3.1:8b-q6_K<br/>Llama 3.1 8B Q6_K 64K (Local Manual)"]
+  plugin_dsh_base_qwen3_5_uncensored_latest["qwen3.5-uncensored:latest<br/>🎯 Capitão — Qwen 3.5 9B Uncensored (Local Manual)"]
+  cfg --> plugin_dsh_base_qwen3_5_uncensored_latest
+  plugin_dsh_base_qwen3_5_2b["qwen3.5:2b<br/>⚡ Rápido — Qwen 3.5 2B (Local Manual)"]
+  cfg --> plugin_dsh_base_qwen3_5_2b
+  plugin_dsh_base_llama3_1_8b_q6_K["llama3.1:8b-q6_K<br/>🗄️ Reserva — Llama 3.1 8B Q6_K 64K (Local Manual)"]
   cfg --> plugin_dsh_base_llama3_1_8b_q6_K
-  plugin_dsh_base_mistral_nemo_12b_q4_K_M["mistral-nemo:12b-q4_K_M<br/>Mistral Nemo 12B Q4_K_M 32K (Local Manual)"]
+  plugin_dsh_base_llama3_1_uncensored_latest["llama3.1-uncensored:latest<br/>📄 Documentos — Llama 3.1 8B Uncensored (Local Manual)"]
+  cfg --> plugin_dsh_base_llama3_1_uncensored_latest
+  plugin_dsh_base_mistral_nemo_12b_q4_K_M["mistral-nemo:12b-q4_K_M<br/>🗄️ Reserva — Mistral Nemo 12B Q4_K_M 32K (Local Manual)"]
   cfg --> plugin_dsh_base_mistral_nemo_12b_q4_K_M
-  plugin_dsh_base_qwen3_8_distill_9b_q8["qwen3.8-distill:9b-q8<br/>Qwen 3.8 9B Distill Q8 (Local Manual)"]
-  cfg --> plugin_dsh_base_qwen3_8_distill_9b_q8
-  plugin_dsh_base_qwen3_8_9b_distill_uncensored_heretic_latest["qwen3.8-9b-distill-uncensored-heretic:latest<br/>Qwen 3.8 9B Heretic (Local Manual)"]
+  plugin_dsh_base_mistral_nemo_uncensored_latest["mistral-nemo-uncensored:latest<br/>💻📡 Código/Redes — Mistral Nemo 12B Uncensored (Local Manual)"]
+  cfg --> plugin_dsh_base_mistral_nemo_uncensored_latest
+  plugin_dsh_base_qwen3_8_9b_distill_uncensored_heretic_latest["qwen3.8-9b-distill-uncensored-heretic:latest<br/>⚙️ Automação — Qwen 3.8 9B Heretic (Local Manual)"]
   cfg --> plugin_dsh_base_qwen3_8_9b_distill_uncensored_heretic_latest
-  plugin_dsh_base_auto["auto<br/>FreeLLMAPI Automatic"]
-  cfg --> plugin_dsh_base_auto
+  plugin_dsh_base_nvidia_nemotron_3_5_lightning_free["nvidia/nemotron-3.5-lightning:free<br/>Nemotron 3.5 Lightning (OpenRouter, Free)"]
+  cfg --> plugin_dsh_base_nvidia_nemotron_3_5_lightning_free
   plugin_dsh_base_gemini_3_1_pro_preview_customtools["gemini-3.1-pro-preview-customtools<br/>Gemini 3.1 Pro Preview Custom Tools"]
   cfg --> plugin_dsh_base_gemini_3_1_pro_preview_customtools
   plugin_dsh_base_gpt_5_6_luna["gpt-5.6-luna<br/>GPT-5.6 Luna (Low)"]
@@ -227,16 +229,17 @@ flowchart LR
 | `settings` | `@deepseek-ai/dsh-settings-file` |
 | `credentials` | `@deepseek-ai/dsh-credentials-local` |
 | `llm-pi-ai` | `@deepseek-ai/dsh-llm-pi-ai` |
-| `qwen3.5:9b` | `Qwen 3.5 9B (Local)` |
-| `qwen3.5:9b-q4_K_M` | `Qwen 3.5 9B Q4_K_M 64K (Local Manual)` |
-| `qwen3.5:9b-q6_K` | `Qwen 3.5 9B Q6_K 64K (Local Manual)` |
-| `ornith-1.5:9b` | `Ornith 1.5 9B (Local Manual)` |
-| `ornith-1.5:9b-q6_K` | `Ornith 1.5 9B Q6_K 64K (Local Manual)` |
-| `llama3.1:8b-q6_K` | `Llama 3.1 8B Q6_K 64K (Local Manual)` |
-| `mistral-nemo:12b-q4_K_M` | `Mistral Nemo 12B Q4_K_M 32K (Local Manual)` |
-| `qwen3.8-distill:9b-q8` | `Qwen 3.8 9B Distill Q8 (Local Manual)` |
-| `qwen3.8-9b-distill-uncensored-heretic:latest` | `Qwen 3.8 9B Heretic (Local Manual)` |
-| `auto` | `FreeLLMAPI Automatic` |
+| `qwen3.5:9b` | `🗄️ Reserva — Qwen 3.5 9B (Local)` |
+| `qwen3.5:9b-q4_K_M` | `🗄️ Reserva — Qwen 3.5 9B Q4_K_M 64K (Local Manual)` |
+| `qwen3.5:9b-q6_K` | `🗄️ Reserva — Qwen 3.5 9B Q6_K 64K (Local Manual)` |
+| `qwen3.5-uncensored:latest` | `🎯 Capitão — Qwen 3.5 9B Uncensored (Local Manual)` |
+| `qwen3.5:2b` | `⚡ Rápido — Qwen 3.5 2B (Local Manual)` |
+| `llama3.1:8b-q6_K` | `🗄️ Reserva — Llama 3.1 8B Q6_K 64K (Local Manual)` |
+| `llama3.1-uncensored:latest` | `📄 Documentos — Llama 3.1 8B Uncensored (Local Manual)` |
+| `mistral-nemo:12b-q4_K_M` | `🗄️ Reserva — Mistral Nemo 12B Q4_K_M 32K (Local Manual)` |
+| `mistral-nemo-uncensored:latest` | `💻📡 Código/Redes — Mistral Nemo 12B Uncensored (Local Manual)` |
+| `qwen3.8-9b-distill-uncensored-heretic:latest` | `⚙️ Automação — Qwen 3.8 9B Heretic (Local Manual)` |
+| `nvidia/nemotron-3.5-lightning:free` | `Nemotron 3.5 Lightning (OpenRouter, Free)` |
 | `gemini-3.1-pro-preview-customtools` | `Gemini 3.1 Pro Preview Custom Tools` |
 | `gpt-5.6-luna` | `GPT-5.6 Luna (Low)` |
 | `moonshotai/kimi-k2.6` | `Kimi K2.6 (NVIDIA NIM)` |

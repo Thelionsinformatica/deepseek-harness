@@ -148,6 +148,26 @@ describe('parseDshArgs', () => {
     expect(exitCode(['restore'])).toBe(1)
     expect(exitCode(['restore', 'archive', '--target', ''])).toBe(1)
     expect(exitCode(['--profile', 'web', 'restore', 'archive'])).toBe(1)
+    expect(exitCode(['--profile', 'web', 'collective'])).toBe(1)
+  })
+
+  it('routes collective multi-agent invocations', () => {
+    expect(parse(['collective'])).toEqual({
+      mode: 'collective',
+      dryRun: false,
+      json: false,
+    })
+    expect(parse(['collective', 'auditar', 'integridade', 'do', 'projeto'])).toEqual({
+      mode: 'collective',
+      mission: 'auditar integridade do projeto',
+      dryRun: false,
+      json: false,
+    })
+    expect(parse(['collective', '--dry-run', '--json'])).toEqual({
+      mode: 'collective',
+      dryRun: true,
+      json: true,
+    })
   })
 
   it('keeps its own help for an invocation with no app to hand it to', () => {

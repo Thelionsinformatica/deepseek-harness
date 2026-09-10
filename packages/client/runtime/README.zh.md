@@ -8,6 +8,10 @@
 
 设置所有者共用本包定义的不依赖 React 的 `SettingsScopeSpec`、`SettingsScope` 与快照类型。ui-settings 拥有 `ctx.settingsScope.bind(spec)`、对应的 Host 传输、schema 校验与生命周期；详见[该包的约定](../ui-settings/README.zh.md)。
 
+## 显式任务验收
+
+`Session.prompt(content, mode, signal?, acceptance?)` 仅随该次根会话请求转发显式条件；后续提示词不会继承条件。条件与模型内容分离，不得包含秘密数据。宿主负责检查策略是否可用、输入界限及空闲队列接纳。子会话目标在本地以 `bad-request` 拒绝条件，而不会静默发送未经验证的提示词。失败仍通过 `promptError` 提供。此运行时入口本身不添加输入栏编辑器。
+
 <a id="slot-declaration-injection"></a>
 
 ## Slot 声明注入

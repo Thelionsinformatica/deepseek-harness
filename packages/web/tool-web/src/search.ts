@@ -10,6 +10,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { GenericCallView, JsonValue, ToolResult, WebSearchResultView, WebSource } from '@deepseek-ai/dsh-tools'
 import type { WebSearchResult, WebSearchSource } from '@deepseek-ai/dsh-web'
 import type {} from '@deepseek-ai/dsh-system-prompt'
+import { authorizeWebEgress } from './egress.ts'
 
 /**
  * Default upper bound on returned sources (the `searchMaxResults` config).
@@ -305,6 +306,7 @@ function mergeSearchResults(
  *   `ToolDefinition.timeoutMs` for `@deepseek-ai/dsh-tool-call-timeout-policy` to enforce.
  * @param fetchEnabled - whether the same composition exposes `web_fetch`, which
  *   controls whether search guidance may recommend that follow-up tool.
+ * @param egressPolicy - whether each call requires a fresh outbound approval.
  */
 export function applyWebSearchTool(
   ctx: Context,
@@ -312,6 +314,7 @@ export function applyWebSearchTool(
   maxQueries: number,
   timeoutMs: number,
   fetchEnabled: boolean,
+  egressPolicy: 'ask' | 'allow',
 ): void {
   ctx.systemPrompt.section({
     name: 'tool:web_search',
@@ -359,10 +362,11 @@ export function applyWebSearchTool(
       presentationMeta: (_args, value) => searchMetaFromValue(value),
     },
     timeoutMs,
-    // Provider reads do not mutate parent-agent state.
-    isConcurrencySafe: () => true,
+    // Interactive approvals stay serial in the agent's tool scheduler.
+    isConcurrencySafe: () => egressPolicy === 'allow',
     async execute(args, exec) {
       const queries = parseSearchArgs(args, maxQueries)
+      await authorizeWebEgress(ctx, exec, egressPolicy)
       const result = await runSearchQueries(ctx, queries, maxResults, exec.signal)
       return {
         ...result.content !== undefined ? { content: result.content } : {},

@@ -24,6 +24,8 @@ The entity/storage rationale lives in the [domain Agent Note](../../../.agents/n
 
 Create and delete persist an explicit pending-mutation marker before their record and order can diverge. Startup completes only the marked mutation, then clears the marker; an unmarked order/table mismatch remains unexplained corruption and fails loud. Deleting and re-registering the same path creates a fresh Workspace id and does not automatically re-adopt the retained Sessions.
 
+Workspace paths must be fully qualified. Drive roots and UNC shares are accepted; relative paths, including Windows drive-relative forms, reject before filesystem resolution. Default titles use the final segment or the root spelling, so a drive root has a non-empty title.
+
 ## Model Experience
 
 ### Workspace records and session accounts

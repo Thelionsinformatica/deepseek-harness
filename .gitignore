@@ -41,3 +41,9 @@ apps/cli/.playwright-cli/
 worktrees/
 .agents/worktrees/
 .typert-*/
+
+# User-authored personal artifacts do not belong to the product repository.
+/INSTRUCOES_ENVIO.md
+/STATUS_ENVIO.md
+/email_poema.eml
+/poema_amor.txt

@@ -50,6 +50,10 @@ Host 带 placement 的 `session/queue` 快照也会携带待处理 steering。Qu
 
 完成的一轮会物化一个有序的 `turn-tail` Conversation Node。它由引擎维护的 `TurnLocation` 提供收尾 Assistant 和 Turn data；renderer 在该 Node 的 IconActions 之前渲染 `conversation.chat.turnTail` chain，并派发包含 Turn、收尾 seq 和 `openFile` 的 `TurnTailOwnerProps`。本包只拥有空位；`@deepseek-ai/dsh-client-ui-deliverables` 把改写工具的 `locations` 累积到 Turn data，并拥有产物行、chip 上限和文案，因此把该插件从 cordis.yml 中组合掉即可关闭该交互面，空位以零成本渲染为空。收尾正文经由同一个开关参与其中：chat 视图向可选的 `chatFileMentions` service（ctx.get；由同一插件提供）索取收尾消息的行内代码词表，并把结果接进 MarkdownText 的 `fileMentions` seam——service 缺席时正文保持死文本。
 
+## 显式任务验证
+
+可选的宿主 `task/validation` 事件为每个轮次创建一条状态行。重试显示正在纠正；通过结果在 `turn/end` 报告 `completed` 前仍为临时状态。取消、错误或其他结束原因都不会显示已验证标签。没有验收决策的普通已结束轮次不会生成验证行。该行仅覆盖显式任务条件，不代表整体正确性。实时更新与历史回放使用同一投影。此展示不提供条件编辑器，也不授权带验证条件的任务提交；这些功能需要宿主支持的提交路径。
+
 ## 模型体验
 
 无。会话 UI 在浏览器中渲染会话历史与流；这里没有任何内容进入模型请求。

@@ -379,6 +379,14 @@ export interface SessionsApi {
     mode: 'queue' | 'steer'
     content: PromptContentPart[]
     clientTimeZone?: string
+    /** Optional explicit acceptance; only idle queue submission with a mounted policy. Never use secrets. */
+    acceptance?: {
+      expectedText?: string
+      maxRecoveries: number
+      requiredReadPath?: string
+      readOnly?: boolean
+      arithmeticTests?: { a: number; b: number; expected: number }[]
+    }
   }>):
   Promise<RpcResponse<{
     accepted: true

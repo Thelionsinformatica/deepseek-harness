@@ -39,6 +39,7 @@ import {
 } from '@deepseek-ai/dsh-agent-presets'
 import type { PresetBearingSession } from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-tools'
+import type {} from '@deepseek-ai/dsh-completion-claim-policy'
 import type {
   ApiProxy, ConfigurableProviderView, CredentialView, GoalRef, HistoryEntry, HostFrame,
   ModelCatalogFailure, ModelProviderGroup,
@@ -94,7 +95,7 @@ import type { ApprovalOutcome, ApprovalRequestId } from '@deepseek-ai/dsh-user-a
 // `ctx.get('approval')` without a value dependency on the seam (optional composition).
 import type {} from '@deepseek-ai/dsh-user-approval'
 import { approvalResponsePayloadSchema } from './api/approvals.schema.ts'
-import { imageLimitsProjectionSchema, sessionListMetadataProjectionSchema } from './api/sessions.schema.ts'
+import { imageLimitsProjectionSchema, sessionListMetadataProjectionSchema, taskAcceptanceRequestSchema } from './api/sessions.schema.ts'
 import { questionResponsePayloadSchema } from './api/questions.schema.ts'
 import type { ClientResponse, RpcError, RpcReceipt, RpcRequest, RpcResponse } from './api/rpc.ts'
 import { RpcId } from './api/rpc.ts'
@@ -607,6 +608,7 @@ export interface ApiProxyDefaults {
   adaptiveModelSelection?: (
     input: {
       content: readonly PromptContentPart[]
+      hasImageHistory?: boolean
       hasHistory: boolean
       goalRound?: number
       recovery?: 'completion-evidence'
@@ -750,7 +752,8 @@ function sensitiveLocalToolResult(
   if (contentHasImage(content)) return 'tool-image-output'
   if (isPotentialLocalContextTool(normalizedName)) return normalizedName
   if (accessesLeonKnowledge(argumentsValue) || isLeonKnowledgeSearchResult(content)) return 'leon-knowledge-base'
-  return undefined
+  // Tool names are extensible: an unclassified result cannot inherit earlier external consent.
+  return normalizedName || 'unclassified-tool'
 }
 
 /** Whether a model-visible injected message carries new local data after the user's consent watermark. */
@@ -1484,7 +1487,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   ): Promise<ModelSelection | undefined> {
     const select = defaults.adaptiveModelSelection
     if (select === undefined || !automaticFor(agent)) return undefined
-    const proposed = await select(input)
+    const hasImageHistory = agent.session.events.some(event =>
+      event.type === 'user/message' ? contentHasImage(event.data.content)
+        : event.type === 'tool/result' && contentHasImage(event.data.message.content),
+    )
+    const proposed = await select({ ...input, ...(hasImageHistory ? { hasImageHistory: true } : {}) })
     if (proposed === undefined) return undefined
     const resolved = await ctx.llm.resolveCallConfig(proposed)
     return {
@@ -3148,7 +3155,10 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       },
 
       async prompt(request) {
-        const { sessionId, mode, content, clientTimeZone } = request.payload
+        const { sessionId, mode, content, clientTimeZone, acceptance } = request.payload
+        if (acceptance !== undefined && !taskAcceptanceRequestSchema.safeParse(acceptance).success) {
+          return err(request, { code: 'bad-request', message: 'Invalid task acceptance criteria.', details: { issues: [{ code: 'custom', path: ['acceptance'], message: 'Expected bounded exact-output criteria.' }] } })
+        }
         const canonicalTimeZone = clientTimeZone === undefined
           ? undefined
           : canonicalClientTimeZone(clientTimeZone)
@@ -3170,6 +3180,13 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         }
         const hasImage = content.some(part => part.type === 'image')
         const admit = async (): Promise<RpcResponse<{ accepted: true; messageId: UserMessage['id'] }>> => {
+          if (acceptance !== undefined && (mode !== 'queue' || agent.status !== 'idle'
+            || agent.inbox.nextTurn.length > 0 || agent.inbox.nextStep.length > 0)) {
+            return err(request, { code: 'agent-busy', message: 'Validated tasks require an idle, empty session inbox.', details: { reason: 'TASK_ACCEPTANCE_REQUIRES_IDLE' } })
+          }
+          if (acceptance !== undefined && (ctx.get('agentPresets')?.serviceFor(agent, 'taskAcceptance') ?? agent.ctx.get('taskAcceptance')) === undefined) {
+            return err(request, { code: 'bad-request', message: 'Task acceptance is unavailable in this session.', details: { issues: [{ code: 'custom', path: ['acceptance'], message: 'Native policy is not mounted.' }] } })
+          }
           if (deletingSessions.has(sessionId) || deletedSessions.has(sessionId)) {
             return err(request, sessionDeletionError(sessionId))
           }
@@ -3213,7 +3230,21 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             if (deletingSessions.has(sessionId) || deletedSessions.has(sessionId)) {
               return err(request, sessionDeletionError(sessionId))
             }
-            const message: UserMessage = createUserMessage({ content: durable, source })
+            const acceptanceProvider = ctx.get('agentPresets')?.serviceFor(agent, 'taskAcceptance') ?? agent.ctx.get('taskAcceptance')
+            if (acceptance !== undefined && (acceptanceProvider === undefined || agent.status !== 'idle'
+              || agent.inbox.nextTurn.length > 0 || agent.inbox.nextStep.length > 0)) {
+              return err(request, { code: 'agent-busy', message: 'Task acceptance became unavailable before admission.', details: { reason: 'TASK_ACCEPTANCE_CHANGED' } })
+            }
+            const prepared = acceptance !== undefined && acceptanceProvider !== undefined
+              ? acceptanceProvider.create(durable, acceptance.expectedText, {
+                maxRecoveries: acceptance.maxRecoveries,
+                ...(acceptance.requiredReadPath === undefined ? {} : { requiredReadPath: acceptance.requiredReadPath }),
+                ...(acceptance.readOnly === undefined ? {} : { readOnly: acceptance.readOnly }),
+                ...(acceptance.arithmeticTests === undefined ? {} : { arithmeticTests: acceptance.arithmeticTests }),
+              })
+              : undefined
+            const message: UserMessage = prepared === undefined ? createUserMessage({ content: durable, source })
+              : freezeMessage({ ...prepared, source: { ...prepared.source, ...source } })
             if (adaptive !== undefined) {
               if (agent.status === 'running') {
                 const pending = pendingAdaptiveSelections.get(agent) ?? new Map<string, ModelSelection>()
@@ -3247,7 +3278,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             })
           }
         }
-        return hasImage || automaticFor(agent) ? serializeImageAdmission(agent, admit) : admit()
+        return acceptance !== undefined || hasImage || automaticFor(agent) ? serializeImageAdmission(agent, admit) : admit()
       },
 
       async attachment(request) {

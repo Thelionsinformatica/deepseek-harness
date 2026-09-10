@@ -55,7 +55,7 @@ export function deriveVoiceActivity(
   if (playback.status === 'error') {
     return { state: 'error', toolName: null, pendingCount: session.pending.length, errorSource: 'playback' }
   }
-  if (session.promptError !== null || session.lastAgentError !== null) {
+  if (session.openError !== null || session.promptError !== null || session.lastAgentError !== null) {
     return { state: 'error', toolName: null, pendingCount: session.pending.length, errorSource: 'session' }
   }
   if (capture.status === 'requesting') {

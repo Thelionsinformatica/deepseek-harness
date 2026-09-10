@@ -19,10 +19,13 @@ import type {
 import SessionStore from '@deepseek-ai/dsh-session'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import ToolRuntime from '@deepseek-ai/dsh-tools'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import type { RpcRequest } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
 import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
 import { createApiProxy } from '../src/api-proxy.ts'
+import { chooseAdaptiveModel } from '../src/adaptive-model.ts'
+import * as CompletionClaimPolicy from '@deepseek-ai/dsh-completion-claim-policy'
 
 let nextRpc = 1
 function request<P>(payload: P): RpcRequest<P> {
@@ -88,6 +91,7 @@ async function harness(logged?: {
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(UserQuestionService)
   await ctx.plugin(AgentRegistry)
+  await ctx.plugin(ToolRuntime)
   ctx.llm.registerAdapter(['deepseek-official'], new CatalogAdapter('DeepSeek', [
     { provider: 'deepseek-official', id: 'deepseek-chat', name: 'DeepSeek Chat' },
     { provider: 'deepseek-official', id: 'deepseek-reasoner', name: 'DeepSeek Reasoner', description: 'Reasoning model' },
@@ -130,6 +134,72 @@ function registerTextOnly(ctx: Context): void {
 }
 
 describe('Web session model selection', () => {
+  it('rejects acceptance criteria when the native policy is absent', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    const followup = vi.fn()
+    Object.assign(agent, { status: 'idle', followup })
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp' })
+    const result = await api.sessions.prompt(request({ sessionId, mode: 'queue', content: [{ type: 'text', text: 'Read the code.' }], acceptance: { expectedText: 'CANARY-ANSWER', maxRecoveries: 1 } }))
+    expect(result.result).toMatchObject({ ok: false, error: { message: 'Task acceptance is unavailable in this session.' } })
+    expect(followup).not.toHaveBeenCalled()
+    await ctx.fiber.dispose()
+  })
+
+  it('preserves request provenance and hashes the expected answer at admission', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    await ctx.plugin(CompletionClaimPolicy)
+    const followup = vi.fn()
+    Object.assign(agent, { status: 'idle', followup })
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp' })
+    const req = request({ sessionId, mode: 'queue' as const, content: [{ type: 'text' as const, text: 'Read the code.' }], clientTimeZone: 'UTC', acceptance: { expectedText: 'CANARY-ANSWER', maxRecoveries: 1, readOnly: true } })
+    expectValue(await api.sessions.prompt(req))
+    const message = followup.mock.calls[0]![0] as UserMessage
+    expect(message.source).toMatchObject({ kind: 'user', rpcId: req.rpcId, clientTimeZone: 'UTC', acceptance: { maxRecoveries: 1, version: 1, readOnly: true } })
+    expect(JSON.stringify(message)).not.toContain('CANARY-ANSWER')
+    await ctx.fiber.dispose()
+  })
+
+  it('rejects invalid criteria and running-session acceptance without submitting', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    await ctx.plugin(CompletionClaimPolicy)
+    const followup = vi.fn()
+    Object.assign(agent, { followup })
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp' })
+    for (const maxRecoveries of [1, 4]) {
+      const result = await api.sessions.prompt(request({ sessionId, mode: 'queue', content: [{ type: 'text', text: 'Read.' }], acceptance: { expectedText: 'CANARY-ANSWER', maxRecoveries } }))
+      expect(result.result.ok).toBe(false)
+    }
+    expect(followup).not.toHaveBeenCalled()
+    await ctx.fiber.dispose()
+  })
+
+  it('admits functional criteria without an exact answer and rejects unsafe combinations', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    await ctx.plugin(CompletionClaimPolicy)
+    const followup = vi.fn()
+    Object.assign(agent, { status: 'idle', followup })
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp' })
+    const acceptance = { maxRecoveries: 1, readOnly: true, arithmeticTests: [{ a: 2, b: 3, expected: 5 }] }
+    const invalidNumbers = [NaN, Infinity, -Infinity, 1_000_001, -1_000_001].flatMap(value =>
+      ['a', 'b', 'expected'].map(field => ({
+        ...acceptance, arithmeticTests: [{ a: 2, b: 3, expected: 5, [field]: value }],
+      })),
+    )
+    for (const invalid of [
+      { ...acceptance, readOnly: false }, { ...acceptance, expectedText: 'answer' },
+      { ...acceptance, arithmeticTests: [] }, ...invalidNumbers,
+    ]) {
+      const response = await api.sessions.prompt(request({ sessionId, mode: 'queue', content: [{ type: 'text', text: 'Compute.' }], acceptance: invalid }))
+      expect(response.result.ok).toBe(false)
+    }
+    expect(followup).not.toHaveBeenCalled()
+    expectValue(await api.sessions.prompt(request({ sessionId, mode: 'queue', content: [{ type: 'text', text: 'Compute.' }], acceptance })))
+    const message = followup.mock.calls[0]![0] as UserMessage
+    expect(message.source).toMatchObject({ acceptance })
+    expect(message.source).not.toHaveProperty('acceptance.expectedSha256')
+    await ctx.fiber.dispose()
+  })
+
   it('validates an ordered image batch before persisting any member', async () => {
     const { ctx, agent, sessionId } = await harness()
     const validateImage = vi.fn((_input: { data: Uint8Array }) => Promise.resolve())
@@ -494,6 +564,32 @@ describe('Web session model selection', () => {
     expect(catalog.current).toEqual({ provider: 'deleted-gateway', model: 'deleted-model' })
     expect(catalog.groups.flatMap(group => group.models.map(model => `${group.id}/${model.id}`)))
       .not.toContain('deleted-gateway/deleted-model')
+    await ctx.fiber.dispose()
+  })
+
+  it('routes a text continuation through vision when the durable history contains an image', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    Object.assign(agent, { status: 'idle', followup: vi.fn() })
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      adaptiveModelSelection: input => chooseAdaptiveModel({
+        provider: 'deepseek-official', fastModel: 'deepseek-chat', mainModel: 'deepseek-chat',
+        visionRoute: { provider: 'deepseek-official', model: 'deepseek-reasoner' },
+      }, input),
+      cwd: '/tmp',
+    })
+    agent.session.append('user/message', {
+      id: 'visual-history', role: 'user', source: { kind: 'user' },
+      content: [{ type: 'image', attachment: {
+        attachmentId: 'att-history', mediaType: 'image/png', bytes: 1, width: 1, height: 1,
+      } }],
+    } as never, { surfaceOp: 'append' })
+    agent.session.append('turn/start', { turn: 1 })
+    expectValue(await api.sessions.prompt(request({
+      sessionId, mode: 'queue' as const, content: [{ type: 'text' as const, text: 'continue' }],
+    })))
+    expect(expectValue(await api.sessions.models(request({ sessionId }))).current)
+      .toMatchObject({ provider: 'deepseek-official', model: 'deepseek-reasoner' })
     await ctx.fiber.dispose()
   })
 

@@ -6,6 +6,8 @@ This package fills the optional root-scoped `conversation.hero.dashboard` seat w
 
 The package owns only product presentation and navigation. `Nova tarefa` delegates to the Workspace runtime, recent rows delegate to the Session runtime, and the conversation package keeps ownership of the resident composer and the active-task surface. A session-header `Revisar memória` action opens three views: workspace-isolated shadow suggestions, workspace saved-memory administration, and a separately owner-isolated personal-memory panel. Every addition, correction, deletion, or enablement change is visibly confirmed; disabling personal memory leaves inspection and deletion available. The Host remains the sole owner of authorization, feature flags, settings persistence, storage, redaction, audit, and read-only rollback. Brazilian Portuguese is product-authored beside complete English and Simplified Chinese dictionaries. Removing this package from the Web composition restores the ordinary dashboard-free Hero and removes the review control without changing any memory domain.
 
+API costs are estimates, not invoices. Unpriced calls produce a partial-estimate warning, and metric cards wrap their labels and details rather than truncating billing caveats.
+
 ## Model Experience
 
 None, as the dashboard reads browser projections and invokes navigation or local review actions without adding its copy, candidates, or state to a model request.

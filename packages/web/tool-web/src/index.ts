@@ -35,6 +35,8 @@ export const DEFAULT_FETCH_MAX_OUTPUT_CHARS = 200_000
 
 /** Plugin config: which web tools to register, search bounds, per-tool budgets, and the fetch output cap. */
 export interface Config {
+  /** Ask once per outbound tool call, or allow without a web-specific approval. */
+  egressPolicy?: 'ask' | 'allow'
   /** Register `web_search`. Defaults to true. */
   search?: boolean
   /** Register `web_fetch`. Defaults to true. */
@@ -52,6 +54,7 @@ export interface Config {
 }
 
 export const Config: z<Config> = z.object({
+  egressPolicy: z.union(['ask', 'allow'] as const).default('allow'),
   search: z.boolean().default(true),
   fetch: z.boolean().default(true),
   searchMaxResults: z.number().default(WEB_SEARCH_MAX_RESULTS),
@@ -89,7 +92,9 @@ export function apply(ctx: Context, config: Config): void {
   assertPositiveInteger('searchTimeoutMs', resolved.searchTimeoutMs)
   assertPositiveInteger('fetchMaxOutputChars', resolved.fetchMaxOutputChars)
   if (resolved.search) {
-    applyWebSearchTool(ctx, resolved.searchMaxResults, resolved.searchMaxQueries, resolved.searchTimeoutMs, resolved.fetch)
+    applyWebSearchTool(
+      ctx, resolved.searchMaxResults, resolved.searchMaxQueries, resolved.searchTimeoutMs, resolved.fetch, resolved.egressPolicy,
+    )
   }
-  if (resolved.fetch) applyWebFetchTool(ctx, resolved.fetchTimeoutMs, resolved.fetchMaxOutputChars)
+  if (resolved.fetch) applyWebFetchTool(ctx, resolved.fetchTimeoutMs, resolved.fetchMaxOutputChars, resolved.egressPolicy)
 }

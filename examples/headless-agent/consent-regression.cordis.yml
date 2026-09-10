@@ -1,0 +1,14 @@
+- id: spine
+  name: '@deepseek-ai/dsh-agent-spine-demo'
+  config:
+    agents: []
+    workspaceContext: false
+    skills: { enabled: false }
+    toolBash: false
+    toolJobs: false
+    goals: false
+- id: persistence
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config: { root: './sessions', compression: none }
+- id: questions
+  name: '@deepseek-ai/dsh-user-questions'

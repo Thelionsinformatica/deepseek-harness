@@ -10,6 +10,11 @@ const PLAN_NEXT_ACTION_EN = 'describe your task to generate plan'
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
+  'validation.checking': '正在验证',
+  'validation.correcting': '正在纠正响应',
+  'validation.validated': '已通过任务条件验证',
+  'validation.unvalidated': '未通过验证',
+  'validation.attempt': '第 {attempt} 次尝试',
   'view.chat': '对话',
   'hint.plan': PLAN_NEXT_ACTION_ZH,
   'hint.goal': '输入目标，智能体将持续执行',
@@ -242,6 +247,11 @@ export type ConversationKey = keyof typeof zh
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
+  'validation.checking': 'Verification in progress',
+  'validation.correcting': 'Correcting response',
+  'validation.validated': 'Validated against task criteria',
+  'validation.unvalidated': 'Not validated',
+  'validation.attempt': 'Attempt {attempt}',
   'view.chat': 'Chat',
   'hint.plan': PLAN_NEXT_ACTION_EN,
   'hint.goal': 'describe the objective for a long-running task',

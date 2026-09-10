@@ -1,0 +1,178 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`validates exact tasks through Loader and refuses a repeated mismatch 1`] = `
+[
+  {
+    "text": [
+      {
+        "arguments": "{}",
+        "id": "mutation-probe",
+        "name": "mutation_probe",
+        "type": "tool-call",
+      },
+    ],
+    "type": "assistant/message",
+  },
+  {
+    "content": [
+      {
+        "content": [
+          {
+            "text": "Error: Esta tarefa permite somente leitura: use read, glob ou grep. Não execute alterações, terminal ou delegação.",
+            "type": "text",
+          },
+        ],
+        "isError": true,
+        "toolCallId": "mutation-probe",
+        "type": "tool-result",
+      },
+    ],
+    "type": "tool/result",
+  },
+  {
+    "text": [
+      {
+        "text": "7F3D",
+        "type": "text",
+      },
+    ],
+    "type": "assistant/message",
+  },
+  {
+    "attempt": 1,
+    "reason": "output-mismatch",
+    "status": "retry",
+    "turn": 1,
+    "type": "task/validation",
+  },
+  {
+    "content": [
+      {
+        "text": "A resposta não passou na validação objetiva desta tarefa. Releia o pedido atual e, se necessário, o arquivo indicado nele. Confira o conteúdo e o formato solicitados. Responda com o valor integral solicitado, sem herdar limites de formato de tarefas anteriores. Se o pedido exigir apenas o valor, não acrescente introdução, explicação, rótulos, negrito ou cercas de código. Preserve a unidade completa pedida: uma linha de código não é apenas sua expressão. Use JSON ou outro formato quando o pedido o exigir. Não altere arquivos para satisfazer a validação.",
+        "type": "text",
+      },
+    ],
+    "type": "correction",
+  },
+  {
+    "text": [
+      {
+        "text": "LEON-CPP-7F3D-9206",
+        "type": "text",
+      },
+    ],
+    "type": "assistant/message",
+  },
+  {
+    "attempt": 2,
+    "reason": "matched",
+    "status": "passed",
+    "turn": 1,
+    "type": "task/validation",
+  },
+  {
+    "reason": {
+      "kind": "completed",
+    },
+    "type": "turn/end",
+  },
+  {
+    "text": [
+      {
+        "text": "bad",
+        "type": "text",
+      },
+    ],
+    "type": "assistant/message",
+  },
+  {
+    "attempt": 1,
+    "reason": "output-mismatch",
+    "status": "retry",
+    "turn": 2,
+    "type": "task/validation",
+  },
+  {
+    "content": [
+      {
+        "text": "A resposta não passou na validação objetiva desta tarefa. Releia o pedido atual e, se necessário, o arquivo indicado nele. Confira o conteúdo e o formato solicitados. Responda com o valor integral solicitado, sem herdar limites de formato de tarefas anteriores. Se o pedido exigir apenas o valor, não acrescente introdução, explicação, rótulos, negrito ou cercas de código. Preserve a unidade completa pedida: uma linha de código não é apenas sua expressão. Use JSON ou outro formato quando o pedido o exigir. Não altere arquivos para satisfazer a validação.",
+        "type": "text",
+      },
+    ],
+    "type": "correction",
+  },
+  {
+    "text": [
+      {
+        "text": "still bad",
+        "type": "text",
+      },
+    ],
+    "type": "assistant/message",
+  },
+  {
+    "attempt": 2,
+    "reason": "output-mismatch",
+    "status": "failed",
+    "turn": 2,
+    "type": "task/validation",
+  },
+  {
+    "reason": {
+      "error": {
+        "code": "UNKNOWN",
+        "message": "Task failed its explicit acceptance criteria.",
+      },
+      "kind": "error",
+    },
+    "type": "turn/end",
+  },
+  {
+    "text": [
+      {
+        "text": "return a - b",
+        "type": "text",
+      },
+    ],
+    "type": "assistant/message",
+  },
+  {
+    "attempt": 1,
+    "reason": "output-mismatch",
+    "status": "retry",
+    "turn": 3,
+    "type": "task/validation",
+  },
+  {
+    "content": [
+      {
+        "text": "A resposta não passou na validação desta tarefa. Resultado dos testes: [{"a":2,"b":3,"expected":5,"actual":-1,"passed":false}] Corrija o problema observado e devolva somente a linha return completa. Não altere arquivos.",
+        "type": "text",
+      },
+    ],
+    "type": "correction",
+  },
+  {
+    "text": [
+      {
+        "text": "return b + a",
+        "type": "text",
+      },
+    ],
+    "type": "assistant/message",
+  },
+  {
+    "attempt": 2,
+    "reason": "matched",
+    "status": "passed",
+    "turn": 3,
+    "type": "task/validation",
+  },
+  {
+    "reason": {
+      "kind": "completed",
+    },
+    "type": "turn/end",
+  },
+]
+`;

@@ -151,4 +151,83 @@ describe('Leon Executive, Blackboard and Coordinator Evolution', () => {
       await rm(tempDir, { recursive: true, force: true })
     }
   })
+
+  it('supports AgentCoder iterative feedback loop: rejection with expected vs observed and rework', () => {
+    const blackboard = new LeonBlackboard('mission-agentcoder-04')
+    const task = blackboard.createTask({
+      id: 'task-auth-patch',
+      title: 'Fix auth token validation',
+      description: 'Require bearer token on endpoint',
+      assignedTo: 'coder-agent',
+      writeScopes: ['packages/auth/src'],
+      maxAttempts: 3,
+      acceptanceCriteria: ['Return 401 when token is missing'],
+    })
+
+    expect(task.attempts).toBe(0)
+    expect(task.writeScopes).toContain('packages/auth/src')
+
+    // 1st attempt: Coder claims and delivers
+    blackboard.claimTask('task-auth-patch', 'coder-agent')
+    expect(blackboard.read().tasks[0].attempts).toBe(1)
+    blackboard.submitDelivery('task-auth-patch', 'coder-agent', 'Added check for Authorization header')
+
+    // Reviewer tests and finds a defect (AgentCoder pattern)
+    const rejected = blackboard.rejectDelivery('task-auth-patch', 'reviewer-agent', {
+      reason: 'Token was checked but malformed header causes 500 instead of 401',
+      expected: 'HTTP 401 Unauthorized',
+      observed: 'HTTP 500 Internal Server Error',
+    })
+
+    expect(rejected.status).toBe('in_progress')
+    expect(rejected.lastRejection?.expected).toBe('HTTP 401 Unauthorized')
+    expect(rejected.lastRejection?.observed).toBe('HTTP 500 Internal Server Error')
+
+    // A shared finding is posted to the blackboard automatically
+    const snapshot = blackboard.read()
+    const qaFinding = snapshot.findings.find(f => f.topic === 'qa_rejection')
+    expect(qaFinding).toBeDefined()
+    expect(qaFinding?.content).toContain('Esperado: HTTP 401 Unauthorized')
+
+    // 2nd attempt: Coder adjusts and resubmits
+    blackboard.claimTask('task-auth-patch', 'coder-agent')
+    expect(blackboard.read().tasks[0].attempts).toBe(2)
+    blackboard.submitDelivery('task-auth-patch', 'coder-agent', 'Added try-catch to return 401 on malformed tokens')
+
+    // Reviewer tests again and now passes
+    const completed = blackboard.completeTask('task-auth-patch', 'reviewer-agent')
+    expect(completed.status).toBe('completed')
+  })
+
+  it('triggers circuit breaker and blocks task when maxAttempts is reached', () => {
+    const blackboard = new LeonBlackboard('mission-circuitbreaker-05')
+    blackboard.createTask({
+      id: 'task-fragile',
+      title: 'Fragile operation',
+      description: 'Test limit',
+      assignedTo: 'coder-agent',
+      maxAttempts: 2,
+    })
+
+    // 1st attempt
+    blackboard.claimTask('task-fragile', 'coder-agent')
+    blackboard.submitDelivery('task-fragile', 'coder-agent', 'Fix 1')
+    blackboard.rejectDelivery('task-fragile', 'reviewer-agent', {
+      reason: 'Fail 1',
+      expected: 'Pass',
+      observed: 'Fail',
+    })
+
+    // 2nd attempt (hits maxAttempts = 2)
+    blackboard.claimTask('task-fragile', 'coder-agent')
+    blackboard.submitDelivery('task-fragile', 'coder-agent', 'Fix 2')
+    const blocked = blackboard.rejectDelivery('task-fragile', 'reviewer-agent', {
+      reason: 'Fail 2 again',
+      expected: 'Pass',
+      observed: 'Fail',
+    })
+
+    expect(blocked.status).toBe('blocked')
+    expect(() => blackboard.claimTask('task-fragile', 'coder-agent')).toThrow(/blocked due to excessive rejections/)
+  })
 })

@@ -13,6 +13,14 @@ export type BlackboardTaskStatus =
   | 'completed'
   | 'blocked'
 
+export interface BlackboardRejection {
+  rejectedBy: string
+  reason: string
+  expected: string
+  observed: string
+  timestamp: number
+}
+
 export interface BlackboardTask {
   id: string
   title: string
@@ -21,7 +29,11 @@ export interface BlackboardTask {
   status: BlackboardTaskStatus
   dependsOn: readonly string[]
   acceptanceCriteria: readonly string[]
+  writeScopes: readonly string[]
+  attempts: number
+  maxAttempts: number
   deliveryEvidence: string | null
+  lastRejection: BlackboardRejection | null
   createdAt: number
   updatedAt: number
 }
@@ -47,6 +59,8 @@ export interface CreateTaskParams {
   dependsOn?: readonly string[] | undefined
   acceptanceCriteria?: readonly string[] | undefined
   assignedTo?: string | undefined
+  writeScopes?: readonly string[] | undefined
+  maxAttempts?: number | undefined
 }
 
 export class LeonBlackboard {
@@ -69,7 +83,11 @@ export class LeonBlackboard {
       status: 'pending',
       dependsOn: params.dependsOn ? [...params.dependsOn] : [],
       acceptanceCriteria: params.acceptanceCriteria ? [...params.acceptanceCriteria] : [],
+      writeScopes: params.writeScopes ? [...params.writeScopes] : [],
+      attempts: 0,
+      maxAttempts: params.maxAttempts && params.maxAttempts > 0 ? params.maxAttempts : 3,
       deliveryEvidence: null,
+      lastRejection: null,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     }
@@ -95,6 +113,7 @@ export class LeonBlackboard {
     const task = this.tasks.get(taskId)
     if (!task) throw new Error(`Task ${taskId} not found`)
     if (task.status === 'completed') throw new Error(`Task ${taskId} is already completed`)
+    if (task.status === 'blocked') throw new Error(`Task ${taskId} is blocked due to excessive rejections`)
     for (const depId of task.dependsOn) {
       const dep = this.tasks.get(depId)
       if (!dep || dep.status !== 'completed') {
@@ -102,6 +121,7 @@ export class LeonBlackboard {
       }
     }
     task.assignedTo = agentName.trim()
+    task.attempts += 1
     task.status = 'in_progress'
     task.updatedAt = Date.now()
     return { ...task }
@@ -120,6 +140,42 @@ export class LeonBlackboard {
     task.deliveryEvidence = evidence.trim()
     task.status = 'review_ready'
     task.updatedAt = Date.now()
+    return { ...task }
+  }
+
+  /** Reviewer rejects delivery with concrete expected vs observed feedback (AgentCoder pattern). */
+  rejectDelivery(
+    taskId: string,
+    reviewerName: string,
+    feedback: { reason: string; expected: string; observed: string },
+  ): BlackboardTask {
+    const task = this.tasks.get(taskId)
+    if (!task) throw new Error(`Task ${taskId} not found`)
+    if (task.status !== 'review_ready') {
+      throw new Error(`Task ${taskId} must be in review_ready to be rejected, current is ${task.status}`)
+    }
+
+    const rejection: BlackboardRejection = {
+      rejectedBy: reviewerName.trim(),
+      reason: feedback.reason.trim(),
+      expected: feedback.expected.trim(),
+      observed: feedback.observed.trim(),
+      timestamp: Date.now(),
+    }
+    task.lastRejection = rejection
+    task.updatedAt = Date.now()
+
+    this.postFinding(
+      reviewerName,
+      'qa_rejection',
+      `[REJEIÇÃO TAREFA ${taskId}] Motivo: ${rejection.reason} | Esperado: ${rejection.expected} | Observado: ${rejection.observed}`,
+    )
+
+    if (task.attempts >= task.maxAttempts) {
+      task.status = 'blocked'
+    } else {
+      task.status = 'in_progress'
+    }
     return { ...task }
   }
 

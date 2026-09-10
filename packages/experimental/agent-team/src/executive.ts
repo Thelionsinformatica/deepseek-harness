@@ -6,12 +6,34 @@
 
 import type { BlackboardTask, LeonBlackboard } from './blackboard.ts'
 
+export const AGENT_ROLES = {
+  EXECUTIVE: 'lead-supervisor',
+  RESEARCHER: 'researcher-agent',
+  CODER: 'coder-agent',
+  CHECKER: 'reviewer-agent',
+} as const
+
+export interface RolePermissions {
+  readonly canWriteFiles: boolean
+  readonly canRunTests: boolean
+  readonly canModifyDag: boolean
+}
+
+export const ROLE_PERMISSIONS: Record<keyof typeof AGENT_ROLES, RolePermissions> = {
+  EXECUTIVE: { canWriteFiles: false, canRunTests: false, canModifyDag: true },
+  RESEARCHER: { canWriteFiles: false, canRunTests: false, canModifyDag: false },
+  CODER: { canWriteFiles: true, canRunTests: true, canModifyDag: false },
+  CHECKER: { canWriteFiles: false, canRunTests: true, canModifyDag: false },
+}
+
 export interface DecomposedTaskSpec {
   title: string
   description: string
   suggestedRole: 'researcher' | 'coder' | 'tester' | 'reviewer'
   dependsOn?: string[] | undefined
   acceptanceCriteria: string[]
+  writeScopes?: string[] | undefined
+  maxAttempts?: number | undefined
 }
 
 export interface MissionStrategy {
@@ -46,6 +68,8 @@ export class LeonExecutive {
         description: spec.description,
         ...spec.dependsOn !== undefined ? { dependsOn: spec.dependsOn } : {},
         acceptanceCriteria: spec.acceptanceCriteria,
+        ...spec.writeScopes !== undefined ? { writeScopes: spec.writeScopes } : {},
+        ...spec.maxAttempts !== undefined ? { maxAttempts: spec.maxAttempts } : {},
       })
       createdTasks.push(task)
     }

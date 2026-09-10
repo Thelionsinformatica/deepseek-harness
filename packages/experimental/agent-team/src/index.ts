@@ -34,14 +34,20 @@ export { TeamError } from './error.ts'
 export { foldTeam } from './fold.ts'
 export type {
   BlackboardFinding,
+  BlackboardRejection,
   BlackboardSnapshot,
   BlackboardTask,
   BlackboardTaskStatus,
   CreateTaskParams,
 } from './blackboard.ts'
 export { LeonBlackboard } from './blackboard.ts'
-export type { DecomposedTaskSpec, MissionStrategy } from './executive.ts'
-export { LEON_EXECUTIVE_SYSTEM_PROMPT, LeonExecutive } from './executive.ts'
+export type { DecomposedTaskSpec, MissionStrategy, RolePermissions } from './executive.ts'
+export {
+  AGENT_ROLES,
+  LEON_EXECUTIVE_SYSTEM_PROMPT,
+  LeonExecutive,
+  ROLE_PERMISSIONS,
+} from './executive.ts'
 export type { CoordinatorInsight } from './coordinator-evolution.ts'
 export {
   CoordinatorEvolution,

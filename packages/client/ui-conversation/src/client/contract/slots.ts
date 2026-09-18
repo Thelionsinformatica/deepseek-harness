@@ -22,9 +22,13 @@ import type { ComposerSubmitGesture, InputSubmitMode } from './composer-submissi
 import type { ChatNode, ChatNodeKind } from './chat-nodes.ts'
 import type { CallId, SelectionTarget, ViewTab } from './views.ts'
 
-/** Browser-owned image that has not crossed the durable host boundary. */
+/**
+ * Browser-owned attachment that has not crossed the durable host boundary.
+ * `kind: 'image'` travels the durable image path; `kind: 'file'` travels the
+ * file path and carries an inline SVG badge as its rail thumbnail.
+ */
 export interface ComposerAttachment {
-  kind: 'image'
+  kind: 'image' | 'file'
   id: DraftAttachmentId
   file: File
   previewUrl: string

@@ -156,7 +156,9 @@ export function WorkDashboard({ useSessions, useWorkspaces, startSession, openSe
           tone="success"
         />
         <Metric
-          value={formatApiCost(apiCostNanos)}
+          value={unpricedModelCalls > 0 && pricedModelCalls === 0
+            ? t('metric.apiCost.unknown')
+            : formatApiCost(apiCostNanos)}
           label={t('metric.apiCost')}
           detail={unpricedModelCalls > 0
             ? t('metric.apiCost.unpriced', { count: unpricedModelCalls })

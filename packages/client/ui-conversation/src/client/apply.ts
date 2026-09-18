@@ -38,6 +38,7 @@ import { queueDockEntry } from './queue/QueueDock.tsx'
 import { ConversationRoot } from './skeleton/ConversationRoot.tsx'
 import { ConversationSession, ConversationSessionHeader } from './skeleton/ConversationSession.tsx'
 import { DetailsPanel } from './skeleton/DetailsPanel.tsx'
+import { ActivityControls } from './skeleton/ActivityControls.tsx'
 import { en, NS, zh, type ConversationKey } from './locales.ts'
 import { registerConversationNodes } from './conversation-nodes/register.ts'
 import { registerChatNodeRenderers } from './chat/register-node-renderers.ts'
@@ -292,6 +293,11 @@ export function apply(ctx: Context): void {
       open: (id) => { sessions.open(id) },
     }),
   }, ConversationSessionHeader)
+
+  slots.register({
+    name: 'conversation.session.header.utilities', id: 'activity', order: -10, locale: NS,
+    inject: () => ({ openActivity: () => { layout.openDetails() } }),
+  }, ActivityControls)
 
   // The default composer body: its own single slot inside the composer
   // chain's fallback. Public machine surface arrives via the

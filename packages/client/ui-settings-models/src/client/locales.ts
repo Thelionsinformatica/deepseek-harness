@@ -1,9 +1,11 @@
 /** Copy dictionaries for the Models settings section. */
 
 import { WELCOME_NOTICE_COPY } from '../onboarding-copy.ts'
+import { assignmentsEn, assignmentsPt, assignmentsZh } from './assignment-copy.ts'
 
 /** English strings (the key-set source of truth for this pair). */
 export const en = {
+  ...assignmentsEn,
   nav: 'Models',
   title: 'Models',
   intro: 'Use local models directly or add API keys for optional remote providers.',
@@ -106,6 +108,7 @@ export type ModelsKey = keyof typeof en
 
 /** Brazilian Portuguese strings (same keys as {@link en}). */
 export const pt: { [Key in keyof typeof en]: string } = {
+  ...assignmentsPt,
   nav: 'Modelos',
   title: 'Modelos',
   intro: 'Use modelos locais diretamente ou adicione chaves de API para provedores remotos opcionais.',
@@ -205,6 +208,7 @@ export const pt: { [Key in keyof typeof en]: string } = {
 
 /** Chinese strings (same keys as {@link en}). */
 export const zh: { [Key in keyof typeof en]: string } = {
+  ...assignmentsZh,
   nav: '模型',
   title: '模型',
   intro: '直接使用本地模型，或为可选的远程提供方添加 API 密钥。',

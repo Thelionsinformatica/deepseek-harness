@@ -11,7 +11,7 @@ export const name = 'client-ui-web-access-invariant'
 /** Service required before the companion can reserve package ownership. */
 export const inject = ['invariants']
 
-/** Slot declaration, registration, and teardown are covered by this package's browser test. */
+/** No runtime invariant: this UI owns no durable state; browser tests cover slot registration and teardown. */
 const install: InvariantInstaller = () => {}
 
 /** Register the package-owned invariant companion. */

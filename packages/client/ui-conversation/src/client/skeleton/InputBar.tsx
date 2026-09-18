@@ -79,6 +79,12 @@ function editRangeOf(pending: PendingEdit | null, prevLength: number, nextLength
 
 export type InputBarProps = ComposerBarProps
 
+/**
+ * Largest attachment the file path accepts, mirroring the Host-side cap in
+ * `packages/host/apiproxy/src/api-proxy.ts` (`MAX_ATTACHED_FILE_BYTES`).
+ */
+const MAX_ATTACHED_FILE_BYTES = 16 * 1024 * 1024
+
 export function InputBar({
   useSession, useInput, inputActions, keyboard, addImages, removeImage, draftImages,
   resolveSubmitMode, toggleCommandMenu, toggleReferenceMenu, toggleSkillMenu,
@@ -534,25 +540,28 @@ export function InputBar({
   // a projected limit is refused as a whole batch, announced immediately, and
   // never enters the rail — no more submit-time failure rolling the rail
   // back. The host enforces the same limits at submit for callers that bypass
-  // this composer.
+  // this composer. Image batches keep the image limits; a batch carrying any
+  // other file is checked against the file cap instead, because those bytes
+  // travel the file path to <DSH_HOME>/uploads rather than the image store.
   const intakeImages = useCallback((files: readonly File[]): void => {
     if (addImages === undefined || files.length === 0) return
     const rejected = ((): string | null => {
-      if (imageLimits !== undefined) {
-        // Format precedes limits (DeepSeek Chat's filter order): a batch with
-        // a non-image must announce the format problem, not a count or size
-        // it could never pass anyway — addImages rejects it authoritatively.
-        if (files.some(file => !(imageLimits.mediaTypes as readonly string[]).includes(file.type))) {
-          return addImages(files)
-        }
-        if (attachments.length + files.length > imageLimits.maxImagesPerMessage) {
+      const mediaTypes = imageLimits === undefined ? undefined : imageLimits.mediaTypes as readonly string[]
+      const images = mediaTypes === undefined ? [] : files.filter(file => mediaTypes.includes(file.type))
+      const others = files.filter(file => !images.includes(file))
+      if (others.some(file => file.size > MAX_ATTACHED_FILE_BYTES)) {
+        return t('file.tooLarge', { size: imageSizeText(MAX_ATTACHED_FILE_BYTES) })
+      }
+      if (images.length > 0 && imageLimits !== undefined) {
+        const held = attachments.filter(attachment => (mediaTypes ?? []).includes(attachment.file.type))
+        if (held.length + images.length > imageLimits.maxImagesPerMessage) {
           return t('image.tooMany', { count: imageLimits.maxImagesPerMessage })
         }
-        if (files.some(file => file.size > imageLimits.maxImageBytes)) {
+        if (images.some(file => file.size > imageLimits.maxImageBytes)) {
           return t('image.fileTooLarge', { size: imageSizeText(imageLimits.maxImageBytes) })
         }
-        const total = attachments.reduce((sum, attachment) => sum + attachment.file.size, 0)
-          + files.reduce((sum, file) => sum + file.size, 0)
+        const total = held.reduce((sum, attachment) => sum + attachment.file.size, 0)
+          + images.reduce((sum, file) => sum + file.size, 0)
         if (total > imageLimits.maxMessageImageBytes) {
           return t('image.totalTooLarge', { size: imageSizeText(imageLimits.maxMessageImageBytes) })
         }
@@ -933,7 +942,6 @@ export function InputBar({
           ref={fileInputRef}
           type="file"
           multiple
-          accept="image/png,image/jpeg,image/webp,image/gif"
           className={css.fileInput}
           aria-label={t('add.files.picker')}
           disabled={locked || machineBusy || addImages === undefined}

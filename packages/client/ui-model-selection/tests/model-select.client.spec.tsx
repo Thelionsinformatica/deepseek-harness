@@ -49,6 +49,7 @@ function state(overrides: Partial<ModelDirectoryState> = {}): ModelDirectoryStat
     routable: true,
     automatic: false,
     automaticAvailable: false,
+    externalFailoverAvailable: true,
     externalFailoverConsent: false,
     groups: [{
       id: 'deepseek-official',
@@ -65,6 +66,27 @@ function state(overrides: Partial<ModelDirectoryState> = {}): ModelDirectoryStat
 afterEach(cleanup)
 
 describe('ModelSelect reasoning effort', () => {
+  it('offers automatic mode directly without changing the session or granting cloud access on open', () => {
+    const selectAutomatic = vi.fn().mockResolvedValue(true)
+    const select = vi.fn().mockResolvedValue(true)
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={createSnapshotStore<ModelDirectoryState>(state({ automaticAvailable: true }))}
+      load={vi.fn()}
+      select={select}
+      selectAutomatic={selectAutomatic}
+      useSession={useSession}
+      t={tPt}
+    />)
+    fireEvent.click(screen.getByRole('button', { name: /Selecionar modelo, atual/ }))
+    expect(screen.getByText(/Descreva a tarefa ao Leon/)).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: /Modelo manual/ })).toBeTruthy()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Leon Automático' }))
+    expect(screen.getByRole('menuitemcheckbox').getAttribute('aria-checked')).toBe('false')
+    expect(select).not.toHaveBeenCalled()
+    expect(selectAutomatic).not.toHaveBeenCalled()
+  })
   it('refreshes the corner model indicator when automatic failover lands', async () => {
     const directory = createSnapshotStore<ModelDirectoryState>(state({
       automatic: true,
@@ -173,6 +195,28 @@ describe('ModelSelect reasoning effort', () => {
 
     await waitFor(() => { expect(selectAutomatic).toHaveBeenCalledWith(true) })
     expect(directory.getSnapshot().externalFailoverConsent).toBe(true)
+  })
+
+  it('does not offer external consent when the deployment has no external failover', () => {
+    const directory = createSnapshotStore<ModelDirectoryState>(state({
+      automaticAvailable: true,
+      externalFailoverAvailable: false,
+    }))
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={directory}
+      load={vi.fn()}
+      select={vi.fn().mockResolvedValue(true)}
+      selectAutomatic={vi.fn().mockResolvedValue(true)}
+      useSession={useSession}
+      t={tPt}
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Selecionar modelo, atual/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Modelo/ }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /Leon Automático/ }))
+    expect(screen.queryByRole('menuitemcheckbox', { name: /Permitir fallback por API/ })).toBeNull()
   })
 
   it('reflects the external fallback consent returned by the Host', () => {

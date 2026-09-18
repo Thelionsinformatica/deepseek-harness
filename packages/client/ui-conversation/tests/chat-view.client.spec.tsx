@@ -389,6 +389,24 @@ describe('Chat node rendering', () => {
 })
 
 describe('ChatView', () => {
+  it('follows each live tool once without reopening on output updates', () => {
+    const h = makeHarness({ running: true, runningCalls: [runningCall('live-1')] })
+    render(<h.ChatView {...h.props} />)
+    expect(h.openDetails).toHaveBeenCalledExactlyOnceWith({ callId: 'live-1', toolName: 'bash', turnSeq: 2, stepSeq: 1 })
+    act(() => { h.set({ runningCalls: [{ ...runningCall('live-1'), argsRaw: '{"command":"updated"}' }] }) })
+    expect(h.openDetails).toHaveBeenCalledTimes(1)
+    act(() => { h.set({ runningCalls: [runningCall('live-2', 'read')] }) })
+    expect(h.openDetails).toHaveBeenLastCalledWith({ callId: 'live-2', toolName: 'read', turnSeq: 2, stepSeq: 1 })
+    act(() => { h.set({ running: false, runningCalls: [] }) })
+    expect(h.openDetails).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not label historical tool material as a new live action', () => {
+    const h = makeHarness({ running: false, runningCalls: [runningCall('historical')] })
+    render(<h.ChatView {...h.props} />)
+    expect(h.openDetails).not.toHaveBeenCalled()
+  })
+
   it('keeps prompt-assembly events hidden by default and reveals them on demand', () => {
     const context = {
       kind: 'context', seq: 2, time: 2_000,

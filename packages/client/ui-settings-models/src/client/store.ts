@@ -7,7 +7,7 @@
  */
 
 import type {
-  ConfigurableProviderView, CredentialView, IApiClient, SettingsNamespaceView,
+  ConfigurableProviderView, CredentialView, IApiClient, SettingsNamespaceView, ModelProviderGroup,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
@@ -36,6 +36,10 @@ export interface ProviderRow {
 
 /** Page snapshot. */
 export interface ModelsSettingsState {
+  /** Adapter-confirmed model choices, loaded when the assignment panel opens. */
+  catalog?: ModelProviderGroup[]
+  /** Catalog failures are distinct from configured credentials and inference health. */
+  catalogError?: string
   status: 'idle' | 'loading' | 'ready' | 'error'
   /** Whole-load failure text; row-level write failures stay in the editor. */
   error: string | null
@@ -113,6 +117,26 @@ export class ModelsSettingsStore {
 
   /** Latest load wins; an older response never overwrites a newer one. */
   private generation = 0
+  private catalogGeneration = 0
+
+  /** Refresh model availability without generating a completion or probing credentials. */
+  async loadCatalog(): Promise<void> {
+    const generation = ++this.catalogGeneration
+    try {
+      const response = await this.api.llm.models({})
+      if (!response.result.ok) throw new Error(response.result.error.message)
+      if (generation !== this.catalogGeneration) return
+      const value = response.result.value
+      this.store.update((s) => {
+        s.catalog = value.groups
+        if (value.failures.length > 0) s.catalogError = value.failures.map(f => f.name).join(', ')
+        else delete s.catalogError
+      })
+    } catch (error) {
+      if (generation !== this.catalogGeneration) return
+      this.store.update((s) => { s.catalogError = messageOf(error) })
+    }
+  }
 
   /**
    * @param api - the wire face (credentials/llm domains, and settings writes).

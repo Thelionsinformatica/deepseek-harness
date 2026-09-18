@@ -74,7 +74,7 @@ async function bench() {
         result: {
           ok: true as const,
           value: {
-            current, routable, automatic, automaticAvailable: true,
+            current, routable, automatic, automaticAvailable: true, externalFailoverAvailable: true,
             ...externalFailoverConsent ? { externalFailoverConsent: true } : {},
             groups: GROUPS, failures: [],
           },

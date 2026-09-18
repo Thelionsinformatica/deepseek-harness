@@ -1,0 +1,52 @@
+/** Copy for model assignments; no provider or model IDs are translated. */
+export const assignmentsEn = {
+  mainModel: 'Main model', mainHelp: 'Default for new conversations. Existing chats keep their own selection.',
+  auxiliaryModels: 'Auxiliary models', auxiliaryHelp: 'Each assignment changes the real consumer. Clear an assignment to restore its inherited configuration.',
+  roleTitle: 'Conversation titles', roleCompression: 'Context compression', roleVision: 'Vision in automatic mode',
+  roleWorker: 'Investigation / workers', roleReview: 'Completion auditor',
+  collaboration: 'Collaboration', collaborationHelp: 'The main model coordinates; delegated workers use their own sessions and the auditor checks completion evidence. These assignments do not start a mission or change its budget.',
+  collaborationLimits: 'The experimental collective keeps its separate composition, limits and verifier. Mixture-of-responses presets are not enabled here.',
+  rolesUnavailable: 'Auxiliary assignments are not enabled in this host composition.',
+  roleInherited: 'Inherited configuration', roleChange: 'Change', roleReset: 'Clear assignment', roleResetAll: 'Clear all assignments',
+  roleProvider: 'Provider', roleModel: 'Model', roleEffort: 'Reasoning', roleProviderDefault: 'Provider default',
+  roleExternalConsent: 'I authorize this function to send its context to this provider and incur API charges.',
+  roleExternalWarning: 'External/API or unverified route. A localhost gateway can send data to the cloud. No budget cap is established by this selector.',
+  roleCatalog: 'Refresh availability', roleCatalogHelp: 'Checks the registered catalog only; does not generate a response or prove inference health.',
+  roleSave: 'Save assignment', roleSaved: 'Saved and reread from the host.', roleCancel: 'Cancel',
+  roleMissing: 'The saved model is unavailable in the current catalog. Choose an available model before saving.',
+  rolePolicies: 'Permissions remain controlled by the user. MCP, skill search and curation have no independent model selector in this composition.',
+}
+/** Brazilian Portuguese model assignment labels and consent explanation. */
+export const assignmentsPt: Record<keyof typeof assignmentsEn, string> = {
+  mainModel: 'Modelo principal', mainHelp: 'Padrão para novas conversas. Os chats existentes mantêm sua própria seleção.',
+  auxiliaryModels: 'Modelos auxiliares', auxiliaryHelp: 'Cada escolha altera a função real. Limpar uma atribuição restaura a configuração herdada pela função.',
+  roleTitle: 'Títulos das conversas', roleCompression: 'Compactação de contexto', roleVision: 'Visão no modo automático',
+  roleWorker: 'Investigação / trabalhadores', roleReview: 'Auditor de conclusão',
+  collaboration: 'Colaboração', collaborationHelp: 'O modelo principal coordena; os trabalhadores delegados usam sessões próprias e o auditor verifica as evidências de conclusão. Estas escolhas não iniciam missões nem alteram o orçamento.',
+  collaborationLimits: 'O coletivo experimental conserva sua composição, limites e verificador separados. Presets de mistura de respostas não estão habilitados aqui.',
+  rolesUnavailable: 'As atribuições auxiliares não estão habilitadas nesta composição do servidor.',
+  roleInherited: 'Configuração herdada', roleChange: 'Alterar', roleReset: 'Limpar atribuição', roleResetAll: 'Limpar todas as atribuições',
+  roleProvider: 'Provedor', roleModel: 'Modelo', roleEffort: 'Raciocínio', roleProviderDefault: 'Padrão do provedor',
+  roleExternalConsent: 'Autorizo esta função a enviar seu contexto a este provedor e gerar cobranças de API.',
+  roleExternalWarning: 'Rota externa/API ou não verificada. Um gateway em localhost pode enviar dados à nuvem. Este seletor não estabelece um limite de gasto.',
+  roleCatalog: 'Atualizar disponibilidade', roleCatalogHelp: 'Consulta apenas o catálogo registrado; não gera resposta nem comprova a inferência.',
+  roleSave: 'Salvar atribuição', roleSaved: 'Salvo e relido do servidor.', roleCancel: 'Cancelar',
+  roleMissing: 'O modelo salvo não está disponível no catálogo atual. Escolha um modelo disponível antes de salvar.',
+  rolePolicies: 'As permissões continuam sob controle do usuário. MCP, busca de skills e curadoria não têm seletor de modelo independente nesta composição.',
+}
+/** Chinese model assignment labels and consent explanation. */
+export const assignmentsZh: Record<keyof typeof assignmentsEn, string> = {
+  mainModel: '主模型', mainHelp: '仅用于新对话。已有对话保留各自的选择。',
+  auxiliaryModels: '辅助模型', auxiliaryHelp: '每项选择影响真实执行。清除分配后恢复该功能的继承配置。',
+  roleTitle: '对话标题', roleCompression: '上下文压缩', roleVision: '自动模式视觉', roleWorker: '调查与工作代理', roleReview: '完成审查员',
+  collaboration: '协作', collaborationHelp: '主模型协调任务，工作代理使用独立会话，审查员检查完成证据。此处不启动任务或修改预算。',
+  collaborationLimits: '实验团队保留独立配置、限制和验证器。此处不启用混合回答预设。',
+  rolesUnavailable: '当前服务器组合未启用辅助模型分配。', roleInherited: '继承配置', roleChange: '更改', roleReset: '清除分配', roleResetAll: '清除所有分配',
+  roleProvider: '提供商', roleModel: '模型', roleEffort: '推理', roleProviderDefault: '提供商默认',
+  roleExternalConsent: '我授权此功能向该提供商发送上下文并产生 API 费用。',
+  roleExternalWarning: '外部 API 或未经验证的路由。localhost 网关也可能将数据发送到云端。此选择器不设置费用上限。',
+  roleCatalog: '刷新可用模型', roleCatalogHelp: '仅查询已注册目录，不生成回答，也不证明推理服务正常。',
+  roleSave: '保存分配', roleSaved: '已保存并从服务器重新读取。', roleCancel: '取消',
+  roleMissing: '当前目录中没有已保存的模型。保存前请选择可用模型。',
+  rolePolicies: '权限仍由用户控制。当前组合不为 MCP、技能检索或整理提供独立模型选择器。',
+}

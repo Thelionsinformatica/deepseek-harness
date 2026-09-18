@@ -297,6 +297,17 @@ export function ModelSelect(
         >
           {pane === 'root' && (
             <>
+              <div className={css.automaticSummary}>
+                <span className={css.modelName}>{state.automatic ? t('automatic.name') : modelLabel}</span>
+                <span className={clsx(css.description, css.wrappingDescription)}>{t('menu.guidance')}</span>
+              </div>
+              {state.automaticAvailable && (
+                <button ref={itemRef()} type="button" role="menuitem" className={css.cell} onClick={configureAutomatic}>
+                  <span className={css.cellLabel}>{t('automatic.name')}</span>
+                  <span className={css.check}>{state.automatic ? <IconCheckOutline16 /> : null}</span>
+                  <IconChevronRightOutline14 className={css.cellChevron} />
+                </button>
+              )}
               <button ref={itemRef()} type="button" role="menuitem" className={css.cell} onClick={() => { setPane('model') }}>
                 <span className={css.cellLabel}>{t('menu.model')}</span>
                 <span className={css.cellValue}>{modelLabel}</span>
@@ -398,25 +409,27 @@ export function ModelSelect(
                   {t('automatic.description')}
                 </span>
               </div>
-              <button
-                ref={itemRef()}
-                type="button"
-                role="menuitemcheckbox"
-                aria-checked={externalFailoverConsent}
-                className={clsx(css.option, externalFailoverConsent && css.selected)}
-                disabled={busy}
-                onClick={() => { setExternalFailoverConsent(value => !value) }}
-              >
-                <span className={css.optionCopy}>
-                  <span className={css.modelName}>{t('automatic.externalConsent.name')}</span>
-                  <span className={clsx(css.description, css.wrappingDescription)}>
-                    {t('automatic.externalConsent.description')}
+              {state.externalFailoverAvailable && (
+                <button
+                  ref={itemRef()}
+                  type="button"
+                  role="menuitemcheckbox"
+                  aria-checked={externalFailoverConsent}
+                  className={clsx(css.option, externalFailoverConsent && css.selected)}
+                  disabled={busy}
+                  onClick={() => { setExternalFailoverConsent(value => !value) }}
+                >
+                  <span className={css.optionCopy}>
+                    <span className={css.modelName}>{t('automatic.externalConsent.name')}</span>
+                    <span className={clsx(css.description, css.wrappingDescription)}>
+                      {t('automatic.externalConsent.description')}
+                    </span>
                   </span>
-                </span>
-                <span className={css.check}>
-                  {externalFailoverConsent ? <IconCheckOutline16 /> : null}
-                </span>
-              </button>
+                  <span className={css.check}>
+                    {externalFailoverConsent ? <IconCheckOutline16 /> : null}
+                  </span>
+                </button>
+              )}
               <button
                 ref={itemRef()}
                 type="button"

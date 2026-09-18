@@ -80,6 +80,7 @@ export function MemoryReviewButton({
   forgetPersonalMemory, setPersonalMemoryEnabled, t,
 }: MemoryReviewButtonProps): ReactNode {
   const [open, setOpen] = useState(false)
+  const [showTechnical, setShowTechnical] = useState(false)
   const [tab, setTab] = useState<Tab>('suggestions')
   const [candidateReload, setCandidateReload] = useState(0)
   const [memoryReload, setMemoryReload] = useState(0)
@@ -207,6 +208,10 @@ export function MemoryReviewButton({
     }
   }
 
+  const visibleCandidates = candidateState.status === 'ready'
+    ? candidateState.items.filter(item => showTechnical || (item.operation === 'message_candidate' && Boolean(item.candidateContent?.trim())))
+    : []
+
   return (
     <>
       <button className={css.trigger} type="button" onClick={show} title={t('memory.open')}>
@@ -214,6 +219,7 @@ export function MemoryReviewButton({
         <span>{t('memory.open')}</span>
       </button>
       <Modal
+        className={css.memoryDialog as string}
         open={open}
         onClose={() => { setOpen(false) }}
         title={t('memory.title')}
@@ -236,6 +242,10 @@ export function MemoryReviewButton({
 
           {tab === 'suggestions' ? (
             <section aria-busy={candidateState.status === 'loading'}>
+              <label className={css.technicalToggle}>
+                <input type="checkbox" checked={showTechnical} onChange={(event) => { setShowTechnical(event.currentTarget.checked) }} />
+                {t('memory.showTechnical')}
+              </label>
               {candidateState.status === 'loading' || candidateState.status === 'idle'
                 ? <p className={css.status}>{t('memory.loading')}</p>
                 : null}
@@ -245,12 +255,12 @@ export function MemoryReviewButton({
                   <button type="button" onClick={loadCandidates}>{t('memory.retry')}</button>
                 </div>
               ) : null}
-              {candidateState.status === 'ready' && candidateState.items.length === 0
+              {candidateState.status === 'ready' && visibleCandidates.length === 0
                 ? <p className={css.status}>{t('memory.empty')}</p>
                 : null}
-              {candidateState.status === 'ready' && candidateState.items.length > 0 ? (
+              {candidateState.status === 'ready' && visibleCandidates.length > 0 ? (
                 <ul className={css.list}>
-                  {candidateState.items.map(item => (
+                  {visibleCandidates.map(item => (
                     <li className={css.card} key={item.id} data-memory-candidate={item.id}>
                       <div className={css.meta}>
                         <span>{readableToken(item.category ?? item.operation)}</span>

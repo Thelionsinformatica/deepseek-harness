@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-12-model-selector-external-consent.md
+2026-09-12-model-selector-external-consent.md: 5cc96453bcb652ef85144c1ec3b8777e76b35ff7
+2026-09-12-model-selector-external-consent.zh.md: bfc3e188efcc2fce3ea5739f18fb5c1bfec0ca71

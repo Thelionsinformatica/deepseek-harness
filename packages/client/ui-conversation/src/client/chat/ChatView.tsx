@@ -158,7 +158,7 @@ function TurnStatus({ startTime, t }: {
  */
 export function ChatView({
   useSession, useSessions, useStore, renderSlot, sessionId, openFile, loadOlder, loadImage, inspectCall, chatScroll, forkAt,
-  fileMentions, useTechnicalContextVisible, t,
+  fileMentions, useTechnicalContextVisible, openDetails, t,
 }: ChatViewSlotProps) {
   const order = useSession(s => s.chat.order)
   const nodeStore = useSession(s => s.chat.nodes)
@@ -177,6 +177,19 @@ export function ChatView({
   // Workspace root off the session list row: path summaries display relative to it.
   const cwd = useSessions(s => s.byId[sessionId]?.cwd)
   const running = useSession(s => s.running)
+  const activeCallId = useSession(s => s.runningCalls.at(-1)?.callId)
+  const activeToolName = useSession(s => s.runningCalls.at(-1)?.name)
+  const activeTurn = useSession(s => s.runningCalls.at(-1)?.turn)
+  const activeStep = useSession(s => s.runningCalls.at(-1)?.step)
+  const followedCall = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (!running || activeCallId === undefined || activeToolName === undefined || activeTurn === undefined) return
+    const key = `${sessionId}:${activeCallId}`
+    if (followedCall.current === key) return
+    followedCall.current = key
+    openDetails({ callId: activeCallId, toolName: activeToolName, turnSeq: activeTurn,
+      ...(activeStep === undefined ? {} : { stepSeq: activeStep }) })
+  }, [running, activeCallId, activeToolName, activeTurn, activeStep, sessionId, openDetails])
   const openState = useSession(s => s.openState)
   const openError = useSession(s => s.openError)
   const hasMore = useSession(s => s.hasMore)

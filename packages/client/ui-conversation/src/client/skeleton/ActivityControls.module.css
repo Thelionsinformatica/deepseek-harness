@@ -1,0 +1,18 @@
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.button {
+  padding: 6px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-base);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.button:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}

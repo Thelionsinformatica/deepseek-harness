@@ -27,6 +27,8 @@ export interface ModelDirectoryState {
   automatic: boolean
   /** Whether this Host exposes automatic local routing. */
   automaticAvailable: boolean
+  /** Whether the automatic policy declares an external fallback route. */
+  externalFailoverAvailable: boolean
   /** Whether automatic retries may send this session's context to an external provider. */
   externalFailoverConsent: boolean
   /** Successfully loaded provider groups (last good load). */
@@ -47,6 +49,7 @@ export class ModelDirectory {
     routable: null,
     automatic: false,
     automaticAvailable: false,
+    externalFailoverAvailable: false,
     externalFailoverConsent: false,
     groups: [],
     failures: [],
@@ -88,13 +91,15 @@ export class ModelDirectory {
       throw new Error(`session.models failed: ${result.error.code}: ${result.error.message}`)
     }
     const {
-      current, routable, automatic, automaticAvailable, externalFailoverConsent, groups, failures,
+      current, routable, automatic, automaticAvailable, externalFailoverAvailable,
+      externalFailoverConsent, groups, failures,
     } = result.value
     this.store.update((s) => {
       s.current = current
       s.routable = routable
       s.automatic = automatic
       s.automaticAvailable = automaticAvailable
+      s.externalFailoverAvailable = externalFailoverAvailable ?? false
       s.externalFailoverConsent = externalFailoverConsent ?? false
       s.groups = groups
       s.failures = failures

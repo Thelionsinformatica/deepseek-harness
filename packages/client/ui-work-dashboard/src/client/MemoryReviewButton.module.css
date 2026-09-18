@@ -19,10 +19,22 @@
   border-color: rgb(255 255 255 / 10%);
 }
 
-.modalContent {
+.memoryDialog.memoryDialog {
   width: min(42rem, calc(100vw - 2rem));
+}
+
+.modalContent {
+  width: 100%;
+  box-sizing: border-box;
   max-height: min(70vh, 42rem);
   overflow: auto;
+}
+
+.technicalToggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
 }
 
 .body {
@@ -32,7 +44,7 @@
 
 .tabs {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.35rem;
   padding: 0.25rem;
   background: rgb(255 255 255 / 4%);
@@ -40,6 +52,8 @@
 }
 
 .tabs button {
+  min-width: 0;
+  overflow-wrap: anywhere;
   padding: 0.5rem 0.75rem;
   color: var(--dsh-color-text-secondary, #aaaab0);
   background: transparent;
@@ -208,6 +222,7 @@
 .meta,
 .policy,
 .actions {
+  flex-wrap: wrap;
   display: flex;
   align-items: center;
   justify-content: space-between;

@@ -2510,6 +2510,9 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         const userText = content.map(b => (b.type === 'text' ? b.text : '')).join('')
         const durable: ContentBlock[] = content.map((block) => {
           if (block.type === 'text') return block
+          // Non-image attachment: the fixture mirrors the Host, which stores the
+          // bytes below <DSH_HOME>/uploads and names the stored path in context.
+          if (block.type === 'file') return { type: 'text', text: `[arquivo anexado] ${block.name}` }
           const attachment: ImageAttachmentRef = {
             attachmentId: `fixture:${randomUuid()}` as AttachmentIdType,
             mediaType: block.mediaType,

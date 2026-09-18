@@ -155,6 +155,8 @@ describe('Leon Work dashboard', () => {
     })
     mount({ sessions: [unpriced] })
     expect(metric('API estimada').textContent).toContain('Parcial: 2 chamadas ainda sem preço')
+    expect(metric('API estimada').textContent).toContain('Custo desconhecido')
+    expect(metric('API estimada').textContent).not.toContain('US$0.00')
   })
 
   it('keeps archived and subagent calls in billing while hiding their navigation rows', () => {

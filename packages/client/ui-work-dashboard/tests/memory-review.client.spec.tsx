@@ -13,6 +13,16 @@ import { pt } from '../src/client/locales.ts'
 
 afterEach(cleanup)
 
+it('hides recall records without deleting or reviewing them', async () => {
+  const actions = mount([candidate({ operation: 'memory_recall' }, false)])
+  fireEvent.click(screen.getByRole('button', { name: pt['memory.open'] }))
+  await screen.findByText(pt['memory.empty'])
+  expect(screen.queryByText(pt['memory.noContent'])).toBeNull()
+  fireEvent.click(screen.getByRole('checkbox', { name: pt['memory.showTechnical'] }))
+  expect(await screen.findByText(pt['memory.noContent'])).toBeTruthy()
+  expect(actions.review).not.toHaveBeenCalled()
+})
+
 const sessionId = 'session-one' as SessionId
 const candidateId = (value: string): MemoryCandidateId => value as MemoryCandidateId
 
@@ -150,6 +160,7 @@ describe('Leon memory candidate review', () => {
 
     fireEvent.click(screen.getByRole('button', { name: pt['memory.open'] }))
     const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: pt['memory.showTechnical'] }))
     await waitFor(() => { expect(within(dialog).getByText(pt['memory.noContent'])).toBeTruthy() })
     expect(within(dialog).getByRole('button', { name: pt['memory.accept'] }).hasAttribute('disabled')).toBe(true)
 

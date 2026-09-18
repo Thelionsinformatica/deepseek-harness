@@ -80,6 +80,9 @@ export function DetailsPanel({ useSession, useSessions, sessionId, useStore, ren
       <div className={css.header}>
         <div className={css.title}>
           {selection === null ? t('details.title') : material?.name ?? selection.toolName ?? t('details.title')}
+          {material !== null && <div role="status" className={css.sectionLabel}>
+            {t(!('kind' in material.block) ? 'activity.running' : material.block.isError ? 'activity.failed' : 'activity.complete')}
+          </div>}
         </div>
         <button
           type="button" className={css.close} aria-label={t('details.close')}

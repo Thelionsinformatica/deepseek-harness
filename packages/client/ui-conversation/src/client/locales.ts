@@ -10,6 +10,12 @@ const PLAN_NEXT_ACTION_EN = 'describe your task to generate plan'
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
+  'activity.open': '活动',
+  'activity.fullscreen': '全屏',
+  'activity.fullscreenHint': '按 F11 切换全屏',
+  'activity.running': '执行中',
+  'activity.complete': '已完成',
+  'activity.failed': '失败',
   'validation.checking': '正在验证',
   'validation.correcting': '正在纠正响应',
   'validation.validated': '已通过任务条件验证',
@@ -81,6 +87,7 @@ export const zh = {
   'image.unsupportedType': '仅支持 PNG、JPG、WebP、GIF 格式的图片',
   'image.tooMany': '一条消息最多添加 {count} 张图片',
   'image.fileTooLarge': '单张图片不能超过 {size}',
+  'file.tooLarge': '单个文件不能超过 {size}',
   'image.totalTooLarge': '图片总大小超过 {size}，请移除部分图片',
   'image.tooManyPixels': '图片分辨率过大，请压缩后重试',
   'image.dimensionTooLarge': '图片宽高不能超过 {size}px，请缩小后重试',
@@ -247,6 +254,12 @@ export type ConversationKey = keyof typeof zh
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
+  'activity.open': 'Activity',
+  'activity.fullscreen': 'Full screen',
+  'activity.fullscreenHint': 'Press F11 to toggle full screen',
+  'activity.running': 'Executing',
+  'activity.complete': 'Completed',
+  'activity.failed': 'Failed',
   'validation.checking': 'Verification in progress',
   'validation.correcting': 'Correcting response',
   'validation.validated': 'Validated against task criteria',
@@ -318,6 +331,7 @@ export const en = {
   'image.unsupportedType': 'Only PNG, JPG, WebP, and GIF images are supported',
   'image.tooMany': 'A message can include up to {count} images',
   'image.fileTooLarge': 'Each image must be smaller than {size}',
+  'file.tooLarge': 'Each file must be smaller than {size}',
   'image.totalTooLarge': 'Images exceed {size} in total; remove some and try again',
   'image.tooManyPixels': 'Image resolution is too high; compress it and try again',
   'image.dimensionTooLarge': 'Image sides must be at most {size}px; downscale it and try again',

@@ -41,18 +41,24 @@ function parseJsonl(content: string): JsonObject[] {
     .map(line => JSON.parse(line) as JsonObject)
 }
 
-/** Zero durable goal timestamps inside metadata records and rendered XML JSON. */
+/** Zero durable goal timestamps and run-varying evidence digests inside metadata records and rendered XML JSON. */
 function normalizeGoalTimestamps(value: unknown): unknown {
   if (typeof value === 'string') {
-    return value.replace(/("(?:createdAt|updatedAt|clearedAt)":)\d+/g, '$10')
+    return value
+      .replace(/("(?:createdAt|updatedAt|clearedAt|auditedAt)":)\d+/g, '$10')
+      // The evidence digest hashes raw session events (real ids and times), so
+      // it changes every run; the auditor verdict digest stays stable.
+      .replace(/("evidence":\{[^{}]*"digest":")[0-9a-f]{64}(")/g, '$1<digest>$2')
   }
   if (Array.isArray(value)) return value.map(normalizeGoalTimestamps)
   if (value !== null && typeof value === 'object') {
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [
       key,
-      ['createdAt', 'updatedAt', 'clearedAt'].includes(key) && typeof item === 'number'
+      ['createdAt', 'updatedAt', 'clearedAt', 'auditedAt'].includes(key) && typeof item === 'number'
         ? 0
-        : normalizeGoalTimestamps(item),
+        : key === 'digest' && typeof item === 'string' && 'fromSeq' in value
+          ? '<digest>'
+          : normalizeGoalTimestamps(item),
     ]))
   }
   return value

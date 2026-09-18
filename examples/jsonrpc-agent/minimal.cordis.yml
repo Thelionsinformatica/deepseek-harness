@@ -36,6 +36,9 @@
   name: '@deepseek-ai/dsh-terminal-bash'
   config:
     timeoutMs: 300000
+    # PTY spawn needs an absolute executable; tests pass a resolved Windows bash
+    # through DSH_BASH_PATH while POSIX keeps the dialect default.
+    shellPath: !!js process.env.DSH_BASH_PATH ?? '/bin/bash'
 
 # The editor uses the bare local filesystem; persistent Bash still consumes the
 # shared danger-full-access sandbox policy above.

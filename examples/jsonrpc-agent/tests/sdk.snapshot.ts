@@ -56,6 +56,18 @@ const recording = mode === 'record'
 const refreshing = mode === 'refresh'
 const bashAvailable = spawnSync('bash', ['--version'], { stdio: 'ignore' }).status === 0
 
+/** Absolute Windows bash for PTY spawn; PATH lookup works for `bash -c` but not node-pty. */
+function resolveWindowsBashPath(): string | undefined {
+  if (process.platform !== 'win32') return undefined
+  const listing = spawnSync('where', ['bash'], { encoding: 'utf8' })
+  if (listing.status !== 0) return undefined
+  const candidates = listing.stdout.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0)
+  // Prefer a real Windows binary (for example Git Bash) over the WSL launcher in System32.
+  return candidates.find(candidate => !candidate.toLowerCase().includes('system32')) ?? candidates[0]
+}
+
+const windowsBashPath = resolveWindowsBashPath()
+
 function dirOf(url: string): string {
   return fileURLToPath(new URL('.', url))
 }
@@ -110,7 +122,10 @@ const SCENARIOS: SdkScenario[] = [
     sessionId: 'persistent-tools-snapshot',
     children: 0,
     configs: { live: minimalLiveConfig, replay: minimalReplayConfig },
-    environment: { DSH_SYSTEM_PROMPT: MINIMAL_SYSTEM_PROMPT },
+    environment: {
+      DSH_SYSTEM_PROMPT: MINIMAL_SYSTEM_PROMPT,
+      ...windowsBashPath === undefined ? {} : { DSH_BASH_PATH: windowsBashPath },
+    },
     expectedFiles: { 'note.txt': 'target:\n\tnew\n' },
     expectedTools: { bash: ['command'], str_replace_editor: ['command', 'path'] },
     expectedSystem: MINIMAL_SYSTEM_PROMPT,
@@ -196,28 +211,43 @@ function assembledRuntimeContexts(log: PersistedLog): string[] {
   })
 }
 
+/** The forward-slash cwd spelling hydration writes into replayed paths. */
+function forwardSlashCwd(cwd: string): string {
+  return cwd.replaceAll('\\', '/')
+}
+
+/** Aliases hydration introduces: replayed arguments carry the forward-slash cwd. */
+function cwdAliasesFor(cwd: string): string[] {
+  const forward = forwardSlashCwd(cwd)
+  return forward === cwd ? [] : [forward]
+}
+
 function contextOf(logs: readonly { content: string; header: Record<string, unknown> }[], cwd: string): NormalizeContext {
   return {
     sessionIds: logs.flatMap(log => typeof log.header.id === 'string' ? [log.header.id] : []),
     cwd,
+    cwdAliases: cwdAliasesFor(cwd),
   }
 }
 
 function contextOfContents(contents: readonly string[]): NormalizeContext {
   const headers = contents.map(content => JSON.parse(content.slice(0, content.indexOf('\n'))) as Record<string, unknown>)
+  const cwd = typeof headers[0]?.cwd === 'string' ? headers[0].cwd : '\0no-cwd\0'
   return {
     sessionIds: headers.flatMap(header => typeof header.id === 'string' ? [header.id] : []),
-    cwd: typeof headers[0]?.cwd === 'string' ? headers[0].cwd : '\0no-cwd\0',
+    cwd,
+    cwdAliases: cwdAliasesFor(cwd),
   }
 }
 
 async function hydrateReplayFixtures(scenario: SdkScenario, cwd: string): Promise<string[]> {
   const root = join(cwd, '.replay-fixtures')
   await mkdir(root, { recursive: true })
-  const escapedCwd = JSON.stringify(cwd).slice(1, -1)
+  // Forward slashes need no JSON escape, so one spelling is valid inside both
+  // plain fixture strings and the nested JSON of tool-call arguments on Windows.
   return Promise.all(fixtureFiles(scenario).map(async (source) => {
     const destination = join(root, basename(source))
-    await writeFile(destination, (await readFile(source, 'utf8')).replaceAll('{{cwd}}', escapedCwd))
+    await writeFile(destination, (await readFile(source, 'utf8')).replaceAll('{{cwd}}', forwardSlashCwd(cwd)))
     return destination
   }))
 }

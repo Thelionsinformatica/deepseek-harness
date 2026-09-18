@@ -13,7 +13,7 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes, scrypt } from 'node:crypto'
 import { constants } from 'node:fs'
 import type { BigIntStats } from 'node:fs'
-import { link, lstat, mkdir, mkdtemp, open, realpath, rename, rmdir, unlink } from 'node:fs/promises'
+import { link, lstat, mkdir, mkdtemp, open, opendir, realpath, rename, rmdir, unlink } from 'node:fs/promises'
 import type { FileHandle } from 'node:fs/promises'
 import { basename, dirname, extname, join, posix, resolve } from 'node:path'
 
@@ -95,6 +95,8 @@ export interface BackupPublicationResult {
 export interface RestoreBackupHooks {
   /** Runs after the full read-only authentication pass and before staging exists. */
   readonly afterVerification?: () => Promise<void>
+  /** Runs after staging is authenticated and immediately before destination claim. */
+  readonly beforePublish?: () => Promise<void>
 }
 
 const MAGIC = Buffer.from('LEONBK1\n', 'ascii')
@@ -708,12 +710,41 @@ export async function inspectLeonBackupArchive(archivePath: string, passphrase: 
   }
 }
 
+/** Publish staged top-level entries into a directory claimed with mkdir. */
+async function publishStaging(staging: string, target: string): Promise<void> {
+  // mkdir is the no-replace primitive available on every supported filesystem.
+  // A final rename(staging, target) is not safe: on POSIX it can replace an
+  // empty directory created by a competing process between two checks.
+  try {
+    await mkdir(target, { mode: 0o700 })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+      throw new Error(`leon backup: destino da restauração já existe: ${target}`, { cause: error })
+    }
+    throw error
+  }
+  const directory = await opendir(staging)
+  const entries: string[] = []
+  try {
+    for await (const entry of directory) entries.push(entry.name)
+  } finally {
+    await directory.close()
+  }
+  entries.sort(comparePath)
+  for (const name of entries) {
+    await rename(join(staging, name), join(target, name))
+  }
+  await syncDirectory(target)
+  await rmdir(staging)
+}
+
 /**
  * Restore a verified package into a destination that must not exist.
  *
  * Extraction happens in a private sibling staging directory. The destination
- * is checked again immediately before the final rename; v1 never merges or
- * replaces an existing Leon home.
+ * is claimed with an exclusive mkdir immediately before publication; v1 never
+ * merges with or replaces an existing Leon home, including one created by a
+ * concurrent process after the initial existence check.
  */
 export async function restoreLeonBackupArchive(
   archivePath: string,
@@ -741,14 +772,12 @@ export async function restoreLeonBackupArchive(
     await assertArchiveUnchanged(archive)
     await hooks.afterVerification?.()
     await mkdir(parent, { recursive: true, mode: 0o700 })
-    await assertMissing(target, 'destino da restauração')
     lease = await acquireRestoreLease(parent, target, archive.manifest)
-    await assertMissing(target, 'destino da restauração')
     staging = await mkdtemp(join(parent, `.${basename(target)}.restore-`))
     await consumePayload(archive, staging)
     await assertArchiveUnchanged(archive)
-    await assertMissing(target, 'destino da restauração')
-    await rename(staging, target)
+    await hooks.beforePublish?.()
+    await publishStaging(staging, target)
     staging = undefined
     await syncDirectory(parent)
     return archive.manifest

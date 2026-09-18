@@ -9,6 +9,7 @@ import { constants, readFileSync } from 'node:fs'
 import { access, stat } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { JSON_SCHEMA, load as loadYaml } from 'js-yaml'
 import { resolveDefaultWorkspace, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 
 /** Severity of one independent diagnostic check. */
@@ -68,12 +69,80 @@ interface DoctorEnvironment {
   readonly ollamaBaseUrl: string
   readonly checkedAt: string
   path(path: string): Promise<PathProbe>
+  settings(path: string): unknown
   http(url: string): Promise<HttpProbe>
   command(command: string, args: readonly string[]): string | undefined
 }
 
 const HTTP_PREFIX_LIMIT = 64 * 1024
-const REQUIRED_LOCAL_MODELS = ['qwen3.5:9b'] as const
+const SETTINGS_LIMIT = 1024 * 1024
+
+interface LocalSelection {
+  readonly provider: 'llamacpp' | 'ollama'
+  readonly model: string
+  readonly baseUrl: string
+}
+
+/** Treat durable YAML mappings as untrusted, without inspecting credential values. */
+function mapping(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined
+}
+
+/** Read the same default settings document as settings-file, without initializing it. */
+function readSettings(path: string): unknown {
+  const source = readFileSync(path, 'utf8')
+  if (Buffer.byteLength(source) > SETTINGS_LIMIT) throw new Error('settings document exceeds diagnostic limit')
+  return loadYaml(source, { schema: JSON_SCHEMA })
+}
+
+/** Limit metadata probes to explicit local providers; a loopback gateway is not a local model. */
+function localBaseUrl(value: string): string | undefined {
+  try {
+    const url = new URL(value)
+    if (!['http:', 'https:'].includes(url.protocol)
+      || !['127.0.0.1', '[::1]', 'localhost'].includes(url.hostname)) return undefined
+    url.username = ''
+    url.password = ''
+    url.search = ''
+    url.hash = ''
+    return url.toString().replace(/\/+$/u, '')
+  } catch {
+    // URL parser errors can contain the original URL, including credentials.
+    return undefined
+  }
+}
+
+interface ModelIdentity {
+  readonly provider: string
+  readonly model: string
+}
+
+function selectedModel(document: unknown): ModelIdentity | undefined {
+  const settings = mapping(document)
+  const selection = mapping(settings?.['agent-default-model'])
+  const provider = selection?.provider
+  const model = selection?.model
+  return typeof provider === 'string' && provider.trim() !== '' && typeof model === 'string' && model.trim() !== ''
+    ? { provider: provider.trim(), model: model.trim() }
+    : undefined
+}
+
+function displayIdentifier(value: string): string {
+  return value.replace(/[^\w./:-]/gu, '?').slice(0, 160)
+}
+
+/** Resolve only saved local selections, never infer a provider from its display name or port. */
+function selectedLocalModel(document: unknown, environment: DoctorEnvironment): LocalSelection | undefined {
+  const selected = selectedModel(document)
+  if (selected === undefined || (selected.provider !== 'llamacpp' && selected.provider !== 'ollama')) return undefined
+  const settings = mapping(document)
+  const configured = mapping(mapping(mapping(settings?.['llm-pi-ai'])?.providers)?.[selected.provider])
+  const base = configured?.baseURL
+  const baseUrl = typeof base === 'string' ? base : selected.provider === 'ollama' ? environment.ollamaBaseUrl : ''
+  return { ...selected, provider: selected.provider, baseUrl }
+}
 
 /** Convert an arbitrary thrown value into a bounded diagnostic. */
 function errorMessage(error: unknown): string {
@@ -205,6 +274,7 @@ function realEnvironment(): DoctorEnvironment {
     ollamaBaseUrl: ollama,
     checkedAt: new Date().toISOString(),
     path: probePath,
+    settings: readSettings,
     http: probeHttp,
     command: probeCommand,
   }
@@ -249,37 +319,65 @@ async function profileCheck(environment: DoctorEnvironment, profile: string): Pr
   return { id: 'profile', label: 'Perfil', status: 'ok', summary: `${profile} instalado` }
 }
 
-/** Inspect the local Ollama endpoint and the two automatic-routing models. */
-async function ollamaCheck(environment: DoctorEnvironment): Promise<DoctorCheck> {
-  if (environment.ollamaBaseUrl.startsWith('invalid:')) {
-    return { id: 'ollama', label: 'Ollama', status: 'failed', summary: environment.ollamaBaseUrl.slice('invalid:'.length) }
-  }
+/** Probe metadata without sending credentials, loading models, or asserting inference success. */
+async function modelChecks(environment: DoctorEnvironment): Promise<DoctorCheck[]> {
+  let document: unknown
   try {
-    const response = await environment.http(`${environment.ollamaBaseUrl}/api/tags`)
-    if (response.status < 200 || response.status >= 300) {
-      return { id: 'ollama', label: 'Ollama', status: 'warning', summary: `respondeu HTTP ${response.status}` }
-    }
-    const payload = JSON.parse(response.body) as { models?: unknown }
-    const names = Array.isArray(payload.models)
-      ? payload.models.flatMap((entry): string[] => {
-        if (typeof entry !== 'object' || entry === null) return []
-        const name = (entry as { name?: unknown }).name
-        return typeof name === 'string' ? [name] : []
-      })
-      : []
-    const missing = REQUIRED_LOCAL_MODELS.filter(required => !names.includes(required))
-    if (missing.length > 0) {
-      return {
-        id: 'ollama',
-        label: 'Ollama',
-        status: 'warning',
-        summary: `${names.length} modelo(s) encontrado(s); roteamento automático local incompleto`,
-        details: missing.map(name => `modelo necessário ausente: ${name}`),
-      }
-    }
-    return { id: 'ollama', label: 'Ollama', status: 'ok', summary: `${names.length} modelo(s); Qwen automático disponível` }
+    document = environment.settings(join(environment.home, 'settings.yaml'))
   } catch (error) {
-    return { id: 'ollama', label: 'Ollama', status: 'warning', summary: `indisponível em ${environment.ollamaBaseUrl}`, details: [errorMessage(error)] }
+    const missing = (error as NodeJS.ErrnoException).code === 'ENOENT'
+    return [{ id: 'model-selection', label: 'Modelo configurado', status: missing ? 'warning' : 'failed',
+      summary: missing ? 'settings.yaml ausente; seleção efetiva não verificada' : 'settings.yaml não pôde ser lido; conteúdo omitido por segurança' }]
+  }
+  const identity = selectedModel(document)
+  if (identity === undefined) return [{ id: 'model-selection', label: 'Modelo configurado', status: 'warning',
+    summary: 'seleção ausente em settings.yaml; nenhum provedor externo foi consultado' }]
+  const selected = selectedLocalModel(document, environment)
+  if (selected === undefined) return [{ id: 'model-selection', label: 'Modelo configurado', status: 'ok',
+    summary: `modelo externo configurado: ${displayIdentifier(identity.provider)}/${displayIdentifier(identity.model)}; disponibilidade não consultada` }]
+  const baseUrl = localBaseUrl(selected.baseUrl)
+  if (baseUrl === undefined) return [{ id: 'model-selection', label: 'Modelo configurado', status: 'failed',
+    summary: 'endereço local ausente, inválido ou não loopback; nenhum provedor foi consultado' }]
+
+  const label = selected.provider === 'llamacpp' ? 'llama.cpp' : 'Ollama'
+  const nativeRoot = baseUrl.replace(/\/v1$/u, '')
+  const checks: DoctorCheck[] = [{ id: 'model-selection', label: 'Modelo configurado', status: 'ok',
+    summary: `${label}: ${selected.model}`, details: ['fonte: agent-default-model e llm-pi-ai.providers em settings.yaml'] }]
+  const healthUrl = selected.provider === 'llamacpp' ? new URL('/health', baseUrl).href : `${nativeRoot}/api/version`
+  checks.push(await metadataCheck(environment, 'model-health', `Serviço ${label}`, healthUrl, (payload) => {
+    const ready = selected.provider === 'llamacpp' ? payload.status === 'ok' : typeof payload.version === 'string'
+    return ready ? 'serviço respondeu com saúde válida; não comprova inferência' : undefined
+  }))
+  const catalogUrl = selected.provider === 'llamacpp' ? `${baseUrl}/models` : `${nativeRoot}/api/tags`
+  checks.push(await metadataCheck(environment, 'model-catalog', `Catálogo ${label}`, catalogUrl, (payload) => {
+    const entries = selected.provider === 'llamacpp' ? payload.data : payload.models
+    if (!Array.isArray(entries)) return undefined
+    const names = new Set(entries.flatMap((entry): string[] => {
+      const value = mapping(entry)?.[selected.provider === 'llamacpp' ? 'id' : 'name']
+      return typeof value === 'string' ? [value] : []
+    }))
+    return names.has(selected.model) ? `${names.size} modelo(s); modelo selecionado presente no catálogo` : undefined
+  }, `modelo selecionado ausente ou catálogo inválido: ${selected.model}`))
+  checks.push({ id: 'model-inference', label: 'Inferência', status: 'warning',
+    summary: 'não executada; saúde e catálogo não validam geração, ferramentas ou desempenho da GPU' })
+  return checks
+}
+
+/** Report wire failures without echoing server payloads or parser diagnostics. */
+async function metadataCheck(
+  environment: DoctorEnvironment, id: string, label: string, url: string,
+  summarize: (payload: Record<string, unknown>) => string | undefined,
+  unavailable = 'resposta de saúde inválida; prontidão não confirmada',
+): Promise<DoctorCheck> {
+  try {
+    const response = await environment.http(url)
+    if (response.status < 200 || response.status >= 300) return { id, label, status: 'warning', summary: `respondeu HTTP ${response.status}; prontidão não confirmada` }
+    const payload = mapping(JSON.parse(response.body))
+    const summary = payload === undefined ? undefined : summarize(payload)
+    return summary === undefined ? { id, label, status: 'warning', summary: unavailable } : { id, label, status: 'ok', summary }
+  } catch {
+    // Network and parser exceptions may echo an untrusted response or URL.
+    return { id, label, status: 'warning', summary: 'serviço indisponível ou resposta inválida; prontidão não confirmada' }
   }
 }
 
@@ -310,8 +408,9 @@ function powershellCheck(environment: DoctorEnvironment): DoctorCheck {
     return { id: 'powershell', label: 'PowerShell', status: 'ok', summary: 'não é requisito nesta plataforma' }
   }
   const version = environment.command('pwsh', ['--version'])
+    ?? environment.command('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '$PSVersionTable.PSVersion.ToString()'])
   return version === undefined
-    ? { id: 'powershell', label: 'PowerShell', status: 'failed', summary: 'PowerShell 7 (pwsh) não foi encontrado' }
+    ? { id: 'powershell', label: 'PowerShell', status: 'failed', summary: 'PowerShell não foi encontrado' }
     : { id: 'powershell', label: 'PowerShell', status: 'ok', summary: version }
 }
 
@@ -335,12 +434,12 @@ export async function collectDoctorReport(
   const node: DoctorCheck = supportedNode(environment.nodeVersion)
     ? { id: 'node', label: 'Node.js', status: 'ok', summary: environment.nodeVersion }
     : { id: 'node', label: 'Node.js', status: 'failed', summary: `${environment.nodeVersion} não atende ^22.19 ou >=24` }
-  const [homeProbe, workspaceProbe, buildProbe, profile, ollama, web] = await Promise.all([
+  const [homeProbe, workspaceProbe, buildProbe, profile, models, web] = await Promise.all([
     environment.path(environment.home),
     environment.path(environment.workspace),
     environment.path(join(environment.packageRoot, 'lib', 'bin.js')),
     profileCheck(environment, options.profile),
-    ollamaCheck(environment),
+    modelChecks(environment),
     webCheck(environment, options.port),
   ])
   const home = directoryCheck('home', 'Dados do Leon', environment.home, homeProbe, 'warning')
@@ -348,7 +447,7 @@ export async function collectDoctorReport(
   const build: DoctorCheck = buildProbe.kind === 'file'
     ? { id: 'build', label: 'Aplicativo compilado', status: 'ok', summary: `versão ${environment.packageVersion}` }
     : { id: 'build', label: 'Aplicativo compilado', status: 'warning', summary: 'lib/bin.js ausente; execução a partir do código-fonte ainda pode funcionar' }
-  const checks = [node, powershellCheck(environment), home, workspace, profile, build, ollama, web]
+  const checks = [node, powershellCheck(environment), home, workspace, profile, build, ...models, web]
   return {
     schemaVersion: 1,
     product: 'Leon',

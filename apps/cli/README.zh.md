@@ -22,9 +22,17 @@
 
 ## 诊断
 
-`dsh doctor` 检查受支持的 Node 运行时、Windows 上的 PowerShell、Harness home、选中的已安装 profile、默认 workspace、已构建启动器、配置的 Ollama endpoint 与自动路由模型，以及预期的 Leon Web 端口。该命令只执行只读路径探测和有界 GET 请求；不会启动或初始化 profile、写入修复、启动服务、发送模型提示词或读取凭据值。警告保持退出状态 0；安装失败或预期 endpoint 被无关服务占用时以 1 退出。支持与安装程序自动化可使用 `--profile <name>`、`--port <port>` 或 `--json`；确切报告约定以 [CLI 行为参考](reference/README.zh.md#diagnosis)为准。
+`dsh doctor` 检查 Node、Windows 上的 PowerShell、Harness home、已安装 profile、workspace、已构建启动器与 Web 端口。它从 `$DSH_HOME/settings.yaml` 读取 `agent-default-model` 和 `llm-pi-ai.providers`，通过 `/health` 与 `/v1/models` 检查选定的本地 llama.cpp 路由，或通过 `/api/version` 与 `/api/tags` 检查 Ollama；不要求固定的 9B 模型。外部 endpoint 会被拒绝，不会查询 FreeLLMAPI 或 Gemini。覆盖 `settings.path` 或动态组装配置的自定义 profile 不在本诊断范围内。这些只读路径探测与有界 GET 请求不会初始化 profile、修改状态、启动服务、读取凭据值或执行模型推理。警告保持退出状态 0；安装失败或预期 endpoint 被无关服务占用时以 1 退出。可使用 `--profile <name>`、`--port <port>` 或 `--json`；详见 [CLI 行为参考](reference/README.zh.md#diagnosis)。
 
 <a id="encrypted-recovery"></a>
+
+## 集体实验室
+
+`dsh collective --dry-run` 输出仅用于说明的计划，不会创建会话、agent、权限、测试或记忆，即使提供了运行时选项也不执行。`--json` 将预览标为 `executed: false` 和 `persisted: false`。没有显式运行时时，执行请求报告 `COLLECTIVE_RUNTIME_UNAVAILABLE`，并在加载 profile 前以 2 退出。
+
+显式执行要求同时提供五个选项：`--runtime <absolute.js>`（也支持 `.mjs`）、`--config <absolute.yml>`（也支持 `.yaml`）、`--workspace <absolute-directory>`、`--action run|resume|status|stop` 和 `--scenario import-idempotency`。文件与 workspace 必须在本地存在，且本身不是符号链接。任意任务文本会被拒绝；本桥接不是通用任务执行器。它以当前 Node 可执行文件调用选定的 JavaScript 入口，参数为 `[action, workspace, config]`，不使用 shell，并原样转发标准流和子进程退出码，不解释成功与否。SIGINT/SIGTERM 会被转发；桥接等待子进程关闭，并报告 130/143。持久 STOP 语义属于运行时的 `stop` 操作，而不是进程中断。
+
+子进程只接收操作系统路径／临时目录变量与固定的本地 token 占位符；不继承环境凭据、Node 选项、提供方设置或 Harness home 覆盖值。操作者必须信任运行时与组合配置：它们会执行本地代码，因此这不是操作系统沙箱或认证机制。发布版 CLI 不依赖实验性包，不编译或安装运行时，也不在普通 profile 中启用实验室。`--json` 控制预览和启动器校验错误；委托输出保留运行时自己的格式。
 
 ## 加密恢复
 
@@ -66,3 +74,5 @@ profile 目录包含一个 `package.json`，其中记录树外插件依赖，以
 ## 开发
 
 生产运行需要已构建的包与前端产物。请在仓库根目录单独运行 `pnpm run build`，然后使用 `pnpm dsh <args...>` 运行 TypeScript 入口并转发所有参数；模块解析约定以[源码执行参考](reference/README.zh.md#source-execution)为准。
+
+公共的 `@deepseek-ai/dsh/desktop` 入口为私有 Windows Electron shell 启动相同的 `web` profile。它是进程内的 host 适配器，不是第二套 UI 或第二套协议实现；shell 负责原生窗口，并在退出前调用返回的 shutdown controller。

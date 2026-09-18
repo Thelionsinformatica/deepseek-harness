@@ -20,7 +20,15 @@ New Leon sessions use `E:/computador` as their Windows workspace root. `$LEON_DE
 
 ## Diagnosis
 
-`dsh doctor` checks the supported Node runtime, PowerShell on Windows, the Harness home, the selected installed profile, the default workspace, the built launcher, the configured Ollama endpoint and automatic-routing models, and the expected Leon Web port. It performs read-only path probes and bounded GET requests; it never boots or initializes a profile, writes a repair, starts a service, sends a model prompt, or reads credential values. Warnings keep exit status 0, while an installation failure or an unrelated service occupying an expected endpoint exits 1. Use `--profile <name>`, `--port <port>`, or `--json` for support and installer automation; the [CLI behavior reference](reference/README.md#diagnosis) owns the exact report contract.
+`dsh doctor` checks Node, PowerShell on Windows, the Harness home, installed profile, workspace, built launcher and Web port. It reads `agent-default-model` and `llm-pi-ai.providers` from `$DSH_HOME/settings.yaml`, checking the selected local llama.cpp route through `/health` and `/v1/models`, or Ollama through `/api/version` and `/api/tags`; it does not require a fixed 9B model. External endpoints are rejected; FreeLLMAPI and Gemini are not queried. Custom profiles that override `settings.path` or assemble dynamic configuration are outside this diagnosis. These read-only path probes and bounded GET requests do not initialize profiles, modify state, start services, read credential values or perform inference. Warnings keep exit status 0; installation failures or unrelated services on expected endpoints exit 1. Use `--profile <name>`, `--port <port>` or `--json`; see the [CLI behavior reference](reference/README.md#diagnosis).
+
+## Collective laboratory
+
+`dsh collective --dry-run` prints an illustrative plan with no sessions, agents, permissions, tests or memory, even when runtime flags are present. `--json` marks the preview `executed: false` and `persisted: false`. Without an explicit runtime, execution reports `COLLECTIVE_RUNTIME_UNAVAILABLE` and exits 2 without loading a profile.
+
+Opt-in execution requires all five options: `--runtime <absolute.js>` (also `.mjs`), `--config <absolute.yml>` (also `.yaml`), `--workspace <absolute-directory>`, `--action run|resume|status|stop`, and `--scenario import-idempotency`. Files and the workspace must exist locally and not themselves be symbolic links. Arbitrary mission text is rejected; this bridge is not a general-purpose task executor. It invokes the selected JavaScript entry with the current Node executable and arguments `[action, workspace, config]`, without a shell, and forwards standard streams and the child's exit code without interpreting success. SIGINT/SIGTERM are forwarded; the bridge waits for the child to close and reports 130/143. Durable STOP semantics belong to the runtime's `stop` action, not to process interruption.
+
+Only OS path/temp variables and a fixed local token placeholder reach the child; ambient credentials, Node options, provider settings and Harness home overrides do not. The operator must trust the runtime and composition: they execute local code, so this is not an OS sandbox or an authentication mechanism. The release CLI has no experimental package dependency, does not compile or install a runtime, and does not enable the laboratory in the normal profile. `--json` controls preview and launcher validation errors; delegated output remains the runtime's own format.
 
 ## Encrypted recovery
 
@@ -60,3 +68,5 @@ The [CLI behavior reference](reference/README.md) owns exact layer precedence, f
 ## Development
 
 Production runs require built package and frontend artifacts. From the repository root, run `pnpm run build` separately, then use `pnpm dsh <args...>` to run the TypeScript entry and forward every argument; the [source-execution reference](reference/README.md#source-execution) owns the module-resolution contract.
+
+The public `@deepseek-ai/dsh/desktop` entry starts the same `web` profile for the private Windows Electron shell. It is an in-process host adapter, not a second UI or a second protocol implementation; the shell owns the native window and calls the returned shutdown controller before exit.

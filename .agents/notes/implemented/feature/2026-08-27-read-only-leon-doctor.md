@@ -10,9 +10,9 @@ Leon needs one support entry point that distinguishes an incomplete installation
 
 ## Decision
 
-The launcher owns `dsh doctor` as a boot-free read-only mode. It checks the supported Node runtime, PowerShell on Windows, Harness home and workspace access, installed profile files, built launcher, the automatic `qwen3.5:9b` Ollama route, the loopback FreeLLMAPI readiness endpoint, and the expected loopback Web endpoint. Manual Ollama catalog entries do not affect automatic-route readiness. Every network probe is a bounded GET that sends no prompt or credential; filesystem probes never create or repair a path.
+The launcher owns `dsh doctor` as a boot-free read-only mode. It checks the supported Node runtime, PowerShell on Windows, Harness home and workspace access, installed profile files, built launcher, the [saved local backend](../bug-fix/2026-09-12-doctor-saved-local-backend.md), and the expected loopback Web endpoint. Every network probe is a bounded GET that sends no prompt or credential; filesystem probes never create or repair a path.
 
-The human report uses PT-BR status lines. The JSON report has `schemaVersion: 1`, stable check ids, sanitized summaries, and no credential values or file contents. A recoverable absence such as a stopped Web or FreeLLMAPI process, unavailable Ollama service, FreeLLMAPI with no ready upstream, uninitialized profile, or source-only build is a warning and exits 0. A prerequisite failure or an unrelated service occupying an expected endpoint exits 1.
+The human report uses PT-BR status lines. The JSON report has `schemaVersion: 1`, stable check ids, sanitized summaries, and no credential values or file contents. A recoverable absence such as a stopped Web process, unavailable local model service, uninitialized profile, source-only build, or unverified inference is a warning and exits 0. A prerequisite failure or an unrelated service occupying an expected endpoint exits 1.
 
 The command checks readiness but does not own installation, service supervision, backup, recovery, or repair. Those operations may consume the JSON report without changing this diagnostic's read-only behavior.
 
@@ -22,7 +22,7 @@ The command checks readiness but does not own installation, service supervision,
 
 **Expose diagnosis as a model-facing tool.** Rejected because installation recovery must work before an agent or model provider is available, and model mediation would add cost and authority to deterministic host checks.
 
-**Probe every configured provider and external connector.** Rejected because health requests could cross a privacy or billing boundary. The command probes only Ollama's model directory, FreeLLMAPI's loopback readiness endpoint, and the loopback Web page; it never submits an inference request. Provider credential and generation validation remains explicit and separately authorized.
+**Probe every configured provider and external connector.** Rejected because health requests could cross a privacy or billing boundary. The command probes only explicitly selected local-model metadata and the loopback Web page; it never submits an inference request. Provider credential and generation validation remains explicit and separately authorized.
 
 ## Consequences
 

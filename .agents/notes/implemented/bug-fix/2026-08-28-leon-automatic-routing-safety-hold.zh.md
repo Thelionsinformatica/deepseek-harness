@@ -18,11 +18,11 @@ Leon Automatic 的 fast、main、expert 与自动目标轮次层级都使用 `ol
 
 Ollama 到 FreeLLMAPI 的边只接受 `TRANSPORT`、`TIMEOUT` 与 `SERVER`。`UNKNOWN_MODEL` 和 `NO_ADAPTER` 会停在本地路由并暴露配置错误。后续 FreeLLMAPI 到 Gemini 及 Gemini 到 OpenAI 的边保留各自提供方专属的合格条件。
 
-shadow 策略修订为 `leon-shadow-v2`。Qwen 是唯一的本地候选，并使用已部署的专家质量层级，因为它是当前 high 强度路由；外部候选仍仅用于 fallback。只读 doctor 只要求 `qwen3.5:9b` 满足自动路由就绪条件，手动模型是否存在只作为信息。
+shadow 策略修订为 `leon-shadow-v2`。Qwen 是唯一的本地候选，并使用已部署的专家质量层级，因为它是当前 high 强度路由；外部候选仍仅用于 fallback。只读 doctor 遵循独立[保存的本地后端](2026-09-12-doctor-saved-local-backend.zh.md)；其目录检查不认证此路由策略或推理。
 
 ## 验证
 
-已记录的 LEON-ACC-008 工件状态为失败，并保留两个本地模型摘要、仅本地请求证据、通过的实现预言机、注入回归后失败的恢复预言机、协议违规与预算失败。聚焦的组合包和路由测试固定所有提示词层级只使用一个自动模型、shadow 目录不包含 Ornith、两个配置错误失败关闭、手动 Qwen 3.8 目录条目及其零本地费用，以及 doctor 只要求 Qwen。
+已记录的 LEON-ACC-008 工件状态为失败，并保留两个本地模型摘要、仅本地请求证据、通过的实现预言机、注入回归后失败的恢复预言机、协议违规与预算失败。聚焦的组合包和路由测试固定所有提示词层级只使用一个自动模型、shadow 目录不包含 Ornith、两个配置错误失败关闭，以及手动 Qwen 3.8 目录条目及其零本地费用。
 
 ## 考虑过的替代方案
 

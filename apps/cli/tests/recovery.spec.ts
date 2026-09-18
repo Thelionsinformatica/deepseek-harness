@@ -325,6 +325,16 @@ describe('Leon encrypted recovery', () => {
     await expect(readFile(lockedTarget)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
+  it('does not replace a destination created after the initial existence check', async () => {
+    const state = await fixture()
+    await createLeonBackup(backupOptions(state.output), '9.8.7', state.runtime)
+
+    await expect(restoreLeonBackupArchive(state.output, state.target, PASSPHRASE, '9.8.7', {
+      beforePublish: async () => { await mkdir(state.target) },
+    })).rejects.toThrow('já existe')
+    await expect(readFile(join(state.target, 'settings.yaml'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
   it('never publishes an unauthenticated partial when the open package changes between passes', async () => {
     const state = await fixture()
     await createLeonBackup(backupOptions(state.output), '9.8.7', state.runtime)

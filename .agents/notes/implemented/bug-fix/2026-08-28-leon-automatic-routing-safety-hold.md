@@ -18,11 +18,11 @@ The manual catalog also exposes `ollama/qwen3.8-distill:9b-q8` with a 16,384-tok
 
 The Ollama-to-FreeLLMAPI edge accepts only `TRANSPORT`, `TIMEOUT`, and `SERVER`. `UNKNOWN_MODEL` and `NO_ADAPTER` stop on the local route and expose the configuration error. Later FreeLLMAPI-to-Gemini and Gemini-to-OpenAI edges retain their provider-specific eligibility.
 
-The shadow policy revision is `leon-shadow-v2`. Qwen is its sole local candidate and carries the deployed expert-quality tier because it is the active high-effort route; external candidates remain fallback-only. The read-only doctor requires only `qwen3.5:9b` for automatic-route readiness, while manual model presence is informational.
+The shadow policy revision is `leon-shadow-v2`. Qwen is its sole local candidate and carries the deployed expert-quality tier because it is the active high-effort route; external candidates remain fallback-only. The read-only doctor follows the separately [saved local backend](2026-09-12-doctor-saved-local-backend.md); its catalogue check does not certify this routing policy or inference.
 
 ## Verification
 
-The recorded LEON-ACC-008 artifact is failed and preserves both local model digests, local-only request evidence, the passing implementation oracle, the failed post-injection recovery oracle, protocol violations, and budget failures. Focused bundle and routing tests pin one automatic model across all prompt tiers, the absence of Ornith from the shadow catalog, the two configuration errors that fail closed, the manual Qwen 3.8 catalog entry and zero local cost, and the doctor requirement for Qwen alone.
+The recorded LEON-ACC-008 artifact is failed and preserves both local model digests, local-only request evidence, the passing implementation oracle, the failed post-injection recovery oracle, protocol violations, and budget failures. Focused bundle and routing tests pin one automatic model across all prompt tiers, the absence of Ornith from the shadow catalog, the two configuration errors that fail closed, and the manual Qwen 3.8 catalog entry and zero local cost.
 
 ## Alternatives considered
 

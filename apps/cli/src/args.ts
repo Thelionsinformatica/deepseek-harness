@@ -87,12 +87,17 @@ interface RestoreInvocation {
   passphraseStdin: boolean
 }
 
-/** Run a collective multi-agent mission orchestrated by Leon Executive and Blackboard DAG. */
+/** Preview a mission or explicitly delegate the bounded local laboratory scenario. */
 export interface CollectiveInvocation {
   mode: 'collective'
   mission?: string
   dryRun: boolean
   json: boolean
+  runtime?: string
+  config?: string
+  workspace?: string
+  action?: string
+  scenario?: string
 }
 
 /** The resolved `dsh` invocation. Help, version, and errors exit inside {@link parseDshArgs}. */
@@ -319,18 +324,36 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
       }
     })
 
-  const collective = program.command('collective').description('run a collaborative multi-agent mission orchestrated by Leon Executive and Blackboard DAG')
+  const collective = program.command('collective').description('preview a mission or explicitly launch an isolated collective laboratory')
   collective
     .argument('[mission...]', 'the mission statement or objective for the collective team')
-    .option('--dry-run', 'plan and decompose into blackboard DAG without executing worker agents')
-    .option('--json', 'emit machine-readable JSON summary of the DAG and post-mortem')
-    .action((missionParts: string[], options: { dryRun?: boolean; json?: boolean }) => {
+    .option('--dry-run', 'print an illustrative plan without executing any runtime')
+    .option('--json', 'emit JSON for the preview or launcher errors; runtime output is forwarded unchanged')
+    .option('--runtime <file>', 'absolute path to a trusted, compiled laboratory .js or .mjs entry')
+    .option('--config <file>', 'absolute path to the explicit laboratory .yml or .yaml composition')
+    .option('--workspace <directory>', 'absolute path to an existing isolated laboratory workspace')
+    .option('--action <action>', 'laboratory operation: run, resume, status or stop')
+    .option('--scenario <scenario>', 'bounded scenario: import-idempotency')
+    .action((missionParts: string[], options: {
+      dryRun?: boolean
+      json?: boolean
+      runtime?: string
+      config?: string
+      workspace?: string
+      action?: string
+      scenario?: string
+    }) => {
       rejectParentOptions('collective')
       resolved = {
         mode: 'collective',
         ...missionParts.length > 0 ? { mission: missionParts.join(' ') } : {},
         dryRun: options.dryRun === true,
         json: options.json === true,
+        ...options.runtime === undefined ? {} : { runtime: options.runtime },
+        ...options.config === undefined ? {} : { config: options.config },
+        ...options.workspace === undefined ? {} : { workspace: options.workspace },
+        ...options.action === undefined ? {} : { action: options.action },
+        ...options.scenario === undefined ? {} : { scenario: options.scenario },
       }
     })
 

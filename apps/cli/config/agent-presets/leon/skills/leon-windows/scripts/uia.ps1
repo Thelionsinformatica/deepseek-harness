@@ -447,7 +447,9 @@ function Select-TargetControl {
 function Save-WindowScreenshot {
   param([System.Windows.Automation.AutomationElement]$Window)
 
-  if ([string]::IsNullOrWhiteSpace($OutputPath) -or -not [IO.Path]::IsPathFullyQualified($OutputPath)) {
+  $fullyQualifiedOutput = -not [string]::IsNullOrWhiteSpace($OutputPath) -and
+    ($OutputPath -match '^[A-Za-z]:[\\/]' -or $OutputPath.StartsWith('\\'))
+  if (-not $fullyQualifiedOutput) {
     Throw-UiaError 'ABSOLUTE_OUTPUT_REQUIRED' 'Informe um caminho absoluto para um novo arquivo PNG.'
   }
   $resolvedOutput = [IO.Path]::GetFullPath($OutputPath)
@@ -474,7 +476,12 @@ function Save-WindowScreenshot {
     Throw-UiaError 'WINDOW_BOUNDS_UNSAFE' 'Os limites da janela são inválidos ou grandes demais para captura.'
   }
 
-  Add-Type -AssemblyName System.Drawing.Common | Out-Null
+  if ($PSVersionTable.PSEdition -eq 'Core') {
+    Add-Type -AssemblyName System.Drawing.Common | Out-Null
+  }
+  else {
+    Add-Type -AssemblyName System.Drawing | Out-Null
+  }
   $bitmap = [System.Drawing.Bitmap]::new($width, $height)
   $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
   try {

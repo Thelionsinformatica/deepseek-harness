@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-18-leon-windows-uia-legacy-powershell.md
+2026-09-18-leon-windows-uia-legacy-powershell.md: 88fba2148b6db8730292d75f26594071ca13a36e
+2026-09-18-leon-windows-uia-legacy-powershell.zh.md: 75a5ac114ccf551741ffbfff2941715f15cbf52d

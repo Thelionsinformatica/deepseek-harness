@@ -10,74 +10,54 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName PresentationFramework
+Add-Type -AssemblyName PresentationCore
+Add-Type -AssemblyName WindowsBase
+
 # The fixture shares the user's desktop, so it must remain UIA-visible without accepting ambient keyboard input.
-if (-not ('LeonUiaTestForm' -as [type])) {
-  $formReferences = @(
-    [System.Windows.Forms.Form].Assembly.Location
-    [System.ComponentModel.Component].Assembly.Location
-  )
-  Add-Type -TypeDefinition @'
-using System.Windows.Forms;
+$window = [System.Windows.Window]::new()
+$window.Title = $Title
+$window.Name = 'LeonTestWindow'
+$window.Width = 360
+$window.Height = 180
+$window.WindowStartupLocation = [System.Windows.WindowStartupLocation]::Manual
+$window.Left = 40
+$window.Top = 40
+$window.ShowInTaskbar = $false
+$window.Opacity = 0.05
+$window.ShowActivated = $false
 
-public sealed class LeonUiaTestForm : Form
-{
-    private const int WsExNoActivate = 0x08000000;
+$canvas = [System.Windows.Controls.Canvas]::new()
 
-    protected override bool ShowWithoutActivation { get { return true; } }
-
-    protected override CreateParams CreateParams
-    {
-        get
-        {
-            CreateParams parameters = base.CreateParams;
-            parameters.ExStyle |= WsExNoActivate;
-            return parameters;
-        }
-    }
-}
-'@ -ReferencedAssemblies $formReferences
-}
-
-$form = [LeonUiaTestForm]::new()
-$form.Text = $Title
-$form.Name = 'LeonTestWindow'
-$form.Width = 360
-$form.Height = 180
-$form.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
-$form.Left = 40
-$form.Top = 40
-$form.ShowInTaskbar = $false
-$form.Opacity = 0.05
-
-$editor = [System.Windows.Forms.TextBox]::new()
+$editor = [System.Windows.Controls.TextBox]::new()
 $editor.Name = 'LeonEditor'
-$editor.Left = 20
-$editor.Top = 20
 $editor.Width = 300
 $editor.Height = 30
-$editor.ShortcutsEnabled = $false
-$editor.ImeMode = [System.Windows.Forms.ImeMode]::Disable
-$editor.Add_KeyPress({ $_.Handled = $true })
+$editor.Focusable = $false
+[System.Windows.Controls.Canvas]::SetLeft($editor, 20)
+[System.Windows.Controls.Canvas]::SetTop($editor, 20)
 
-$button = [System.Windows.Forms.Button]::new()
+$button = [System.Windows.Controls.Button]::new()
 $button.Name = 'LeonActionButton'
-$button.Text = 'Aplicar'
-$button.Left = 20
-$button.Top = 65
+$button.Content = 'Aplicar'
 $button.Width = 100
 $button.Height = 32
 $button.Add_Click({ [IO.File]::WriteAllText($MarkerPath, $editor.Text) })
+[System.Windows.Controls.Canvas]::SetLeft($button, 20)
+[System.Windows.Controls.Canvas]::SetTop($button, 65)
 
-$status = [System.Windows.Forms.Label]::new()
+$status = [System.Windows.Controls.Label]::new()
 $status.Name = 'LeonStatus'
-$status.Text = 'Aguardando'
-$status.Left = 140
-$status.Top = 72
+$status.Content = 'Aguardando'
 $status.Width = 180
 $status.Height = 24
+[System.Windows.Controls.Canvas]::SetLeft($status, 140)
+[System.Windows.Controls.Canvas]::SetTop($status, 72)
 
-$form.Controls.AddRange(@($editor, $button, $status))
-$form.Add_Shown({ [IO.File]::WriteAllText($ReadyPath, [string]$PID) })
-[System.Windows.Forms.Application]::Run($form)
-
+$canvas.Children.Add($editor) | Out-Null
+$canvas.Children.Add($button) | Out-Null
+$canvas.Children.Add($status) | Out-Null
+$window.Content = $canvas
+$window.Add_ContentRendered({ [IO.File]::WriteAllText($ReadyPath, [string]$PID) })
+$window.Show() | Out-Null
+[System.Windows.Threading.Dispatcher]::Run()

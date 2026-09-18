@@ -10,6 +10,7 @@
   "files": [],
   "references": [
     { "path": "./tsconfig.host.json" },
-    { "path": "./tsconfig.client.json" }
+    { "path": "./tsconfig.client.json" },
+    { "path": "./apps/desktop" }
   ]
 }

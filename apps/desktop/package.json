@@ -1,0 +1,53 @@
+{
+  "name": "@deepseek-ai/dsh-desktop",
+  "description": "Leon desktop shell for the existing local Web host",
+  "version": "0.1.1-rc.2",
+  "private": true,
+  "type": "module",
+  "main": "lib/main.js",
+  "files": ["lib"],
+  "scripts": {
+    "build": "tsc -b && tsdown",
+    "dev": "pnpm run build && electron .",
+    "package": "pnpm run build && electron-builder --win nsis"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.0",
+    "electron": "^37.2.6",
+    "electron-builder": "^26.0.12",
+    "tsdown": "^0.22.2",
+    "typescript": "^6.0.3"
+  },
+  "build": {
+    "appId": "br.com.thelions.leon",
+    "productName": "Leon",
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "lib/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "Leon-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

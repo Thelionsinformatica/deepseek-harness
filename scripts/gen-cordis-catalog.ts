@@ -117,6 +117,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   typertGateway: 'typert.md',
   userQuestions: 'user-questions.md',
   web: 'web.md',
+  webAccess: 'web.md',
   workflowEngine: 'workflow.md',
   workspaceRegistry: 'workspace.md',
 }
@@ -457,6 +458,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   TeamMemberView: 'agent-team.md',
   TeamMembership: 'agent-team.md',
   TeamCompletionReviewer: 'agent-team.md',
+  TeamMissionBindings: 'agent-team.md',
+  TeamMissionProvisionRequest: 'agent-team.md',
   TeamMissionRecord: 'agent-team.md',
   TeamTaskId: 'agent-team.md',
   TeamTaskView: 'agent-team.md',
@@ -565,6 +568,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ProcedureInspectRequest: 'memory.md',
   ProcedureLearningResult: 'memory.md',
   ProcedureProposalRequest: 'memory.md',
+  ProcedureRecord: 'memory.md',
   ProcedureRevalidationRequest: 'memory.md',
   ProcedureReviewRequest: 'memory.md',
   ProcedureReuseRequest: 'memory.md',
@@ -623,6 +627,7 @@ export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
 
 /** Project types deliberately documented outside the subsystems catalog. */
 export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
+  AuxiliaryModelRole: 'host-assigned consumer roles are owned by packages/core/agent-default-model/README.md',
   z: 'schemastery schema constructor is owned by vendor/schemastery (vendored upstream)',
   BeginCommandRequest: 'event-local request contract is owned by packages/client/ui-input-trigger/src/types.ts',
   InsertReferenceRequest: 'event-local request contract is owned by packages/client/ui-input-trigger/src/types.ts',

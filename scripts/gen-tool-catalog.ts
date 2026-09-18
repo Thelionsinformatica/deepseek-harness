@@ -562,11 +562,14 @@ const TOOL_PACKAGES: ToolPackage[] = [
     pkg: '@deepseek-ai/dsh-experimental-tool-agent-team',
     dir: 'tool-agent-team',
     source: 'packages/experimental/tool-agent-team/src/index.ts',
-    requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.agentTeams', 'an exact live Team member Agent'],
+    requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.agentTeams', 'ctx.subagents continuable providers', 'an exact live Team member Agent'],
     writes: ['tool/call', 'team/member', 'team/message/queued', 'team/message/delivered', 'team/task', 'tool/result'],
     async mount(ctx) {
       await ctx.plugin(AgentRegistry)
       await ctx.plugin(SessionStore)
+      await ctx.plugin(SubagentRuntime)
+      registerCatalogSubagentProvider(ctx, 'spawn')
+      registerCatalogSubagentProvider(ctx, 'fork')
       const session = ctx.sessions.create(SessionId('tool-catalog-team-lead'))
       let agent!: Agent
       const membership = {

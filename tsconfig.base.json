@@ -243,7 +243,12 @@
       "@deepseek-ai/dsh-sdk-client": ["./packages/sdk/client/src"],
       "@deepseek-ai/dsh-sdk-protocol": ["./packages/sdk/protocol/src"],
       "@deepseek-ai/dsh-sdk-jsonrpc-server": ["./packages/sdk/server/src"],
+      "@deepseek-ai/dsh/desktop": ["./apps/cli/src/desktop.ts"],
       "@deepseek-ai/dsh-experimental-agent-team": ["./packages/experimental/agent-team/src"],
+      "@deepseek-ai/dsh-experimental-agent-team/mission-control": ["./packages/experimental/agent-team/src/mission-control.ts"],
+      "@deepseek-ai/dsh-experimental-agent-team/execution": ["./packages/experimental/agent-team/src/execution.ts"],
+      "@deepseek-ai/dsh-experimental-agent-team/import-lab": ["./packages/experimental/agent-team/src/import-lab.ts"],
+      "@deepseek-ai/dsh-client-ui-web-access": ["./packages/client/ui-web-access/src"],
       "@deepseek-ai/dsh-experimental-tool-agent-team": ["./packages/experimental/tool-agent-team/src"],
       "@deepseek-ai/dsh-*": [
         "./packages/core/*/src",

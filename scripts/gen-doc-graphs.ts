@@ -562,6 +562,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Search and fetch providers register into one ctx.web seam; tool-web owns the stable model-facing names.',
   },
   {
+    key: 'webAccess',
+    pkg: 'web-access',
+    title: 'Per-session web-access grant',
+    mode: 'core',
+    consumers: ['tool-web'],
+    note: 'Folds the latest web/access event into an explicit durable per-session grant; tool-web consults it before allowing native search/fetch egress.',
+  },
+  {
     key: 'spillStore',
     pkg: 'spill',
     title: 'Spill storage seam',

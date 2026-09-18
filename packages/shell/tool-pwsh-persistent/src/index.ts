@@ -132,7 +132,9 @@ function commandOutput(
   // scrolled out and extraction fell back to the echoed copy.
   captured = captured.replaceAll(wrapper, '')
   return {
-    text: captured.replace(/^\r?\n/, '').replace(/\r?\n$/, ''),
+    // Whitespace-only rows before real output are ConPTY visual padding of the
+    // same class trimmed after the status digits, not command output.
+    text: captured.replace(/^\r?\n/, '').replace(/^(?:[^\S\r\n]+\r?\n)+(?=\S)/, '').replace(/\r?\n$/, ''),
     incomplete: startMarker < 0,
     exitCode: Number(status),
   }

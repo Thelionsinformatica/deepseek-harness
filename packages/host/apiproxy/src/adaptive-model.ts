@@ -57,6 +57,8 @@ export interface AdaptiveFailoverConfig {
 
 /** Prompt tiers plus optional provider-neutral goal-round escalation. */
 export interface AdaptiveRoutingConfig {
+  /** Keep the saved principal route in automatic mode; auxiliary roles do not replace it. */
+  coordinatorMode?: boolean
   /** Provider route used when a tier does not name its own provider. */
   provider: string
   /** Registered provider route for short, self-contained requests. */

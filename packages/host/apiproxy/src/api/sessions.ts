@@ -87,10 +87,15 @@ export interface SessionProjectionsBlock {
   values: Partial<SessionProjectionMap>
 }
 
-/** Browser-submitted prompt content; the host promotes image bytes to durable references. */
+/**
+ * Browser-submitted prompt content. The host promotes image bytes to durable
+ * attachment references and persists `file` bytes below `<DSH_HOME>/uploads`,
+ * replacing each file part with a text block that names the stored path.
+ */
 export type PromptContentPart =
   | { type: 'text'; text: string }
   | { type: 'image'; mediaType: ImageMediaType; data: string; name?: string }
+  | { type: 'file'; name: string; data: string }
 
 /** Complete model selection for one session. */
 export interface ModelSelection {
@@ -169,6 +174,8 @@ export interface SessionModels {
   automatic: boolean
   /** Whether this deployment exposes a local adaptive policy. */
   automaticAvailable: boolean
+  /** Whether the automatic policy declares at least one external failover route. */
+  externalFailoverAvailable?: boolean
   /**
    * Whether this process may send this session's automatic retry content to a
    * failover route declared external. A protected local retrieval after the

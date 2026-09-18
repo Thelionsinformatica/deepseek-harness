@@ -364,6 +364,7 @@ export class PiAiAdapter extends LlmAdapter {
         : await toPiContext({ ...options, signal: watchdog.signal }, attachments, onReplayDegrade, profile.maxRequestImageBytes, {
           maxPixels: profile.requestImagePixelBudget,
           maxBytes: profile.requestImageMaxBytes,
+          ...profile.requestImageOutputFormat === undefined ? {} : { outputFormat: profile.requestImageOutputFormat },
         })
       let reportedCostUsdNanos: number | undefined
       const capturesOmniRouteCost = options.provider === 'omniroute'

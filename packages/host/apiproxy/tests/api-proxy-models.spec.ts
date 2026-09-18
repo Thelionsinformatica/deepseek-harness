@@ -593,6 +593,53 @@ describe('Web session model selection', () => {
     await ctx.fiber.dispose()
   })
 
+  it('routes historical images through vision when the saved coordinator is enabled', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    Object.assign(agent, { status: 'idle', followup: vi.fn() })
+    const classifier = vi.fn(() => ({ provider: 'deepseek-official', model: 'deepseek-reasoner' }))
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      adaptiveModelSelection: classifier,
+      automaticCoordinator: true,
+      cwd: '/tmp',
+    })
+    agent.session.append('user/message', {
+      id: 'visual-history', role: 'user', source: { kind: 'user' },
+      content: [{ type: 'image', attachment: {
+        attachmentId: 'att-history', mediaType: 'image/png', bytes: 1, width: 1, height: 1,
+      } }],
+    } as never, { surfaceOp: 'append' })
+    agent.session.append('turn/start', { turn: 1 })
+    expectValue(await api.sessions.prompt(request({
+      sessionId, mode: 'queue' as const, content: [{ type: 'text' as const, text: 'continue' }],
+    })))
+    expect(classifier).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ hasImageHistory: true }))
+    expect(expectValue(await api.sessions.models(request({ sessionId }))).current)
+      .toMatchObject({ provider: 'deepseek-official', model: 'deepseek-reasoner' })
+    await ctx.fiber.dispose()
+  })
+
+  it.each(['classifier', 'resolution'])('blocks admission after %s failure instead of using the saved external route', async (failure) => {
+    const { ctx, agent, sessionId } = await harness()
+    const followup = vi.fn()
+    Object.assign(agent, { status: 'idle', followup })
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      adaptiveModelSelection: () => {
+        if (failure === 'classifier') throw new Error('classifier unavailable')
+        return { provider: 'missing-local', model: 'local-model' }
+      },
+      cwd: '/tmp',
+    })
+    const result = await api.sessions.prompt(request({
+      sessionId, mode: 'queue' as const, content: [{ type: 'text' as const, text: 'Fix the isolated module' }],
+    }))
+    expect(result.result).toMatchObject({ ok: false, error: { details: { reason: 'ADAPTIVE_ROUTE_UNAVAILABLE' } } })
+    expect(followup).not.toHaveBeenCalled()
+    expect(agent.session.events.some(event => event.type === 'user/message')).toBe(false)
+    await ctx.fiber.dispose()
+  })
+
   it('adapts idle prompts, exposes the active route, and preserves explicit manual control', async () => {
     const { ctx, agent, sessionId } = await harness()
     const followup = vi.fn()

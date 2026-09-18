@@ -12,6 +12,7 @@ import Include from '@deepseek-ai/cordis-plugin-include'
 import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import GoalService from '@deepseek-ai/dsh-goal'
+import AgentDefaultModelConfig from '@deepseek-ai/dsh-agent-default-model'
 import { CallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
@@ -54,10 +55,16 @@ function liveAgent(ctx: Context): Agent {
 }
 
 describe('tool-goal independent audit through real Loader composition', () => {
-  it('routes the fresh auditor to the configured model before committing completion', async () => {
+  it.each([false, true])('routes the fresh auditor before completion with auxiliary opt-in %s', async (auxiliary) => {
     root = await mkdtemp(join(tmpdir(), 'dsh-goal-audit-loader-'))
     const configPath = join(root, 'cordis.yml')
     await writeFile(configPath, [
+      ...auxiliary ? [
+        "- name: '@deepseek-ai/dsh-agent-default-model'",
+        '  config:', '    provider: local', '    model: main',
+        '    auxiliaryModels:', '      localProviders: [local]', '      roles:',
+        '        review:', '          provider: local', '          model: reviewer-role',
+      ] : [],
       "- name: '@deepseek-ai/dsh-agent'",
       "- name: '@deepseek-ai/dsh-subagent'",
       "- name: 'test-auditor-provider'",
@@ -115,6 +122,7 @@ describe('tool-goal independent audit through real Loader composition', () => {
       ['@deepseek-ai/dsh-system-prompt', SystemPrompt],
       ['@deepseek-ai/dsh-tools', ToolRuntime],
       ['@deepseek-ai/dsh-goal', GoalService],
+      ['@deepseek-ai/dsh-agent-default-model', AgentDefaultModelConfig],
       ['@deepseek-ai/dsh-tool-goal', ToolGoal],
     ])
     ctx.loader.internal = {
@@ -142,7 +150,9 @@ describe('tool-goal independent audit through real Loader composition', () => {
     expect(result.isError).toBe(false)
     expect(ctx.goals.get(agent)).toMatchObject({ phase: 'complete', revision: 2 })
     expect(requests).toHaveLength(1)
-    expect(requests[0]?.agentOptions).toMatchObject({ provider: 'google', model: 'gemini-auditor' })
+    expect(requests[0]?.agentOptions).toMatchObject(auxiliary
+      ? { provider: 'local', model: 'reviewer-role', maxTokens: 2048 }
+      : { provider: 'google', model: 'gemini-auditor', maxTokens: 2048 })
     expect(ctx.tools.get('update_goal')?.presentCall?.({
       goal_id: created.id, revision: created.revision, action: 'complete',
     })).toMatchObject({ title: 'Verify delivery' })

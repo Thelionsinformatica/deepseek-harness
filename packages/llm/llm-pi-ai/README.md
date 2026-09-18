@@ -22,6 +22,7 @@ Configure credentials, the model catalog, and deployment-specific transport sett
         reasoning: high
         requestImagePixelBudget: 4194304 # total pixels; 2048 by 2048 default
         requestImageMaxBytes: 1048576    # raw bytes before base64 expansion
+        # requestImageOutputFormat: png # opt in for llama.cpp/WebP-incompatible endpoints
         maxRequestImageBytes: 20971520   # accumulated base64 payload
         retryPolicy:
           mode: normal

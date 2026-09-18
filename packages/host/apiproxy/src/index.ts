@@ -87,6 +87,7 @@ export class ApiProxyService extends Service implements ApiProxy {
     // object default, so omission stays undefined while a supplied block is
     // still validated in full.
     adaptiveRouting: z.union([z.object({
+      coordinatorMode: z.boolean(),
       provider: z.string().required(),
       fastProvider: z.string(),
       mainProvider: z.string(),
@@ -179,11 +180,13 @@ export class ApiProxyService extends Service implements ApiProxy {
         ? {}
         : {
           adaptiveModelSelection: input => chooseAdaptiveModel(config.adaptiveRouting as AdaptiveRoutingConfig, input),
+          automaticCoordinator: config.adaptiveRouting.coordinatorMode,
           adaptiveModelFailover: input => chooseAdaptiveFailover(config.adaptiveRouting as AdaptiveRoutingConfig, {
             provider: input.provider,
             failureCode: input.failure.code,
             hasImage: input.hasImage,
           }),
+          externalFailoverAvailable: config.adaptiveRouting.failovers?.some(route => route.residency === 'external') ?? false,
           ...config.adaptiveRouting.shadow === undefined
             ? {}
             : { adaptiveRoutingShadow: config.adaptiveRouting.shadow },

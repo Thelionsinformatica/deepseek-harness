@@ -4,9 +4,10 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { mkdir, stat } from 'node:fs/promises'
+import { mkdir, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
+import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { z as zod } from 'zod'
 import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
@@ -133,6 +134,50 @@ export const DEFAULT_COLD_BLANK_PROBE_MAX_BYTES = 1024
 /** Conversation message event types (the pagination counting unit). */
 const MESSAGE_TYPES = new Set(['user/message', 'assistant/message'])
 
+/** Largest decoded browser-attached file the Host persists. */
+const MAX_ATTACHED_FILE_BYTES = 16 * 1024 * 1024
+
+/**
+ * Reduce one browser-supplied name to a single safe path segment.
+ * Separators, Windows-reserved characters, control characters, and a leading
+ * dot run are replaced so the stored name can never escape the uploads
+ * directory or hide as a dotfile.
+ */
+function attachedFileSegment(name: string): string {
+  const flattened = name.replace(/[\\/]+/gu, '_').replace(/[<>:"|?*\u0000-\u001f]/gu, '_').trim()
+  const visible = flattened.replace(/^\.+/u, '')
+  return (visible === '' ? 'anexo' : visible).slice(0, 120)
+}
+
+/**
+ * Persist one browser-attached file below `<DSH_HOME>/uploads` and return the
+ * model-facing text block that replaces the wire part. The bytes stay on disk;
+ * only the path enters model context, so the agent reads the file on demand.
+ */
+async function persistAttachedFile(part: { name: string; data: string }): Promise<string> {
+  const bytes = Buffer.from(part.data, 'base64')
+  if (bytes.byteLength === 0) throw new Error('attached file is empty')
+  if (bytes.byteLength > MAX_ATTACHED_FILE_BYTES) {
+    throw new Error(`attached file exceeds ${MAX_ATTACHED_FILE_BYTES} bytes`)
+  }
+  const directory = join(resolveDshHome(), 'uploads')
+  await mkdir(directory, { recursive: true })
+  const stamp = new Date().toISOString().replace(/[:.]/gu, '-')
+  const segment = attachedFileSegment(part.name)
+  // Exclusive create keeps a repeated name from overwriting an earlier upload.
+  for (let attempt = 0; ; attempt += 1) {
+    const suffix = attempt === 0 ? '' : `-${String(attempt)}`
+    const target = join(directory, `${stamp}${suffix}-${segment}`)
+    try {
+      await writeFile(target, bytes, { flag: 'wx', mode: 0o600 })
+      return `[arquivo anexado] ${target}`
+    } catch (error: unknown) {
+      if ((error as { code?: string }).code !== 'EEXIST') throw error
+      if (attempt >= 20) throw error
+    }
+  }
+}
+
 /** Validate one prompt as a batch before publishing any durable image object. */
 async function durablePromptContent(ctx: Context, content: readonly PromptContentPart[]): Promise<ContentBlock[]> {
   if (content.every(part => part.type === 'text')) {
@@ -140,10 +185,19 @@ async function durablePromptContent(ctx: Context, content: readonly PromptConten
   }
   const refs = await admitEncodedImages(ctx.attachments, content.filter(part => part.type === 'image'))
   let next = 0
-  return content.map(part => part.type === 'text'
-    ? { type: 'text', text: part.text }
-    // admitEncodedImages returns one reference per image part in order.
-    : { type: 'image', attachment: refs[next++] as ImageAttachmentRef })
+  const blocks: ContentBlock[] = []
+  for (const part of content) {
+    if (part.type === 'text') {
+      blocks.push({ type: 'text', text: part.text })
+    } else if (part.type === 'file') {
+      // Non-image attachment: durable bytes on disk, a short pointer in context.
+      blocks.push({ type: 'text', text: await persistAttachedFile(part) })
+    } else {
+      // admitEncodedImages returns one reference per image part in order.
+      blocks.push({ type: 'image', attachment: refs[next++] as ImageAttachmentRef })
+    }
+  }
+  return blocks
 }
 
 /** Search durable content for an image reference, including nested tool results. */
@@ -589,6 +643,8 @@ export interface AdaptiveFailoverSelection extends ModelSelection {
 
 /** Resolved Agent model and project-directory defaults consumed by the API implementation. */
 export interface ApiProxyDefaults {
+  /** Opt-in stable principal route, independent of auxiliary model assignments. */
+  automaticCoordinator?: boolean
   /**
    * The model selection a session starts from when its own log names none. Read on
    * every access rather than captured, so a default saved during this process
@@ -618,6 +674,8 @@ export interface ApiProxyDefaults {
   adaptiveModelFailover?: (
     input: { provider: string; failure: LlmFailure; hasImage?: boolean },
   ) => AdaptiveFailoverSelection | undefined | Promise<AdaptiveFailoverSelection | undefined>
+  /** Whether the automatic replacement policy can select an external route. */
+  externalFailoverAvailable?: boolean
   /** Passive provider-neutral preflight; records recommendations but never replaces the selected route. */
   adaptiveRoutingShadow?: AdaptiveRoutingShadowConfig
   /** Default project directory for new sessions whose create request carries no cwd. */
@@ -1416,8 +1474,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         if (resolved !== undefined) selection.current = resolved
       } catch (error: unknown) {
         ctx.logger.warn(
-          `api-proxy: completion-evidence model escalation failed before prompt assembly; preserving the current route: ${String(error)}`,
+          `api-proxy: completion-evidence model escalation failed before prompt assembly; blocking the request: ${String(error)}`,
         )
+        throw error
       }
       // This listener is prepended so installModelSelection snapshots the
       // recovery route into both prompt variables and request routing.
@@ -1491,7 +1550,17 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       event.type === 'user/message' ? contentHasImage(event.data.content)
         : event.type === 'tool/result' && contentHasImage(event.data.message.content),
     )
-    const proposed = await select({ ...input, ...(hasImageHistory ? { hasImageHistory: true } : {}) })
+    const hasImage = hasImageHistory || input.content.some(part => part.type === 'image')
+    if (defaults.automaticCoordinator === true && !hasImage) {
+      const resolved = await ctx.llm.resolveCallConfig(defaults.defaultModelSelection())
+      return {
+        provider: resolved.provider,
+        model: resolved.model,
+        ...resolved.reasoningEffort === undefined ? {} : { reasoningEffort: resolved.reasoningEffort },
+      }
+    }
+    const vision = hasImage ? ctx.get('agentDefaultModel')?.auxiliarySelection('vision') : undefined
+    const proposed = vision ?? await select({ ...input, ...(hasImageHistory ? { hasImageHistory: true } : {}) })
     if (proposed === undefined) return undefined
     const resolved = await ctx.llm.resolveCallConfig(proposed)
     return {
@@ -1682,9 +1751,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         }
       } catch (error: unknown) {
         ctx.logger.warn(
-          `api-proxy: ${recovery ? 'completion-evidence' : 'goal-round'} model escalation failed; preserving the current route: ${String(error)}`,
+          `api-proxy: ${recovery ? 'completion-evidence' : 'goal-round'} model escalation failed; blocking the request: ${String(error)}`,
         )
-        return await next()
+        throw error
       }
     })
   }
@@ -2951,6 +3020,8 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           routable,
           automatic: automaticFor(found.agent),
           automaticAvailable: defaults.adaptiveModelSelection !== undefined,
+          externalFailoverAvailable: defaults.externalFailoverAvailable
+            ?? defaults.adaptiveModelFailover !== undefined,
           externalFailoverConsent: externalFailoverConsented(found.agent),
           groups,
           failures,
@@ -3204,7 +3275,12 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
                   hasHistory: agent.session.events.some(event => event.type === 'turn/start'),
                 })
               } catch (error: unknown) {
-                ctx.logger.warn(`api-proxy: adaptive model selection failed; preserving the current route: ${String(error)}`)
+                ctx.logger.warn(`api-proxy: adaptive model selection failed; blocking prompt admission: ${String(error)}`)
+                return err(request, {
+                  code: 'agent-busy',
+                  message: 'Leon Automático não conseguiu resolver o modelo configurado. Nenhuma mensagem foi enviada ao modelo anterior.',
+                  details: { reason: 'ADAPTIVE_ROUTE_UNAVAILABLE' },
+                })
               }
             }
             const active = adaptive ?? selectionFor(agent).current

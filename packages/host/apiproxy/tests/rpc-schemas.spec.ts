@@ -211,6 +211,7 @@ describe('sessions domain schemas', () => {
       routable: true,
       automatic: true,
       automaticAvailable: true,
+      externalFailoverAvailable: true,
       externalFailoverConsent: false,
       groups: [{
         id: 'deepseek-official',

@@ -256,6 +256,7 @@ export async function requireCompletionAudit(
   let result: SubagentResult
   let auditorSessionId: string
   try {
+    const auxiliary = ctx.get('agentDefaultModel')?.auxiliarySelection('review')
     const run = await subagents.start(config.provider, {
       label: 'Leon quality review',
       prompt: [{ type: 'text', text: auditPrompt(agent, goal, todos) }],
@@ -264,6 +265,7 @@ export async function requireCompletionAudit(
       agentOptions: {
         ...config.modelProvider === undefined ? {} : { provider: config.modelProvider },
         ...config.model === undefined ? {} : { model: config.model },
+        ...auxiliary,
         maxTokens: config.maxTokens,
       },
       outputSchema: AUDIT_SCHEMA,
@@ -320,3 +322,4 @@ export async function requireCompletionAudit(
     completionVerdictDigest(verdict),
   )
 }
+import type {} from '@deepseek-ai/dsh-agent-default-model'

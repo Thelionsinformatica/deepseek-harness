@@ -11,6 +11,8 @@ The plugin config requires `{ provider, model }`. That composition entry is the 
 
 The service does not validate catalog membership. A provider route may serve an unadvertised model, and the consumer that actually opens a model request owns availability diagnostics.
 
+The optional `auxiliaryModels` composition policy enables the `agent-model-roles` settings namespace. Each title, compression, vision, worker or review entry supplies provider, model, optional reasoning effort and explicit external consent. Consumers resolve the assignment before logging a request or creating a child. Missing entries retain their consumer's existing inheritance; absent composition opt-in preserves laboratories. Only deployment-declared `localProviders` are trusted as local, including when an endpoint uses localhost. Other routes require `allowExternal: true`. This policy grants no tool permissions, monetary budget or extra agents. Changing a role affects its next call or newly created child; cross-model cache reuse is not guaranteed.
+
 ## Model Experience
 
 Indirectly, through the provider/model selection supplied to an entry point; request assembly and adapters own the model-visible request.

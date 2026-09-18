@@ -253,6 +253,7 @@ export const sessionModelsValueSchema = z.object({
   routable: z.boolean(),
   automatic: z.boolean(),
   automaticAvailable: z.boolean(),
+  externalFailoverAvailable: z.boolean().optional(),
   externalFailoverConsent: z.boolean().optional(),
   groups: z.array(modelProviderGroupSchema),
   failures: z.array(modelCatalogFailureSchema),
@@ -290,6 +291,14 @@ export const imageMediaTypeSchema = z.union([
 export const promptContentPartSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('text'), text: z.string() }),
   z.object({ type: z.literal('image'), mediaType: imageMediaTypeSchema, data: z.string(), name: z.string().optional() }),
+  // Non-image attachment: canonical base64 bytes plus a display name. The Host
+  // stores the decoded bytes below <DSH_HOME>/uploads and injects a text block
+  // naming the stored path, so the browser wire stays image-free here.
+  z.object({
+    type: z.literal('file'),
+    name: z.string().min(1).max(255),
+    data: z.string().min(1),
+  }),
 ])
 
 /** session.prompt request payload, including optional browser-local request provenance. */

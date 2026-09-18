@@ -324,6 +324,14 @@ Owns the default model selection independently of any Host or transport. The com
 
 ```ts cordis-catalog
 /**
+ * Resolve a configured auxiliary route before the consumer logs and dispatches it.
+ * @param role - fixed host-assigned function, never a participant display name.
+ * @returns a detached selection, or undefined to preserve existing inheritance.
+ * @throws when an external route lacks explicit consent or a route is incomplete.
+ */
+auxiliarySelection(role: AuxiliaryModelRole): ModelSelection | undefined
+
+/**
  * Read the current default model selection.
  * @returns a detached provider, model, and optional reasoning selection.
  */

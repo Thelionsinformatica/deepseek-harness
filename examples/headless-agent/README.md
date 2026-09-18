@@ -30,3 +30,13 @@ The overlay creates the same absolute cwd inside the sandbox, but it does not up
 ## Advanced configuration
 
 [`advanced.cordis.yml`](advanced.cordis.yml) adds Code Mode and the Cordis tools to the test composition.
+
+## Host-bound collective laboratory
+
+[`collective-host.cordis.yml`](collective-host.cordis.yml) is an experimental import-idempotency demonstration: Lead, one investigator and one reviewer use separate native sessions with one generation at a time. The host persists their functional identities before inference. Limits are 48 calls and 15 minutes, including eight final reviewer-only calls. This does not enable the normal profile or provide a general coding mission.
+
+Verify a local llama.cpp server at `127.0.0.1:8097` serving the `qwen3.5:4b` alias before invoking the [CLI runtime bridge](../../apps/cli/README.md). The alias does not require Ollama. The configuration grants no shell, arbitrary file access, memory promotion or cloud fallback. Use a new empty mission directory. The host reuses native tasks and peer evidence; it never closes missing work merely to pass review. A blocked mission remains blocked even if its artifact passes.
+
+The runner accepts `status`, `pause` and terminal `stop` on stdin. After exit, the same runtime/config/directory support `status`, `stop` and an explicit `resume` of a paused mission within its original deadline. Repeated handoff requests are suppressed within a run unless artifact, task or collaboration evidence changes. A leftover owner lock requires process inspection, not automatic deletion. The normal profile is unchanged; exit this laboratory and use the normal launcher to return.
+
+[`collective-host-v2.cordis.yml`](collective-host-v2.cordis.yml) is a separate variant with the same prompts, model route, limits and final verifier. It adds an admission check to the host-bound reviewer's task completion: a successful verification of the current digest must follow receipt of peer evidence. A premature completion request returns an actionable error without changing the task. This variant does not replace prior results. Cold-resume preservation of a pending inbox and cross-process handoff deduplication are not validated by the successful-completion smoke test.

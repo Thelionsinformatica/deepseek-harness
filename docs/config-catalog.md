@@ -97,10 +97,42 @@ export interface Config {
   provider: string
   /** Provider-owned model id. */
   model: string
+  /** Explicit normal-profile auxiliary routing policy; omitted in frozen laboratories. */
+  auxiliaryModels?: AuxiliaryModelPolicy
+}
+
+/** Deployment opt-in; an absent policy leaves experimental compositions untouched. */
+export interface AuxiliaryModelPolicy {
+  /** Trusted direct local adapters. A loopback gateway is not automatically local. */
+  localProviders: string[]
+  /** Initial routes, overridden by the settings provider when mounted. */
+  roles?: AuxiliaryModelSettings
+}
+
+/** Missing entries preserve the consumer's existing inheritance behavior. */
+export type AuxiliaryModelSettings = Partial<Record<AuxiliaryModelRole, AuxiliaryModelRoute>>
+
+/** Independent consumers supported by the normal Leon composition. */
+export type AuxiliaryModelRole = 'title' | 'compression' | 'vision' | 'worker' | 'review'
+
+/** A complete route and explicit consent for automatic external calls. */
+export interface AuxiliaryModelRoute extends AgentDefaultModelSettings {
+  /** Allows this role to send its context to an external provider and incur charges. */
+  allowExternal?: boolean
+}
+
+/** Stored and composed default model selection. */
+export interface AgentDefaultModelSettings {
+  /** Registered provider route. */
+  provider: string
+  /** Provider-owned model id. */
+  model: string
+  /** Adapter-owned reasoning effort, or provider/default behavior when absent. */
+  reasoningEffort?: string
 }
 ```
 
-Source: [`packages/core/agent-default-model/src/index.ts:41`](../packages/core/agent-default-model/src/index.ts)
+Source: [`packages/core/agent-default-model/src/index.ts:43`](../packages/core/agent-default-model/src/index.ts)
 
 <a id="deepseek-aidsh-agent-instructions"></a>
 
@@ -650,11 +682,41 @@ export interface Config {
 
 Source: [`packages/experimental/agent-team/src/types.ts:125`](../packages/experimental/agent-team/src/types.ts)
 
+<a id="deepseek-aidsh-experimental-mirofish"></a>
+
+## `@deepseek-ai/dsh-experimental-mirofish`
+
+Requires: `tools` · `systemPrompt` · `approval`
+
+```ts config-catalog
+/** Runtime configuration for the optional local MiroFish bridge. */
+export interface Config {
+  /** Expose the tool. The generic bundle default is disabled. */
+  enabled?: boolean
+  /** MiroFish backend URL, normally http://127.0.0.1:5001. */
+  baseUrl?: string
+  /** Per-request HTTP timeout in milliseconds. */
+  timeoutMs?: number
+  /** Delay between asynchronous MiroFish status checks. */
+  pollIntervalMs?: number
+  /** Maximum total wait for each asynchronous stage. */
+  maxWaitMs?: number
+  /** Maximum seed text sent to MiroFish. */
+  maxSeedChars?: number
+  /** Maximum report characters returned to the model. */
+  maxReportChars?: number
+  /** Upper bound for user-requested simulation rounds. */
+  maxRounds?: number
+}
+```
+
+Source: [`packages/experimental/mirofish/src/index.ts:33`](../packages/experimental/mirofish/src/index.ts)
+
 <a id="deepseek-aidsh-experimental-tool-agent-team"></a>
 
 ## `@deepseek-ai/dsh-experimental-tool-agent-team`
 
-Requires: `agents` · `agentTeams` · `tools` · `systemPrompt`
+Requires: `agents` · `agentTeams` · `tools` · `systemPrompt` · `subagents`
 
 ```ts config-catalog
 /** Tool routing configuration. */
@@ -666,7 +728,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/experimental/tool-agent-team/src/index.ts:17`](../packages/experimental/tool-agent-team/src/index.ts)
+Source: [`packages/experimental/tool-agent-team/src/index.ts:18`](../packages/experimental/tool-agent-team/src/index.ts)
 
 <a id="deepseek-aidsh-explicit-target-policy"></a>
 
@@ -937,6 +999,8 @@ export interface Config {
 
 /** Prompt tiers plus optional provider-neutral goal-round escalation. */
 export interface AdaptiveRoutingConfig {
+  /** Keep the saved principal route in automatic mode; auxiliary roles do not replace it. */
+  coordinatorMode?: boolean
   /** Provider route used when a tier does not name its own provider. */
   provider: string
   /** Registered provider route for short, self-contained requests. */
@@ -1106,6 +1170,30 @@ export interface Config {
 ```
 
 Source: [`packages/host/frontend-static/src/index.ts:28`](../packages/host/frontend-static/src/index.ts)
+
+<a id="deepseek-aidsh-host-plugin-inventory"></a>
+
+## `@deepseek-ai/dsh-host-plugin-inventory`
+
+Requires: `loader`
+
+```ts config-catalog
+/** Deployment-owned explicit allow-list for optional process-local toggles. */
+export interface Config {
+  /** Exact configuration id + module identity pairs audited as safe optional live toggles. */
+  liveToggleEntries?: readonly LiveToggleEntry[]
+}
+
+/** One deployment-audited target, identified in its Loader configuration tree. */
+export interface LiveToggleEntry {
+  /** Stable `Entry.options.id` within the containing Loader configuration tree. */
+  id: string
+  /** Exact public module identity, preventing a same-id entry elsewhere from inheriting the grant. */
+  moduleName: string
+}
+```
+
+Source: [`packages/host/plugin-inventory/src/index.ts:37`](../packages/host/plugin-inventory/src/index.ts)
 
 <a id="deepseek-aidsh-host-webserver"></a>
 
@@ -1350,6 +1438,8 @@ export interface PiAiProviderProfile {
   requestImagePixelBudget?: number
   /** Raw encoded-byte cap for each deterministic inline request version. */
   requestImageMaxBytes?: number
+  /** Force PNG for endpoints that cannot decode WebP, such as llama.cpp. */
+  requestImageOutputFormat?: 'png'
   /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
   retryPolicy?: RetryPolicyConfig
 }
@@ -1498,7 +1588,7 @@ export type PiAiThinkingFormat = NonNullable<OpenAICompletionsCompat['thinkingFo
 
 Depends on: `Api` (`@earendil-works/pi-ai`) · `CacheRetention` (`@earendil-works/pi-ai`) · `Model` (`@earendil-works/pi-ai`) · `ModelThinkingLevel` (`@earendil-works/pi-ai`) · `OpenAICompletionsCompat` (`@earendil-works/pi-ai`) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets` (`@earendil-works/pi-ai`) · `Transport` (`@earendil-works/pi-ai`)
 
-Source: [`packages/llm/llm-pi-ai/src/config.ts:220`](../packages/llm/llm-pi-ai/src/config.ts)
+Source: [`packages/llm/llm-pi-ai/src/config.ts:222`](../packages/llm/llm-pi-ai/src/config.ts)
 
 <a id="deepseek-aidsh-llm-replay"></a>
 
@@ -2183,7 +2273,7 @@ export interface Config extends SessionQueryConfig {
   maxLimit?: number
   /** Maximum snippet length in Unicode code points. Defaults to 240. */
   snippetChars?: number
-  /** Maximum concurrent persisted-log inspections in one inherited batch read. Defaults to 4. */
+  /** Maximum concurrent persisted-log inspections in batch reads and FTS reconciliation. Defaults to 4. */
   persistedInspectConcurrency?: number
 }
 
@@ -3796,6 +3886,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-trajectory` ([`packages/client/ui-trajectory/src/index.ts`](../packages/client/ui-trajectory/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-user-questions` ([`packages/client/ui-user-questions/src/index.ts`](../packages/client/ui-user-questions/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-voice` ([`packages/client/ui-voice/src/index.ts`](../packages/client/ui-voice/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-web-access` ([`packages/client/ui-web-access/src/index.ts`](../packages/client/ui-web-access/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-work-dashboard` ([`packages/client/ui-work-dashboard/src/index.ts`](../packages/client/ui-work-dashboard/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-workflow-run` ([`packages/client/ui-workflow-run/src/index.ts`](../packages/client/ui-workflow-run/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-workspace` ([`packages/client/ui-workspace/src/index.ts`](../packages/client/ui-workspace/src/index.ts))
@@ -3808,7 +3899,6 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-fs-observation-policy` ([`packages/fs/fs-observation-policy/src/index.ts`](../packages/fs/fs-observation-policy/src/index.ts))
 - `@deepseek-ai/dsh-host-directory-picker-auto` — requires `webServer` · `loader` ([`packages/host/directory-picker-auto/src/index.ts`](../packages/host/directory-picker-auto/src/index.ts))
 - `@deepseek-ai/dsh-host-directory-picker-native` ([`packages/host/directory-picker-native/src/index.ts`](../packages/host/directory-picker-native/src/index.ts))
-- `@deepseek-ai/dsh-host-plugin-inventory` — requires `loader` ([`packages/host/plugin-inventory/src/index.ts`](../packages/host/plugin-inventory/src/index.ts))
 - `@deepseek-ai/dsh-llm` ([`packages/llm/llm/src/index.ts`](../packages/llm/llm/src/index.ts))
 - `@deepseek-ai/dsh-lsp` ([`packages/lsp/lsp/src/index.ts`](../packages/lsp/lsp/src/index.ts))
 - `@deepseek-ai/dsh-memory-continuity` ([`packages/memory/memory-continuity/src/index.ts`](../packages/memory/memory-continuity/src/index.ts))
@@ -3827,6 +3917,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-tool-cordis` — requires `tools` · `systemPrompt` · `dynamicCordisRunner` · `cordisInspect` ([`packages/extensions/tool-cordis/src/index.ts`](../packages/extensions/tool-cordis/src/index.ts))
 - `@deepseek-ai/dsh-tool-subagent-control` — requires `tools` · `subagents` ([`packages/subagent/tool-subagent-control/src/index.ts`](../packages/subagent/tool-subagent-control/src/index.ts))
 - `@deepseek-ai/dsh-user-questions` ([`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts))
+- `@deepseek-ai/dsh-web-access` ([`packages/web/web-access/src/index.ts`](../packages/web/web-access/src/index.ts))
 - `@deepseek-ai/dsh-workspace` — requires `storageDomain` · `sessionPersistence` ([`packages/workspace/workspace/src/index.ts`](../packages/workspace/workspace/src/index.ts))
 
 ## Seam packages (not directly loadable)

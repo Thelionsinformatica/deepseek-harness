@@ -30,3 +30,13 @@ pnpm exec vitest run --config vitest.e2e.config.ts packages/e2b/e2b/tests/compos
 ## 高级配置
 
 [`advanced.cordis.yml`](advanced.cordis.yml) 在测试组装中添加 Code Mode 和 Cordis 工具。
+
+## 宿主绑定的集体实验室
+
+[`collective-host.cordis.yml`](collective-host.cordis.yml) 是实验性的导入幂等性演示：Lead、一名调查者和一名审核者使用独立原生会话，每次仅进行一次推理。宿主在推理前持久化其功能身份。限制为 48 次调用和 15 分钟，包括最后八次审核者专用调用。这不会启用正常配置，也不提供通用编程任务。
+
+调用 [CLI 运行时桥接](../../apps/cli/README.zh.md) 前，请确认本地 llama.cpp 服务器在 `127.0.0.1:8097` 提供 `qwen3.5:4b` 别名。该别名不要求 Ollama。配置不授予 shell、任意文件访问、记忆提升或云端回退。请使用新的空任务目录。宿主复用原生任务和同伴证据，不会为了通过审核而关闭未完成工作。即使产物通过，受阻任务仍保持受阻。
+
+运行器通过 stdin 接受 `status`、`pause` 和终止性的 `stop`。退出后，相同运行时、配置和目录支持 `status`、`stop`，以及在原始截止时间内显式 `resume` 已暂停任务。单次运行内，除非产物、任务或协作证据发生变化，否则重复交接请求会被抑制。遗留所有者锁需要检查进程，不能自动删除。正常配置保持不变；退出实验室并使用正常启动器即可返回。
+
+[`collective-host-v2.cordis.yml`](collective-host-v2.cordis.yml) 是独立变体，保持相同提示词、模型路由、限制和最终验证器。它为宿主绑定审核者的任务完成添加准入检查：对当前摘要的成功验证必须发生在收到同伴证据之后。过早的完成请求返回可操作错误，不改变任务。此变体不会替换历史结果。成功完成的冒烟测试不验证冷启动恢复时待处理收件箱的保留，也不验证跨进程交接去重。

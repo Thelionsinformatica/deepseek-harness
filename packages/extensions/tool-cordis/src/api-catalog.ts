@@ -87,6 +87,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Owns the default model selection independently of any Host or transport. The composition entry remains usable without a settings provider; when one is mounted, its user layer is read live.',
     methods: [
       {
+        signature: 'auxiliarySelection(role: AuxiliaryModelRole): ModelSelection | undefined',
+        description: 'Resolve a configured auxiliary route before the consumer logs and dispatches it.',
+        parameters: [{ name: 'role', description: 'fixed host-assigned function, never a participant display name.' }],
+        returns: 'a detached selection, or undefined to preserve existing inheritance.',
+        throws: ['when an external route lacks explicit consent or a route is incomplete.'],
+      },
+      {
         signature: 'currentSelection(): ModelSelection',
         description: 'Read the current default model selection.',
         parameters: [],
@@ -1357,6 +1364,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'A detached record or the stable not-found branch.',
       },
       {
+        signature: 'listCandidates(workspaceId: ProcedureRecord[\'workspaceId\']): readonly ProcedureRecord[]',
+        description: 'List pending review candidates for one exact workspace.',
+        parameters: [{ name: 'workspaceId', description: 'Workspace whose candidates may be disclosed.' }],
+        returns: 'Detached candidates ordered newest first.',
+      },
+      {
         signature: 'review(request: ProcedureReviewRequest): Promise<ProcedureLearningResult>',
         description: 'Promote or reject one exact candidate revision after explicit operator review. Acceptance fails once revalidation is due or the validity window has expired.',
         parameters: [{ name: 'request', description: 'Workspace, exact revision, and immutable review decision.' }],
@@ -2204,6 +2217,36 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Host-only state transitions and atomic reservations; not a model-facing authorization API.',
     methods: [
       {
+        signature: 'getComposition(caller: Agent): TeamMissionBindings',
+        description: 'Read and verify durable functional identities against the current native roster.',
+        parameters: [{ name: 'caller', description: 'exact live Lead, including after a cold resume.' }],
+        returns: 'detached immutable host assignments; unready or changed rosters reject.',
+      },
+      {
+        signature: 'inspectStored(id: SessionId): TeamMissionRecord',
+        description: 'Inspect a stored mission without materializing an agent or draining its inbox.',
+        parameters: [{ name: 'id', description: 'root identity selected by the isolated, authenticated host entry.' }],
+        returns: 'detached scope-checked control state; this read does not mutate or emit events.',
+      },
+      {
+        signature: 'async stopStored(id: SessionId): Promise<TeamMissionRecord>',
+        description: 'Commit terminal STOP for an inactive root without loading any participant session. The host must hold the same exclusive directory ownership used by the live runner.',
+        parameters: [{ name: 'id', description: 'root identity selected outside model/tool initiator scope.' }],
+        returns: 'durable cancelled record; no lifecycle notification can activate pending inbox work.',
+      },
+      {
+        signature: 'async provisionTeam(caller: Agent, request: TeamMissionProvisionRequest): Promise<TeamMissionBindings>',
+        description: 'Provision exactly two native continuable workers before admitting model calls. Failure retains every roster/session record and blocks the mission without renewing limits.',
+        parameters: [{ name: 'caller', description: 'exact Lead invoked outside model/tool initiator scope.' }, { name: 'request', description: 'host-authored research and check requests; labels grant no authority.' }],
+        returns: 'persisted function-to-session assignments after full roster validation.',
+      },
+      {
+        signature: 'async waitForComposition(caller: Agent, signal: AbortSignal): Promise<TeamMissionBindings>',
+        description: 'Wait after message durability but before reservation/inference for host composition.',
+        parameters: [{ name: 'caller', description: 'exact current Lead resolved from the requesting participant.' }, { name: 'signal', description: 'request cancellation; the original mission deadline also bounds waiting.' }],
+        returns: 'validated function assignments; STOP, orphan provisioning, failure and extras reject.',
+      },
+      {
         signature: 'async start(caller: Agent, objective: string, criteria: string): Promise<TeamMissionRecord>',
         description: 'Start one host-authorized mission; a root can never reset its consumed budget.',
         parameters: [{ name: 'caller', description: 'exact live Lead; caller authentication remains the host entry\'s responsibility.' }, { name: 'objective', description: 'authorized outcome, not a worker instruction.' }, { name: 'criteria', description: 'frozen acceptance text; cannot be edited through this API.' }],
@@ -2234,9 +2277,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'committed outcome; verifier exceptions pause without approval or budget renewal, and concurrent controls win.',
       },
       {
-        signature: 'close(): void',
-        description: 'Reject future control calls when the plugin begins disposal.',
+        signature: 'async close(): Promise<void>',
+        description: 'Reject new control calls and await admitted provisioning before closing its storage.',
         parameters: [],
+        returns: 'once every admitted provisioning operation has settled.',
       },
     ],
   },
@@ -2561,6 +2605,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Retrieve one URL through the selected provider. Resolves the provider at call time with the selection rules above; throws WebError when the capability cannot run. A non-2xx response is a result, not a throw.',
         parameters: [{ name: 'request', description: 'the URL plus retrieval options.' }, { name: 'signal', description: 'optional cancellation signal forwarded to the provider.' }],
         returns: 'the retrieval outcome; non-2xx responses resolve descriptively.',
+      },
+    ],
+  },
+  {
+    key: 'webAccess',
+    summary: 'Host-plane controller for one explicit user-controlled web-access grant.',
+    description: 'Host-plane controller for one explicit user-controlled web-access grant. It does not contact the web itself and does not alter global approvals.',
+    methods: [
+      {
+        signature: 'isEnabled(session: Session): boolean',
+        description: 'Read the effective durable grant for one session.',
+        parameters: [{ name: 'session', description: 'session whose event history owns the decision.' }],
+        returns: 'whether native web tools may bypass per-call approval.',
+      },
+      {
+        signature: 'set(session: Session, enabled: boolean): boolean',
+        description: 'Change the complete session-scoped grant. Repeating the current value is intentionally a no-op so the durable log remains an audit of decisions.',
+        parameters: [{ name: 'session', description: 'session whose user decision changes.' }, { name: 'enabled', description: 'next complete grant state.' }],
+        returns: 'true only when a new durable event was appended.',
       },
     ],
   },
@@ -3384,6 +3447,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AuthorizationStatus = \'authorized\' | \'cancelled\';',
   },
   {
+    name: 'AuxiliaryModelRole',
+    declaration: 'export type AuxiliaryModelRole = \'title\' | \'compression\' | \'vision\' | \'worker\' | \'review\';',
+  },
+  {
     name: 'BackendRegistry',
     declaration: 'export class BackendRegistry {\n    register(name: string, backend: StorageBackend): () => void;\n    get(name: string): StorageBackend;\n    names(): string[];\n}',
   },
@@ -3853,7 +3920,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ImageRequestPolicy',
-    declaration: 'export interface ImageRequestPolicy {\n    maxPixels: number;\n    maxBytes: number;\n}',
+    declaration: 'export interface ImageRequestPolicy {\n    outputFormat?: \'png\';\n    maxPixels: number;\n    maxBytes: number;\n}',
   },
   {
     name: 'ImageVariantId',
@@ -5490,6 +5557,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'TeamMessageId',
     declaration: 'export type TeamMessageId = Branded<\'TeamMessageId\'>;',
+  },
+  {
+    name: 'TeamMissionBindings',
+    declaration: 'export interface TeamMissionBindings {\n    readonly lead: SessionId;\n    readonly researcher: SessionId;\n    readonly checker: SessionId;\n}',
+  },
+  {
+    name: 'TeamMissionProvisionRequest',
+    declaration: 'export interface TeamMissionProvisionRequest {\n    readonly researcher: SpawnTeammateRequest;\n    readonly checker: SpawnTeammateRequest;\n}',
   },
   {
     name: 'TeamMissionRecord',

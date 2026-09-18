@@ -31,6 +31,8 @@ pnpm install
 node scripts/install-lefthook.mjs
 ```
 
+Windows desktop shell 会在 Electron 窗口中复用 Web profile。完成普通仓库构建后，使用 `pnpm run desktop:dev` 启动；使用 `pnpm run desktop:package` 创建 x64 NSIS 安装程序。shell 只在 loopback 上绑定 host，并禁止 renderer 访问 Node.js。安装版会注册为 Windows 用户登录时自动启动；开发模式不会注册此项。
+
 如果包装脚本拒绝现有 Git 配置或报告陈旧锁，请遵循其诊断和所链接的 Agent Note，不要凭猜测编辑 worktree 元数据。移动检出目录后，请重新运行包装脚本以重新生成自有路径。
 
 新克隆后请先运行一次类型检查：

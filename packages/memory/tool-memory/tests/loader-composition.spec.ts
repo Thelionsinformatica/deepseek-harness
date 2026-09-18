@@ -122,6 +122,24 @@ async function bootMemoryLoader(extraRows: string[]): Promise<string> {
 }
 
 describe('memory shadow extraction through a real Loader composition', () => {
+  it('invalidates a changed personal memory confirmation through the loaded JSON provider', async () => {
+    await bootMemoryLoader([])
+    if (context === undefined) throw new Error('loader context was not initialized')
+    const scope = { ownerId: PersonalMemoryOwnerId('revision-owner') }
+    const created = await context.personalMemory.create({
+      scope, content: 'Verified deployment', confidence: 1, validation: 'reviewed',
+      source: { kind: 'session', sessionId: SessionId('revision-source') },
+    })
+    const changed = await context.personalMemory.update({
+      scope, ref: { id: created.id, revision: created.revision }, content: 'Deployment hypothesis',
+    })
+    expect(changed.validation).toBeUndefined()
+    expect(changed.confidence).toBeUndefined()
+    const current = await context.personalMemory.search({ scope, query: 'hypothesis', limit: 4 })
+    expect(current[0]?.record).toMatchObject({ id: created.id, revision: 2, content: 'Deployment hypothesis' })
+    expect(current[0]?.record.validation).toBeUndefined()
+  })
+
   it('boots the isolated personal-memory service and local provider', async () => {
     await bootMemoryLoader([
       "- name: '@deepseek-ai/dsh-tool-memory'",

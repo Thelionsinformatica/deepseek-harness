@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { delimiter, dirname, join } from 'node:path'
@@ -33,6 +33,8 @@ const ptyStreamExpected = join(ptyScenarioDir, 'stream-json.expected.jsonl')
 const ptyConfigPath = fileURLToPath(new URL('../pty.cordis.snapshot.yml', import.meta.url))
 const goalScenarioDir = join(snapshotsDir, 'goal-tools')
 const goalConfigPath = fileURLToPath(new URL('../goal.cordis.snapshot.yml', import.meta.url))
+const procedureScenarioDir = join(snapshotsDir, 'procedure-candidates')
+const procedureConfigPath = fileURLToPath(new URL('../procedure.cordis.snapshot.yml', import.meta.url))
 const retryScenarioDir = join(snapshotsDir, 'provider-retry')
 const retryConfigPath = fileURLToPath(new URL('../retry.cordis.snapshot.yml', import.meta.url))
 const compactionScenarioDir = join(snapshotsDir, 'compaction-recovery')
@@ -214,6 +216,80 @@ function normalizeGoalStream(rawStdout: string, cwd: string): string {
     .join('\n') + '\n'
 }
 
+/** Seed one durable workspace and pending procedure before the assembled app boots. */
+async function seedProcedureWorkspace(cwd: string): Promise<void> {
+  const canonical = await realpath(cwd)
+  const storageRoot = join(cwd, '.storages')
+  await mkdir(storageRoot, { recursive: true })
+  const workspaceId = 'workspace-procedure-candidate'
+  const workspace = {
+    unit: { name: 'workspace', version: 2 },
+    global: {
+      initialized: true,
+      workspaceIds: [workspaceId],
+      archivedSessionIds: [],
+    },
+    tables: {
+      workspaces: {
+        [workspaceId]: {
+          path: canonical,
+          title: 'Procedure candidates',
+          sessionIds: [],
+          createdAt: '2026-09-18T00:00:00.000Z',
+          updatedAt: '2026-09-18T00:00:00.000Z',
+        },
+      },
+    },
+  }
+  const procedures = {
+    unit: { name: 'procedure_learning', version: 1 },
+    global: null,
+    tables: {
+      procedures: {
+        'procedure-candidate-1': {
+          id: 'procedure-candidate-1',
+          workspaceId,
+          revision: 1,
+          title: 'Prepare validated workspace',
+          trigger: 'prepare a workspace with independent verification',
+          preconditions: [
+            { key: 'platform', expected: process.platform },
+            { key: 'cwd', expected: canonical },
+          ],
+          steps: [
+            { tool: 'fixture_workspace_step', arguments: { action: 'prepare', target: 'workspace' } },
+          ],
+          verifier: {
+            tool: 'fixture_workspace_verify',
+            arguments: { check: 'workspace-ready' },
+          },
+          validity: {
+            revalidateAfter: '2026-10-18T00:00:00.000Z',
+            validUntil: '2026-12-17T00:00:00.000Z',
+          },
+          status: 'candidate',
+          evidence: [{
+            kind: 'initial-validation',
+            sessionId: 'procedure-seed-session',
+            executionCallIds: ['procedure-seed-execution'],
+            verificationCallId: 'procedure-seed-verification',
+            resultDigests: ['procedure-seed-digest'],
+            succeeded: true,
+            recordedAt: '2026-09-18T00:00:00.000Z',
+          }],
+          proposedAt: '2026-09-18T00:00:00.000Z',
+          updatedAt: '2026-09-18T00:00:00.000Z',
+          schemaVersion: 1,
+        },
+      },
+    },
+  }
+  await Promise.all([
+    writeFile(join(storageRoot, 'workspace.json'), `${JSON.stringify(workspace, null, 2)}\n`),
+    writeFile(join(storageRoot, 'procedure_learning.json'), `${JSON.stringify(procedures, null, 2)}\n`),
+  ])
+}
+
 async function scenarioPrompt(dir: string, label: string): Promise<string> {
   const input = JSON.parse(await readFile(join(dir, 'input.json'), 'utf8')) as {
     steps?: { op?: unknown; text?: unknown }[]
@@ -297,6 +373,7 @@ describe('headless stream-json snapshots', () => {
       binArgs: ['--profile', 'headless', '--patch', headlessOverlayPath, 'Trigger the keyless model failure.'],
       tsconfigPath,
       expectedExitCode: 1,
+      processTimeoutMs: 120_000,
       env: {
         DSH_CLI_MOCK_FAILURE: '1',
         DSH_TELEMETRY_DISABLED: '1',
@@ -868,6 +945,61 @@ describe('headless stream-json snapshots', () => {
     const normalized = normalizeGoalStream(result.stdout, runCwd)
     if (refreshing) await writeFile(streamExpected, normalized)
     expect(normalized).toBe(await readFile(streamExpected, 'utf8'))
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
+  it('lists durable procedure candidates through the one-shot app', async () => {
+    const prompt = await scenarioPrompt(procedureScenarioDir, 'procedure-candidates')
+    const streamExpected = join(procedureScenarioDir, 'stream-json.expected.jsonl')
+    let runCwd = ''
+    const result = await runLoaderSmoke({
+      label: 'procedure candidates headless stream-json snapshot',
+      tempDirPrefix: 'headless-snapshot-procedure-candidates-',
+      binScript,
+      libBinScript: binScript,
+      configPath: procedureConfigPath,
+      binArgs: [procedureConfigPath, prompt],
+      tsconfigPath,
+      env: {
+        DSH_SNAPSHOT: 'replay',
+        DSH_SNAPSHOT_FILE: join(procedureScenarioDir, 'session.jsonl'),
+        DSH_SNAPSHOT_OVERRIDE: join(procedureScenarioDir, 'replay.override.json'),
+        NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
+      },
+      prepare: async (cwd) => {
+        runCwd = cwd
+        await seedProcedureWorkspace(cwd)
+      },
+      inspect: async (cwd) => {
+        const logs = await persistedLogs(cwd)
+        expect(logs).toHaveLength(1)
+        const records = parseJsonl(logs[0]?.content ?? '')
+        const calls = records.filter(record => record.type === 'tool/call')
+          .map(record => (record.data as JsonObject | undefined)?.name)
+        expect(calls).toEqual(['procedure_candidates'])
+        const toolResult = records.find((record) => {
+          if (record.type !== 'tool/result') return false
+          const data = record.data as JsonObject | undefined
+          const message = data?.message as JsonObject | undefined
+          const source = message?.source as JsonObject | undefined
+          return source?.callId === 'call_procedure_candidates'
+        })
+        const message = (toolResult?.data as JsonObject | undefined)?.message as JsonObject | undefined
+        const content = message?.content as JsonObject[] | undefined
+        const text = content?.[0]?.content as JsonObject[] | undefined
+        expect(text?.find(block => block.type === 'text')?.text).toBe(
+          '{"candidates":[{"id":"procedure-candidate-1","revision":1,"title":"Prepare validated workspace","status":"candidate"}]}',
+        )
+      },
+    })
+
+    expect(result.stderr).toBe('')
+    const normalized = normalizeHeadlessStream(result.stdout, runCwd)
+    if (refreshing) await writeFile(streamExpected, normalized)
+    expect(normalized).toBe(await readFile(streamExpected, 'utf8'))
+    expect(parseJsonl(result.stdout).at(-1)).toMatchObject({
+      type: 'result',
+      output: 'PROCEDURE_CANDIDATES_LISTED',
+    })
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
   it('replays two fresh Ralph rounds through the one-shot app', async () => {

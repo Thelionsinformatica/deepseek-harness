@@ -20,6 +20,30 @@ import type {} from './procedure-learning.ts'
 const DAY_MS = 86_400_000
 const MAX_VALID_DAYS = 3_650
 
+const CANDIDATE_LIST_OUTPUT = {
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      candidates: {
+        type: 'array',
+        required: true,
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            id: { type: 'string', required: true },
+            revision: { type: 'integer', required: true },
+            title: { type: 'string', required: true },
+            status: { type: 'string', required: true, enum: ['candidate'] },
+          },
+        },
+      },
+    },
+  },
+  render: (_args: unknown, value: unknown) => [{ type: 'text' as const, text: JSON.stringify(value) }],
+} as const
+
 const PROCEDURE_OUTPUT = {
   schema: {
     type: 'object',
@@ -339,6 +363,20 @@ export function registerProcedureTools(ctx: Context): void {
       }))
     },
     presentCall: args => ({ card: 'generic', title: 'Propose learned procedure', kind: 'other', rawInput: args.title }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'procedure_candidates',
+    description: 'List pending procedure candidates in this session workspace. This is read-only and grants no authority.',
+    parameters: {},
+    output: CANDIDATE_LIST_OUTPUT,
+    async execute(_args, exec) {
+      const owner = await procedureOwner(ctx, exec)
+      return { candidates: ctx.procedureLearning.listCandidates(owner.workspaceId).map(record => ({
+        id: record.id, revision: record.revision, title: record.title, status: 'candidate' as const,
+      })) }
+    },
+    presentCall: () => ({ card: 'generic', title: 'List procedure candidates', kind: 'search' }),
   }))
 
   ctx.tools.register(defineTool({

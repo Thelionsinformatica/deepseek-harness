@@ -332,6 +332,13 @@ async propose(request: ProcedureProposalRequest): Promise<ProcedureLearningResul
 inspect(request: ProcedureInspectRequest): ProcedureLearningResult
 
 /**
+ * List pending review candidates for one exact workspace.
+ * @param workspaceId - Workspace whose candidates may be disclosed.
+ * @returns Detached candidates ordered newest first.
+ */
+listCandidates(workspaceId: ProcedureRecord['workspaceId']): readonly ProcedureRecord[]
+
+/**
  * Promote or reject one exact candidate revision after explicit operator review.
  * Acceptance fails once revalidation is due or the validity window has expired.
  * @param request - Workspace, exact revision, and immutable review decision.

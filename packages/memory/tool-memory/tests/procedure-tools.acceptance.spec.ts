@@ -109,6 +109,7 @@ describe('LEON-ACC-005 procedure tools', () => {
         revalidate_days: 30,
         valid_days: 90,
       }),
+      toolCallResponse('list-candidates', 'procedure_candidates', {}),
       options => toolCallResponse('inspect-candidate', 'procedure_inspect', {
         procedure_id: procedureIdFrom(options),
       }),
@@ -189,6 +190,9 @@ describe('LEON-ACC-005 procedure tools', () => {
     const proposed = resultJson(teaching.session.events, 'propose-procedure')
     expect(proposed).toMatchObject({ revision: 1, status: 'candidate' })
     const procedureId = String(proposed.id)
+    expect(resultJson(teaching.session.events, 'list-candidates')).toEqual({
+      candidates: [{ id: procedureId, revision: 1, title: 'Preparar workspace validado', status: 'candidate' }],
+    })
     const inspected = resultJson(teaching.session.events, 'inspect-candidate')
     expect(inspected).toMatchObject({
       id: procedureId,
@@ -255,6 +259,7 @@ describe('LEON-ACC-005 procedure tools', () => {
     await reuse.whenIdle()
 
     expect(adapter.requests.map(request => request.model)).toEqual([
+      'qwen3.8:9b-q8',
       'qwen3.8:9b-q8',
       'qwen3.8:9b-q8',
       'qwen3.8:9b-q8',

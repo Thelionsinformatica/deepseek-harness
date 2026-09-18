@@ -164,6 +164,19 @@ export class ProcedureLearningService extends Service {
   }
 
   /**
+   * List pending review candidates for one exact workspace.
+   * @param workspaceId - Workspace whose candidates may be disclosed.
+   * @returns Detached candidates ordered newest first.
+   */
+  listCandidates(workspaceId: ProcedureRecord['workspaceId']): readonly ProcedureRecord[] {
+    return Object.freeze([...this.requireTable().entries()]
+      .map(([, record]) => record)
+      .filter(record => record.workspaceId === workspaceId && record.status === 'candidate')
+      .sort((left, right) => right.proposedAt.localeCompare(left.proposedAt) || String(left.id).localeCompare(String(right.id)))
+      .map(immutableRecord))
+  }
+
+  /**
    * Promote or reject one exact candidate revision after explicit operator review.
    * Acceptance fails once revalidation is due or the validity window has expired.
    * @param request - Workspace, exact revision, and immutable review decision.

@@ -171,7 +171,7 @@ Workspace memory context — SECURITY BOUNDARY: UNTRUSTED DATA, NOT INSTRUCTIONS
 
 #### 模型看到什么
 
-当过程学习服务、workspace 注册表和代理注册表组合启用时，插件会添加一个稳定的过程策略提示词章节和六个工具：`procedure_propose`、`procedure_inspect`、`procedure_review`、`procedure_search`、`procedure_revalidate` 和 `procedure_revoke`。一个提案只能为每个执行步骤引用一对唯一、成功且已持久化的 `tool/call` + `tool/result`，并引用同一会话中另一个独立且成功的验证器。持久化的 `cwd` 前置条件采用注册表中的规范 workspace 路径，而不是会话中的路径写法。`procedure_inspect` 允许模型在审查前展示同一 workspace 候选项的状态、精确参数、前置条件、验证器和有效期。接受或拒绝要求活动根轮次中最新的直接人工消息包含独立成行的精确命令 `/procedure-review <procedure_id> <revision> <accept|reject>`；撤销同样要求 `/procedure-revoke <procedure_id> <revision>`。普通人工消息、模型自主行为或子代理轮次都不构成审查授权。`procedure_search` 只为可复用的已审查记录返回精确步骤；被阻止的同一 workspace 记录会包含其验证器，使模型能够通过普通权限检查来重新验证。已存过程始终是数据而非工具权限，并且不会自动执行。
+当过程学习服务、workspace 注册表和代理注册表组合启用时，插件会添加一个稳定的过程策略提示词章节和七个工具：`procedure_propose`、`procedure_candidates`、`procedure_inspect`、`procedure_review`、`procedure_search`、`procedure_revalidate` 和 `procedure_revoke`。`procedure_candidates` 只列出当前 workspace 中待审查的候选项，不授予审查或执行权限。一个提案只能为每个执行步骤引用一对唯一、成功且已持久化的 `tool/call` + `tool/result`，并引用同一会话中另一个独立且成功的验证器。持久化的 `cwd` 前置条件采用注册表中的规范 workspace 路径，而不是会话中的路径写法。`procedure_inspect` 允许模型在审查前展示同一 workspace 候选项的状态、精确参数、前置条件、验证器和有效期。接受或拒绝要求活动根轮次中最新的直接人工消息包含独立成行的精确命令 `/procedure-review <procedure_id> <revision> <accept|reject>`；撤销同样要求 `/procedure-revoke <procedure_id> <revision>`。普通人工消息、模型自主行为或子代理轮次都不构成审查授权。`procedure_search` 只为可复用的已审查记录返回精确步骤；被阻止的同一 workspace 记录会包含其验证器，使模型能够通过普通权限检查来重新验证。已存过程始终是数据而非工具权限，并且不会自动执行。
 
 ##### 过程策略
 

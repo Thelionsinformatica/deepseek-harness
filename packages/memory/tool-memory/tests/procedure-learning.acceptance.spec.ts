@@ -149,6 +149,10 @@ describe('LEON-ACC-005 structured procedure learning', () => {
         succeeded: true,
       }],
     })
+    expect(first.ctx.procedureLearning.listCandidates(workspaceId)).toEqual([
+      expect.objectContaining({ id: proposed.value.id, revision: 1, status: 'candidate' }),
+    ])
+    expect(first.ctx.procedureLearning.listCandidates(otherWorkspaceId)).toEqual([])
     expect(first.ctx.procedureLearning.findReusable({
       workspaceId,
       query: 'preparar workspace Node',
@@ -185,6 +189,7 @@ describe('LEON-ACC-005 structured procedure learning', () => {
         currentRevision: 2,
       },
     })
+    expect(first.ctx.procedureLearning.listCandidates(workspaceId)).toEqual([])
 
     await first.ctx.fiber.dispose()
     contexts.splice(contexts.indexOf(first.ctx), 1)

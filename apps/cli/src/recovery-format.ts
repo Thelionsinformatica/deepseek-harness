@@ -723,13 +723,9 @@ async function publishStaging(staging: string, target: string): Promise<void> {
     }
     throw error
   }
-  const directory = await opendir(staging)
+  // Async iteration closes the Dir on completion and on early termination.
   const entries: string[] = []
-  try {
-    for await (const entry of directory) entries.push(entry.name)
-  } finally {
-    await directory.close()
-  }
+  for await (const entry of await opendir(staging)) entries.push(entry.name)
   entries.sort(comparePath)
   for (const name of entries) {
     await rename(join(staging, name), join(target, name))

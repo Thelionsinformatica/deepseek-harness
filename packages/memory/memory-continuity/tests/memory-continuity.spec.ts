@@ -236,10 +236,11 @@ describe('memory continuity', () => {
       revision: 2,
       content: 'Leon usa memória local com modelo Mistral.',
       importance: 0.9,
-      confidence: 1,
-      validation: 'explicit',
       source: { kind: 'session', sessionId: 'session-mistral' },
     })
+    // Changed content invalidates the prior confirmation fields.
+    expect(hits[0]?.record.confidence).toBeUndefined()
+    expect(hits[0]?.record.validation).toBeUndefined()
 
     // Verify provenance chain survives
     const history = await second.ctx.memory.search({

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-12-explicit-collective-runtime-bridge.md
+2026-09-12-explicit-collective-runtime-bridge.md: a279428269a3250cdf6b448fd0015ea83f5d6598
+2026-09-12-explicit-collective-runtime-bridge.zh.md: f69e008d803d462e85efeaf33f2382599bb57856

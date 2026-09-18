@@ -1,14 +1,16 @@
-- id: reserved-collective
+- id: host-collective-snapshot
   name: '@deepseek-ai/cordis-plugin-include'
   config:
     path: ./collective.cordis.yml
     patches:
-      - id: local-adapter
-        name: '@deepseek-ai/dsh-llm-pi-ai'
-        disabled: true
-      - insert:
-          - id: fixture
-            name: './tests/fixtures/collective-llm.mjs'
+      - id: control
+        config:
+          domainName: leon_collective
+          owner: local-lab-owner
+          workspace: !!js process.cwd()
+          maxCalls: 48
+          durationMs: 900000
+          hostComposition: true
       - id: execution
         config:
           provider: collective-local
@@ -16,10 +18,8 @@
           maxOutputTokens: 2048
           queueTimeoutMs: 120000
           turnStepLimit: 8
-          # Deliberately unassigned durable ID: no self-named worker can spend this reserve.
-          reviewReserve: { calls: 47, reviewerSessionId: host-unassigned-reviewer-session }
+          reviewReserve: { calls: 8, reviewerRole: checker }
           allowedTools:
-            - spawn_teammate
             - send_message
             - followup_task
             - list_agents
@@ -31,3 +31,9 @@
             - mission_inspect
             - mission_verify
             - mission_patch
+      - id: local-adapter
+        name: '@deepseek-ai/dsh-llm-pi-ai'
+        disabled: true
+      - insert:
+          - id: fixture
+            name: './tests/fixtures/collective-llm.mjs'

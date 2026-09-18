@@ -180,39 +180,55 @@ it('yields a repetitive turn without granting new mission budget', async () => {
 
 it('rechecks review allowance for concurrent streams after acquiring the slot', async () => {
   const { ctx, lead } = await setup(await directory(), { maxCalls: 3 })
-  const adapter = new MockAdapter([textResponse('one'), textResponse('two'), textResponse('forbidden')])
+  const adapter = new MockAdapter([textResponse('provisioned'), textResponse('provisioned'),
+    textResponse('one'), textResponse('two'), textResponse('forbidden')])
   ctx.llm.registerAdapter(['mock'], adapter)
+  await ctx.plugin(Spawn, { providerName: 'spawn' })
+  const reviewer = await ctx.agentTeams.spawnTeammate(lead, { name: 'checker', description: 'Reserved reviewer',
+    prompt: [{ type: 'text', text: 'Provision test session' }], context: 'fresh', provider: 'spawn',
+    signal: new AbortController().signal })
+  await vi.waitFor(() => { expect(ctx.agents.get(reviewer.member.id)).toBeUndefined() })
+  expect(adapter.requests).toHaveLength(2)
   await ctx.plugin(Execution, { provider: 'mock', model: 'mock', maxOutputTokens: 100,
-    queueTimeoutMs: 1000, allowedTools: [], reviewReserve: { calls: 1, reviewerName: 'checker' } })
+    queueTimeoutMs: 1000, allowedTools: [], reviewReserve: { calls: 1, reviewerSessionId: reviewer.member.id } })
   await ctx.teamMissions.start(lead, 'Concurrent review reserve', 'Keep final call')
   const results = await Promise.allSettled(Array.from({ length: 5 }, () => ctx.agents.withInitiator(lead, async () => {
     for await (const chunk of ctx.llm.stream({ provider: 'mock', model: 'mock', maxTokens: 100,
       messages: [], signal: AbortSignal.timeout(1000) })) void chunk
   })))
   expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(2)
-  expect(adapter.requests).toHaveLength(2)
+  expect(adapter.requests).toHaveLength(4)
   expect(ctx.teamMissions.get(lead).calls).toBe(2)
 })
 
 it('preserves the final reservation for a real reviewer after denying the lead', async () => {
   const { ctx, lead } = await setup(await directory(), { maxCalls: 3 })
-  const adapter = new MockAdapter([textResponse('one'), textResponse('two'), textResponse('review')])
+  const adapter = new MockAdapter([textResponse('provisioned'), textResponse('resumed'),
+    textResponse('one'), textResponse('two'), textResponse('review')])
   ctx.llm.registerAdapter(['mock'], adapter)
   await ctx.plugin(Spawn, { providerName: 'spawn' })
+  // The fixture provisions one native session before mission admission, then binds its durable ID.
+  const spawned = await ctx.agentTeams.spawnTeammate(lead, { name: 'unrelated-display-name', description: 'Review',
+    prompt: [{ type: 'text', text: 'Provision test session' }], context: 'fresh', provider: 'spawn', signal: new AbortController().signal })
+  await vi.waitFor(() => { expect(ctx.agents.get(spawned.member.id)).toBeUndefined() })
+  const { agent: worker } = await ctx.agents.resume({ resumeSessionId: spawned.member.id,
+    agentOptions: { provider: 'mock', model: 'mock' } })
+  expect(worker.id).toBe(spawned.member.id)
+  expect(ctx.agentTeams.membership(worker).role).toBe('teammate')
+  await worker.whenIdle()
+  expect(adapter.requests).toHaveLength(2)
   await ctx.plugin(Execution, { provider: 'mock', model: 'mock', maxOutputTokens: 100,
-    queueTimeoutMs: 1000, allowedTools: [], reviewReserve: { calls: 1, reviewerName: 'checker' } })
+    queueTimeoutMs: 1000, allowedTools: [], reviewReserve: { calls: 1, reviewerSessionId: worker.id } })
   await ctx.teamMissions.start(lead, 'Reserved review', 'No lead spending final call')
   for (let i = 0; i < 4; i++) {
     lead.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'continue' }] }))
     await lead.whenIdle()
   }
-  expect(adapter.requests).toHaveLength(2)
+  expect(adapter.requests).toHaveLength(4)
   expect(ctx.teamMissions.get(lead).calls).toBe(2)
-  const spawned = await ctx.agentTeams.spawnTeammate(lead, { name: 'checker', description: 'Review',
-    prompt: [{ type: 'text', text: 'Review' }], context: 'fresh', provider: 'spawn', signal: new AbortController().signal })
-  const worker = ctx.agents.get(spawned.member.id)
-  if (worker) await worker.whenIdle()
-  expect(adapter.requests).toHaveLength(3)
+  worker.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'Review' }] }))
+  await worker.whenIdle()
+  expect(adapter.requests).toHaveLength(5)
   expect(ctx.teamMissions.get(lead).calls).toBe(3)
 })
 
@@ -227,6 +243,72 @@ it('enforces the final tool allowlist even for a registered tool', async () => {
   const result = await ctx.tools.execute({ agent: lead, callId: CallId('deny'), name: 'forbidden', arguments: {}, signal: new AbortController().signal })
   expect(result.isError).toBe(true)
   expect(invoked).toBe(false)
+})
+
+it('rejects legacy display-name authorization before any adapter request', async () => {
+  const { ctx } = await setup(await directory())
+  const adapter = new MockAdapter([textResponse('must not run')])
+  ctx.llm.registerAdapter(['mock'], adapter)
+  expect(() => { Execution.apply(ctx, { provider: 'mock', model: 'mock', maxOutputTokens: 100,
+    queueTimeoutMs: 1000, allowedTools: [],
+    reviewReserve: { calls: 1, reviewerName: 'checker' } as unknown as NonNullable<Execution.Config['reviewReserve']>,
+  }) }).toThrow('host-bound persistent reviewerSessionId')
+  expect(adapter.requests).toHaveLength(0)
+})
+
+it('never grants review by exact, prefixed or suffixed display names', async () => {
+  const { ctx, lead } = await setup(await directory(), { maxCalls: 3 })
+  const adapter = new MockAdapter(Array.from({ length: 8 }, () => textResponse('provisioned or resumed')))
+  ctx.llm.registerAdapter(['mock'], adapter)
+  await ctx.plugin(Spawn, { providerName: 'spawn' })
+  const workers = []
+  for (const name of ['checker', 'checker-untrusted', 'untrusted-checker', 'host-approved-reviewer']) {
+    const result = await ctx.agentTeams.spawnTeammate(lead, { name, description: 'Identity test',
+      prompt: [{ type: 'text', text: 'Provision test session' }], context: 'fresh', provider: 'spawn',
+      signal: new AbortController().signal })
+    await vi.waitFor(() => { expect(ctx.agents.get(result.member.id)).toBeUndefined() })
+    const { agent: worker } = await ctx.agents.resume({ resumeSessionId: result.member.id,
+      agentOptions: { provider: 'mock', model: 'mock' } })
+    await worker.whenIdle()
+    workers.push(worker)
+  }
+  const reviewer = workers.pop()
+  if (reviewer === undefined) throw new Error('Missing approved reviewer')
+  const config: Execution.Config = { provider: 'mock', model: 'mock', maxOutputTokens: 100,
+    queueTimeoutMs: 1000, allowedTools: [], reviewReserve: { calls: 1, reviewerSessionId: reviewer.id } }
+  await ctx.plugin(Execution, config)
+  // Only the copied host policy applies; later mutation cannot make a worker a reviewer.
+  if (config.reviewReserve === undefined || !('reviewerSessionId' in config.reviewReserve)
+    || workers[0] === undefined) throw new Error('Missing policy fixture')
+  config.reviewReserve.reviewerSessionId = workers[0].id
+  config.reviewReserve.calls = 2
+  config.reviewReserve = undefined
+  await ctx.teamMissions.start(lead, 'Identity denial', 'No self-assigned reviewer')
+  await ctx.teamMissions.reserveCall(lead)
+  await ctx.teamMissions.reserveCall(lead)
+  for (const agent of [lead, ...workers]) {
+    await expect(ctx.agents.withInitiator(agent, async () => {
+      for await (const chunk of ctx.llm.stream({ provider: 'mock', model: 'mock', maxTokens: 100,
+        messages: [], signal: AbortSignal.timeout(1000) })) void chunk
+    })).rejects.toMatchObject({ code: 'MISSION_REVIEW_RESERVED' })
+  }
+  expect(adapter.requests).toHaveLength(8)
+  expect(ctx.teamMissions.get(lead)).toMatchObject({ state: 'running', calls: 2, maxCalls: 3 })
+})
+
+it.each(['mission-root', 'missing-session'])('rejects invalid reviewer %s before the first inference', async (reviewerSessionId) => {
+  const { ctx, lead } = await setup(await directory(), { maxCalls: 3 })
+  const adapter = new MockAdapter([textResponse('must not run')])
+  ctx.llm.registerAdapter(['mock'], adapter)
+  await ctx.plugin(Execution, { provider: 'mock', model: 'mock', maxOutputTokens: 100,
+    queueTimeoutMs: 1000, allowedTools: [], reviewReserve: { calls: 1, reviewerSessionId } })
+  await ctx.teamMissions.start(lead, 'Invalid reviewer', 'No calls admitted')
+  await expect(ctx.agents.withInitiator(lead, async () => {
+    for await (const chunk of ctx.llm.stream({ provider: 'mock', model: 'mock', maxTokens: 100,
+      messages: [], signal: AbortSignal.timeout(1000) })) void chunk
+  })).rejects.toMatchObject({ code: 'MISSION_REVIEW_CONFIG' })
+  expect(adapter.requests).toHaveLength(0)
+  expect(ctx.teamMissions.get(lead)).toMatchObject({ state: 'running', calls: 0, maxCalls: 3 })
 })
 
 it('STOP cancels actual streaming and future calls without resetting consumption', async () => {

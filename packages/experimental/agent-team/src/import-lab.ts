@@ -7,6 +7,7 @@ import { z } from 'zod'
 import schema from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from './mission-control.ts'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { TeamError } from './error.ts'
@@ -16,9 +17,14 @@ export const name = 'team-import-lab'
 /** The demonstration reuses native tools, Team tasks and mission control. */
 export const inject = ['agents', 'agentTeams', 'teamMissions', 'tools', 'systemPrompt']
 /** Explicit authorized demonstration directory. */
-export interface Config { workspace: string }
+export interface Config {
+  workspace: string
+  /** Require the host-bound checker to verify current evidence after receiving a peer discovery. */
+  requirePeerReviewAfterReceipt?: boolean
+}
 /** No cwd fallback: the host names the authorized directory. */
-export const Config: schema<Config> = schema.object({ workspace: schema.string().required() })
+export const Config: schema<Config> = schema.object({ workspace: schema.string().required(),
+  requirePeerReviewAfterReceipt: schema.boolean().default(false) })
 
 const policySchema = z.object({ mode: z.enum(['append', 'upsert']) }).strict()
 interface ImportPolicy { path: string; mode: 'append' | 'upsert'; digest: string }
@@ -89,6 +95,27 @@ export async function verifyImportPolicy(workspace: string): Promise<ImportVerif
     passed: rows.length === 2 && rows[0]?.value === 3, count: rows.length, expectedCount: 2, rows }
 }
 
+/** Native peer receipt followed by a current verification; shared by final and optional task review. */
+function peerVerification(events: readonly SessionEvent[], leadEvents: readonly SessionEvent[],
+  leadId: SessionId, memberId: SessionId, currentDigest: string): { peerMessage: boolean; workerVerification: boolean } {
+  const receipts = events.filter(event => event.type === 'user/message' && event.data.source.kind === 'team-message'
+    && leadEvents.some(queued => queued.type === 'team/message/queued'
+      && queued.data.message.senderId !== leadId && queued.data.message.targetId === memberId
+      && event.data.source.kind === 'team-message' && queued.data.message.id === event.data.source.messageId))
+  const calls = new Set(events.flatMap(event => event.type === 'tool/call' && event.data.name === 'mission_verify'
+    && receipts.some(receipt => receipt.seq < event.seq) ? [event.data.callId] : []))
+  const workerVerification = events.some(event => event.type === 'tool/result'
+    && event.data.message.content.some(block => !block.isError && calls.has(block.toolCallId)
+      && block.content.some((item) => {
+        if (item.type !== 'text') return false
+        try {
+          const proof = z.object({ kind: z.literal('test_result'), passed: z.literal(true), digest: z.string() }).safeParse(JSON.parse(item.text))
+          return proof.success && proof.data.digest === currentDigest
+        } catch { return false }
+      })))
+  return { peerMessage: receipts.length > 0 && calls.size > 0, workerVerification }
+}
+
 /**
  * Verify native collaborative work and the current fixture, not a model's success claim.
  * @param ctx - runtime owning the canonical Team journal.
@@ -105,22 +132,9 @@ export async function verifyImportMission(ctx: Context, lead: Agent, workspace: 
   for (const member of members) {
     const events = ctx.agents.get(member.id)?.session.events
       ?? (await ctx.sessionPersistence.load(member.id)).events
-    const receipts = events.filter(event => event.type === 'user/message' && event.data.source.kind === 'team-message'
-      && lead.session.events.some(queued => queued.type === 'team/message/queued'
-        && queued.data.message.senderId !== lead.id && queued.data.message.targetId === member.id
-        && event.data.source.kind === 'team-message' && queued.data.message.id === event.data.source.messageId))
-    const calls = new Set(events.flatMap(event => event.type === 'tool/call' && event.data.name === 'mission_verify'
-      && receipts.some(receipt => receipt.seq < event.seq) ? [event.data.callId] : []))
-    if (receipts.length > 0 && calls.size > 0) peerMessage = true
-    if (events.some(event => event.type === 'tool/result'
-      && event.data.message.content.some(block => !block.isError && calls.has(block.toolCallId)
-        && block.content.some((item) => {
-          if (item.type !== 'text') return false
-          try {
-            const proof = z.object({ kind: z.literal('test_result'), passed: z.literal(true), digest: z.string() }).safeParse(JSON.parse(item.text))
-            return proof.success && proof.data.digest === test.digest
-          } catch { return false }
-        })))) workerVerification = true
+    const proof = peerVerification(events, lead.session.events, lead.id, member.id, test.digest)
+    if (proof.peerMessage) peerMessage = true
+    if (proof.workerVerification) workerVerification = true
   }
   const passed = test.passed && members.length === 2 && tasks.length >= 2
     && tasks.every(task => task.status === 'completed') && peerMessage && workerVerification
@@ -134,6 +148,9 @@ export async function verifyImportMission(ctx: Context, lead: Agent, workspace: 
  * @param config - authorized demonstration directory.
  */
 export function apply(ctx: Context, config: Config): void {
+  if (config.requirePeerReviewAfterReceipt && !ctx.teamMissions.requiresComposition) {
+    throw new TeamError('Peer review requires hostComposition with a persistent checker binding', 'MISSION_PEER_REVIEW_CONFIG')
+  }
   const taskOperations = new Map<string, Promise<unknown>>()
   ctx.effect(() => ctx.systemPrompt.context({ name: 'collective-lab-role', order: 90, text: () => {
     const agent = ctx.agents.requireInitiator()
@@ -236,6 +253,17 @@ ${member.role === 'lead'
   })))
   ctx.effect(() => ctx.agentTeams.registerCompletionReviewer(async (agent) => {
     const current = await readImportPolicy(config.workspace)
+    if (config.requirePeerReviewAfterReceipt) {
+      const lead = ctx.agentTeams.membership(agent).root
+      if (agent.id === ctx.teamMissions.getComposition(lead).checker) {
+        const proof = peerVerification(agent.session.events, lead.session.events, lead.id, agent.id, current.digest)
+        if (!proof.workerVerification) {
+          throw new TeamError('MISSION_CHECKER_PEER_REVIEW_REQUIRED: checker completion requires mission_verify passed=true for the current digest AFTER receiving peer evidence. Receive the discovery and run mission_verify again before completing this task.',
+            'MISSION_CHECKER_PEER_REVIEW_REQUIRED')
+        }
+        return true
+      }
+    }
     const calls = new Set(agent.session.events.flatMap(event => event.type === 'tool/call'
       && (event.data.name === 'mission_inspect' || event.data.name === 'mission_verify') ? [event.data.callId] : []))
     const evidence = agent.session.events.some(event => event.type === 'tool/result'

@@ -20,8 +20,8 @@ export interface Config {
   queueTimeoutMs: number
   allowedTools: string[]
   turnStepLimit?: number
-  /** Optional final calls available only to the named teammate, never the lead. */
-  reviewReserve?: { calls: number; reviewerName: string } | undefined
+  /** Final calls bind to a durable teammate ID or the host-provisioned checker function. */
+  reviewReserve?: { calls: number; reviewerSessionId: string } | { calls: number; reviewerRole: 'checker' } | undefined
 }
 /** Lab-only configuration; no automatic cloud replacement or generic tool grant. */
 export const Config: schema<Config> = schema.object({
@@ -32,7 +32,10 @@ export const Config: schema<Config> = schema.object({
   turnStepLimit: schema.number().step(1).min(1).default(8),
   reviewReserve: schema.union([schema.const(undefined), schema.object({
     calls: schema.number().step(1).min(1).required(),
-    reviewerName: schema.string().required(),
+    reviewerSessionId: schema.string().required(),
+  }), schema.object({
+    calls: schema.number().step(1).min(1).required(),
+    reviewerRole: schema.const('checker').required(),
   })]),
 })
 
@@ -44,6 +47,13 @@ export const Config: schema<Config> = schema.object({
  * @param config - trusted route, output ceiling, queue deadline and exact tools.
  */
 export function apply(ctx: Context, config: Config): void {
+  const reserve = config.reviewReserve === undefined ? undefined : { ...config.reviewReserve }
+  if (reserve !== undefined && (!Number.isSafeInteger(reserve.calls) || reserve.calls < 1
+    || ('reviewerRole' in reserve
+      ? !ctx.teamMissions.requiresComposition
+      : typeof reserve.reviewerSessionId !== 'string' || !reserve.reviewerSessionId.trim()))) {
+    throw new TeamError('Review reserve requires a host-bound persistent reviewerSessionId or enabled host checker composition', 'MISSION_REVIEW_CONFIG')
+  }
   const slot = new InferenceSlot()
   const allowed = new Set(config.allowedTools)
   const active = new Set<Agent>()
@@ -73,9 +83,20 @@ export function apply(ctx: Context, config: Config): void {
     const record = ctx.teamMissions.get(lead)
     if (record.state !== 'running') throw new TeamError(`Mission is ${record.state}`, 'MISSION_NOT_RUNNING')
     if (Date.now() >= record.deadline) throw new TeamError('Mission deadline reached', 'MISSION_DEADLINE')
+    if (reserve !== undefined && reserve.calls >= record.maxCalls) {
+      throw new TeamError('Review reserve must leave calls for investigation', 'MISSION_REVIEW_CONFIG')
+    }
+    const bindings = ctx.teamMissions.requiresComposition ? ctx.teamMissions.getComposition(lead) : undefined
+    const reviewerSessionId = reserve === undefined ? undefined
+      : 'reviewerRole' in reserve ? bindings?.checker : reserve.reviewerSessionId
+    if (reserve !== undefined && !ctx.agentTeams.listMembers(lead).some(member =>
+      member.id === reviewerSessionId && member.role === 'teammate'
+      && member.status !== 'failed' && member.status !== 'provisioning')) {
+      throw new TeamError('Review reserve requires an existing teammate session in this mission', 'MISSION_REVIEW_CONFIG')
+    }
     if (!deadlines.has(lead)) deadlines.set(lead, setTimeout(() => { cancelTeam(lead, 'Mission deadline reached') },
       Math.min(2147483647, Math.max(1, record.deadline - Date.now()))))
-    return { lead, record }
+    return { lead, record, reviewerSessionId }
   }
   ctx.effect(() => ctx.tools.guard((exec) => {
     try {
@@ -96,11 +117,18 @@ export function apply(ctx: Context, config: Config): void {
     }
   })
   ctx.on('agent/request', async (_payload, next) => {
+    if (ctx.teamMissions.requiresComposition) {
+      await ctx.teamMissions.waitForComposition(root(ctx.agents.requireInitiator()), _payload.signal)
+    }
     const request = await next()
     return { ...request, maxTokens: Math.min(request.maxTokens ?? config.maxOutputTokens, config.maxOutputTokens) }
   })
   ctx.on('llm/stream', async function* (options: GenerateOptions, next: () => AsyncIterable<StreamChunk>) {
     const agent = ctx.agents.requireInitiator()
+    if (ctx.teamMissions.requiresComposition) {
+      if (options.signal === undefined) throw new TeamError('Model call requires cancellation', 'MISSION_SIGNAL_REQUIRED')
+      await ctx.teamMissions.waitForComposition(root(agent), options.signal)
+    }
     const { record } = admit(agent)
     if (options.provider !== config.provider || options.model !== config.model) {
       throw new TeamError('Model route is not authorized for this local mission', 'MISSION_ROUTE_DENIED')
@@ -118,16 +146,10 @@ export function apply(ctx: Context, config: Config): void {
       release = await slot.acquire(signal)
       signal.throwIfAborted()
       const current = admit(agent)
-      const reserve = config.reviewReserve
       if (reserve !== undefined) {
-        if (reserve.calls >= current.record.maxCalls || !reserve.reviewerName.trim()) {
-          throw new TeamError('Review reserve must leave calls for investigation and name a teammate', 'MISSION_REVIEW_CONFIG')
-        }
         const member = ctx.agentTeams.membership(agent)
         const isReviewer = member.role === 'teammate'
-          && (member.name === reserve.reviewerName
-            || member.name.startsWith(reserve.reviewerName)
-            || member.name.endsWith(reserve.reviewerName))
+          && agent.id === current.reviewerSessionId
         if (current.record.calls >= current.record.maxCalls - reserve.calls && !isReviewer) {
           throw new TeamError('Remaining calls are reserved for the final reviewer', 'MISSION_REVIEW_RESERVED')
         }

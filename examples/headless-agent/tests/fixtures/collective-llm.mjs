@@ -43,7 +43,9 @@ class Fixture extends LlmAdapter {
       else if (!update('complete')) response = chunks('mission_task_complete', { phase: 'complete' })
       else response = text('Repeat import verified.')
     } else {
-      const spawned = calls.filter(call => call.name === 'spawn_teammate').length
+      const spawned = this.ctx.teamMissions.requiresComposition
+        ? this.ctx.agentTeams.listMembers(this.ctx.agents.requireInitiator()).filter(item => item.role === 'teammate').length
+        : calls.filter(call => call.name === 'spawn_teammate').length
       if (spawned < 2) response = chunks('spawn_teammate', { name: spawned === 0 ? 'checker' : 'researcher',
         description: 'Bounded investigator', prompt: spawned === 0 ? 'CHECK_ROLE' : 'RESEARCH_ROLE' })
       else if (!allText.includes('REPEAT_IMPORT_FAIL')) response = chunks('wait_agent', { timeout_ms: 10000 })
@@ -61,6 +63,6 @@ class Fixture extends LlmAdapter {
 /** Loader plugin name. */
 export const name = 'collective-fixture'
 /** Only the fixture adapter is replaced; all native execution owners remain real. */
-export const inject = ['llm', 'agents', 'agentTeams']
+export const inject = ['llm', 'agents', 'agentTeams', 'teamMissions']
 /** Register a keyless route with no HTTP transport. */
 export function apply(ctx) { ctx.effect(() => ctx.llm.registerAdapter(['collective-local'], new Fixture(ctx))) }

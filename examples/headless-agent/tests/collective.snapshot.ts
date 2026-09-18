@@ -48,7 +48,7 @@ it('completes an evidence-checked import mission with two real Team sessions', a
   expect(result.stdout).toContain('NO_DUPLICATE_SOURCE')
 }, 135000)
 
-it('denies the coordinator reserved calls through the real Loader without approving the mission', async () => {
+it('rejects an unbound reviewer through the real Loader before inference without approving the mission', async () => {
   const config = fileURLToPath(new URL('../collective-reserve.cordis.snapshot.yml', import.meta.url))
   let denied = false
   const result = await runLoaderSmoke({
@@ -63,15 +63,15 @@ it('denies the coordinator reserved calls through the real Loader without approv
       for (const file of await readdir(root, { recursive: true })) {
         if (!file.endsWith('session.jsonl')) continue
         const text = await readFile(join(root, file), 'utf8')
-        if (text.includes('Remaining calls are reserved for the final reviewer')) denied = true
+        if (text.includes('Review reserve requires an existing teammate session in this mission')) denied = true
       }
       expect(JSON.parse(await readFile(join(cwd, 'import-policy.json'), 'utf8'))).toEqual({ mode: 'append' })
     },
   })
   const rows = result.stdout.trim().split('\n').map(line => JSON.parse(line) as { session?: string; event?: { type: string }; mission?: { state: string; calls: number; maxCalls: number } })
-  expect(rows.filter(row => row.session === 'leon-collective' && row.event?.type === 'tool/call')).toHaveLength(1)
-  expect(rows.some(row => row.session !== 'leon-collective' && row.event?.type === 'tool/call')).toBe(true)
-  expect(rows.at(-1)?.mission).toMatchObject({ state: 'blocked', maxCalls: 48 })
+  expect(rows.filter(row => row.session === 'leon-collective' && row.event?.type === 'tool/call')).toHaveLength(0)
+  expect(rows.some(row => row.session !== 'leon-collective' && row.event?.type === 'tool/call')).toBe(false)
+  expect(rows.at(-1)?.mission).toMatchObject({ state: 'blocked', calls: 0, maxCalls: 48 })
   expect(rows.at(-1)?.mission?.calls).toBeLessThan(48)
   expect(denied).toBe(true)
 }, 75000)

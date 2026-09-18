@@ -1,11 +1,11 @@
 /**
- * Shared Blackboard for multi-agent coordination: central state for DAG tasks,
- * verifiable acceptance criteria, peer discoveries and evidence tracking.
+ * In-memory task-plan preview, never an execution or evidence authority.
+ * Runtime task ownership, review and recovery belong to the native TeamService.
  * @module @deepseek-ai/dsh-experimental-agent-team/blackboard
  */
-
 import { randomUUID } from 'node:crypto'
 
+/** Legacy report states; the planning preview emits only pending. */
 export type BlackboardTaskStatus =
   | 'pending'
   | 'in_progress'
@@ -13,6 +13,7 @@ export type BlackboardTaskStatus =
   | 'completed'
   | 'blocked'
 
+/** Unverified historical rejection fields, not a native reviewer authorization. */
 export interface BlackboardRejection {
   rejectedBy: string
   reason: string
@@ -21,6 +22,7 @@ export interface BlackboardRejection {
   timestamp: number
 }
 
+/** Preview or legacy report fields; these values never authorize execution. */
 export interface BlackboardTask {
   id: string
   title: string
@@ -38,6 +40,7 @@ export interface BlackboardTask {
   updatedAt: number
 }
 
+/** Unverified historical finding fields; preview APIs cannot create findings. */
 export interface BlackboardFinding {
   id: string
   author: string
@@ -46,12 +49,14 @@ export interface BlackboardFinding {
   timestamp: number
 }
 
+/** Independent ephemeral plan copy, not a durable session projection. */
 export interface BlackboardSnapshot {
   missionId: string
   tasks: readonly BlackboardTask[]
   findings: readonly BlackboardFinding[]
 }
 
+/** Metadata for a proposed task, without runtime permissions or ownership. */
 export interface CreateTaskParams {
   id?: string | undefined
   title: string
@@ -63,151 +68,117 @@ export interface CreateTaskParams {
   maxAttempts?: number | undefined
 }
 
+/**
+ * Holds only an ephemeral plan. Reusing a mission id does not recover a session.
+ * Operational methods always reject, including direct calls outside the CLI.
+ */
 export class LeonBlackboard {
   private readonly tasks = new Map<string, BlackboardTask>()
-  private readonly findings: BlackboardFinding[] = []
 
   constructor(public readonly missionId: string = randomUUID()) {}
 
-  /** Create a new task with explicit dependencies and acceptance criteria. */
+  /**
+   * Add a pending plan item without creating any runtime task or permission.
+   * @param params Proposed task metadata.
+   * @returns An independent copy of the planned item.
+   */
   createTask(params: CreateTaskParams): BlackboardTask {
     const id = params.id ?? `task-${randomUUID().slice(0, 8)}`
-    if (this.tasks.has(id)) {
-      throw new Error(`Task ${id} already exists on the blackboard`)
-    }
+    if (this.tasks.has(id)) throw new Error(`Task ${id} already exists on the plan`)
     const task: BlackboardTask = {
       id,
       title: params.title.trim(),
       description: params.description.trim(),
       assignedTo: params.assignedTo?.trim() ?? null,
       status: 'pending',
-      dependsOn: params.dependsOn ? [...params.dependsOn] : [],
-      acceptanceCriteria: params.acceptanceCriteria ? [...params.acceptanceCriteria] : [],
-      writeScopes: params.writeScopes ? [...params.writeScopes] : [],
+      dependsOn: [...params.dependsOn ?? []],
+      acceptanceCriteria: [...params.acceptanceCriteria ?? []],
+      writeScopes: [...params.writeScopes ?? []],
       attempts: 0,
-      maxAttempts: params.maxAttempts && params.maxAttempts > 0 ? params.maxAttempts : 3,
+      maxAttempts: params.maxAttempts ?? 3,
       deliveryEvidence: null,
       lastRejection: null,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     }
     this.tasks.set(id, task)
-    return { ...task }
+    return structuredClone(task)
   }
 
-  /** Post a shared technical discovery, artifact digest or log excerpt to the blackboard. */
-  postFinding(author: string, topic: string, content: string): BlackboardFinding {
-    const finding: BlackboardFinding = {
-      id: `find-${randomUUID().slice(0, 8)}`,
-      author: author.trim(),
-      topic: topic.trim(),
-      content: content.trim(),
-      timestamp: Date.now(),
-    }
-    this.findings.push(finding)
-    return { ...finding }
+  /**
+   * Reject unverified discoveries; this preview has no persisted actor or session.
+   * @param _author Unverified display name.
+   * @param _topic Claimed discovery topic.
+   * @param _content Claimed discovery content.
+   * @returns Never; throws without changing the plan.
+   */
+  postFinding(_author: string, _topic: string, _content: string): BlackboardFinding {
+    return this.unavailable()
   }
 
-  /** Worker claims an available task. Dependencies must be completed before start. */
-  claimTask(taskId: string, agentName: string): BlackboardTask {
-    const task = this.tasks.get(taskId)
-    if (!task) throw new Error(`Task ${taskId} not found`)
-    if (task.status === 'completed') throw new Error(`Task ${taskId} is already completed`)
-    if (task.status === 'blocked') throw new Error(`Task ${taskId} is blocked due to excessive rejections`)
-    for (const depId of task.dependsOn) {
-      const dep = this.tasks.get(depId)
-      if (!dep || dep.status !== 'completed') {
-        throw new Error(`Cannot claim ${taskId}: dependency ${depId} is not completed`)
-      }
-    }
-    task.assignedTo = agentName.trim()
-    task.attempts += 1
-    task.status = 'in_progress'
-    task.updatedAt = Date.now()
-    return { ...task }
+  /**
+   * Reject task execution; ownership is authoritative only in the native TeamService.
+   * @param _taskId Proposed task id.
+   * @param _agentName Unverified display name.
+   * @returns Never; throws without assigning ownership or consuming attempts.
+   */
+  claimTask(_taskId: string, _agentName: string): BlackboardTask {
+    return this.unavailable()
   }
 
-  /** Worker delivers the result with concrete verification evidence. */
-  submitDelivery(taskId: string, agentName: string, evidence: string): BlackboardTask {
-    const task = this.tasks.get(taskId)
-    if (!task) throw new Error(`Task ${taskId} not found`)
-    if (task.assignedTo !== agentName.trim()) {
-      throw new Error(`Task ${taskId} is assigned to ${task.assignedTo}, not ${agentName}`)
-    }
-    if (!evidence.trim()) {
-      throw new Error(`Delivery of ${taskId} requires non-empty evidence`)
-    }
-    task.deliveryEvidence = evidence.trim()
-    task.status = 'review_ready'
-    task.updatedAt = Date.now()
-    return { ...task }
+  /**
+   * Reject delivery claims; this preview cannot establish artifact or verifier provenance.
+   * @param _taskId Proposed task id.
+   * @param _agentName Unverified display name.
+   * @param _evidence Unverified delivery claim.
+   * @returns Never; throws without accepting evidence or changing the plan.
+   */
+  submitDelivery(_taskId: string, _agentName: string, _evidence: string): BlackboardTask {
+    return this.unavailable()
   }
 
-  /** Reviewer rejects delivery with concrete expected vs observed feedback (AgentCoder pattern). */
+  /**
+   * Reject review mutations; callers cannot appoint themselves as reviewers here.
+   * @param _taskId Proposed task id.
+   * @param _reviewerName Unverified display name.
+   * @param _feedback Unverified review claim.
+   * @returns Never; throws without accepting review or changing the plan.
+   */
   rejectDelivery(
-    taskId: string,
-    reviewerName: string,
-    feedback: { reason: string; expected: string; observed: string },
+    _taskId: string,
+    _reviewerName: string,
+    _feedback: { reason: string; expected: string; observed: string },
   ): BlackboardTask {
-    const task = this.tasks.get(taskId)
-    if (!task) throw new Error(`Task ${taskId} not found`)
-    if (task.status !== 'review_ready') {
-      throw new Error(`Task ${taskId} must be in review_ready to be rejected, current is ${task.status}`)
-    }
-
-    const rejection: BlackboardRejection = {
-      rejectedBy: reviewerName.trim(),
-      reason: feedback.reason.trim(),
-      expected: feedback.expected.trim(),
-      observed: feedback.observed.trim(),
-      timestamp: Date.now(),
-    }
-    task.lastRejection = rejection
-    task.updatedAt = Date.now()
-
-    this.postFinding(
-      reviewerName,
-      'qa_rejection',
-      `[REJEIÇÃO TAREFA ${taskId}] Motivo: ${rejection.reason} | Esperado: ${rejection.expected} | Observado: ${rejection.observed}`,
-    )
-
-    if (task.attempts >= task.maxAttempts) {
-      task.status = 'blocked'
-    } else {
-      task.status = 'in_progress'
-    }
-    return { ...task }
+    return this.unavailable()
   }
 
-  /** Reviewer or Coordinator approves and closes the task. */
-  completeTask(taskId: string, _reviewerName: string): BlackboardTask {
-    const task = this.tasks.get(taskId)
-    if (!task) throw new Error(`Task ${taskId} not found`)
-    if (task.status !== 'review_ready' && task.status !== 'in_progress') {
-      throw new Error(`Task ${taskId} must be in review_ready or in_progress to be completed`)
-    }
-    task.status = 'completed'
-    task.updatedAt = Date.now()
-    return { ...task }
+  /**
+   * Reject completion without changing the plan, regardless of the supplied reviewer name.
+   * @param _taskId Proposed task id.
+   * @param _reviewerName Unverified display name.
+   * @returns Never; throws without authorizing completion.
+   */
+  completeTask(_taskId: string, _reviewerName: string): BlackboardTask {
+    return this.unavailable()
   }
 
-  /** Return all tasks whose dependencies are satisfied and ready for work. */
+  /**
+   * List dependency-free plan items, not admitted work.
+   * @returns Independent copies of items without planned prerequisites.
+   */
   getReadyTasks(): readonly BlackboardTask[] {
-    const ready: BlackboardTask[] = []
-    for (const task of this.tasks.values()) {
-      if (task.status !== 'pending') continue
-      const satisfied = task.dependsOn.every(depId => this.tasks.get(depId)?.status === 'completed')
-      if (satisfied) ready.push({ ...task })
-    }
-    return ready
+    return [...this.tasks.values()].filter(task => task.dependsOn.length === 0).map(task => structuredClone(task))
   }
 
-  /** Read an immutable snapshot of current blackboard state. */
+  /**
+   * Read an independent plan snapshot. Findings remain empty because execution is unavailable.
+   * @returns Pending task metadata and no execution evidence.
+   */
   read(): BlackboardSnapshot {
-    return {
-      missionId: this.missionId,
-      tasks: Array.from(this.tasks.values()).map(task => ({ ...task })),
-      findings: [...this.findings],
-    }
+    return { missionId: this.missionId, tasks: [...this.tasks.values()].map(task => structuredClone(task)), findings: [] }
+  }
+
+  private unavailable(): never {
+    throw new Error('COLLECTIVE_RUNTIME_UNAVAILABLE: LeonBlackboard is a planning-only preview; use the native TeamService for persisted tasks, host identity and review.')
   }
 }

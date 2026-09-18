@@ -6,6 +6,7 @@
 
 import type { BlackboardTask, LeonBlackboard } from './blackboard.ts'
 
+/** Suggested display labels, never persisted identities or authorization roles. */
 export const AGENT_ROLES = {
   EXECUTIVE: 'lead-supervisor',
   RESEARCHER: 'researcher-agent',
@@ -13,12 +14,14 @@ export const AGENT_ROLES = {
   CHECKER: 'reviewer-agent',
 } as const
 
+/** Proposed permission descriptions, not enforced grants. */
 export interface RolePermissions {
   readonly canWriteFiles: boolean
   readonly canRunTests: boolean
   readonly canModifyDag: boolean
 }
 
+/** Planning reference only; native host policies own executable permissions. */
 export const ROLE_PERMISSIONS: Record<keyof typeof AGENT_ROLES, RolePermissions> = {
   EXECUTIVE: { canWriteFiles: false, canRunTests: false, canModifyDag: true },
   RESEARCHER: { canWriteFiles: false, canRunTests: false, canModifyDag: false },
@@ -26,6 +29,7 @@ export const ROLE_PERMISSIONS: Record<keyof typeof AGENT_ROLES, RolePermissions>
   CHECKER: { canWriteFiles: false, canRunTests: true, canModifyDag: false },
 }
 
+/** Proposed task breakdown used only for an ephemeral plan. */
 export interface DecomposedTaskSpec {
   title: string
   description: string
@@ -36,13 +40,14 @@ export interface DecomposedTaskSpec {
   maxAttempts?: number | undefined
 }
 
+/** Unexecuted objective and proposed task metadata. */
 export interface MissionStrategy {
   objective: string
   decomposedTasks: DecomposedTaskSpec[]
   successCriteria: string[]
 }
 
-/** Executive system guidance ensuring the coordinator delegates rather than executing directly. */
+/** Proposed guidance only; this preview does not mount a runtime prompt or enforce permissions. */
 export const LEON_EXECUTIVE_SYSTEM_PROMPT = `
 You are LEON_EXECUTIVE, the Technical Lead and Orchestrator of the multi-agent collective.
 Your primary responsibility is strategic coordination, high-level problem decomposition, and final synthesis.
@@ -56,10 +61,15 @@ Core Operating Principles:
 5. CONCISE DIRECTION: Give clear, unambiguous task assignments. Avoid endless conversational back-and-forth.
 `.trim()
 
+/** Ephemeral plan presenter, not a model coordinator or execution runtime. */
 export class LeonExecutive {
   constructor(public readonly blackboard: LeonBlackboard) {}
 
-  /** Initialize a mission on the blackboard with structured tasks and dependency DAG. */
+  /**
+   * Create an ephemeral task plan; no runtime session or teammate is initialized.
+   * @param strategy Proposed mission metadata.
+   * @returns Independent copies of pending plan items.
+   */
   initializeMission(strategy: MissionStrategy): readonly BlackboardTask[] {
     const createdTasks: BlackboardTask[] = []
     for (const spec of strategy.decomposedTasks) {
@@ -77,33 +87,29 @@ export class LeonExecutive {
   }
 
   /**
-   * Determine whether the mission is ready for final executive synthesis.
-   * All mandatory tasks must be in completed status and verified.
+   * Refuse runtime completion because this preview has no persisted verification evidence.
+   * @returns Always false; a plan cannot authorize mission completion.
    */
   isMissionReadyForSynthesis(): boolean {
-    const snapshot = this.blackboard.read()
-    if (snapshot.tasks.length === 0) return false
-    return snapshot.tasks.every(task => task.status === 'completed')
+    return false
   }
 
-  /** Generate an executive synthesis summarizing delivered findings and task evidence. */
+  /**
+   * Render only planned tasks, without claiming execution, evidence or review.
+   * @returns Text explicitly identifying the plan as not executed.
+   */
   generateExecutiveSynthesis(): string {
     const snapshot = this.blackboard.read()
     const taskSummary = snapshot.tasks.map(task =>
       `- [${task.id}] ${task.title}: ${task.status} (Evidence: ${task.deliveryEvidence ?? 'N/A'})`,
     ).join('\n')
 
-    const findingsSummary = snapshot.findings.map(finding =>
-      `- [${finding.author} on ${finding.topic}]: ${finding.content}`,
-    ).join('\n')
-
     return [
-      '# Executive Mission Synthesis',
+      '# Executive Plan Preview — NOT EXECUTED',
       `Mission ID: ${snapshot.missionId}`,
-      '\n## Delivered Tasks:',
+      'No runtime sessions, tools, tests or review were executed.',
+      '\n## Planned Tasks:',
       taskSummary || 'No tasks registered.',
-      '\n## Team Findings & Evidence:',
-      findingsSummary || 'No shared findings recorded.',
     ].join('\n')
   }
 }

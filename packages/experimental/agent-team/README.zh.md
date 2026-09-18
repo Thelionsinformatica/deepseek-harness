@@ -62,7 +62,17 @@ roster 同时报告持久 provisioning／failed phase 与实时 `running`／`idl
 
 宿主启动任务时固定目标、验收条件、截止时间和调用上限。原子预留在调用前消耗次数；并发调用方无法超过已存储的上限。检查版本的暂停和恢复操作保留消耗和截止时间。STOP 对该根会话是终态，重新打开存储后仍然有效；再次启动不能重置它。其他所有者或工作区不能复用该记录。
 
+离线宿主命令在创建任何 agent（智能体）之前调用 `inspectStored(rootId)` 和 `stopStored(rootId)`。检查返回已核对所有者及工作区的独立状态副本，不执行写入。离线 STOP 原子保留限额、消耗和组合，对已取消记录具有幂等性，且不发送可能唤醒待处理工作的生命周期事件。它拒绝实时根会话；实时 STOP 使用正常控制器。两个 API 均拒绝模型或工具发起者作用域，宿主仍须独占任务目录的所有权。
+
 此入口是控制账本，不是完整执行器：它不拦截模型调用，不取消活动子进程，不串行化推理，也不限制本地路由或文件写入。宿主必须连接这些边界后才能启用任务。不支持多个进程共享同一存储。`team.cordis.snapshot.yml` 使用确定性适配器测试此入口，而非本地模型。
+
+### 宿主创建的组合
+
+显式启用任务控制设置 `hostComposition: true` 时，必须恰好包含 Lead、researcher 和 checker 三个会话。`requiresComposition` 向宿主入口提供该策略。首次模型请求前，宿主通过两个原生 `SpawnTeammateRequest` 调用 `provisionTeam(lead, { researcher, checker })`。每个原生成员具有独立且不可变的会话 ID；请求的显示名称不授予职能。职能绑定及 provisioning/ready/failed 状态存入现有任务记录，不创建第二个任务数据库。模型或工具发起者作用域不能调用创建操作。重复设置、额外成员或持久 ID 不匹配均会被拒绝。
+
+执行插件在 `agent/request` 和 `llm/stream` 等待全部绑定持久化为 ready。它不在 `agent/pre-step` 等待；此时 inbox 消息已被取走但尚未进入持久用户历史，等待可能阻止原生成员创建完成。直接预留调用也拒绝未完成的组合。STOP 或暂停会取消正在进行的创建；失败保留原生成员名单、部分会话、原截止时间及已消耗调用。关闭存储前会等待已取消的创建操作完全结束。
+
+重新加载时，`getComposition(lead)` 将已保存绑定与完整原生成员名单核对，不激活成员也不消耗 token。暂停任务仍要求正常的显式恢复；运行中的任务可能保留先前已接受的 inbox 工作。不得为 ready 组合再次调用 `provisionTeam`。进程消失后残留的 provisioning 明确标为未完成，不会静默重建工作者、重置限额，或将持久 running 标记视为活动进程的证据。[宿主组合决策](../../../.agents/notes/implemented/feature/2026-09-12-host-mission-composition.zh.md)记录准入和恢复的取舍。
 
 ## 隔离导入实验
 
@@ -82,7 +92,17 @@ roster 同时报告持久 provisioning／failed phase 与实时 `running`／`idl
 
 实验通过原生持久化上下文快照注入真实身份、成员和任务视图。这增加上下文 token，并改变动态后缀而不重写静态身份。工具结果和同伴消息仍进入普通会话日志。确定性 Loader 测试证明组合，不证明 Qwen 能力或硬件性能。
 
-可选执行配置 `reviewReserve: { calls, reviewerName }` 将任务最后正整数次调用预留给指定 teammate，不包括 Lead；必须至少留出一次普通调用。执行器取得推理 slot 后、预订调用前检查持久计数器，拒绝的尝试不消耗预算。省略配置保持普通准入规则。这不会安排审核、保证产物有效，也不会阻止审核者将额度用于无关工作。宿主必须请求并验证最终证据；宿主直接预订调用和多个运行时进程的并发操作不在此执行器策略范围内。
+可选执行配置 `reviewReserve: { calls, reviewerSessionId }` 将任务最后正整数次调用预留给宿主指定的持久 teammate 会话，不包括 Lead；必须至少留出一次普通调用。旧的 `reviewerName` 配置无效：宿主必须创建参与者并明确配置其持久会话 id；未转换的集成在推理前保持阻塞。执行器取得推理 slot 后、预订调用前检查持久计数器，拒绝的尝试不消耗预算。省略配置保持普通准入规则。这不会安排审核、保证产物有效，也不会阻止审核者将额度用于无关工作。宿主必须请求并验证最终证据；宿主直接预订调用和多个运行时进程的并发操作不在此执行器策略范围内。
+
+启用宿主组合时，`reviewReserve: { calls: 8, reviewerRole: checker }` 选择已保存的 checker ID，而不要求在原生成员创建前知道其 UUID。这是显式选择的实验预留额度变体；它不修改现有配置、48 次调用额度或原截止时间。关闭宿主组合时，职能形式被拒绝。名为 `checker` 的 researcher 仍不能使用该预留额度；恢复后的 checker 按原会话 ID 保留资格。
+
+import-lab 配置 `requirePeerReviewAfterReceipt: true` 是单独显式启用的 v2 完成契约，要求宿主组合。只有宿主持久绑定的 checker 必须提供成功的 `mission_verify` 结果，其中 `passed: true` 且摘要对应当前产物，并且工具调用必须发生在收到与 Lead 日志匹配的原生同伴消息之后。更早的验证、陈旧摘要、失败的验证或普通观察均不能批准该 checker 的任务。拒绝报告 `MISSION_CHECKER_PEER_REVIEW_REQUIRED`，保持任务及其修订不变；不会自动运行验证或完成任务。显示名称不授予豁免。researcher 的完成仍遵循现有证据规则；省略或设为 `false` 保持 v1 行为。最终任务验证器复用同一个同伴证据谓词，不改变产物、成员、任务或协作标准。该选项不改变提示词、调用额度、截止时间、预留额度或以前尝试的分类。
+
+## 仅规划原型
+
+`LeonBlackboard` 和 `LeonExecutive` 保存临时计划预览，不代表原生任务、会话、权限或执行证据。读取计划返回独立副本；复用任务 id 不会恢复状态。所有 blackboard 操作方法均以 `COLLECTIVE_RUNTIME_UNAVAILABLE` 拒绝，包括直接认领、发现、交付、拒绝和完成。Executive 汇总明确显示未执行的计划，绝不授权任务完成。
+
+`CoordinatorEvolution.generatePostMortem()` 拒绝未验证的计划结果，`persistInsight()` 拒绝操作且不创建目录、不修改文件。历史 JSONL 保持不变；渲染已有报告会将其声明标为未验证，不会批准记忆。原生 TeamService 的所有权、持久事件、宿主审核和现有记忆审批仍是必需的执行路径。这些限制仅适用于预览辅助类，不影响上述显式启用的运行时。
 
 ## 模型体验
 

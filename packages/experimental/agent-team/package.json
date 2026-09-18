@@ -36,13 +36,13 @@
     "./package.json": "./package.json"
   },
   "files": [
+    "lib/index.js",
+    "lib/invariant.js",
     "lib/import-lab.js",
     "lib/lab-bin.js",
     "lib/execution.js",
     "lib/*-*.js",
     "lib/mission-control.js",
-    "lib/index.js",
-    "lib/invariant.js",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",

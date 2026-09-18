@@ -201,6 +201,45 @@ Host-only state transitions and atomic reservations; not a model-facing authoriz
 
 ```ts cordis-catalog
 /**
+ * Read and verify durable functional identities against the current native roster.
+ * @param caller - exact live Lead, including after a cold resume.
+ * @returns detached immutable host assignments; unready or changed rosters reject.
+ */
+getComposition(caller: Agent): TeamMissionBindings
+
+/**
+ * Inspect a stored mission without materializing an agent or draining its inbox.
+ * @param id - root identity selected by the isolated, authenticated host entry.
+ * @returns detached scope-checked control state; this read does not mutate or emit events.
+ */
+inspectStored(id: SessionId): TeamMissionRecord
+
+/**
+ * Commit terminal STOP for an inactive root without loading any participant session.
+ * The host must hold the same exclusive directory ownership used by the live runner.
+ * @param id - root identity selected outside model/tool initiator scope.
+ * @returns durable cancelled record; no lifecycle notification can activate pending inbox work.
+ */
+async stopStored(id: SessionId): Promise<TeamMissionRecord>
+
+/**
+ * Provision exactly two native continuable workers before admitting model calls.
+ * Failure retains every roster/session record and blocks the mission without renewing limits.
+ * @param caller - exact Lead invoked outside model/tool initiator scope.
+ * @param request - host-authored research and check requests; labels grant no authority.
+ * @returns persisted function-to-session assignments after full roster validation.
+ */
+async provisionTeam(caller: Agent, request: TeamMissionProvisionRequest): Promise<TeamMissionBindings>
+
+/**
+ * Wait after message durability but before reservation/inference for host composition.
+ * @param caller - exact current Lead resolved from the requesting participant.
+ * @param signal - request cancellation; the original mission deadline also bounds waiting.
+ * @returns validated function assignments; STOP, orphan provisioning, failure and extras reject.
+ */
+async waitForComposition(caller: Agent, signal: AbortSignal): Promise<TeamMissionBindings>
+
+/**
  * Start one host-authorized mission; a root can never reset its consumed budget.
  * @param caller - exact live Lead; caller authentication remains the host entry's responsibility.
  * @param objective - authorized outcome, not a worker instruction.
@@ -241,11 +280,14 @@ async reserveCall(caller: Agent): Promise<number>
  */
 async finish(caller: Agent, verify: () => Promise<{ passed: boolean; summary: string }>): Promise<TeamMissionRecord>
 
-/** Reject future control calls when the plugin begins disposal. */
-close(): void
+/**
+ * Reject new control calls and await admitted provisioning before closing its storage.
+ * @returns once every admitted provisioning operation has settled.
+ */
+async close(): Promise<void>
 ```
 
-Types: [Agent](core.zh.md)
+Types: [Agent](core.zh.md) · [SessionId](core.zh.md)
 
 Source: [`packages/experimental/agent-team/src/mission-control.ts`](../../packages/experimental/agent-team/src/mission-control.ts)
 

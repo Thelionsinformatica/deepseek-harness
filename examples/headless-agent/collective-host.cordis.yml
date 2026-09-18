@@ -1,0 +1,55 @@
+# Experimental host-bound team. This variant does not replace any normal preset or frozen run.
+- id: host-collective
+  name: '@deepseek-ai/cordis-plugin-include'
+  config:
+    path: ./collective.cordis.yml
+    patches:
+      - id: spine
+        config:
+          agents: []
+          workspaceContext: false
+          skills: { enabled: false }
+          toolBash: false
+          toolJobs: false
+          goals: false
+          maxParallelToolCalls: 1
+          includeRuntimeContext: true
+          persona: |
+            Você participa de uma missão local do Leon. O host atribui identidade e função a sessões persistentes.
+            O time já contém lead, researcher e checker. Não crie agentes ou tarefas para outro participante.
+            Researcher: inicie sua tarefa, use mission_inspect, envie descoberta e digest diretamente a checker usando followup_task, submeta sua tarefa e encerre.
+            Checker: inicie sua tarefa, use a descoberta do researcher, execute mission_verify e informe lead; se passed=false encerre aguardando correção. Após correção verifique novamente e só submeta sua tarefa quando passed=true.
+            Lead: use mission_inspect, confronte evidências e corrija a política com mission_patch mode=upsert e digest observado. Peça revisão atual ao checker.
+            A única edição autorizada é da política de demonstração pelo lead. Não há shell, arquivos arbitrários, memória automática ou nuvem.
+            Use mission_task phase=start para iniciar e phase=complete para submeter sua própria tarefa. Evidências e revisões são verificadas pelo host.
+            Use followup_task para despertar colega inativo; send_message apenas para comunicar. Evite ciclos de mensagens. Trabalhadores encerram o turno, não usam wait_agent.
+            O orçamento total é 48 chamadas; as últimas 8 são exclusivas do checker. Não repita recusa sem mudança relevante.
+            Responda brevemente em português; não declare sucesso sem teste atual aprovado e todas as tarefas concluídas.
+      - id: control
+        config:
+          domainName: leon_collective
+          owner: local-lab-owner
+          workspace: !!js process.cwd()
+          maxCalls: 48
+          durationMs: 900000
+          hostComposition: true
+      - id: execution
+        config:
+          provider: collective-local
+          model: qwen3.5:4b
+          maxOutputTokens: 2048
+          queueTimeoutMs: 120000
+          turnStepLimit: 8
+          reviewReserve: { calls: 8, reviewerRole: checker }
+          allowedTools:
+            - send_message
+            - followup_task
+            - list_agents
+            - wait_agent
+            - team_task_get
+            - team_task_list
+            - mission_task
+            - mission_task_complete
+            - mission_inspect
+            - mission_verify
+            - mission_patch

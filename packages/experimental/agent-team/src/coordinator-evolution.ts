@@ -1,13 +1,11 @@
 /**
- * Coordinator Evolution & Post-Mortem system: captures multi-agent performance
- * metrics, coordination efficacy, and reusable organizational knowledge.
+ * Quarantined preview helpers: historical reports can be rendered, never promoted or persisted.
+ * Runtime learning requires native session evidence and the existing approval pipeline.
  * @module @deepseek-ai/dsh-experimental-agent-team/coordinator-evolution
  */
-
-import { appendFile, mkdir } from 'node:fs/promises'
-import { dirname } from 'node:path'
 import type { LeonBlackboard } from './blackboard.ts'
 
+/** Unverified historical report fields, not approved memory or measured runtime results. */
 export interface CoordinatorInsight {
   missionId: string
   timestamp: number
@@ -20,71 +18,48 @@ export interface CoordinatorInsight {
   recommendedFutureStrategy: string
 }
 
-/** Analyze blackboard execution facts and derive actionable coordination insights. */
+/**
+ * Reject post-mortems from a plan that carries no durable execution evidence.
+ * @param _blackboard Ephemeral preview, not an execution log.
+ * @param _outcome Unverified requested outcome.
+ * @returns Never; throws before producing any claimed lesson.
+ */
 export function generatePostMortem(
-  blackboard: LeonBlackboard,
-  outcome: 'completed' | 'blocked' | 'cancelled',
+  _blackboard: LeonBlackboard,
+  _outcome: 'completed' | 'blocked' | 'cancelled',
 ): CoordinatorInsight {
-  const snapshot = blackboard.read()
-  const totalTasks = snapshot.tasks.length
-  const completedTasks = snapshot.tasks.filter(task => task.status === 'completed').length
-  const blockedTasks = snapshot.tasks.filter(task => task.status === 'blocked').length
-  const totalFindings = snapshot.findings.length
-
-  const lessons: string[] = []
-
-  if (totalTasks > 0 && completedTasks === totalTasks) {
-    lessons.push('Sequential DAG decomposition succeeded without orphaned tasks.')
-  } else if (blockedTasks > 0) {
-    lessons.push(`Identified ${blockedTasks} blocked task(s); inspect dependency resolution or strictness.`)
-  }
-
-  if (totalFindings === 0) {
-    lessons.push('Team did not leverage shared blackboard findings; encourage discovery posting.')
-  } else {
-    lessons.push(`Team shared ${totalFindings} technical discoveries across sessions.`)
-  }
-
-  let strategy = 'Continue standard DAG decomposition with explicit acceptance criteria.'
-  if (outcome === 'blocked') {
-    strategy = 'Incorporate preliminary exploratory spike before committing to downstream dependencies.'
-  } else if (completedTasks >= 3) {
-    strategy = 'Maintain tiered specialist delegation (investigation -> execution -> review).'
-  }
-
-  return {
-    missionId: snapshot.missionId,
-    timestamp: Date.now(),
-    outcome,
-    totalTasks,
-    completedTasks,
-    blockedTasks,
-    totalFindings,
-    lessonsLearned: lessons,
-    recommendedFutureStrategy: strategy,
-  }
+  throw new Error('COLLECTIVE_RUNTIME_UNAVAILABLE: a planning preview cannot generate verified experience.')
 }
 
-/** Render an operational summary ready for human audit or long-term memory ingestion. */
+/**
+ * Render a historical or caller-supplied report as unverified data for inspection only.
+ * @param insight Unverified report; its claims are not independently validated here.
+ * @returns Text that explicitly disclaims execution, review and memory approval.
+ */
 export function formatPostMortemMarkdown(insight: CoordinatorInsight): string {
   return [
-    `### Post-Mortem Report: ${insight.missionId}`,
-    `- **Outcome:** ${insight.outcome.toUpperCase()}`,
-    `- **Tasks Delivered:** ${insight.completedTasks} / ${insight.totalTasks}`,
-    `- **Shared Findings:** ${insight.totalFindings}`,
-    '- **Lessons Learned:**',
+    `### Unverified Preview Report: ${insight.missionId}`,
+    'UNVERIFIED DATA — not proof of execution, independent review or approved memory.',
+    `- Claimed outcome: ${insight.outcome}`,
+    `- Claimed delivered tasks: ${insight.completedTasks} / ${insight.totalTasks}`,
+    `- Claimed findings: ${insight.totalFindings}`,
+    '- Unverified suggestions:',
     ...insight.lessonsLearned.map(lesson => `  - ${lesson}`),
-    `- **Recommended Future Strategy:** ${insight.recommendedFutureStrategy}`,
+    `- Unverified strategy: ${insight.recommendedFutureStrategy}`,
   ].join('\n')
 }
 
-/** Persist the operational insight as append-only JSONL into Leon memory storage. */
-export async function persistInsight(insight: CoordinatorInsight, targetJsonlPath: string): Promise<void> {
-  await mkdir(dirname(targetJsonlPath), { recursive: true })
-  const entry = `${JSON.stringify(insight)}\n`
-  await appendFile(targetJsonlPath, entry, 'utf8')
+/**
+ * Reject persistence from this preview without creating directories or touching existing JSONL.
+ * @param _insight Unverified preview data, never approved memory.
+ * @param _targetJsonlPath Requested path, which remains untouched.
+ * @returns Rejected promise explaining the unavailable evidence and approval integration.
+ */
+export function persistInsight(_insight: CoordinatorInsight, _targetJsonlPath: string): Promise<void> {
+  return Promise.reject(new Error('COLLECTIVE_RUNTIME_UNAVAILABLE: preview insights cannot be persisted or promoted to memory.'))
 }
 
+/** Inspection helpers with experience generation and persistence deliberately unavailable. */
 export const CoordinatorEvolution = {
   generatePostMortem,
   formatPostMortemMarkdown,

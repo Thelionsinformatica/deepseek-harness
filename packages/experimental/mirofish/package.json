@@ -16,6 +16,10 @@
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
+    "./invariant": {
+      "types": "./lib/types/invariant.d.ts",
+      "default": "./lib/invariant.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
@@ -29,6 +33,7 @@
     "@deepseek-ai/schemastery": "workspace:^"
   },
   "peerDependencies": {
+    "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/dsh-system-prompt": "workspace:^",
     "@deepseek-ai/dsh-tools": "workspace:^",
     "@deepseek-ai/dsh-user-approval": "workspace:^",
@@ -36,6 +41,7 @@
   },
   "devDependencies": {
     "@deepseek-ai/dsh-agent": "workspace:^",
+    "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/dsh-agent-loop": "workspace:^",
     "@deepseek-ai/dsh-agent-loop-testkit": "workspace:^",
     "@deepseek-ai/dsh-system-prompt": "workspace:^",

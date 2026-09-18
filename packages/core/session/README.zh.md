@@ -6,6 +6,8 @@
 
 可选配套入口 `@deepseek-ai/dsh-session/invariant` 将此包的关系轨迹检查注册到 `ctx.invariants`：序号单调递增、轮次／步骤闭合，以及同一步骤内的工具调用／结果配对。加载或重新加载时，它会回放现有会话；存储校验、快照、冻结、被引用的源事件校验和 surface 准入仍始终由根会话包负责。
 
+同一个 `./invariant` 入口导出 `installSessionEventValidation(ctx, validate)`，供各包执行无状态事件检查。返回的 promise 会等待注入 `sessions` 的子上下文完成设置，验证已有历史和新公告会话的 seed，随后在分发前、追加或下游观察者运行前拒绝无效候选事件。调用方必须在不变量注册中调用并等待它；监听器归该注册所有，释放时移除。验证器必须同步、无副作用，并使用所属包绑定的失败报告函数。有状态轨迹投影仍需自行处理已提交事件。
+
 ## 服务：`SessionStore`（ctx 键：`sessions`）
 
 创建并持有事件溯源的 `Session` 实例。这里有意不实现持久化：插件订阅 `session/event`，在 `session/flush` 时刷新，并可镜像成对的 `session/created`／`session/disposed` 生命周期。

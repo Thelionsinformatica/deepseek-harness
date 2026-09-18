@@ -12,7 +12,7 @@ import {
   resolveTargetPolicy,
 } from '@deepseek-ai/dsh-compaction-basic/src/config.ts'
 import type { CompactionResult } from '@deepseek-ai/dsh-compaction'
-import LlmRuntime, { createUserMessage, CallId, CONTEXT_WINDOW_EXCEEDED_CODE, createToolResultMessage, LlmAdapter , createMessage } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createUserMessage, CallId, CONTEXT_WINDOW_EXCEEDED_CODE, createToolResultMessage, LlmAdapter, LlmError, createMessage } from '@deepseek-ai/dsh-llm'
 import type {
   ContentBlock,
   GenerateOptions,
@@ -24,6 +24,8 @@ import type {
 } from '@deepseek-ai/dsh-llm'
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
+import AgentDefaultModel from '@deepseek-ai/dsh-agent-default-model'
+import { auxiliarySummaryRegionBudget } from '../src/summarizer.ts'
 import { agentEvents, type Agent, type RequestErrorAction } from '@deepseek-ai/dsh-agent'
 import ToolResultPruner from '@deepseek-ai/dsh-compaction-tool-result-pruner'
 
@@ -600,7 +602,7 @@ describe('pressure measurement and retention', () => {
     session.append('step/end', { turn: 1, step: 1 })
     const generation = session.surface.replaceGeneration
 
-    await expect(compactIfNeeded(compact, session, 'context-overflow')).resolves.toBeNull()
+    await expect(compactIfNeeded(compact, session, 'context-overflow')).rejects.toMatchObject({ code: CONTEXT_WINDOW_EXCEEDED_CODE })
     expect(session.surface.replaceGeneration).toBe(generation)
     expect(session.events.some(event => event.type === 'compaction/start')).toBe(false)
   })
@@ -664,14 +666,14 @@ describe('pressure measurement and retention', () => {
       header: { config: { provider: MODEL, model: MODEL }, system: 'x'.repeat(100_000) },
       reason: 'initial',
     })
-    expect(await compactIfNeeded(compact, empty)).toBeNull()
+    await expect(compactIfNeeded(compact, empty)).rejects.toMatchObject({ code: CONTEXT_WINDOW_EXCEEDED_CODE })
 
     const retained = conversation(1)
     retained.append('request/header', {
       header: { config: { provider: MODEL, model: MODEL }, system: 'x'.repeat(100_000) },
       reason: 'resume',
     })
-    expect(await compactIfNeeded(compact, retained)).toBeNull()
+    await expect(compactIfNeeded(compact, retained)).rejects.toMatchObject({ code: CONTEXT_WINDOW_EXCEEDED_CODE })
   })
 
   it('uses one unified measurement for each pressure-and-retention decision', async () => {
@@ -729,6 +731,31 @@ describe('pressure measurement and retention', () => {
       ...priced,
       nodes: priced.nodes.slice(1),
     }, 1)).toThrow(/does not match/)
+  })
+
+  it('limits a region to the auxiliary budget without changing the original surface', () => {
+    const ctx = createContext()
+    const session = conversation(8)
+    const priced = ctx.tokenMeter.measure(session)
+    const before = [...session.surface.nodes]
+    const budget = priced.nodes[0]!.tokens + priced.nodes[1]!.tokens
+    expect(selectCompactableRange(session, priced, 1, budget))
+      .toEqual({ start: before[0], end: before[1] })
+    expect(selectCompactableRange(session, priced, 1, 0)).toBeNull()
+    expect(session.surface.nodes).toEqual(before)
+  })
+
+  it('never cuts a tool pair to fit a smaller summary budget', () => {
+    const ctx = createContext()
+    const session = toolConversation()
+    const priced = ctx.tokenMeter.measure(session)
+    for (let budget = 1; budget < priced.surfaceTokens; budget += 20) {
+      const range = selectCompactableRange(session, priced, 1, budget)
+      if (range === null) continue
+      expect(toolPairingBalancedAfter(session, range.end)).toBe(true)
+      expect(priced.nodes.filter(node => node.seq >= range.start && node.seq <= range.end)
+        .reduce((total, node) => total + node.tokens, 0)).toBeLessThanOrEqual(budget)
+    }
   })
 
   it('declines when rounding a cut would consume the only tool pair', () => {
@@ -1241,6 +1268,64 @@ async function summarizerHarness(
 }
 
 describe('default one-shot summarizer', () => {
+  it('routes image history to the assigned local vision summarizer without replacing the principal', async () => {
+    const { ctx, compact, adapter } = await summarizerHarness([{ type: 'text', text: 'visual checkpoint' }])
+    new AgentDefaultModel(ctx, {
+      provider: MODEL, model: MODEL,
+      auxiliaryModels: { localProviders: [MODEL], roles: {
+        compression: { provider: MODEL, model: 'text' }, vision: { provider: MODEL, model: 'vision' },
+      } },
+    })
+    vi.spyOn(ctx.llm, 'resolveModelInfo').mockImplementation(async (provider, model) => ({
+      provider, id: model, name: model, inputModalities: model === 'vision' ? ['text', 'image'] : ['text'],
+      context: { contextWindow: 32768 },
+    }))
+    const input: SummarizationInput = { messages: [createUserMessage({ source: { kind: 'user' }, content: [{
+      type: 'image', attachment: {
+        attachmentId: AttachmentId('visual-history'), mediaType: 'image/png', width: 1, height: 1, bytes: 1,
+      },
+    }] })] }
+    const before = JSON.stringify(input)
+    const result = await compact.runSummarize(input, agent(conversation(1), MODEL))
+    expect(result.model).toBe('vision')
+    expect(adapter.lastOptions?.model).toBe('vision')
+    expect(ctx.agentDefaultModel.currentSelection().model).toBe(MODEL)
+    expect(JSON.stringify(input)).toBe(before)
+  })
+
+  it('refuses image summaries without an authorized visual route before inference', async () => {
+    const { ctx, compact, adapter } = await summarizerHarness([{ type: 'text', text: 'unused' }])
+    vi.spyOn(ctx.llm, 'resolveModelInfo').mockResolvedValue({ provider: MODEL, id: MODEL, name: MODEL, inputModalities: ['text'] })
+    const input: SummarizationInput = { messages: [createUserMessage({ source: { kind: 'user' }, content: [{
+      type: 'image', attachment: {
+        attachmentId: AttachmentId('visual-history'), mediaType: 'image/png', width: 1, height: 1, bytes: 1,
+      },
+    }] })] }
+    await expect(compact.runSummarize(input, agent(conversation(1), MODEL))).rejects.toMatchObject({ code: 'UNSUPPORTED_CONTENT' })
+    expect(adapter.lastOptions).toBeUndefined()
+  })
+  it('reserves the header, instruction and output within the auxiliary capacity', async () => {
+    const { ctx } = await summarizerHarness([])
+    new AgentDefaultModel(ctx, {
+      provider: MODEL, model: MODEL,
+      auxiliaryModels: { localProviders: [MODEL], roles: { compression: { provider: MODEL, model: MODEL } } },
+    })
+    vi.spyOn(ctx.llm, 'resolveModelInfo').mockResolvedValue({ provider: MODEL, id: MODEL, name: MODEL, context: { contextWindow: 32768 } })
+    const policy = { summarizationProvider: '', summarizationModel: '', maxTokens: 8192 }
+    const budget = await auxiliarySummaryRegionBudget(ctx, policy, agent(conversation(1), MODEL))
+    expect(budget).toBeGreaterThan(0)
+    expect(budget).toBeLessThan(32768 - 8192)
+  })
+  it('refuses an oversized summary before calling the model and preserves its input', async () => {
+    const { ctx, adapter, compact } = await summarizerHarness([{ type: 'text', text: 'unused' }])
+    vi.spyOn(ctx.llm, 'resolveModelInfo').mockResolvedValue({ provider: MODEL, id: MODEL, name: MODEL, context: { contextWindow: 32768 } })
+    const input = promptInput('x'.repeat(160000))
+    const before = JSON.stringify(input)
+    await expect(compact.runSummarize(input, agent(conversation(1), MODEL)))
+      .rejects.toThrow('Compactação bloqueada antes do envio')
+    expect(adapter.lastOptions).toBeUndefined()
+    expect(JSON.stringify(input)).toBe(before)
+  })
   it('requires complete raw output when a subclass marks one local LLM stream call', () => {
     expectTypeOf<{
       summary: ContentBlock[]
@@ -1291,7 +1376,10 @@ describe('default one-shot summarizer', () => {
   })
 
   it('replays the conversation prefix and appends the instruction as the final message', async () => {
-    const { adapter, compact } = await summarizerHarness([{ type: 'text', text: 'summary' }])
+    const { ctx, adapter, compact } = await summarizerHarness([{ type: 'text', text: 'summary' }])
+    vi.spyOn(ctx.llm, 'resolveModelInfo').mockResolvedValue({
+      provider: MODEL, id: MODEL, name: MODEL, inputModalities: ['text', 'image'],
+    })
     const tools = [{ name: 'do_thing', description: 'd', parameters: { type: 'object' } }]
     const prefix: Message = createUserMessage({
       content: [
@@ -1578,6 +1666,15 @@ describe('automatic listener and loader composition', () => {
 
     await expect(preStep(ctx, agent(session, MODEL))).resolves.toEqual({ kind: 'enter', messages: [] })
     expect(warnings).toContainEqual(expect.stringContaining('temporary failure'))
+    expect(session.events.some(event => event.type === 'compaction/summary')).toBe(false)
+  })
+
+  it('blocks the next model request when compaction reports incompatible content', async () => {
+    const ctx = createContext()
+    const compact = new TestCompactionEngine(ctx, { thresholdRatio: 0.5, retainTokens: 180 })
+    const session = conversation(4)
+    compact.error = new LlmError('Text-only compressor cannot read images', 'UNSUPPORTED_CONTENT')
+    await expect(preStep(ctx, agent(session, MODEL))).rejects.toMatchObject({ code: 'UNSUPPORTED_CONTENT' })
     expect(session.events.some(event => event.type === 'compaction/summary')).toBe(false)
   })
 

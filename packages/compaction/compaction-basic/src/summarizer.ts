@@ -9,12 +9,56 @@ import { contentHasImage, createUserMessage, BlockAssembler, LlmError } from '@d
 import type {
   ContentBlock, FinishReason, GenerateOptions, Message, TokenUsage, ToolSchema,
 } from '@deepseek-ai/dsh-llm'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Agent, ModelSelection } from '@deepseek-ai/dsh-agent'
 
 interface SummaryConfig {
   readonly summarizationProvider: string
   readonly summarizationModel: string
   readonly maxTokens: number
+}
+
+/**
+ * Bound a region for an explicitly assigned auxiliary summarizer, reserving the replay header and summary output.
+ * @param ctx - supplies the assigned route, model metadata and token meter.
+ * @param config - summary output policy.
+ * @param agent - owns the replay header.
+ * @param signal - cancellation for metadata resolution.
+ * @returns heuristic region budget, or undefined when no auxiliary route is assigned.
+ */
+export async function auxiliarySummaryRegionBudget(
+  ctx: Context, config: SummaryConfig, agent: Agent, signal?: AbortSignal,
+): Promise<number | undefined> {
+  const route = ctx.get('agentDefaultModel')?.auxiliarySelection('compression')
+  if (route === undefined) return undefined
+  const capacity = (await ctx.llm.resolveModelInfo(route.provider, route.model, signal)).context?.contextWindow
+  if (capacity === undefined) throw new Error('Auxiliary summarizer must declare its context capacity')
+  const visualRoute = await compatibleSummaryRoute(ctx, route, agent.session.deriveMessages(), signal)
+  const visualCapacity = (await ctx.llm.resolveModelInfo(visualRoute.provider, visualRoute.model, signal)).context?.contextWindow
+  if (visualCapacity === undefined) throw new Error('Auxiliary summarizer must declare its context capacity')
+  const header = agent.session.requestHeader()
+  const instruction = createUserMessage({
+    content: [{ type: 'text', text: COMPACTION_INSTRUCTION }],
+    source: { kind: 'plugin', plugin: 'dsh-compaction-basic' },
+  })
+  const overhead = ctx.tokenMeter.estimateMessage(instruction)
+    + Math.ceil((header?.system?.length ?? 0) / 4)
+    + Math.ceil(JSON.stringify(header?.tools ?? []).length / 4)
+  return Math.max(0, Math.min(capacity, visualCapacity) - config.maxTokens - overhead)
+}
+
+/** Resolve image-bearing summaries only through an explicitly authorized vision assignment. */
+async function compatibleSummaryRoute(
+  ctx: Context, target: ModelSelection, messages: readonly Message[], signal?: AbortSignal,
+): Promise<ModelSelection> {
+  if (!messages.some(message => contentHasImage(message.content))) return target
+  const info = await ctx.llm.resolveModelInfo(target.provider, target.model, signal)
+  if (info.inputModalities?.includes('image')) return target
+  const vision = ctx.get('agentDefaultModel')?.auxiliarySelection('vision')
+  if (vision !== undefined) {
+    const visualInfo = await ctx.llm.resolveModelInfo(vision.provider, vision.model, signal)
+    if (visualInfo.inputModalities?.includes('image')) return vision
+  }
+  throw new LlmError('Image-bearing history requires an authorized image-capable summarizer; original history preserved.', 'UNSUPPORTED_CONTENT')
 }
 
 /** Tags wrapping the structured summary inside the landed checkpoint node. */
@@ -343,12 +387,14 @@ export async function summarizeWithLlm(
     && agent.options.model.length > 0
     ? { provider: agent.options.provider, model: agent.options.model }
     : undefined
-  const target = configured ?? latest ?? agentTarget
-  if (target === undefined) {
+  const auxiliary = ctx.get('agentDefaultModel')?.auxiliarySelection('compression')
+  const proposed = auxiliary ?? configured ?? latest ?? agentTarget
+  if (proposed === undefined) {
     throw new Error(
       'no provider/model available for summarization: set both BasicCompactionConfig summarization fields, route one request, or set both AgentOptions fields',
     )
   }
+  const target = await compatibleSummaryRoute(ctx, proposed, input.messages, signal)
 
   const assembler = new BlockAssembler()
   const messages: Message[] = [
@@ -367,7 +413,21 @@ export async function summarizeWithLlm(
     maxTokens: config.maxTokens,
     sessionId: agent.session.id,
     purpose: 'compaction',
+    ...target.reasoningEffort === undefined ? {} : { reasoningEffort: target.reasoningEffort },
     ...signal === undefined ? {} : { signal },
+  }
+  const capacity = (await ctx.llm.resolveModelInfo(target.provider, target.model, signal)).context?.contextWindow
+  const meter = ctx.get('tokenMeter')
+  if (capacity !== undefined && meter !== undefined) {
+    const estimatedInput = messages.reduce((total, message) => total + meter.estimateMessage(message), 0)
+      + Math.ceil((input.system?.length ?? 0) / 4)
+      + Math.ceil(JSON.stringify(input.tools ?? []).length / 4)
+    if (estimatedInput + config.maxTokens > capacity) {
+      throw new LlmError(
+        `Compactação bloqueada antes do envio: histórico estimado em ${estimatedInput} tokens, reserva de saída ${config.maxTokens}, capacidade ${capacity} de ${target.provider}/${target.model}. O histórico foi preservado; é necessário resumir em partes ou escolher um compactador com capacidade suficiente.`,
+        'CONTEXT_WINDOW_EXCEEDED',
+      )
+    }
   }
   for await (const chunk of ctx.llm.stream(options)) assembler.push(chunk)
   const error = finishError(assembler.finish)
@@ -430,3 +490,4 @@ function summaryText(
   }
   return blocks.filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text')
 }
+import type {} from '@deepseek-ai/dsh-agent-default-model'

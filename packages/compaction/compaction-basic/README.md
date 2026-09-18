@@ -1,6 +1,12 @@
 # @deepseek-ai/dsh-compaction-basic
 
+Before summarization, the configured summarizer capacity is checked against the heuristic input estimate plus output reserve when model metadata and the token meter are available. Oversized summaries fail before inference without replacing history. This guard is not exact tokenization or hierarchical summarization.
+
+When an auxiliary compression model is assigned, automatic and manual range selection also caps each prefix by that model's remaining estimated input budget after header, instruction and output reservations. Whole tool-call/result pairs remain intact. Each successful prefix uses the existing durable compaction transaction; retry limits are unchanged. An indivisible oversized prefix is not truncated. This is incremental prefix recovery, not an unbounded whole-history summarization job.
+
 English | [中文](README.zh.md)
+
+Image-bearing summaries require declared image support. If the selected compression route is text-only, the backend uses the explicitly authorized `vision` auxiliary route, if compatible, without changing the coordinator. Range selection conservatively budgets against both routes. With no authorized compatible route, `UNSUPPORTED_CONTENT` stops automatic admission and preserves original history. LLM errors and exhausted or indivisible over-budget prefixes are not swallowed by the pre-step listener; other operational errors retain the existing warning policy. This does not implement ordinary-chat visual delegation.
 
 The **basic compaction backend**: a `BasicCompactionEngine` implementing the `@deepseek-ai/dsh-compaction` Service Definition with reusable `ctx.tokenMeter` pressure, token-budget retention, and summarization as a direct one-shot `ctx.llm.stream()` call that replays the conversation prefix to reuse the provider's KV cache (interceptable at `llm/stream`).
 

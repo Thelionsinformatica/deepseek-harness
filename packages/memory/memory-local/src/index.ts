@@ -266,9 +266,12 @@ export class LocalMemoryProvider implements MemoryProvider {
             this.emitBlocked,
           )
           if (this.historyMode === 'v1') {
+            const { confidence, validation, ...retained } = current
             return {
-              ...current,
+              ...retained,
+              ...(request.content === current.content ? { confidence, validation } : {}),
               content: request.content,
+              source: request.source ?? current.source,
               revision: current.revision + 1,
               updatedAt: new Date().toISOString(),
             }
@@ -502,8 +505,8 @@ function supersede(
     revision: nextRef.revision,
     source: request.source ?? current.source,
     ...(current.importance === undefined ? {} : { importance: current.importance }),
-    ...(current.confidence === undefined ? {} : { confidence: current.confidence }),
-    ...(current.validation === undefined ? {} : { validation: current.validation }),
+    ...(request.content !== current.content || current.confidence === undefined ? {} : { confidence: current.confidence }),
+    ...(request.content !== current.content || current.validation === undefined ? {} : { validation: current.validation }),
     schemaVersion: MEMORY_RECORD_SCHEMA_VERSION,
     validFrom,
     ...(expiresAt === undefined ? {} : { expiresAt }),

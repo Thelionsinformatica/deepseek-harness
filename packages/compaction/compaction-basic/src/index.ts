@@ -10,7 +10,7 @@ import { CompactionEngine, ManualCompactionError } from '@deepseek-ai/dsh-compac
 import type { CompactionResult, CompactionTrigger } from '@deepseek-ai/dsh-compaction'
 import type { TokenMeter } from '@deepseek-ai/dsh-token-meter'
 import type { Session } from '@deepseek-ai/dsh-session'
-import { CONTEXT_WINDOW_EXCEEDED_CODE, assertNever } from '@deepseek-ai/dsh-llm'
+import { CONTEXT_WINDOW_EXCEEDED_CODE, assertNever, LlmError } from '@deepseek-ai/dsh-llm'
 import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
 import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
@@ -27,7 +27,7 @@ import {
   compactSurfaceRegion,
   selectCompactableRange,
 } from './region.ts'
-import { summarizeWithLlm } from './summarizer.ts'
+import { summarizeWithLlm, auxiliarySummaryRegionBudget } from './summarizer.ts'
 import type { SummarizationInput, SummaryResult } from './summarizer.ts'
 import type {
   BasicCompactionConfig,
@@ -153,6 +153,7 @@ export class BasicCompactionEngine extends CompactionEngine {
           const result = await this.compactIfNeeded(agent, 'pressure', signal)
           if (result !== null) logResult(result, 'step pressure')
         } catch (error: unknown) {
+          if (error instanceof LlmError) throw error
           if (error instanceof TargetPressureConfigError) {
             if (this.warnedPressureConfigTargets.has(error.targetKey)) return next()
             this.warnedPressureConfigTargets.add(error.targetKey)
@@ -281,12 +282,15 @@ export class BasicCompactionEngine extends CompactionEngine {
     const prune = this.ctx.get('toolResultPruner')
 
     if (trigger === 'context-overflow') {
+      const regionBudget = await auxiliarySummaryRegionBudget(this.ctx, policy, agent, signal)
       if (prune !== undefined) {
         prune.pruneSession(agent.session)
         measurement = meter.measure(agent.session)
       }
-      const range = selectCompactableRange(agent.session, measurement, 0)
-      if (range === null) return null
+      const range = selectCompactableRange(agent.session, measurement, 0, regionBudget)
+      if (range === null) {
+        throw new LlmError('No balanced conversation prefix fits the summarizer capacity; history preserved.', CONTEXT_WINDOW_EXCEEDED_CODE)
+      }
       return this.compactRegion(range.start, range.end, agent, signal)
     }
 
@@ -312,11 +316,14 @@ export class BasicCompactionEngine extends CompactionEngine {
     if (measurement.totalTokens < spec.thresholdTokens) return null
 
     let result: CompactionResult | null = null
+    const regionBudget = await auxiliarySummaryRegionBudget(this.ctx, policy, agent, signal)
     for (let attempt = 0; attempt <= spec.compactionRetries; attempt += 1) {
-      const range = selectCompactableRange(agent.session, measurement, spec.retainTokens)
+      const range = selectCompactableRange(agent.session, measurement, spec.retainTokens, regionBudget)
       if (range === null) {
         /* v8 ignore else -- concrete replacement preserves a compactable checkpoint; subclass hooks cannot mutate it. */
-        if (result === null) return null
+        if (result === null) {
+          throw new LlmError('No balanced conversation prefix fits the summarizer capacity; history preserved.', CONTEXT_WINDOW_EXCEEDED_CODE)
+        }
         /* v8 ignore next -- paired with the defensive post-success branch above. */
         break
       }
@@ -325,9 +332,10 @@ export class BasicCompactionEngine extends CompactionEngine {
       if (measurement.totalTokens < spec.thresholdTokens) return result
     }
 
-    throw new Error(
+    throw new LlmError(
       `compaction still above threshold after ${spec.compactionRetries + 1} compaction attempts `
       + `(${measurement.totalTokens} estimated tokens >= threshold ${spec.thresholdTokens})`,
+      CONTEXT_WINDOW_EXCEEDED_CODE,
     )
   }
 
@@ -380,6 +388,7 @@ export class BasicCompactionEngine extends CompactionEngine {
             agent.session,
             this.ctx.tokenMeter.measure(agent.session),
             0,
+            await auxiliarySummaryRegionBudget(this.ctx, this.config, agent, operationSignal),
           )
           if (range === null) return null
           return await compactSurfaceRegion(

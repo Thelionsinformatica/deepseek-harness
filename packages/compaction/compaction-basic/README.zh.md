@@ -2,6 +2,12 @@
 
 [English](README.md) | 中文
 
+摘要推理前，在模型元数据与 token 计量器可用时，按输入估算和输出预留检查容量。超限摘要在推理前失败且不替换历史；这不是精确分词或分层摘要。
+
+配置压缩辅助模型后，自动及手动范围选择也按该模型扣除请求头、指令和输出预留后的估算输入预算限制前缀。完整工具调用与结果配对保持不变。成功前缀仍使用既有持久压缩事务，重试限制不变。不可分割的超限前缀不被截断。这是增量前缀恢复，不是无限制的全历史摘要任务。
+
+含图片的摘要要求模型声明图片支持。若所选压缩路由仅支持文本，后端会使用已明确授权且兼容的 `vision` 辅助路由，不改变协调者。范围选择保守地考虑两条路由的预算。没有已授权的兼容路由时，`UNSUPPORTED_CONTENT` 阻止自动准入并保留原始历史。LLM 错误以及预算耗尽或不可分割的超限前缀不会被 pre-step 监听器吞掉；其他运行错误保留既有警告策略。这不实现普通聊天的视觉委派。
+
 **基础压缩（compaction）后端**：`BasicCompactionEngine` 实现 `@deepseek-ai/dsh-compaction` Service Definition，使用可复用的 `ctx.tokenMeter` 压力、token 预算保留与摘要。摘要是直接的一次性 `ctx.llm.stream()` 调用，它会回放会话前缀以复用提供方的 KV Cache（可在 `llm/stream` 处拦截）。
 
 本包承担压缩能力的 Service Provider 角色；其约定见 [Service Definition 包](../compaction/README.zh.md)，设计见 [能力 seam Agent Note](../../../.agents/notes/implemented/feature/2026-06-18-compaction-capability-seam.zh.md)。

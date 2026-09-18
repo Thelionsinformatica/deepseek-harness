@@ -6,6 +6,8 @@ This package is the local Service Provider for `ctx.memory`. It opens the versio
 
 ## Behavior
 
+Changing a record's content clears its current confirmation and confidence; the old approval does not certify the new text. An unchanged-content update preserves those fields. In temporal mode, the prior revision retains its original metadata in history. This is revision invalidation, not factual verification of the replacement or a retroactive audit of stored memories.
+
 - Records are keyed by generated `MemoryId` values and carry stable `WorkspaceId` ownership, session provenance, ISO timestamps, a compare-and-set revision, and any optional importance, confidence, confirmation, and temporal metadata supplied at creation.
 - Create, correct, and forget operations are serialized. In the default `temporal-v2` mode, one correction atomically writes the new current revision and the immutable prior revision inside the same lineage value. The durable write lands before the operation resolves.
 - Active search filters by workspace and evaluation time before ranking or sending candidate text to another local component. Scheduled, expired, and replaced revisions remain absent by default. `includeHistory: true` returns valid audit revisions through deterministic lexical search; history text is not sent to the semantic index.

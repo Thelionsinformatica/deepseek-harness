@@ -61,6 +61,29 @@ const beta = { workspaceId: WorkspaceId('workspace-beta') }
 const source = { kind: 'session' as const, sessionId: SessionId('session-alpha') }
 
 describe('local durable memory operations', () => {
+  it.each(['temporal-v2', 'v1'] as const)('invalidates confirmation on changed content in %s', async (historyMode) => {
+    const { ctx } = await harness(new MemoryMediaPool(), { historyMode })
+    try {
+      const original = await ctx.memory.create({
+        scope: alpha, source, content: 'Deployment verified', confidence: 1, validation: 'reviewed',
+      })
+      const unchanged = await ctx.memory.update({
+        scope: alpha, ref: { id: original.id, revision: 1 }, content: original.content,
+      })
+      expect(unchanged).toMatchObject({ confidence: 1, validation: 'reviewed' })
+      const changed = await ctx.memory.update({
+        scope: alpha, ref: { id: original.id, revision: 2 }, content: 'Deployment hypothesis',
+      })
+      expect(changed.validation).toBeUndefined()
+      expect(changed.confidence).toBeUndefined()
+      if (historyMode === 'temporal-v2') {
+        const history = await ctx.memory.search({ scope: alpha, query: 'verified', limit: 10, includeHistory: true })
+        expect(history.some(hit => hit.record.revision === 1 && hit.record.validation === 'reviewed')).toBe(true)
+      }
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
   it('creates, searches accent-insensitively, corrects by revision, and forgets', async () => {
     const { ctx } = await harness()
     const created = await ctx.memory.create({
@@ -92,9 +115,9 @@ describe('local durable memory operations', () => {
       id: created.id,
       revision: 2,
       importance: 0.7,
-      confidence: 1,
-      validation: 'explicit',
     })
+    expect(corrected.confidence).toBeUndefined()
+    expect(corrected.validation).toBeUndefined()
     await expect(ctx.memory.update({
       scope: alpha,
       ref: { id: created.id, revision: 1 },
@@ -315,10 +338,10 @@ describe('local durable memory operations', () => {
       revision: 2,
       source,
       importance: 0.8,
-      confidence: 0.9,
-      validation: 'reviewed',
       expiresAt: '2026-08-25T15:00:00.000Z',
     })
+    expect(second.validation).toBeUndefined()
+    expect(second.confidence).toBeUndefined()
     vi.setSystemTime(new Date('2026-08-25T13:00:00.000Z'))
     const third = await ctx.memory.update({
       scope: alpha,

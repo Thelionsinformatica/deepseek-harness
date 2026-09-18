@@ -96,7 +96,10 @@
   name: '@deepseek-ai/dsh-tool-session-query'
   config:
     maxSearchResults: 12
-    searchTimeoutMs: 30000
+    # Reconstruções do índice derivado (session-query.sqlite) podem ultrapassar
+    # 30 s e faziam a busca falhar por timeout sem aviso. A janela se repete a
+    # cada reconstrução; 120 s dá margem sem esconder travamento real.
+    searchTimeoutMs: 120000
     enabledTools:
       - session_search
       - current_session_search
@@ -438,6 +441,113 @@
     egressPolicy: ask
     fetch: true
     searchTimeoutMs: 60000
+
+# MiroFish is an optional local simulation service. The tool uploads the seed
+# to the configured backend and asks the shared approval service before doing
+# so; it remains scoped to Leon rather than becoming a generic base capability.
+#
+# DESATIVADO em 2026-09-17 — bloqueava a criação de TODA sessão nova.
+# Motivo: o pacote '@deepseek-ai/dsh-experimental-mirofish' não está instalado
+# nem compilado (sem link em node_modules; lib/index.js inexistente) e o
+# backend em 127.0.0.1:5001 não está no ar. Como a montagem do preset falha por
+# inteiro, toda sessão nova devolvia SessionCreateError: agent-preset-invalid.
+# Reverter: descomentar as linhas abaixo DEPOIS de compilar/instalar o pacote
+# (pnpm install no monorepo) e subir o backend MiroFish.
+#
+# - id: mirofish
+#   name: '@deepseek-ai/dsh-experimental-mirofish'
+#   config:
+#     enabled: true
+#     baseUrl: 'http://127.0.0.1:5001'
+#     timeoutMs: 300000
+#     pollIntervalMs: 3000
+#     maxWaitMs: 1800000
+#     maxSeedChars: 200000
+#     maxReportChars: 120000
+#     maxRounds: 40
+
+# ── Cua Driver (automação de desktop/computer-use) ──────────────────────────
+
+# Ponte MCP para o Cua Driver — a capacidade que faltava: operar aplicativo
+# NATIVO (não só página web) e ler o desktop por UIA/pixels. Verificado em
+# 2026-09-17 contra a instalação real em
+# %LOCALAPPDATA%\Programs\Cua\cua-driver\bin\cua-driver.exe (v0.28.1), com
+# daemon `cua-driver-serve` ativo por tarefa agendada de logon.
+#
+# `allowedTools` é OBRIGATÓRIO aqui, não opcional, por três razões:
+#   1. Superfície: o driver publica ~54 ferramentas, incluindo `kill_app`
+#      (encerra processo), `set_config`/`set_value`, `clipboard_read`
+#      (texto sensível), `start_recording`, `launch_app` e `install_ffmpeg`.
+#      Expor tudo daria ao agente poder de alterar o sistema e ler a área
+#      de transferência.
+#   2. Contexto: cada esquema é pago em TODA requisição. O nome qualificado
+#      `mcp__cua__<nome>` e o esquema somam tokens permanentemente.
+#   3. Menor privilégio: a lista abaixo é só leitura + interação de janela
+#      e navegador, que é exatamente o que faltava.
+#
+# `failOnStartupError: false` é deliberado: se o driver não estiver instalado
+# ou o daemon estiver caído, o preset ATIVA sem as ferramentas em vez de
+# invalidar o preset inteiro — o modo de falha que em 17/09 derrubou a criação
+# de TODA sessão nova (ver o bloco mirofish, comentado, acima).
+- id: mcp-cua-driver
+  name: '@deepseek-ai/dsh-mcp-client'
+  config:
+    serverName: cua
+    transport: stdio
+    command: !!js "process.getBuiltinModule('node:path').join(process.env.LOCALAPPDATA, 'Programs','Cua','cua-driver','bin','cua-driver.exe')"
+    args:
+      - mcp
+    env:
+      # Modo `standard` (padrão do daemon) permite entrada contra qualquer
+      # aplicativo. `bounded` exige capability manifest e é o caminho para
+      # restringir a aplicativos/origens revisados — ver
+      # https://cua.ai/docs/how-to-guides/driver/write-a-bounded-manifest
+      CUA_DRIVER_PERMISSION_MODE: standard
+    toolCallTimeoutMs: 180000
+    failOnStartupError: false
+    reconnect:
+      enabled: true
+      initialDelayMs: 1000
+      maxDelayMs: 30000
+      maxAttempts: 5
+    # Somente leitura e interação. Excluídos de propósito: kill_app,
+    # launch_app, set_config, set_value, clipboard_read, clipboard_write,
+    # start_recording, stop_recording, replay_trajectory, install_ffmpeg,
+    # set_window_frame, invoke_menu, end_session.
+    allowedTools:
+      # descoberta e leitura de estado
+      - list_apps
+      - list_windows
+      - get_window_state
+      - get_accessibility_tree
+      - get_screen_size
+      - get_desktop_state
+      - get_config
+      - health_report
+      - check_permissions
+      - verify_state
+      - zoom
+      - debug_window_info
+      # interação com janela nativa
+      - click
+      - double_click
+      - right_click
+      - scroll
+      - type_text
+      - press_key
+      - hotkey
+      - drag
+      - bring_to_front
+      - set_agent_cursor_enabled
+      # navegador por CDP — a rota que substitui o Playwright com timeout
+      - get_browser_state
+      - browser_prepare
+      - browser_navigate
+      - browser_click
+      - browser_type
+      - browser_pointer
+      - browser_set_input_files
+      - browser_dialog
 
 # Preserve native tool calling while bounding verbose schema descriptions for
 # faster prompt ingestion on local models. Execution keeps the full definitions.

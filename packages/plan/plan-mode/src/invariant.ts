@@ -1,7 +1,7 @@
 /** Package-owned durable plan-mode invariants. @module @deepseek-ai/dsh-plan-mode/invariant */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import { installSessionEventValidation } from '@deepseek-ai/dsh-session/invariant'
 import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
 const PACKAGE_NAME = '@deepseek-ai/dsh-plan-mode'
@@ -17,27 +17,14 @@ export const inject = ['invariants']
  * between turns and a mid-turn selection commits at the step boundary, so
  * no turn-enclosure relation exists — only the payload shape is checkable.
  */
-function validateEvent(event: SessionEvent, fail: InvariantFailure): void {
-  if (event.type !== 'plan/mode') return
-  const active = (event.data as { active?: unknown }).active
-  if (typeof active !== 'boolean') {
-    fail(`plan/mode carries invalid active state ${JSON.stringify(active)}; expected a boolean`)
-  }
-}
-
-/** Install validation for loaded and newly appended plan-mode state. */
-const install: InvariantInstaller = Object.assign((ctx: Context, fail: InvariantFailure) => {
-  const seed = (session: Session): void => {
-    for (const event of session.events) validateEvent(event, fail)
-  }
-  for (const session of ctx.sessions.list()) seed(session)
-  ctx.on('session/created', (session) => { seed(session) }, { global: true })
-  ctx.on('internal/dispatch', (_mode, eventName, args) => {
-    if (eventName !== 'session/event') return
-    const [, event] = args as [Session, SessionEvent]
-    validateEvent(event, fail)
-  }, { global: true })
-}, { inject: ['sessions'] })
+const install: InvariantInstaller = (ctx: Context, fail: InvariantFailure) =>
+  installSessionEventValidation(ctx, (event) => {
+    if (event.type !== 'plan/mode') return
+    const active = (event.data as { active?: unknown }).active
+    if (typeof active !== 'boolean') {
+      fail(`plan/mode carries invalid active state ${JSON.stringify(active)}; expected a boolean`)
+    }
+  })
 
 /**
  * Register the plan-mode invariant companion.

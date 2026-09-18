@@ -383,11 +383,13 @@ export function apply(ctx: Context, config: Config): void {
         }
 
         const maxDepth = typeof config.maxDepth === 'number' ? config.maxDepth : undefined
+        const auxiliary = ctx.get('agentDefaultModel')?.auxiliarySelection('worker')
+        const agentOptions = auxiliary === undefined ? config.agentOptions : { ...config.agentOptions, ...auxiliary }
         const request = {
           label: args.description,
           prompt: [{ type: 'text', text: args.prompt }] as ContentBlock[],
           parent,
-          ...config.agentOptions !== undefined ? { agentOptions: config.agentOptions } : {},
+          ...agentOptions === undefined ? {} : { agentOptions },
           ...config.persona !== undefined ? { persona: config.persona } : {},
           ...config.toolFilter !== undefined ? { toolFilter: config.toolFilter } : {},
           ...maxDepth !== undefined ? { maxDepth } : {},
@@ -474,3 +476,4 @@ export function apply(ctx: Context, config: Config): void {
     })
   }
 }
+import type {} from '@deepseek-ai/dsh-agent-default-model'

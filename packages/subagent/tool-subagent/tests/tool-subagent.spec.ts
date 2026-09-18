@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
+import AgentDefaultModelConfig from '@deepseek-ai/dsh-agent-default-model'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -248,7 +249,7 @@ describe('dsh-tool-subagent', () => {
     expect(text(result)).toContain('abnormally')
   })
 
-  it('forwards configured agentOptions into the start request', async () => {
+  it.each([false, true])('forwards effective agentOptions with auxiliary opt-in %s', async (auxiliary) => {
     // Cover the `config.agentOptions ? … : {}` spread: a provider that captures
     // the request lets us assert the agentOptions reached it.
     let seen: { agentOptions?: { model?: string } } | undefined
@@ -256,6 +257,10 @@ describe('dsh-tool-subagent', () => {
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
     await ctx.plugin(SubagentRuntime)
+    if (auxiliary) await ctx.plugin(AgentDefaultModelConfig, {
+      provider: 'local', model: 'main',
+      auxiliaryModels: { localProviders: ['local'], roles: { worker: { provider: 'local', model: 'worker-role' } } },
+    })
     ctx.subagents.registerProvider({
       name: 'capture',
       capabilities: { outputSchema: false, depthLimit: false, toolFilter: false, persona: false },
@@ -273,7 +278,7 @@ describe('dsh-tool-subagent', () => {
     await ctx.plugin(tool, { provider: 'capture', agentOptions: { model: 'child-model' }, maxDepth: 'provider-managed' })
 
     await callSubagent(ctx, { description: 'd', prompt: 'p' })
-    expect(seen?.agentOptions).toEqual({ model: 'child-model' })
+    expect(seen?.agentOptions).toEqual(auxiliary ? { provider: 'local', model: 'worker-role' } : { model: 'child-model' })
   })
 
   it('defaults toolName and omits agentOptions when apply() is called directly (schema bypass)', async () => {

@@ -34,4 +34,6 @@
 - **凭据清除依赖名称启发式规则**：只匹配 `*KEY*`／`*PASSWORD*`／`*SECRET*`／`*TOKEN*`；名称不同的 secret（例如 `*PASSPHRASE*`）会继续传递，对误删变量引入白名单属于已记录的后续工作。
 - **不会删除已完成的 spill 文件**：有界的完整输出恢复文件（以及每个进程的私有 spill 目录）会在 OS tmpdir 下累积，直到外部机制进行清理；超大的不完整 spill 会被丢弃并立即尝试删除，但清理失败可能留下一个有界文件。
 
-原始进程处理位于 `src/spawn.ts`；`src/index.ts` 负责服务接线。
+原始进程处理位于 `src/spawn.ts`；`src/index.ts` 负责服务接线。PTY 分配同步执行，但 `spawnTerminal` 通过被拒绝的 promise 报告校验失败和原生分配失败。即使尚未 await，观察之后的终止检查仍然必要：已不存在的进程树可以同步结算其观察操作。
+
+要运行被 Windows 全面测试配置排除的测试套件中的可移植终止／PTY 回归用例，请从仓库根目录运行 `node node_modules/vitest/vitest.mjs run --config packages/subprocess/subprocess-local/tests/vitest.contract.config.mjs`。此命令只选择指定名称的用例；被跳过的 POSIX 用例不算 Windows 验证。

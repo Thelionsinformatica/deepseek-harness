@@ -1,5 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { fileURLToPath } from 'node:url'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { Context } from '@deepseek-ai/cordis'
 import AttachmentStore, { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
@@ -187,6 +189,21 @@ describe('syncTools', () => {
     ctx = await mountRegistry()
   })
 
+  it('rejects repeated pagination from a real stdio server and closes the client', async () => {
+    const client = new Client({ name: 'pagination-contract', version: '1.0.0' })
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: ['--import', 'tsx/esm', fileURLToPath(new URL('./fixtures/repeated-cursor-server.ts', import.meta.url))],
+    })
+    try {
+      await client.connect(transport)
+      await expect(syncTools(client, ctx, defaultOpts, new Map())).rejects.toThrow('repeated a tools/list continuation cursor')
+      expect(ctx.tools.get('mcp__srv__greet')).toBeUndefined()
+    } finally {
+      await client.close()
+    }
+  })
+
   it('registers tools under server-qualified public names', async () => {
     const client = createMockClient([
       { name: 'greet', description: 'Say hello', inputSchema: { type: 'object', properties: { name: { type: 'string' } } } },
@@ -334,6 +351,57 @@ describe('syncTools', () => {
     expect(disposers.size).toBe(2)
     expect(ctx.tools.get('mcp__srv__page1')).toBeDefined()
     expect(ctx.tools.get('mcp__srv__page2')).toBeDefined()
+  })
+
+  it.each([
+    ['immediate repetition', ['page-2', 'page-2']],
+    ['multi-page cycle', ['page-2', 'page-3', 'page-2']],
+  ])('rejects %s over empty pages without replacing callable tools', async (_label, cursors) => {
+    const client = createMockClient([{ name: 'stable', inputSchema: { type: 'object' } }])
+    const first = await syncTools(client as never, ctx, defaultOpts, new Map())
+    client.listTools.mockReset().mockRejectedValue(new Error('requested beyond the cycle'))
+    for (const nextCursor of cursors) client.listTools.mockResolvedValueOnce({ tools: [], nextCursor })
+
+    await expect(syncTools(client as never, ctx, defaultOpts, first))
+      .rejects.toThrow('server repeated a tools/list continuation cursor — invalid tool list')
+    expect(client.listTools).toHaveBeenCalledTimes(cursors.length)
+    const result = await ctx.tools.execute({
+      signal: testToolSignal, callId: CallId('retained'), name: 'mcp__srv__stable', arguments: {},
+    })
+    expect(result.isError).toBe(false)
+    expect(result.content).toEqual([{ type: 'text', text: 'ok' }])
+    expect([...first.keys()]).toEqual(['mcp__srv__stable'])
+  })
+
+  it('does not publish a partial generation when unique tools carry a repeated cursor', async () => {
+    const client = createMockClient([])
+    client.listTools
+      .mockResolvedValueOnce({ tools: [{ name: 'page1', inputSchema: { type: 'object' } }], nextCursor: 'next' })
+      .mockResolvedValueOnce({ tools: [{ name: 'page2', inputSchema: { type: 'object' } }], nextCursor: 'next' })
+      .mockRejectedValue(new Error('requested beyond the cycle'))
+
+    await expect(syncTools(client as never, ctx, defaultOpts, new Map())).rejects.toThrow('repeated a tools/list')
+    expect(client.listTools).toHaveBeenCalledTimes(2)
+    expect(ctx.tools.get('mcp__srv__page1')).toBeUndefined()
+    expect(ctx.tools.get('mcp__srv__page2')).toBeUndefined()
+  })
+
+  it('accepts empty intermediate pages, empty terminal cursors, and cursor reuse in a later sync', async () => {
+    const client = createMockClient([])
+    for (const name of ['old', 'new']) {
+      client.listTools
+        .mockResolvedValueOnce({ tools: [], nextCursor: 'same-next' })
+        .mockResolvedValueOnce({ tools: [{ name, inputSchema: { type: 'object' } }], nextCursor: '' })
+    }
+    const first = await syncTools(client as never, ctx, defaultOpts, new Map())
+    const second = await syncTools(client as never, ctx, defaultOpts, first)
+
+    expect(client.listTools).toHaveBeenCalledTimes(4)
+    expect(client.listTools.mock.calls.map(([params]) => params?.cursor)).toEqual([
+      undefined, 'same-next', undefined, 'same-next',
+    ])
+    expect(ctx.tools.get('mcp__srv__old')).toBeUndefined()
+    expect([...second.keys()]).toEqual(['mcp__srv__new'])
   })
 
   it('owns output validation independently of the SDK per-page cache', async () => {

@@ -324,6 +324,49 @@ describe('apply (plugin lifecycle)', () => {
     expect(mockClose).toHaveBeenCalled()
   })
 
+  it('rejects strict startup on a discovery cycle and closes the client', async () => {
+    mockListTools
+      .mockResolvedValueOnce({ tools: [], nextCursor: 'repeated' })
+      .mockResolvedValueOnce({ tools: [], nextCursor: 'repeated' })
+      .mockRejectedValue(new Error('requested beyond the cycle'))
+    try {
+      await expect(apply(ctx, { ...stdioConfig, failOnStartupError: true }))
+        .rejects.toMatchObject({
+          message: 'mcp-client(srv): initial connection or tool synchronization failed',
+          cause: { message: 'mcp-client(srv): server repeated a tools/list continuation cursor — invalid tool list' },
+        })
+      expect(mockListTools).toHaveBeenCalledTimes(2)
+      expect(ctx.tools.get('mcp__srv__remote')).toBeUndefined()
+      expect(mockClose).toHaveBeenCalled()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('retains a generation after a notification cycle and recovers on the next notification', async () => {
+    await apply(ctx, stdioConfig)
+    const handler = mockSetNotificationHandler.mock.calls[0]![1] as () => Promise<void>
+    mockListTools.mockReset()
+      .mockResolvedValueOnce({ tools: [], nextCursor: 'first' })
+      .mockResolvedValueOnce({ tools: [], nextCursor: 'second' })
+      .mockResolvedValueOnce({ tools: [], nextCursor: 'first' })
+      .mockRejectedValue(new Error('requested beyond the cycle'))
+    try {
+      await handler()
+      expect(mockListTools).toHaveBeenCalledTimes(3)
+      expect(ctx.tools.get('mcp__srv__remote')).toBeDefined()
+      mockListTools.mockReset()
+        .mockResolvedValueOnce({ tools: [], nextCursor: 'first' })
+        .mockResolvedValueOnce({ tools: [{ name: 'recovered', inputSchema: { type: 'object' } }] })
+      await handler()
+      expect(mockListTools).toHaveBeenCalledTimes(2)
+      expect(ctx.tools.get('mcp__srv__remote')).toBeUndefined()
+      expect(ctx.tools.get('mcp__srv__recovered')).toBeDefined()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('preserves strict startup registration when list_changed arrives before connect resolves', async () => {
     ctx.tools.register({
       name: 'mcp__srv__remote',

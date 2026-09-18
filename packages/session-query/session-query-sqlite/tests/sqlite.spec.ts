@@ -187,6 +187,42 @@ async function liveContext(config: ConstructorParameters<typeof SqliteSessionQue
 }
 
 describe('SQLite session search', () => {
+  it('bounds parallel cold inspections and reuses unchanged indexed revisions', async () => {
+    TestPersistence.reset(Array.from({ length: 5 }, (_, i) => ({
+      meta: header(`parallel-${i}`), events: messageEvents('parallel needle'),
+    })))
+    const ctx = await liveContext({ path: ':memory:', persistedInspectConcurrency: 2 })
+    const persistence = await ctx.plugin(TestPersistence)
+    const original = ctx.sessionPersistence.inspect.bind(ctx.sessionPersistence)
+    const admitted = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    let active = 0
+    let peak = 0
+    const spy = vi.spyOn(ctx.sessionPersistence, 'inspect').mockImplementation(async (...args) => {
+      active++
+      peak = Math.max(peak, active)
+      if (active === 2) admitted.resolve(undefined)
+      try {
+        await release.promise
+        return await original(...args)
+      } finally {
+        active--
+      }
+    })
+    const pending = ctx.sessionQuery.searchSessions({ query: 'needle' })
+    await admitted.promise
+    expect(spy).toHaveBeenCalledTimes(2)
+    release.resolve(undefined)
+    expect((await pending).items).toHaveLength(5)
+    expect(peak).toBe(2)
+    expect(active).toBe(0)
+    expect(spy).toHaveBeenCalledTimes(5)
+    expect((await ctx.sessionQuery.searchSessions({ query: 'needle' })).items).toHaveLength(5)
+    expect(spy).toHaveBeenCalledTimes(5)
+    spy.mockRestore()
+    await (ctx.sessionQuery as SqliteSessionQueryEngine).close()
+    await persistence.dispose()
+  })
   it('defaults and validates opening policy and persisted inspection concurrency through its Cordis config', async () => {
     const defaultCtx = await liveContext()
     expect((defaultCtx.sessionQuery as SqliteSessionQueryEngine).config.openAt).toBe('startup')
@@ -1597,7 +1633,7 @@ describe('SQLite schema, cancellation, and real persistence integration', () => 
       { meta: first, events: messageEvents('first needle') },
       { meta: second, events: messageEvents('second needle') },
     ])
-    const ctx = await liveContext()
+    const ctx = await liveContext({ path: ':memory:', persistedInspectConcurrency: 1 })
     await ctx.plugin(TestPersistence)
     const started = Promise.withResolvers<AbortSignal>()
     const cleanup = Promise.withResolvers<undefined>()

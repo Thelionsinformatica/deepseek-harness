@@ -34,4 +34,6 @@ No direct invalidation; the named consumers own any request-prefix changes.
 - **The credential scrub is a name heuristic** — `*KEY*`/`*PASSWORD*`/`*SECRET*`/`*TOKEN*` only; differently-named secrets (e.g. `*PASSPHRASE*`) pass through, and a whitelist for over-scrubbed vars is noted future work.
 - **Completed spill files are not deleted** — bounded full-output recovery files (and the private per-process spill dir) accumulate under the OS tmpdir until something external cleans them; oversize incomplete spills are discarded and deletion is attempted immediately, but a cleanup failure can leave a bounded file behind.
 
-The raw process handling lives in `src/spawn.ts`; `src/index.ts` is the service wiring.
+The raw process handling lives in `src/spawn.ts`; `src/index.ts` is the service wiring. PTY allocation runs synchronously, but `spawnTerminal` reports validation and native allocation failures through rejected promises. The post-observation termination check remains necessary even before awaiting: an already-absent tree can settle its observer synchronously.
+
+For the portable termination/PTY regressions from suites excluded by the broad Windows test configuration, run `node node_modules/vitest/vitest.mjs run --config packages/subprocess/subprocess-local/tests/vitest.contract.config.mjs` from the repository root. This selects named cases only; skipped POSIX cases are not Windows validation.

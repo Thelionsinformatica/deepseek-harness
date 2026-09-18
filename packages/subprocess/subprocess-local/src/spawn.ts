@@ -449,12 +449,15 @@ export function spawnSubprocess(spec: SubprocessSpawnSpec, internals: SpawnInter
     signalTree(platform, pid, sig, child, taskkill)
   }
 
+  // Re-read through the closure: observeTreeExit can confirm absence before returning its promise.
+  const hasTreeExited = (): boolean => treeExitObserved
+
   const terminate = (): void => {
-    if (treeExitObserved || graceTimer !== undefined) return
+    if (hasTreeExited() || graceTimer !== undefined) return
     // Observe from the first termination tier onward, even when inherited
     // pipes delay `done` and no consumer has begun its own teardown wait.
     void observeTreeExit()
-    if (treeExitObserved) return
+    if (hasTreeExited()) return
     kill('SIGTERM')
     // The escalation must survive direct-child settlement — the leader dying
     // does not mean the tree died — so settle does not clear this timer, and

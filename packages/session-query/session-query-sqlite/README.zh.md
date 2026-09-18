@@ -33,7 +33,7 @@
 | `maxLimit` | `100` | 接受的最大请求分页大小；最多为 `Number.MAX_SAFE_INTEGER - 1`。 |
 | `snippetChars` | `240` | 按 Unicode 码点计算的最大 snippet 长度。 |
 | `readWindowMax` | `50` | `before` 或 `after` 的最大原始事件数，用于继承的 `readEvent()`。 |
-| `persistedInspectConcurrency` | `4` | 继承批量读取的最大并发持久化日志检查数；必须是正安全整数。 |
+| `persistedInspectConcurrency` | `4` | 继承批量读取及 FTS 协调的最大并发持久化日志检查数；必须是正安全整数。 |
 
 ## 分词器与限制
 

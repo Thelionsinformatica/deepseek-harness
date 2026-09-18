@@ -111,7 +111,7 @@ export interface Config extends SessionQueryConfig {
   maxLimit?: number
   /** Maximum snippet length in Unicode code points. Defaults to 240. */
   snippetChars?: number
-  /** Maximum concurrent persisted-log inspections in one inherited batch read. Defaults to 4. */
+  /** Maximum concurrent persisted-log inspections in batch reads and FTS reconciliation. Defaults to 4. */
   persistedInspectConcurrency?: number
 }
 
@@ -554,19 +554,35 @@ export class SqliteSessionQueryEngine extends SessionQueryEngine {
           const before = await persistence.listSnapshots(signal)
           assertNotAborted(signal)
           persisted = materializePersistenceSnapshots(before)
-          for (const entry of persisted.values()) {
-            if (canReuseIndexed && indexed.get(entry.header.id)?.revision === entry.revision) continue
-            // Skip work already shadowed by a live owner. `inspect()` is
-            // non-mutating, so an owner attaching after this check cannot cause
-            // crash-repair side effects; the live-membership retry below makes
-            // the returned observation live-preferred.
-            if (initiallyLive.has(entry.header.id) || this.ctx.sessions.get(entry.header.id) !== undefined) continue
-            assertNotAborted(signal)
-            const loaded = await persistence.inspect(entry.header.id, signal)
-            assertNotAborted(signal)
-            assertSessionHeadersCompatible(entry.header, loaded.meta)
-            entry.loaded = observeSession(loaded.meta, loaded.events)
+          const pending = [...persisted.values()].filter(entry =>
+            !(canReuseIndexed && indexed.get(entry.header.id)?.revision === entry.revision))
+          let cursor = 0
+          let failed = false
+          const worker = async (): Promise<void> => {
+            while (!failed && cursor < pending.length) {
+              assertNotAborted(signal)
+              const entry = pending[cursor++] as ObservedPersistedSession
+              // Live owners shadow persistence; the membership check below retries attachment races.
+              if (initiallyLive.has(entry.header.id) || this.ctx.sessions.get(entry.header.id) !== undefined) continue
+              const loaded = await persistence.inspect(entry.header.id, signal)
+              assertNotAborted(signal)
+              assertSessionHeadersCompatible(entry.header, loaded.meta)
+              entry.loaded = observeSession(loaded.meta, loaded.events)
+            }
           }
+          // Drain admitted reads before failure releases the serialized search queue.
+          const settlements = await Promise.allSettled(Array.from({
+            length: Math.min(this.config.persistedInspectConcurrency, pending.length),
+          }, async () => {
+            try {
+              await worker()
+            } catch (error: unknown) {
+              failed = true
+              throw error
+            }
+          }))
+          const failure = settlements.find(result => result.status === 'rejected')
+          if (failure?.status === 'rejected') throw failure.reason
           assertNotAborted(signal)
           const afterSnapshots = await persistence.listSnapshots(signal)
           assertNotAborted(signal)

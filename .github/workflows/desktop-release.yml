@@ -72,19 +72,15 @@ jobs:
         shell: pwsh
         run: pnpm install --frozen-lockfile
 
-      - name: Build desktop shell
-        shell: pwsh
-        run: pnpm --dir apps/desktop run build
-
       # CSC_LINK/CSC_KEY_PASSWORD are read by electron-builder directly. When
       # the secrets are absent the artifacts stay unsigned and the manifest
       # says so; nothing here may mark them signed.
-      - name: Pack Windows installer and portable
+      - name: Build and pack Windows artifacts
         shell: pwsh
         env:
           CSC_LINK: ${{ secrets.WINDOWS_CERTIFICATE_PFX_BASE64 }}
           CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-        run: pnpm --dir apps/desktop exec electron-builder --win nsis portable
+        run: pnpm --dir apps/desktop run package
 
       # The packaged shell launches the deployment's Iniciar-Leon.ps1, which
       # does not exist on a runner. The smoke stubs the deployment (a no-op

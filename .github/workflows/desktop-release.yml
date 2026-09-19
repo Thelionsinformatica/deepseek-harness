@@ -113,11 +113,21 @@ jobs:
             $leon.Refresh()
             $alive = -not $leon.HasExited
             Write-Output "leon process alive: $alive"
+            Write-Output "leon processes:"
+            Get-Process Leon -ErrorAction SilentlyContinue |
+              Select-Object Id, StartTime, @{n='Parent';e={(Get-CimInstance Win32_Process -Filter "ProcessId=$($_.Id)").ParentProcessId}} |
+              Format-Table -AutoSize | Out-String | Write-Output
             Write-Output "desktop.log: $logPath"
             if ($logPath) { Get-Content $logPath } else {
-              Write-Output "no desktop.log under $env:APPDATA:"
+              Write-Output "searching both profile roots for desktop.log:"
+              Get-ChildItem "$env:APPDATA", "$env:LOCALAPPDATA" -Recurse -Filter desktop.log -ErrorAction SilentlyContinue |
+                ForEach-Object { Write-Output "found: $($_.FullName)"; Get-Content $_.FullName }
               Get-ChildItem "$env:APPDATA" -Directory | Select-Object -Expand Name
             }
+            Write-Output "recent application errors:"
+            Get-WinEvent -FilterHashtable @{LogName='Application'; Level=2} -MaxEvents 5 -ErrorAction SilentlyContinue |
+              Where-Object { $_.Message -match 'Leon|electron' } |
+              ForEach-Object { Write-Output ($_.TimeCreated.ToString() + ' ' + ($_.Message -split "`n")[0]) }
             $probe = try { (Invoke-WebRequest -Uri 'http://127.0.0.1:3080' -UseBasicParsing -TimeoutSec 5).StatusCode } catch { $_.Exception.Message }
             Write-Output "loopback probe: $probe"
             if (-not $alive) { throw 'Leon.exe exited before loading the window' }

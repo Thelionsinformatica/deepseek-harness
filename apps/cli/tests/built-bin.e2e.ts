@@ -481,6 +481,12 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       '',
     ].join('\n'))
     try {
+      writeFileSync(join(home, 'settings.yaml'), [
+        'agent-default-model:',
+        '  provider: ollama',
+        '  model: fixture-model',
+        '',
+      ].join('\n'))
       const result = await runBuiltBin(['doctor', '--port', '1', '--json'], {
         DSH_HOME: home,
         LEON_DEFAULT_WORKSPACE: workspace,
@@ -499,7 +505,8 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       expect(report.checks).toEqual(expect.arrayContaining([
         expect.objectContaining({ id: 'workspace', status: 'ok' }),
         expect.objectContaining({ id: 'profile', status: 'warning' }),
-        expect.objectContaining({ id: 'ollama', status: 'warning' }),
+        expect.objectContaining({ id: 'model-selection', status: 'ok' }),
+        expect.objectContaining({ id: 'model-health', status: 'warning' }),
         expect.objectContaining({ id: 'web', status: 'warning' }),
       ]))
       expect(existsSync(join(home, 'profiles', 'web'))).toBe(false)

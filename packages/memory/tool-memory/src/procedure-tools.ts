@@ -20,6 +20,14 @@ import type {} from './procedure-learning.ts'
 const DAY_MS = 86_400_000
 const MAX_VALID_DAYS = 3_650
 
+const PROCEDURE_STATUS_VALUES = ['candidate', 'validated', 'rejected', 'stale', 'revoked'] as const
+
+const PROCEDURE_IDENTITY_PROPERTIES = {
+  id: { type: 'string', required: true },
+  revision: { type: 'integer', required: true },
+  title: { type: 'string', required: true },
+} as const
+
 const CANDIDATE_LIST_OUTPUT = {
   schema: {
     type: 'object',
@@ -32,9 +40,7 @@ const CANDIDATE_LIST_OUTPUT = {
           type: 'object',
           additionalProperties: false,
           properties: {
-            id: { type: 'string', required: true },
-            revision: { type: 'integer', required: true },
-            title: { type: 'string', required: true },
+            ...PROCEDURE_IDENTITY_PROPERTIES,
             status: { type: 'string', required: true, enum: ['candidate'] },
           },
         },
@@ -49,14 +55,8 @@ const PROCEDURE_OUTPUT = {
     type: 'object',
     additionalProperties: false,
     properties: {
-      id: { type: 'string', required: true },
-      revision: { type: 'integer', required: true },
-      title: { type: 'string', required: true },
-      status: {
-        type: 'string',
-        required: true,
-        enum: ['candidate', 'validated', 'rejected', 'stale', 'revoked'],
-      },
+      ...PROCEDURE_IDENTITY_PROPERTIES,
+      status: { type: 'string', required: true, enum: PROCEDURE_STATUS_VALUES },
     },
   },
   render: (_args: unknown, value: unknown) => [{ type: 'text' as const, text: JSON.stringify(value) }],
@@ -72,9 +72,7 @@ const STEP_SCHEMA = {
 } as const
 
 const PROCEDURE_DETAILS_PROPERTIES = {
-  id: { type: 'string', required: true },
-  revision: { type: 'integer', required: true },
-  title: { type: 'string', required: true },
+  ...PROCEDURE_IDENTITY_PROPERTIES,
   trigger: { type: 'string', required: true },
 } as const
 
@@ -123,11 +121,7 @@ const INSPECT_OUTPUT = {
     additionalProperties: false,
     properties: {
       ...PROCEDURE_DETAILS_PROPERTIES,
-      status: {
-        type: 'string',
-        required: true,
-        enum: ['candidate', 'validated', 'rejected', 'stale', 'revoked'],
-      },
+      status: { type: 'string', required: true, enum: PROCEDURE_STATUS_VALUES },
       preconditions: {
         type: 'array',
         required: true,

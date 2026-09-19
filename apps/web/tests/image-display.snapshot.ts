@@ -134,20 +134,22 @@ it('accepts pasted images into the composer rail in order and removes them', asy
     expect(document.querySelector('[role="group"][aria-label="Pending images"]')).toBeNull()
   })
 
-  // An unsupported file announces a transient toast (the inline strip is
-  // gone) and the banner dismisses itself after its hold-and-fade lifetime.
+  // A non-image file travels the file path rather than being refused: it
+  // lands in the rail under the extension badge (a data: SVG) instead of an
+  // image preview, and no toast announces a rejection.
   fireEvent.paste(textarea, {
     clipboardData: {
       items: [{ kind: 'file', type: 'text/plain', getAsFile: () => new File(['x'], 'notes.txt', { type: 'text/plain' }) }],
       getData: () => '',
     },
   })
-  const unsupportedMessage = 'Only PNG, JPG, WebP, and GIF images are supported'
-  const toast = await screen.findByText(unsupportedMessage)
-  expect(toast.closest('[role="alert"]')).not.toBeNull()
   await waitFor(() => {
-    expect(screen.queryByText(unsupportedMessage)).toBeNull()
-  }, { timeout: 6_000 })
+    const el = document.querySelector('[role="group"][aria-label="Pending images"]')
+    if (el === null) throw new Error('attachment rail missing')
+    expect([...el.querySelectorAll('img')].map(img => ({
+      alt: img.getAttribute('alt'), scheme: img.getAttribute('src')?.split(':')[0],
+    }))).toEqual([{ alt: 'notes.txt', scheme: 'data' }])
+  }, { timeout: 5_000 })
 })
 
 it('accepts a whole-page drop under the limits-labeled overlay and refuses an over-limit batch at intake', async () => {

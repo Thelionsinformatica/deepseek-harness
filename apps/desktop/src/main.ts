@@ -16,10 +16,25 @@ function record(event: string): void {
   appendFileSync(join(folder, 'desktop.log'), `${new Date().toISOString()} ${event}\n`)
 }
 
+/** Render a non-Error thrown value, bounded for logs and dialogs. */
+function describeThrownValue(error: unknown): string {
+  if (typeof error === 'string') return error
+  if (typeof error === 'number' || typeof error === 'boolean' || typeof error === 'bigint'
+    || typeof error === 'symbol' || typeof error === 'function' || error === undefined) {
+    return String(error)
+  }
+  try {
+    return JSON.stringify(error).slice(0, 1_000)
+  } catch {
+    // Circular or accessor-throwing objects still get a stable tag.
+    return Object.prototype.toString.call(error)
+  }
+}
+
 /** Flatten nested error chains into one sanitized message per cause. */
 function describe(error: unknown, depth = 0): string {
   if (depth > 8 || error === undefined || error === null) return ''
-  const message = error instanceof Error ? error.message : String(error)
+  const message = error instanceof Error ? error.message : describeThrownValue(error)
   const children = error instanceof AggregateError ? error.errors : []
   const cause = error instanceof Error ? error.cause : undefined
   return [message, ...children.map(item => describe(item, depth + 1)), describe(cause, depth + 1)]

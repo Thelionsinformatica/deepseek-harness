@@ -104,19 +104,28 @@ jobs:
           $leon = Start-Process 'apps/desktop/dist/win-unpacked/Leon.exe' -PassThru
           try {
             $deadline = (Get-Date).AddSeconds(60)
-            $logPath = @("$env:APPDATA/Leon/desktop.log", "$env:APPDATA/Leon Desktop/desktop.log") |
-              Where-Object { Test-Path $_ } | Select-Object -First 1
+            $logPath = Get-ChildItem "$env:APPDATA/*/desktop.log" -ErrorAction SilentlyContinue |
+              Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
             while ((Get-Date) -lt $deadline -and -not ($logPath -and (Select-String -Path $logPath -Pattern 'window-loaded' -Quiet))) {
               Start-Sleep -Seconds 1
-              $logPath = @("$env:APPDATA/Leon/desktop.log", "$env:APPDATA/Leon Desktop/desktop.log") |
-                Where-Object { Test-Path $_ } | Select-Object -First 1
+              $logPath = Get-ChildItem "$env:APPDATA/*/desktop.log" -ErrorAction SilentlyContinue |
+                Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
             }
-            if ($leon.HasExited) { throw 'Leon.exe exited before loading the window' }
+            $leon.Refresh()
+            $alive = -not $leon.HasExited
+            Write-Output "leon process alive: $alive"
+            Write-Output "desktop.log: $logPath"
+            if ($logPath) { Get-Content $logPath } else {
+              Write-Output "no desktop.log under $env:APPDATA:"
+              Get-ChildItem "$env:APPDATA" -Directory | Select-Object -Expand Name
+            }
+            $probe = try { (Invoke-WebRequest -Uri 'http://127.0.0.1:3080' -UseBasicParsing -TimeoutSec 5).StatusCode } catch { $_.Exception.Message }
+            Write-Output "loopback probe: $probe"
+            if (-not $alive) { throw 'Leon.exe exited before loading the window' }
             if (-not ($logPath -and (Select-String -Path $logPath -Pattern 'window-loaded' -Quiet))) {
               throw 'desktop.log never recorded window-loaded'
             }
-            $status = (Invoke-WebRequest -Uri 'http://127.0.0.1:3080' -UseBasicParsing).StatusCode
-            if ($status -ne 200) { throw "loopback origin returned $status" }
+            if ($probe -ne 200) { throw "loopback origin returned $probe" }
           } finally {
             Stop-Process -Id $leon.Id -Force -ErrorAction SilentlyContinue
             Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue

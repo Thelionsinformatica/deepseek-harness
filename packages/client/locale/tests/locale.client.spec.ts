@@ -292,7 +292,6 @@ describe('LocaleRuntime', () => {
       automatic: 'Leon Automatic',
       automaticRoute: 'Leon Automatic, currently using {model}',
       automaticRouteEffort: 'Leon Automatic, currently using {model}, reasoning effort {effort}',
-      automaticDescription: 'Uses the local 9B model at minimum effort, raises its effort for medium work, and calls the configured cloud model for complex work',
       working: 'Leon is working…',
       retryingLocal: 'Retrying local model',
       retryingCloud: 'Retrying model request',
@@ -329,7 +328,6 @@ describe('LocaleRuntime', () => {
     expect(t('automaticRoute', { model: 'Qwen 3.5 9B' })).toBe('Leon Automático, usando agora: Qwen 3.5 9B')
     expect(t('automaticRouteEffort', { model: 'Qwen 3.5 9B', effort: 'Low' }))
       .toBe('Leon Automático, usando agora: Qwen 3.5 9B, esforço de raciocínio: Low')
-    expect(t('automaticDescription')).toBe('Usa o modelo local 9B com esforço mínimo, aumenta o esforço em tarefas médias e chama o modelo em nuvem configurado nas tarefas complexas')
     expect(t('working')).toBe('Leon está trabalhando…')
     expect(t('retryingLocal')).toBe('Tentando novamente com o modelo local')
     expect(t('retryingCloud')).toBe('Tentando novamente com o modelo')

@@ -294,7 +294,6 @@ export const ptBrFallbackByEnglish: Readonly<Record<string, string>> = Object.fr
   'Leon Automatic, currently using {model}': 'Leon Automático, usando agora: {model}',
   'Leon Automatic, currently using {model}, reasoning effort {effort}': 'Leon Automático, usando agora: {model}, esforço de raciocínio: {effort}',
   'Leon Automatic': 'Leon Automático',
-  'Uses the local 9B model at minimum effort, raises its effort for medium work, and calls the configured cloud model for complex work': 'Usa o modelo local 9B com esforço mínimo, aumenta o esforço em tarefas médias e chama o modelo em nuvem configurado nas tarefas complexas',
   'Select the model for this conversation': 'Selecione o modelo para esta conversa',
   'Send message': 'Enviar mensagem',
   'Session': 'Sessão',

@@ -78,14 +78,14 @@ describe('web e2e: Leon Work dashboard', () => {
   })
 
   it('shows the three-tier automatic policy without a default DeepSeek catalog', async () => {
-    const automatic = page.getByRole('button', { name: /Leon Automatic, currently using Qwen 3\.5 9B/ })
+    const automatic = page.getByRole('button', { name: /Leon Automatic, currently using .*Qwen 3\.5 2B/ })
     await automatic.waitFor({ timeout: 30_000 })
     await automatic.click()
-    await page.getByRole('menuitem', { name: /Model Qwen 3\.5 9B/ }).click()
+    await page.getByRole('menuitem', { name: /Model .*Qwen 3\.5 2B/ }).click()
 
     const menu = page.getByRole('menu', { name: 'Model and reasoning effort' })
     await menu.getByRole('menuitemradio', {
-      name: /Leon Automatic Uses the local 9B model at minimum effort, raises its effort for medium work/,
+      name: /Leon Automatic Uses the route this deployment configured for each task/,
     }).waitFor({ timeout: 10_000 })
     expect(await menu.getByRole('menuitemradio', { name: 'Qwen 3.5 9B (Local)' }).count()).toBe(1)
     expect(await menu.getByRole('menuitemradio', { name: /Qwen 3\.5 4B/ }).count()).toBe(0)

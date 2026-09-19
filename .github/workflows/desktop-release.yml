@@ -96,7 +96,7 @@ jobs:
         run: |
           $deploy = "$env:RUNNER_TEMP/leon-deploy"
           New-Item -ItemType Directory -Force $deploy | Out-Null
-          Set-Content -Path "$deploy/Iniciar-Leon.ps1" -Value 'param($NoOpen, $FreeLLMAPI) exit 0'
+          Set-Content -Path "$deploy/Iniciar-Leon.ps1" -Value 'param([switch]$NoOpen, $FreeLLMAPI) exit 0'
           Set-Content -Path "$deploy/server.js" -Value 'require("http").createServer((q,s)=>{s.writeHead(200);s.end("ok")}).listen(3080,"127.0.0.1")'
           $server = Start-Process node -PassThru -WindowStyle Hidden -ArgumentList "`"$deploy/server.js`""
           $env:LEON_ROOT = $deploy

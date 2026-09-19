@@ -10,7 +10,7 @@ Leon already provides a complete Web client and a local Cordis host. A desktop d
 
 ## Decision
 
-`apps/desktop` (`@deepseek-ai/dsh-desktop`) is an Electron application. Its main process imports the public `@deepseek-ai/dsh/desktop` entry, starts the shipped `web` profile in-process on `127.0.0.1` with an OS-assigned port, and loads that origin in a hardened `BrowserWindow`.
+`apps/desktop` (`@deepseek-ai/dsh-desktop`) is an Electron application. Its development entry imports the public `@deepseek-ai/dsh/desktop` entry, starts the shipped `web` profile in-process on `127.0.0.1` with an OS-assigned port, and loads that origin in a hardened `BrowserWindow`. The packaged Windows artifact instead ships the launcher entry that starts the verified deployment; see [Packaged desktop artifact launches the verified deployment](2026-09-18-desktop-packaged-launcher-entry.md).
 
 The renderer uses `contextIsolation: true`, `nodeIntegration: false`, and `sandbox: true`. Same-origin navigation remains inside the window. External navigation is opened by the operating system and is never handed Node.js access.
 
@@ -24,7 +24,7 @@ The packaged Windows build registers `openAtLogin` through Electron's login-item
 
 **A separate native UI was rejected.** Reimplementing the existing React surface would duplicate session rendering, RPC behavior, and accessibility logic.
 
-**A child `dsh` process was rejected.** Keeping the host in Electron's main process gives the shell one lifecycle owner and lets shutdown dispose the Cordis tree without signal and port-discovery races.
+**A child `dsh` process was rejected for development.** Keeping the host in Electron's main process gives the shell one lifecycle owner and lets shutdown dispose the Cordis tree without signal and port-discovery races. The packaged artifact could not run the in-process host and reverted to a launcher; see [Packaged desktop artifact launches the verified deployment](2026-09-18-desktop-packaged-launcher-entry.md).
 
 **Tauri was deferred.** It would reduce runtime size, but it introduces a second native toolchain before the existing Node host has a desktop lifecycle contract.
 

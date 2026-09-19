@@ -18,6 +18,8 @@
 
     - id: hmr
       name: '@deepseek-ai/cordis-plugin-hmr'
+      # Packaged shells have no script path in argv[1]; there is no source tree to watch.
+      disabled: !!js process.argv[1] === undefined
       config:
         root: ['.']
 

@@ -10,7 +10,7 @@ Leon は完全な Web クライアントとローカル Cordis ホストをす�
 
 ## Decision
 
-`apps/desktop`（`@deepseek-ai/dsh-desktop`）は Electron アプリケーションである。そのメインプロセスは公開 `@deepseek-ai/dsh/desktop` エントリをインポートし、出荷済み `web` profile を `127.0.0.1` の OS 割り当てポートでインプロセス起動し、そのオリジンを強化 `BrowserWindow` に読み込む。
+`apps/desktop`（`@deepseek-ai/dsh-desktop`）は Electron アプリケーションである。開発エントリは公開 `@deepseek-ai/dsh/desktop` エントリをインポートし、出荷済み `web` profile を `127.0.0.1` の OS 割り当てポートでインプロセス起動し、そのオリジンを強化 `BrowserWindow` に読み込む。Windows パッケージ版は代わりに検証済みデプロイメントを起動するランチャーエントリを出荷する。[パッケージ版デスクトップは検証済みデプロイメントを起動する](2026-09-18-desktop-packaged-launcher-entry.zh.md) を参照。
 
 レンダラーは `contextIsolation: true`、`nodeIntegration: false`、`sandbox: true` を使う。同一オリジン内の遷移はウィンドウ内に留まる。外部ナビゲーションは OS が開き、Node.js アクセスは渡さない。
 
@@ -24,7 +24,7 @@ Windows パッケージ版は起動時に Electron の login-item API を通じ�
 
 **独立したネイティブ UI は却下。** 既存の React サーフェスを再実装すると、セッション描画・RPC 動作・アクセシビリティロジックが重複する。
 
-**子プロセス `dsh` は却下。** ホストを Electron メインプロセスに置くことでシェルのライフサイクル所有者が一つになり、シャットダウン時にシグナルやポート検出の競合なく Cordis ツリーを破棄できる。
+**開発用途では子プロセス `dsh` は却下。** ホストを Electron メインプロセスに置くことでシェルのライフサイクル所有者が一つになり、シャットダウン時にシグナルやポート検出の競合なく Cordis ツリーを破棄できる。パッケージ版はインプロセスホストを実行できずランチャーへ戻した。[パッケージ版デスクトップは検証済みデプロイメントを起動する](2026-09-18-desktop-packaged-launcher-entry.zh.md) を参照。
 
 **Tauri は見送り。** ランタイムサイズは削減できるが、既存の Node ホストにデスクトップライフサイクル契約がない段階で第二のネイティブツールチェーンを導入することになる。
 

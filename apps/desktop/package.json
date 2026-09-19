@@ -4,17 +4,17 @@
   "version": "0.1.1-rc.2",
   "private": true,
   "type": "module",
-  "main": "lib/main.js",
-  "files": ["lib"],
+  "main": "lib/local-main.js",
+  "files": [
+    "lib"
+  ],
   "scripts": {
     "build": "tsc -b && tsdown",
     "dev": "pnpm run build && electron .",
-    "package": "pnpm run build && electron-builder --win nsis"
-  },
-  "dependencies": {
-    "@deepseek-ai/dsh": "workspace:^"
+    "package": "pnpm run build && electron-builder --win nsis portable"
   },
   "devDependencies": {
+    "@deepseek-ai/dsh": "workspace:^",
     "@types/node": "^22.20.0",
     "electron": "^37.2.6",
     "electron-builder": "^26.0.12",
@@ -25,6 +25,10 @@
     "appId": "br.com.thelions.leon",
     "productName": "Leon",
     "asar": true,
+    "npmRebuild": false,
+    "extraMetadata": {
+      "type": "module"
+    },
     "directories": {
       "output": "dist"
     },
@@ -33,21 +37,33 @@
       "package.json"
     ],
     "win": {
+      "signAndEditExecutable": false,
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
         }
-      ],
-      "artifactName": "Leon-Setup-${version}.${ext}"
+      ]
     },
     "nsis": {
+      "artifactName": "Leon-Setup-${version}-${arch}.${ext}",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "runAfterFinish": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
+    },
+    "portable": {
+      "artifactName": "Leon-Portable-${version}-${arch}.${ext}"
     }
   }
 }

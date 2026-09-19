@@ -16,6 +16,17 @@ function record(event: string): void {
   appendFileSync(join(folder, 'desktop.log'), `${new Date().toISOString()} ${event}\n`)
 }
 
+/** Flatten nested error chains into one sanitized message per cause. */
+function describe(error: unknown, depth = 0): string {
+  if (depth > 8 || error === undefined || error === null) return ''
+  const message = error instanceof Error ? error.message : String(error)
+  const children = error instanceof AggregateError ? error.errors : []
+  const cause = error instanceof Error ? error.cause : undefined
+  return [message, ...children.map(item => describe(item, depth + 1)), describe(cause, depth + 1)]
+    .filter(part => part.length > 0)
+    .join(' <= ')
+}
+
 /** Start or verify the deployment using its process-identity checks. */
 async function ensureServer(): Promise<void> {
   const launcher = join(deployment, 'Iniciar-Leon.ps1')
@@ -96,9 +107,10 @@ if (!app.requestSingleInstanceLock()) {
   })
   app.on('window-all-closed', () => { app.quit() })
   app.whenReady().then(boot).catch(async (error: unknown) => {
-    record('startup-failed')
+    const message = describe(error) || 'Falha ao abrir Leon.'
+    record(`startup-failed ${message}`)
     await dialog.showMessageBox({ type: 'error', title: 'Leon não iniciou',
-      message: error instanceof Error ? error.message : 'Falha ao abrir Leon.', buttons: ['Fechar'] })
+      message, buttons: ['Fechar'] })
     app.quit()
   })
 }

@@ -2,10 +2,30 @@
 
 import { app, BrowserWindow, dialog, shell } from 'electron'
 import { startDesktopHost, type DesktopHost } from '@deepseek-ai/dsh/desktop'
+import { appendFileSync, mkdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { DESKTOP_WINDOW, isLocalNavigation, shouldRegisterWindowsAutoStart } from './config.ts'
 
 let desktopHost: DesktopHost | undefined
 let closing = false
+
+/** Write lifecycle evidence without recording conversations or credentials. */
+function record(event: string): void {
+  const folder = app.getPath('userData')
+  mkdirSync(folder, { recursive: true })
+  appendFileSync(join(folder, 'desktop.log'), `${new Date().toISOString()} ${event}\n`)
+}
+
+/** Flatten nested error chains into one sanitized message per cause. */
+function describe(error: unknown, depth = 0): string {
+  if (depth > 8 || error === undefined || error === null) return ''
+  const message = error instanceof Error ? error.message : String(error)
+  const children = error instanceof AggregateError ? error.errors : []
+  const cause = error instanceof Error ? error.cause : undefined
+  return [message, ...children.map(item => describe(item, depth + 1)), describe(cause, depth + 1)]
+    .filter(part => part.length > 0)
+    .join(' <= ')
+}
 
 /** Hand supported external links to the OS without executing arbitrary schemes. */
 function openExternal(url: string): void {
@@ -67,7 +87,9 @@ async function boot(): Promise<void> {
     }
   }
   desktopHost = await startDesktopHost()
+  record('host-started')
   await createMainWindow()
+  record('window-loaded')
 }
 
 app.on('window-all-closed', () => {
@@ -82,7 +104,8 @@ app.on('before-quit', (event) => {
 })
 
 app.whenReady().then(boot).catch(async (error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error)
+  const message = describe(error) || 'Falha ao abrir Leon.'
+  record(`startup-failed ${message}`)
   await closeDesktopHost()
   await dialog.showMessageBox({
     type: 'error',

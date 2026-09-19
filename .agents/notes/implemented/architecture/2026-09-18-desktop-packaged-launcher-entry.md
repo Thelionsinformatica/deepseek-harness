@@ -33,3 +33,5 @@ The packaged artifact is a launcher, not a self-contained install: it requires a
 ## Verification
 
 `pnpm run package` in `apps/desktop` produces NSIS and portable x64 artifacts. Smoke verification launches the packaged `Leon.exe`, confirms the window title `Leon — The Lions Informática`, receives HTTP `200` from `127.0.0.1:3080`, and captures the window through the `leon-windows` UIA connector. `Get-AuthenticodeSignature` on every shipped binary reports `NotSigned`; `SHA256SUMS.txt` is generated alongside the artifacts.
+
+`.github/workflows/desktop-release.yml` builds and smokes the artifacts on Windows runners for every pull request touching `apps/desktop`; publication to GitHub Releases is a manual `workflow_dispatch` through the `desktop-release` environment. The publish job re-verifies that each binary's Authenticode status matches the manifest before creating the release.

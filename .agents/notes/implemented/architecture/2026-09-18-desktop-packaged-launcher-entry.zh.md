@@ -33,3 +33,5 @@ Status: implemented
 ## 验证
 
 `apps/desktop` 中的 `pnpm run package` 生成 NSIS 与 portable x64 产物。冒烟验证启动打包后的 `Leon.exe`，确认窗口标题为 `Leon — The Lions Informática`，从 `127.0.0.1:3080` 收到 HTTP `200`，并通过 `leon-windows` UIA 连接器截取窗口。对每个发布二进制执行 `Get-AuthenticodeSignature` 均报告 `NotSigned`；`SHA256SUMS.txt` 与产物一并生成。
+
+`.github/workflows/desktop-release.yml` 在 Windows runner 上为每个触及 `apps/desktop` 的 pull request 构建并冒烟测试产物；向 GitHub Releases 的发布是经 `desktop-release` environment 的手动 `workflow_dispatch`。publish job 在创建 release 前重新验证每个二进制的 Authenticode 状态与清单一致。

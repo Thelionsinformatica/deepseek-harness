@@ -1,0 +1,202 @@
+# Build, smoke, and release the Leon desktop Windows artifacts.
+#
+# Every pull request touching apps/desktop proves the installer still packs and
+# still launches against a stub deployment. Publishing to GitHub Releases is a
+# manual workflow_dispatch so a release is always an explicit, reviewed act.
+#
+# Artifacts are unsigned until the WINDOWS_CERTIFICATE_PFX_BASE64 and
+# WINDOWS_CERTIFICATE_PASSWORD secrets exist; electron-builder picks up
+# CSC_LINK/CSC_KEY_PASSWORD automatically when they are configured. The release
+# manifest records the verified signature status — it never claims a signature
+# the evidence does not show.
+name: Desktop release (Leon Windows)
+
+on:
+  pull_request:
+    paths:
+      - apps/desktop/**
+      - pnpm-lock.yaml
+      - .github/workflows/desktop-release.yml
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (for example desktop-v0.1.1-rc.2)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PRIMARY_NODE_VERSION: '24'
+  DSH_TELEMETRY_DISABLED: '1'
+
+jobs:
+  build:
+    name: Build and smoke Windows artifacts
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+
+      - name: Configure pnpm store path
+        id: pnpm-store
+        shell: pwsh
+        run: |
+          $storeRoot = "$env:RUNNER_TEMP/pnpm-store"
+          "PNPM_CONFIG_STORE_DIR=$storeRoot" >> $env:GITHUB_ENV
+          $storePath = & { $env:PNPM_CONFIG_STORE_DIR = $storeRoot; pnpm store path --silent }
+          "path=$storePath" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/cache/restore@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-node-${{ env.PRIMARY_NODE_VERSION }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-node-${{ env.PRIMARY_NODE_VERSION }}-pnpm-
+
+      - name: Install (immutable)
+        shell: pwsh
+        run: pnpm install --frozen-lockfile
+
+      - name: Build desktop shell
+        shell: pwsh
+        run: pnpm --dir apps/desktop run build
+
+      # CSC_LINK/CSC_KEY_PASSWORD are read by electron-builder directly. When
+      # the secrets are absent the artifacts stay unsigned and the manifest
+      # says so; nothing here may mark them signed.
+      - name: Pack Windows installer and portable
+        shell: pwsh
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_CERTIFICATE_PFX_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: pnpm --dir apps/desktop exec electron-builder --win nsis portable
+
+      # The packaged shell launches the deployment's Iniciar-Leon.ps1, which
+      # does not exist on a runner. The smoke stubs the deployment (a no-op
+      # launcher plus a plain loopback HTTP server) so the packaged bytes prove
+      # they boot, reach the window, and record the lifecycle log — without
+      # pretending a real deployment is present.
+      - name: Smoke test packaged executable
+        shell: pwsh
+        run: |
+          $deploy = "$env:RUNNER_TEMP/leon-deploy"
+          New-Item -ItemType Directory -Force $deploy | Out-Null
+          Set-Content -Path "$deploy/Iniciar-Leon.ps1" -Value 'param($NoOpen, $FreeLLMAPI) exit 0'
+          $server = Start-Process node -PassThru -WindowStyle Hidden -ArgumentList @(
+            '-e', 'require("http").createServer((q,s)=>{s.writeHead(200);s.end("ok")}).listen(3080,"127.0.0.1")'
+          )
+          $env:LEON_ROOT = $deploy
+          $leon = Start-Process 'apps/desktop/dist/win-unpacked/Leon.exe' -PassThru
+          try {
+            $deadline = (Get-Date).AddSeconds(60)
+            $logPath = @("$env:APPDATA/Leon/desktop.log", "$env:APPDATA/Leon Desktop/desktop.log") |
+              Where-Object { Test-Path $_ } | Select-Object -First 1
+            while ((Get-Date) -lt $deadline -and -not ($logPath -and (Select-String -Path $logPath -Pattern 'window-loaded' -Quiet))) {
+              Start-Sleep -Seconds 1
+              $logPath = @("$env:APPDATA/Leon/desktop.log", "$env:APPDATA/Leon Desktop/desktop.log") |
+                Where-Object { Test-Path $_ } | Select-Object -First 1
+            }
+            if ($leon.HasExited) { throw 'Leon.exe exited before loading the window' }
+            if (-not ($logPath -and (Select-String -Path $logPath -Pattern 'window-loaded' -Quiet))) {
+              throw 'desktop.log never recorded window-loaded'
+            }
+            $status = (Invoke-WebRequest -Uri 'http://127.0.0.1:3080' -UseBasicParsing).StatusCode
+            if ($status -ne 200) { throw "loopback origin returned $status" }
+          } finally {
+            Stop-Process -Id $leon.Id -Force -ErrorAction SilentlyContinue
+            Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Generate checksums and release manifest
+        shell: pwsh
+        run: |
+          Set-Location apps/desktop/dist
+          Get-FileHash Leon-*.exe -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  $($_.Path | Split-Path -Leaf)" } |
+            Set-Content -Encoding ascii SHA256SUMS.txt
+          $signed = (Get-AuthenticodeSignature 'win-unpacked/Leon.exe').Status -eq 'Valid'
+          $manifest = [ordered]@{
+            version   = (Get-Content ../package.json | ConvertFrom-Json).version
+            channel   = 'github-releases'
+            arch      = 'x64'
+            signed    = $signed
+            unsigned  = -not $signed
+            commit    = $env:GITHUB_SHA
+            artifacts = Get-ChildItem Leon-*.exe | ForEach-Object { $_.Name }
+          }
+          $manifest | ConvertTo-Json | Set-Content -Encoding utf8 release-manifest.json
+          Get-Content SHA256SUMS.txt, release-manifest.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: leon-desktop-windows-x64
+          path: |
+            apps/desktop/dist/Leon-*.exe
+            apps/desktop/dist/SHA256SUMS.txt
+            apps/desktop/dist/release-manifest.json
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    # Required reviewers live on the environment; this is the only job that may
+    # create a release.
+    environment: desktop-release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: leon-desktop-windows-x64
+          path: artifacts
+
+      - name: Verify artifacts are honestly labeled
+        shell: pwsh
+        run: |
+          $manifest = Get-Content artifacts/release-manifest.json | ConvertFrom-Json
+          foreach ($exe in Get-ChildItem artifacts/Leon-*.exe) {
+            $status = (Get-AuthenticodeSignature $exe.FullName).Status
+            if ($status -eq 'Valid' -and -not $manifest.signed) {
+              throw "$($exe.Name) is signed but the manifest claims unsigned"
+            }
+            if ($status -ne 'Valid' -and $manifest.signed) {
+              throw "$($exe.Name) is unsigned but the manifest claims signed"
+            }
+          }
+
+      - name: Create release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          $manifest = Get-Content artifacts/release-manifest.json | ConvertFrom-Json
+          $signedNote = if ($manifest.signed) { 'Authenticode-signed' } else {
+            'UNSIGNED - Windows will show an unknown-publisher warning. Signatures require the WINDOWS_CERTIFICATE_* secrets.'
+          }
+          @(
+            "Leon desktop $($manifest.version) - Windows x64.",
+            "",
+            "Signature: $signedNote",
+            "Verify integrity against SHA256SUMS.txt. Requires an existing Leon deployment (LEON_ROOT)."
+          ) | Set-Content notes.md
+          $files = (Get-ChildItem artifacts/Leon-*.exe, artifacts/SHA256SUMS.txt, artifacts/release-manifest.json).FullName
+          gh release create $env:RELEASE_TAG @files --title "Leon Desktop $($manifest.version)" --notes-file notes.md

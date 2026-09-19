@@ -103,11 +103,11 @@ jobs:
           $leon = Start-Process 'apps/desktop/dist/win-unpacked/Leon.exe' -PassThru
           try {
             $deadline = (Get-Date).AddSeconds(120)
-            $logPath = Get-ChildItem "$env:APPDATA/*/desktop.log" -ErrorAction SilentlyContinue |
+            $logPath = Get-ChildItem "$env:APPDATA" -Recurse -Filter desktop.log -ErrorAction SilentlyContinue |
               Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
             while ((Get-Date) -lt $deadline -and -not ($logPath -and (Select-String -Path $logPath -Pattern 'window-loaded' -Quiet))) {
               Start-Sleep -Seconds 1
-              $logPath = Get-ChildItem "$env:APPDATA/*/desktop.log" -ErrorAction SilentlyContinue |
+              $logPath = Get-ChildItem "$env:APPDATA" -Recurse -Filter desktop.log -ErrorAction SilentlyContinue |
                 Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
             }
             $leon.Refresh()

@@ -41,9 +41,11 @@ async function ensureServer(): Promise<void> {
       '& $env:LEON_DESKTOP_LAUNCHER -NoOpen -FreeLLMAPI:$false'], {
       env: environment,
       windowsHide: true, timeout: 120_000, maxBuffer: 1024 * 1024,
-    }, (error) => {
-      if (error) reject(new Error('Não foi possível iniciar o Leon. Consulte os registros em D:\\Leon\\logs\\startup.'))
-      else resolve()
+    }, (error, _stdout, stderr) => {
+      if (error) {
+        const detail = (stderr || '').trim() || error.message
+        reject(new Error(`Não foi possível iniciar o Leon. Consulte os registros em D:\\Leon\\logs\\startup. ${detail.slice(0, 500)}`))
+      } else resolve()
     })
   })
   record('local-server-verified')

@@ -97,13 +97,12 @@ jobs:
           $deploy = "$env:RUNNER_TEMP/leon-deploy"
           New-Item -ItemType Directory -Force $deploy | Out-Null
           Set-Content -Path "$deploy/Iniciar-Leon.ps1" -Value 'param($NoOpen, $FreeLLMAPI) exit 0'
-          $server = Start-Process node -PassThru -WindowStyle Hidden -ArgumentList @(
-            '-e', 'require("http").createServer((q,s)=>{s.writeHead(200);s.end("ok")}).listen(3080,"127.0.0.1")'
-          )
+          Set-Content -Path "$deploy/server.js" -Value 'require("http").createServer((q,s)=>{s.writeHead(200);s.end("ok")}).listen(3080,"127.0.0.1")'
+          $server = Start-Process node -PassThru -WindowStyle Hidden -ArgumentList "`"$deploy/server.js`""
           $env:LEON_ROOT = $deploy
           $leon = Start-Process 'apps/desktop/dist/win-unpacked/Leon.exe' -PassThru
           try {
-            $deadline = (Get-Date).AddSeconds(60)
+            $deadline = (Get-Date).AddSeconds(120)
             $logPath = Get-ChildItem "$env:APPDATA/*/desktop.log" -ErrorAction SilentlyContinue |
               Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
             while ((Get-Date) -lt $deadline -and -not ($logPath -and (Select-String -Path $logPath -Pattern 'window-loaded' -Quiet))) {

@@ -62,6 +62,7 @@ async function openLink(url: string): Promise<void> {
 
 /** Present a visible loading state while the local services become ready. */
 async function boot(): Promise<void> {
+  record('app-ready')
   app.setAppUserModelId('br.com.thelions.leon.local')
   mainWindow = new BrowserWindow({ ...DESKTOP_WINDOW, title: 'Leon Desktop',
     backgroundColor: '#111318', autoHideMenuBar: false,

@@ -325,7 +325,7 @@
           },
           "event_types": {
             "type": "array",
-            "description": "Event types to include.",
+            "description": "Optional canonical event types to include (for example \"user/message\" or \"tool/call\").",
             "items": {
               "type": "string"
             }
@@ -387,11 +387,11 @@
           },
           "created_at_from": {
             "type": "string",
-            "description": "Inclusive timezone-qualified ISO 8601 creation-time lower bound."
+            "description": "Optional inclusive timezone-qualified ISO 8601 creation-time lower bound. Omit unless the user supplied a time constraint."
           },
           "created_at_to": {
             "type": "string",
-            "description": "Inclusive timezone-qualified ISO 8601 creation-time upper bound."
+            "description": "Optional inclusive timezone-qualified ISO 8601 creation-time upper bound. Omit unless the user supplied a time constraint."
           },
           "parent_session_ids": {
             "type": "array",
@@ -433,7 +433,7 @@
           },
           "event_types": {
             "type": "array",
-            "description": "Event types to include.",
+            "description": "Optional canonical event types to include (for example \"user/message\" or \"tool/call\"). Omit for broad history search.",
             "items": {
               "type": "string"
             }

@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-session-stats",
-  "description": "Whole-log conversation counts and wall times projection (sessionStats) for the DeepSeek Harness",
+  "description": "Whole-log conversation counts, timings, and configured API cost estimates (sessionStats) for the DeepSeek Harness",
   "version": "0.1.1-rc.2",
   "publishConfig": {
     "access": "public"
@@ -48,6 +48,7 @@
     "@deepseek-ai/cordis": "workspace:^"
   },
   "dependencies": {
+    "@deepseek-ai/schemastery": "workspace:^",
     "zod": "^4.4.3"
   },
   "devDependencies": {

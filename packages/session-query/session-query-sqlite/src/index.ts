@@ -97,8 +97,10 @@ export interface Config extends SessionQueryConfig {
    * Open the SQLite module and handle at service activation or the first
    * search, or `never` to disable full-text search: the inherited exact
    * reads, filters, and traces stay available, while `searchSessions` and
-   * `searchEvents` fail with `SESSION_QUERY_SEARCH_DISABLED` and SQLite is
-   * never imported or opened. Defaults to `startup`.
+   * `searchEvents` fail with `SESSION_QUERY_SEARCH_DISABLED`. An explicit
+   * {@link SqliteSessionQueryEngine.purgeSession} maintenance call may still
+   * open the derived index so permanent deletion can remove its rows.
+   * Defaults to `startup`.
    */
   openAt?: OpenAt
   /** SQLite journal mode. Defaults to `wal`. */
@@ -109,7 +111,7 @@ export interface Config extends SessionQueryConfig {
   maxLimit?: number
   /** Maximum snippet length in Unicode code points. Defaults to 240. */
   snippetChars?: number
-  /** Maximum concurrent persisted-log inspections in one inherited batch read. Defaults to 4. */
+  /** Maximum concurrent persisted-log inspections in batch reads and FTS reconciliation. Defaults to 4. */
   persistedInspectConcurrency?: number
 }
 
@@ -312,6 +314,61 @@ export class SqliteSessionQueryEngine extends SessionQueryEngine {
     })
   }
 
+  /**
+   * Delete one session from both persistent FTS rows and connection-local
+   * TEMP rows in the same serialized SQLite transaction. Repeated calls are
+   * successful no-ops. The caller must first quiesce or remove authoritative
+   * live and persistence sources; a later search intentionally reconciles any
+   * source that still exists.
+   * @param sessionId - logical session whose derived search rows must be absent.
+   * @returns resolution after the deletion transaction commits.
+   */
+  override purgeSession(sessionId: SessionId): Promise<void> {
+    return this._serialized(undefined, async () => {
+      await this._ensureReady(undefined)
+      const db = this._requireDb()
+      const persisted = db.prepare(
+        'SELECT 1 AS present FROM persisted_sessions WHERE id = ? LIMIT 1',
+      ).get(sessionId) !== undefined
+      const live = db.prepare(
+        'SELECT 1 AS present FROM temp.live_sessions WHERE id = ? LIMIT 1',
+      ).get(sessionId) !== undefined
+      if (!persisted && !live) return
+
+      let began = false
+      const nextMainGeneration = persisted ? this._mainGeneration() + 1 : this._mainGeneration()
+      try {
+        db.exec('BEGIN IMMEDIATE')
+        began = true
+        this._deleteSession('persisted', sessionId)
+        this._deleteSession('live', sessionId)
+        if (persisted) {
+          db.prepare('UPDATE search_state SET global_generation = ? WHERE singleton = 1')
+            .run(nextMainGeneration)
+        }
+        db.exec('COMMIT')
+      } catch (error: unknown) {
+        /* v8 ignore next -- a BEGIN failure has no transaction to roll back. */
+        if (began) {
+          /* v8 ignore next 5 -- requires a SQLite double fault; preserve the original cause. */
+          try {
+            db.exec('ROLLBACK')
+          } catch {
+            // The original SQLite failure remains the actionable cause.
+          }
+        }
+        throw new SessionQueryError(
+          `session-search purge failed: ${errorMessage(error)}`,
+          'SESSION_QUERY_INDEX_FAILED',
+          { cause: error },
+        )
+      }
+
+      this._globalGeneration += 1
+      if (persisted) this._localGeneration = Math.max(this._localGeneration, nextMainGeneration)
+    })
+  }
+
   /** Close the database after every accepted operation reaches quiescence. */
   close(): Promise<void> {
     this._closePromise ??= this._close()
@@ -497,19 +554,35 @@ export class SqliteSessionQueryEngine extends SessionQueryEngine {
           const before = await persistence.listSnapshots(signal)
           assertNotAborted(signal)
           persisted = materializePersistenceSnapshots(before)
-          for (const entry of persisted.values()) {
-            if (canReuseIndexed && indexed.get(entry.header.id)?.revision === entry.revision) continue
-            // Skip work already shadowed by a live owner. `inspect()` is
-            // non-mutating, so an owner attaching after this check cannot cause
-            // crash-repair side effects; the live-membership retry below makes
-            // the returned observation live-preferred.
-            if (initiallyLive.has(entry.header.id) || this.ctx.sessions.get(entry.header.id) !== undefined) continue
-            assertNotAborted(signal)
-            const loaded = await persistence.inspect(entry.header.id, signal)
-            assertNotAborted(signal)
-            assertSessionHeadersCompatible(entry.header, loaded.meta)
-            entry.loaded = observeSession(loaded.meta, loaded.events)
+          const pending = [...persisted.values()].filter(entry =>
+            !(canReuseIndexed && indexed.get(entry.header.id)?.revision === entry.revision))
+          let cursor = 0
+          let failed = false
+          const worker = async (): Promise<void> => {
+            while (!failed && cursor < pending.length) {
+              assertNotAborted(signal)
+              const entry = pending[cursor++] as ObservedPersistedSession
+              // Live owners shadow persistence; the membership check below retries attachment races.
+              if (initiallyLive.has(entry.header.id) || this.ctx.sessions.get(entry.header.id) !== undefined) continue
+              const loaded = await persistence.inspect(entry.header.id, signal)
+              assertNotAborted(signal)
+              assertSessionHeadersCompatible(entry.header, loaded.meta)
+              entry.loaded = observeSession(loaded.meta, loaded.events)
+            }
           }
+          // Drain admitted reads before failure releases the serialized search queue.
+          const settlements = await Promise.allSettled(Array.from({
+            length: Math.min(this.config.persistedInspectConcurrency, pending.length),
+          }, async () => {
+            try {
+              await worker()
+            } catch (error: unknown) {
+              failed = true
+              throw error
+            }
+          }))
+          const failure = settlements.find(result => result.status === 'rejected')
+          if (failure?.status === 'rejected') throw failure.reason
           assertNotAborted(signal)
           const afterSnapshots = await persistence.listSnapshots(signal)
           assertNotAborted(signal)

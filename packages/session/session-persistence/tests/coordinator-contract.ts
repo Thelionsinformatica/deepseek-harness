@@ -225,6 +225,48 @@ export function runCoordinatorContract(name: string, makeFixture: () => Promise<
 
     // --- write path: live session → flush → reload ---
 
+    it('deletes only the exact persisted identity and remains idempotent', async () => {
+      const fix = await makeFixture()
+      const { ctx, fiber } = await freshCtx(fix)
+      try {
+        const target = SessionId('delete-target')
+        const survivor = SessionId('delete-survivor')
+        for (const id of [target, survivor]) {
+          await ctx.sessionPersistence.create(meta(id, WORK))
+          await ctx.sessionPersistence.append(id, oneTurnLog())
+        }
+
+        await ctx.sessionPersistence.delete(target)
+        await expect(ctx.sessionPersistence.delete(target)).resolves.toBeUndefined()
+        expect((await ctx.sessionPersistence.list()).map(header => header.id)).toEqual([survivor])
+        await expect(ctx.sessionPersistence.load(target)).rejects.toThrow(/deleted/)
+        expect((await ctx.sessionPersistence.load(survivor)).events).toHaveLength(oneTurnLog().length)
+      } finally {
+        await fiber.dispose()
+        await fix.cleanup()
+      }
+    })
+
+    it('closes admission after delete so a late append cannot resurrect the log', async () => {
+      const fix = await makeFixture()
+      const { ctx, fiber } = await freshCtx(fix)
+      try {
+        const id = SessionId('delete-tombstone')
+        await ctx.sessionPersistence.create(meta(id, WORK))
+        await ctx.sessionPersistence.append(id, oneTurnLog())
+        await ctx.sessionPersistence.delete(id)
+
+        await expect(ctx.sessionPersistence.append(id, oneTurnLog()))
+          .rejects.toThrow(/being deleted or was deleted/)
+        await expect(ctx.sessionPersistence.prepare(id))
+          .rejects.toThrow(/being deleted or was deleted/)
+        expect((await ctx.sessionPersistence.list()).some(header => header.id === id)).toBe(false)
+      } finally {
+        await fiber.dispose()
+        await fix.cleanup()
+      }
+    })
+
     it('persists a live session driven through the store, surviving reload', async () => {
       const fix = await makeFixture()
       const { ctx, fiber } = await freshCtx(fix)

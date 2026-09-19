@@ -16,7 +16,7 @@ Status: implemented
 
 层次关系为目标（Goal）→ Goal Round → 轮次（Turn）→ 步骤（Step）。Goal Round 是外层继续执行策略的一次迭代；它会成为一个归属于目标的会话轮次，而该轮次可以包含任意数量的普通模型或工具步骤。同一会话中的人类轮次不是 Goal Round，也绝不会增加 `roundsStarted`。
 
-该插件没有配置项。`maxGoalRounds` 由 `dsh-goal` 解析并持久化；「相同阻塞条件」的门槛由 `dsh-tool-goal` 解析并写入提示词。若驱动器重复声明这些可调值，一个策略就会出现多个所有者。
+继续执行机制不会重复拥有 goal 或阻塞参数：`maxGoalRounds` 由 `dsh-goal` 解析并持久化；「相同阻塞条件」的门槛由 `dsh-tool-goal` 解析并写入提示词。驱动器拥有一项显式启用的准入策略 `autoStartPresets` 与 `autoStartMaxGoalRounds`，供需要在模型未调用 `create_goal` 时仍把已接纳的人类直接实现工作转换为 goal 的部署使用。确定性分类器要求命令式执行语言，并且还要有具体工作目标、持续执行语言或足够复杂的结构；只要求回复的健康探测保持单轮。准入只发生在下游 `agent/pre-step` 监听器接纳人类批次之后，只面向指定预设中的实时根 agent，创建失败也不会拒绝人类步骤。
 
 ### 预留与接纳
 

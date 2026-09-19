@@ -7,7 +7,6 @@
 
 import { randomUUID } from 'node:crypto'
 import { stat } from 'node:fs/promises'
-import { basename } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
@@ -16,7 +15,7 @@ import { WorkspaceEntity } from './entity.ts'
 import type { WorkspaceEntityHost } from './entity.ts'
 
 export { WorkspaceMoveInvalidError } from './entity.ts'
-import { realpathNormalize } from './paths.ts'
+import { defaultWorkspaceTitle, realpathNormalize } from './paths.ts'
 import { workspaceDomainSpec } from './spec.ts'
 import type { WorkspaceDomainState, WorkspaceRecord } from './spec.ts'
 import type { Workspace, WorkspaceId as WorkspaceIdBrand } from './types.ts'
@@ -140,13 +139,13 @@ export class WorkspaceRegistry extends Service {
   }
 
   /**
-   * Create or reuse a workspace for an existing directory. The path is
-   * canonicalized through `fs.realpath`; a nonexistent path rejects with the
-   * original error and a non-directory rejects. Repeated calls for the same
-   * canonical path return the existing entity without changing its title.
+   * Create or reuse a workspace for an existing directory. The fully qualified
+   * path is canonicalized through `fs.realpath`; a relative, nonexistent, or
+   * non-directory path rejects. Repeated calls for the same canonical path
+   * return the existing entity without changing its title.
    * A newly created workspace is prepended to the durable registry order.
    * Different canonical paths may share a display title.
-   * @param path - Existing directory to own, in any path spelling.
+   * @param path - Existing directory to own, in a fully qualified path spelling.
    * @param title - Display title used only when a new record is created.
    * @returns the existing or newly durable workspace.
    */
@@ -255,6 +254,49 @@ export class WorkspaceRegistry extends Service {
   }
 
   /**
+   * Remove one id from the durable archive set without changing its workspace
+   * position or persistence artifact. Idempotent when already unarchived.
+   * @param sessionId - session to restore to grouping surfaces.
+   */
+  unarchiveSession(sessionId: SessionId): Promise<void> {
+    return this.enqueueOperation(async () => {
+      const state = this.requireState()
+      if (!state.archivedSessionIds.includes(sessionId)) return
+      await this.setState({
+        ...state,
+        archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId),
+      })
+    })
+  }
+
+  /**
+   * Whether durable registry state or the validated header index still names
+   * a session. Used by a deletion retry after the canonical log has already
+   * committed its removal but registry/sidecar cleanup has not yet finished.
+   * @param sessionId - session identity whose retained references are queried.
+   * @returns whether any durable or indexed workspace state still names it.
+   */
+  hasSessionReference(sessionId: SessionId): boolean {
+    if (this.requireState().archivedSessionIds.includes(sessionId)) return true
+    if (this.headers.has(sessionId)) return true
+    for (const [, record] of this.requireTable().entries()) {
+      if (record.sessionIds.includes(sessionId)) return true
+    }
+    return false
+  }
+
+  /**
+   * Remove one session from workspace accounting and the archive set. A
+   * durable marker makes the record/global multi-write recoverable; the
+   * canonical session log is owned and deleted separately by
+   * SessionPersistence. No cwd or user file is touched.
+   * @param sessionId - exact session identity whose registry references clear.
+   */
+  deleteSession(sessionId: SessionId): Promise<void> {
+    return this.enqueueOperation(() => this.deleteSessionKnown(sessionId))
+  }
+
+  /**
    * Whether a session is live, header-indexed, or present in a fresh
    * persistence listing. Only a definite miss returns false — a failing
    * `sessionPersistence.list()` propagates so storage faults never
@@ -271,7 +313,7 @@ export class WorkspaceRegistry extends Service {
    * Resolve by canonical directory path without creating or mutating a
    * workspace. A missing path rejects during `realpath`; an existing unowned
    * directory returns `undefined`.
-   * @param path - Existing directory path in any spelling.
+   * @param path - Existing directory path in a fully qualified spelling.
    * @returns the workspace owning the canonical path, when one exists.
    */
   async resolveByPath(path: string): Promise<Workspace | undefined> {
@@ -287,7 +329,7 @@ export class WorkspaceRegistry extends Service {
       if (entity.path === canonical) return entity
     }
 
-    const workspaceName = title ?? basename(canonical)
+    const workspaceName = title ?? defaultWorkspaceTitle(canonical)
     const table = this.requireTable()
     const state = this.requireState()
     const id = WorkspaceId(randomUUID())
@@ -400,6 +442,37 @@ export class WorkspaceRegistry extends Service {
     return true
   }
 
+  /** Complete the recoverable registry half of permanent session deletion. */
+  private async deleteSessionKnown(sessionId: SessionId): Promise<void> {
+    const state = this.requireState()
+    const records = [...this.requireTable().entries()]
+      .filter(([, record]) => record.sessionIds.includes(sessionId))
+    const archivedSessionIds = state.archivedSessionIds.filter(id => id !== sessionId)
+    if (records.length === 0 && archivedSessionIds.length === state.archivedSessionIds.length) {
+      this.forgetSession(sessionId)
+      return
+    }
+
+    await this.setState({
+      ...state,
+      pendingMutation: { operation: 'delete-session', sessionId },
+    })
+    for (const [workspaceId, record] of records) {
+      await this.requireTable().put(workspaceId, {
+        ...record,
+        sessionIds: record.sessionIds.filter(id => id !== sessionId),
+        updatedAt: new Date().toISOString(),
+      })
+    }
+    await this.setState({
+      initialized: state.initialized,
+      workspaceIds: state.workspaceIds,
+      archivedSessionIds,
+    })
+    this.forgetSession(sessionId)
+    this.rebuildEntities()
+  }
+
   /**
    * Complete the one mutation explicitly named by durable state. Unexplained
    * order/table divergence still reaches {@link validateStoredState} and
@@ -409,6 +482,24 @@ export class WorkspaceRegistry extends Service {
     const state = this.requireState()
     const pending = state.pendingMutation
     if (pending === undefined) return
+    if (pending.operation === 'delete-session') {
+      for (const [workspaceId, record] of this.requireTable().entries()) {
+        if (!record.sessionIds.includes(pending.sessionId)) continue
+        await this.requireTable().put(workspaceId, {
+          ...record,
+          sessionIds: record.sessionIds.filter(id => id !== pending.sessionId),
+          updatedAt: new Date().toISOString(),
+        })
+      }
+      await this.setState({
+        initialized: state.initialized,
+        workspaceIds: state.workspaceIds,
+        archivedSessionIds: state.archivedSessionIds.filter(id => id !== pending.sessionId),
+      })
+      this.forgetSession(pending.sessionId)
+      this.rebuildEntities()
+      return
+    }
     if (state.workspaceIds.includes(pending.workspaceId)) {
       throw new Error(
         `workspace domain is inconsistent: pending ${pending.operation} workspace `
@@ -459,7 +550,7 @@ export class WorkspaceRegistry extends Service {
         const createdAt = new Date(group.newestAt).toISOString()
         const record: WorkspaceRecord = {
           path: group.path,
-          title: basename(group.path),
+          title: defaultWorkspaceTitle(group.path),
           sessionIds,
           createdAt,
           updatedAt: createdAt,
@@ -563,6 +654,13 @@ export class WorkspaceRegistry extends Service {
     this.sessionPaths.clear()
     this.invalidSessionPaths.clear()
     await this.indexHeaders(headers)
+  }
+
+  /** Drop only registry-owned projections for a deleted session identity. */
+  private forgetSession(id: SessionId): void {
+    this.headers.delete(id)
+    this.sessionPaths.delete(id)
+    this.invalidSessionPaths.delete(id)
   }
 
   private async indexHeaders(headers: readonly SessionHeader[]): Promise<void> {

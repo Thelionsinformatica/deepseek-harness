@@ -125,3 +125,29 @@
   opacity: 0.4;
   cursor: default;
 }
+
+.continueBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 2px 8px;
+  border: none;
+  border-radius: 999px;
+  background: var(--dsw-alias-state-warn-tertiary);
+  color: var(--dsw-alias-state-warn-label);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.continueBtn:hover:not(:disabled) {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+.continueBtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

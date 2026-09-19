@@ -13,27 +13,59 @@ afterEach(cleanup)
 type Snapshot = Awaited<ReturnType<PluginInventorySettingsTabInjected['list']>>
 const t = ((key: PluginInventoryLocaleKey): string => en[key]) as PluginInventorySettingsTabProps['t']
 
-function props(list: PluginInventorySettingsTabInjected['list']): PluginInventorySettingsTabProps {
+function props(
+  list: PluginInventorySettingsTabInjected['list'],
+  setEnabled: PluginInventorySettingsTabInjected['setEnabled'] = async () => SNAPSHOT.entries[0]!,
+): PluginInventorySettingsTabProps {
   return {
     t,
     list,
+    setEnabled,
   } as PluginInventorySettingsTabProps
 }
 
 const SNAPSHOT = {
   entries: [
-    { entryId: '8a1b2c3d', moduleName: '@deepseek-ai/cordis-plugin-hmr', enabled: true, fiberPhase: 'active' },
-    { entryId: 'pending', moduleName: 'cordis:pending-name', enabled: true, fiberPhase: 'pending' },
-    { entryId: 'loading', moduleName: '@fixture/loading-name', enabled: true, fiberPhase: 'loading' },
-    { entryId: 'failed', moduleName: '@fixture/failed-name', enabled: true, fiberPhase: 'failed' },
-    { entryId: 'unloading', moduleName: '@fixture/unloading-name', enabled: true, fiberPhase: 'unloading' },
-    { entryId: 'unobserved', moduleName: '@fixture/unobserved-name', enabled: true, fiberPhase: null },
-    { entryId: 'disabled-entry', moduleName: '@deepseek-ai/dsh-host-directory-picker-native', enabled: false, fiberPhase: null },
+    {
+      entryId: '8a1b2c3d', moduleName: '@deepseek-ai/cordis-plugin-hmr', enabled: true, fiberPhase: 'active',
+      category: 'extension', summary: 'Reloads browser plugin bundles.', capabilities: ['plugin lifecycle'],
+      activation: 'live-toggle', activationReason: 'Audited optional capability. Change reverts on restart.',
+    },
+    {
+      entryId: 'pending', moduleName: 'cordis:pending-name', enabled: true, fiberPhase: 'pending',
+      category: 'other', summary: 'Configured Cordis plugin.', capabilities: ['plugin lifecycle'],
+      activation: 'restart-required', activationReason: 'Restart after configuration change.',
+    },
+    {
+      entryId: 'loading', moduleName: '@fixture/loading-name', enabled: true, fiberPhase: 'loading',
+      category: 'other', summary: 'Configured Cordis plugin.', capabilities: ['plugin lifecycle'],
+      activation: 'restart-required', activationReason: 'Restart after configuration change.',
+    },
+    {
+      entryId: 'failed', moduleName: '@fixture/failed-name', enabled: true, fiberPhase: 'failed',
+      category: 'other', summary: 'Configured Cordis plugin.', capabilities: ['plugin lifecycle'],
+      activation: 'restart-required', activationReason: 'Restart after configuration change.',
+    },
+    {
+      entryId: 'unloading', moduleName: '@fixture/unloading-name', enabled: true, fiberPhase: 'unloading',
+      category: 'other', summary: 'Configured Cordis plugin.', capabilities: ['plugin lifecycle'],
+      activation: 'restart-required', activationReason: 'Restart after configuration change.',
+    },
+    {
+      entryId: 'unobserved', moduleName: '@fixture/unobserved-name', enabled: true, fiberPhase: null,
+      category: 'other', summary: 'Configured Cordis plugin.', capabilities: ['plugin lifecycle'],
+      activation: 'restart-required', activationReason: 'Restart after configuration change.',
+    },
+    {
+      entryId: 'disabled-entry', moduleName: '@deepseek-ai/dsh-host-directory-picker-native', enabled: false, fiberPhase: null,
+      category: 'host-runtime', summary: 'Supports the local host runtime.', capabilities: ['host runtime'],
+      activation: 'restart-required', activationReason: 'Restart after configuration change.',
+    },
   ],
 } as unknown as Snapshot
 
 describe('PluginInventorySettingsTab', () => {
-  it('renders runtime status only for enabled plugins', async () => {
+  it('renders operational detail and exposes the narrow live control only for audited entries', async () => {
     const deferred = Promise.withResolvers<Snapshot>()
     const list = vi.fn(() => deferred.promise)
     const view = render(<PluginInventorySettingsTab {...props(list)} />)
@@ -47,6 +79,8 @@ describe('PluginInventorySettingsTab', () => {
     expect(screen.getAllByRole('listitem')).toHaveLength(7)
     expect(screen.getAllByText(en.enabledTag)).toHaveLength(6)
     expect(screen.getByText(en.disabledTag)).toBeTruthy()
+    expect(screen.getByText(en.liveToggle)).toBeTruthy()
+    expect(screen.getAllByText(en.restartRequired)).toHaveLength(6)
     for (const value of [
       'Mounted',
       'Waiting for dependencies',
@@ -57,13 +91,17 @@ describe('PluginInventorySettingsTab', () => {
     ]) {
       expect(screen.getByRole('img', { name: value })).toBeTruthy()
     }
-    const active = screen.getByRole('button', { name: 'hmr, Mounted, Enabled' })
+    const active = screen.getByRole('button', { name: 'hmr, Mounted, Enabled, Live toggle' })
     expect(active.getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(active)
     expect(active.getAttribute('aria-expanded')).toBe('true')
     expect(view.container.querySelector('[data-loader-entry]')?.textContent).toBe('8a1b2c3d')
     expect(screen.getByText(en.configuration)).toBeTruthy()
     expect(screen.getByText(en.cordis)).toBeTruthy()
+    expect(screen.getByText(en.purpose)).toBeTruthy()
+    expect(screen.getByText(en.capabilities)).toBeTruthy()
+    expect(screen.getByText(en.management)).toBeTruthy()
+    expect(screen.getByRole('button', { name: en.disableNow })).toBeTruthy()
     fireEvent.click(active)
     expect(view.container.querySelector('[data-loader-entry]')).toBeNull()
 
@@ -72,13 +110,36 @@ describe('PluginInventorySettingsTab', () => {
       target: { value: 'disabled-entry' },
     })
     expect(view.container.querySelector('[data-loader-entry]')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'directory-picker-native, Disabled' }))
+    fireEvent.click(screen.getByRole('button', { name: 'directory-picker-native, Disabled, Restart required' }))
     expect(screen.getAllByText(en.disabledTag)).toHaveLength(2)
     expect(screen.queryByText(en.cordis)).toBeNull()
     expect(screen.queryByText(en.unobserved)).toBeNull()
+    expect(screen.queryByRole('button', { name: en.enableNow })).toBeNull()
   })
 
-  it('filters by module name or Loader entry id', async () => {
+  it('updates the displayed plugin only from the Host result and contains a failed live toggle', async () => {
+    const updated = {
+      ...SNAPSHOT.entries[0]!,
+      enabled: false,
+      fiberPhase: null,
+    } as Snapshot['entries'][number]
+    const setEnabled = vi.fn<PluginInventorySettingsTabInjected['setEnabled']>()
+      .mockResolvedValueOnce(updated)
+      .mockRejectedValueOnce(new Error('host refused this plugin'))
+    render(<PluginInventorySettingsTab {...props(async () => SNAPSHOT, setEnabled)} />)
+    const active = await screen.findByRole('button', { name: 'hmr, Mounted, Enabled, Live toggle' })
+    fireEvent.click(active)
+    fireEvent.click(screen.getByRole('button', { name: en.disableNow }))
+    await waitFor(() => { expect(setEnabled).toHaveBeenCalledWith('8a1b2c3d', false) })
+    expect(await screen.findByRole('button', { name: 'hmr, Disabled, Live toggle' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: en.enableNow })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: en.enableNow }))
+    expect((await screen.findByRole('status')).textContent).toBe(en.actionError)
+    expect(screen.queryByText('host refused this plugin')).toBeNull()
+  })
+
+  it('filters by module name, entry id, purpose, or capability', async () => {
     render(<PluginInventorySettingsTab {...props(async () => SNAPSHOT)} />)
     const search = await screen.findByRole('searchbox', { name: en.search })
 
@@ -89,6 +150,11 @@ describe('PluginInventorySettingsTab', () => {
     fireEvent.change(search, { target: { value: 'cordis-plugin-hmr' } })
     expect(screen.getAllByRole('listitem')).toHaveLength(1)
     expect(screen.getByText('hmr')).toBeTruthy()
+
+    fireEvent.change(search, { target: { value: 'browser interface' } })
+    expect(screen.queryAllByRole('listitem')).toHaveLength(0)
+    fireEvent.change(search, { target: { value: 'plugin lifecycle' } })
+    expect(screen.getAllByRole('listitem')).toHaveLength(6)
 
     fireEvent.change(search, { target: { value: 'not-a-plugin' } })
     expect(screen.queryAllByRole('listitem')).toHaveLength(0)

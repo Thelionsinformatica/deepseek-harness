@@ -1,0 +1,8 @@
+- id: skill-filesystem
+  config:
+    watch: false
+    customSkillDirs:
+      - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('../../../../../apps/cli/config/agent-presets/leon/skills/', baseUrl))"
+
+- id: session-telemetry-otel
+  disabled: true

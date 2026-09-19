@@ -75,6 +75,10 @@ export class SessionProjectionCache extends Service {
 
   private table?: KvTable<SessionId, CheckpointRecord>
   private readonly dirty = new Map<Session, DirtyState>()
+  private readonly operationTails = new Map<SessionId, Promise<void>>()
+  private readonly purgeEpochs = new Map<SessionId, number>()
+  private readonly purgeBlocked = new Set<SessionId>()
+  private operationAdmissionOpen = true
 
   constructor(ctx: Context, public config: Config) {
     super(ctx, 'sessionProjectionCache')
@@ -83,7 +87,11 @@ export class SessionProjectionCache extends Service {
   /** Open the domain and install the write-behind listeners. */
   protected async [Service.init](): Promise<void> {
     const domain = await this.ctx.storageDomain.open(projectionCacheDomainSpec)
-    this.ctx.effect(() => () => domain.close(), 'sessionProjectionCache.domainClose')
+    this.ctx.effect(() => async () => {
+      this.operationAdmissionOpen = false
+      await Promise.all(this.operationTails.values())
+      await domain.close()
+    }, 'sessionProjectionCache.domainClose')
     this.table = domain.table('sessions')
     this.installWritePath()
   }
@@ -138,6 +146,11 @@ export class SessionProjectionCache extends Service {
    * @returns resolution after durability and event emission.
    */
   async write(session: Session): Promise<void> {
+    if (this.purgeBlocked.has(session.id)) {
+      this.markClean(session)
+      return
+    }
+    const epoch = this.purgeEpoch(session.id)
     const rows = this.ctx.sessionProjections.checkpoint(session)
     this.markClean(session)
     // Durability barrier: the checkpoint cut was taken above, so flushing
@@ -148,7 +161,41 @@ export class SessionProjectionCache extends Service {
     // already gone; persistence's own retirement drain covers that path and
     // any residual overreach is caught by the cold read's anchored floor.
     if (this.ctx.sessions.get(session.id) === session) await this.ctx.sessions.flush(session)
-    await this.put(session.id, identityOf(session.header), rows)
+    await this.enqueue(session.id, async () => {
+      if (this.purgeBlocked.has(session.id) || this.purgeEpoch(session.id) !== epoch) return
+      await this.put(session.id, identityOf(session.header), rows)
+    })
+  }
+
+  /**
+   * Durably remove one session's complete projection-cache row.
+   *
+   * The purge synchronously fences new writes, invalidates writes and cold
+   * write-backs that began earlier, cancels armed timers, and then queues the
+   * idempotent row deletion behind already-admitted writes. A later
+   * `session/created` event for the same id opens a new lifecycle without
+   * allowing stale work from the purged lifecycle to cross the epoch barrier.
+   * @param id - permanently deleted session whose cache row must be absent.
+   * @returns resolution after the durable row deletion reaches its queue slot.
+   */
+  purgeSession(id: SessionId): Promise<void> {
+    if (!this.operationAdmissionOpen) {
+      return Promise.reject(new Error('session projection cache is disposing'))
+    }
+    const epoch = this.purgeEpoch(id) + 1
+    this.purgeEpochs.set(id, epoch)
+    this.purgeBlocked.add(id)
+    for (const session of this.dirty.keys()) {
+      if (session.id !== id) continue
+      this.markClean(session)
+      this.dirty.delete(session)
+    }
+    return this.enqueue(id, async () => {
+      await this.requireTable().delete(id)
+    }).catch((error: unknown) => {
+      if (this.purgeEpoch(id) === epoch) this.purgeBlocked.delete(id)
+      throw error
+    })
   }
 
   /**
@@ -164,6 +211,7 @@ export class SessionProjectionCache extends Service {
    * @returns the snapshot cut at the stored log end.
    */
   async coldSnapshot(id: SessionId, signal?: AbortSignal): Promise<ProjectionSnapshot> {
+    const epoch = this.purgeEpoch(id)
     const record = this.requireTable().get(id)
     const cached = record?.rows ?? {}
     const floor = this.ctx.sessionProjections.restoreFloor(cached)
@@ -191,17 +239,24 @@ export class SessionProjectionCache extends Service {
       const whole = await persistence.readFrom(id, 0, signal)
       restored = this.ctx.sessionProjections.restore({}, whole.events, 0)
     }
-    await this.putSoft(id, identityOf(tail.meta), restored.checkpoint, 'cold-read write-back')
+    await this.putSoft(id, identityOf(tail.meta), restored.checkpoint, epoch, 'cold-read write-back')
     return restored.snapshot
   }
 
   // --- write-behind (throttle + mandatory points) ---
 
   private installWritePath(): void {
+    // A recreated id is a new lifecycle. The monotonically increasing purge
+    // epoch still prevents work captured by its predecessor from writing.
+    this.ctx.on('session/created', (session: Session) => {
+      this.purgeBlocked.delete(session.id)
+    })
+
     // Every committed event advances the dirty counter; turn/end is a
     // mandatory point (the durable value most reads want is the turn-final
     // one), count/interval throttle the in-turn stream.
     this.ctx.on('session/event', (session: Session, event: SessionEvent) => {
+      if (this.purgeBlocked.has(session.id)) return
       if (event.type === 'turn/end') {
         void this.flushSoft(session, 'turn/end')
         return
@@ -234,6 +289,8 @@ export class SessionProjectionCache extends Service {
         if (state.timer !== undefined) clearTimeout(state.timer)
       }
       this.dirty.clear()
+      this.purgeBlocked.clear()
+      this.purgeEpochs.clear()
     }, 'sessionProjectionCache.timers')
   }
 
@@ -271,12 +328,50 @@ export class SessionProjectionCache extends Service {
   }
 
   /** Fail-soft {@link put}: cache writes must never fail their caller's read or event path. */
-  private async putSoft(id: SessionId, identity: CheckpointIdentity, rows: ProjectionCheckpoint, what: string): Promise<void> {
+  private async putSoft(
+    id: SessionId,
+    identity: CheckpointIdentity,
+    rows: ProjectionCheckpoint,
+    epoch: number,
+    what: string,
+  ): Promise<void> {
     try {
-      await this.put(id, identity, rows)
+      await this.enqueue(id, async () => {
+        if (this.purgeBlocked.has(id) || this.purgeEpoch(id) !== epoch) return
+        await this.put(id, identity, rows)
+      })
     } catch (error) {
       this.ctx.logger.warn(`session projection cache: ${what} for "${id}" failed (cache stays stale): ${String(error)}`)
     }
+  }
+
+  /** Return the current monotonic purge barrier for one Session id. */
+  private purgeEpoch(id: SessionId): number {
+    return this.purgeEpochs.get(id) ?? 0
+  }
+
+  /** Queue one complete cache mutation behind this Session's prior mutation. */
+  private enqueue<T>(id: SessionId, operation: () => Promise<T>): Promise<T> {
+    if (!this.operationAdmissionOpen) {
+      return Promise.reject(new Error('session projection cache is disposing'))
+    }
+    const previous = this.operationTails.get(id) ?? Promise.resolve()
+    const result = previous.then(operation)
+    const tail = result.then(() => undefined, () => undefined)
+    this.operationTails.set(id, tail)
+    const clearSettledTail = (): void => {
+      if (this.operationTails.get(id) === tail) this.operationTails.delete(id)
+    }
+    return result.then(
+      (value) => {
+        clearSettledTail()
+        return value
+      },
+      (error: unknown) => {
+        clearSettledTail()
+        throw error
+      },
+    )
   }
 
   private requireTable(): KvTable<SessionId, CheckpointRecord> {

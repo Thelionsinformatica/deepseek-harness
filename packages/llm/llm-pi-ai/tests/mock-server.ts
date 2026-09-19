@@ -29,6 +29,7 @@ export const textEvents = [
 export async function mockServer(script: {
   status?: number
   events?: string[]
+  commentsBeforeDone?: string[]
   body?: string
   delayMs?: number
   headers?: Record<string, string>
@@ -55,11 +56,15 @@ export async function mockServer(script: {
         response.end(behavior.body ?? '{}')
         return
       }
-      response.writeHead(200, { 'content-type': 'text/event-stream' })
+      response.writeHead(200, { 'content-type': 'text/event-stream', ...behavior.headers })
       let index = 0
       const writeNext = (): void => {
         const event = behavior.events?.[index++]
         if (event === undefined) { response.end(); return }
+        if (event === '[DONE]') {
+          for (const comment of behavior.commentsBeforeDone ?? []) response.write(`: ${comment}\n`)
+          if ((behavior.commentsBeforeDone?.length ?? 0) > 0) response.write('\n')
+        }
         response.write(`data: ${event}\n\n`)
         if (behavior.delayMs === undefined) writeNext()
         else setTimeout(writeNext, behavior.delayMs)

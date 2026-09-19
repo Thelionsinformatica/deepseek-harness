@@ -76,7 +76,7 @@ retry → next numbered step/start      ⟵ derives from the replacement surface
 ```
 compaction/start    → log-only. Acquires the lock.
 [summarize older range via the backend]
-compaction/summary  → log-only. Records the raw summary, local-call marker, range, shadowed seqs, and token count.
+compaction/summary  → log-only. Records the checkpoint summary, original output, local-call marker, range, shadowed seqs, and token count.
 user/message     → canonical checkpoint source + surfaceOp { op:'replace', start, end }.
                    THE surface mutation (framed summary).
                    deriveMessages() renders it as a user-role message.
@@ -87,7 +87,7 @@ compaction/end      → log-only. Releases the lock (carries `error` on a recove
 
 ### 检查点框架 + 增量合并（后端私有）
 
-基础后端将摘要包装为既定的检查点上下文，并标记以便下一轮增量合并。原始摘要保留在 `compaction/summary` 上。框架是后端策略；seam 承诺由一条替换 user 消息承载可能带框架的摘要，并使用规范的检查点来源。
+基础后端将摘要包装为既定的检查点上下文，并标记以便下一轮增量合并。在框定之前，它会从被替换消息中确定性恢复有界的 HTTP(S) 引用、Windows 路径和选定的工具结果状态行，移除凭据与 URL 查询数据，并带来源标签追加这些内容。该操作附录不会把 assistant 声明提升为工具证据。完整检查点摘要保留在 `compaction/summary` 上，未经修改的模型响应保留在 `rawOutput` 中。框定与连续性提取属于后端策略；seam 承诺由一条替换 user 消息承载可能带框架的摘要，并使用规范的检查点来源。
 
 ### 通过日志记录的锁实现阻塞，加上崩溃/可恢复失败的分类
 
@@ -127,7 +127,7 @@ compaction/end      → log-only. Releases the lock (carries `error` on a recove
 
 ## 测试
 
-- **单元测试：** 使用真实 Loader 和 invariant 插件覆盖完整单元保留、修剪配置与回放、富块顺序、元数据保留、收敛、`compaction/end` 的两种结果、开放尾部拒绝、仅修剪与带摘要的溢出恢复、generation 证明、上限和原始错误保留。
+- **单元测试：** 使用真实 Loader 和 invariant 插件覆盖完整单元保留、修剪配置与回放、富块顺序、元数据保留、确定性操作连续性与秘密移除、收敛、`compaction/end` 的两种结果、开放尾部拒绝、仅修剪与带摘要的溢出恢复、generation 证明、上限和原始错误保留。
 - **循环测试：** 测试固定 pre-step 发生在前一个 `step/end` 之后、下一个 `step/start` 之前，使用实际 `agent/request` 路由，关闭失败步骤，分配新的重试编号，并覆盖完整的抛出/带内溢出 → 压缩 → 重建重试组合。
 - **手动测试：** 无需模型密钥即可固定 maintenance 串行化、标记顺序、注入保留、活动／陈旧未匹配标记分类、取消、闭合／flush 失败、命令映射以及排队 TUI 流程。
 - **带密钥 e2e：** 真实模型和 bash 会话在降低的限制下触发压缩，记录完整的 `compaction/start…end` 对，缩小 surface，并完成任务。

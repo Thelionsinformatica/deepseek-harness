@@ -125,6 +125,35 @@ afterEach(async () => {
 })
 
 describe('SessionProjectionCache write policy', () => {
+  it('serializes an idempotent purge behind an admitted write and leaves no row', async () => {
+    const { ctx, cache, pool } = await harness()
+    const session = ctx.sessions.create(SessionId('purge-queued-write'))
+    mark(session, ['before purge'])
+    const table = (cache as unknown as {
+      table: { put(key: SessionId, value: unknown): Promise<void> }
+    }).table
+    const put = table.put.bind(table)
+    const started = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    vi.spyOn(table, 'put').mockImplementationOnce(async (key, value) => {
+      started.resolve(undefined)
+      await release.promise
+      await put(key, value)
+    })
+
+    const writing = cache.write(session)
+    await started.promise
+    let purgeSettled = false
+    const purging = cache.purgeSession(session.id).then(() => { purgeSettled = true })
+    await Promise.resolve()
+    expect(purgeSettled).toBe(false)
+    release.resolve(undefined)
+    await Promise.all([writing, purging])
+    await cache.purgeSession(session.id)
+
+    expect(storedRecord(pool, session.id)).toBeUndefined()
+  })
+
   it('writes a durable checkpoint at turn/end (mandatory point)', async () => {
     const { ctx, pool } = await harness()
     const session = ctx.sessions.create(SessionId('turn-end'))
@@ -265,6 +294,32 @@ describe('SessionProjectionCache cold read', () => {
     // Write-back: the stored row advanced to the served cut.
     expect(storedRows(samePool, id)?.['cache-test/marks'])
       .toEqual({ ver: 1, seq: 3, val: { marks: ['a', 'b'] } })
+  })
+
+  it('does not resurrect a purged row when an earlier cold read finishes late', async () => {
+    const pool = new MemoryMediaPool()
+    const id = SessionId('purge-cold-race')
+    const events = storedLog([['late']])
+    const logs = new Map([[String(id), events]])
+    const { cache, persistence } = await harness({ pool, logs })
+    const started = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    persistence.readFrom.mockImplementationOnce(async (_id, fromSeq) => {
+      started.resolve(undefined)
+      await release.promise
+      return {
+        meta: headerOf(id),
+        events: events.filter(event => event.seq >= fromSeq),
+      }
+    })
+
+    const reading = cache.coldSnapshot(id)
+    await started.promise
+    await cache.purgeSession(id)
+    release.resolve(undefined)
+
+    await expect(reading).resolves.toMatchObject({ values: { 'cache-test/marks': { marks: ['late'] } } })
+    expect(storedRecord(pool, id)).toBeUndefined()
   })
 
   it('discards a version-mismatched row and refolds the full log', async () => {

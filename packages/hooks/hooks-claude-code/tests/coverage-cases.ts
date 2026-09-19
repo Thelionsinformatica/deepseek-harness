@@ -415,9 +415,7 @@ export function defineCoverageCases(group: CoverageGroup): void {
   })
 
   if (group === 'context') describe('hooks-claude-code coverage — continue:false, context arm, no-cwd', () => {
-    it('a {"continue":false} hook is RECORDED as decision "stop" but does not halt the run (TODO(hook-continue-false))', async () => {
-    // The extension points cannot yet honor `continue:false` as a hard halt. The log must still record the
-    // stop decision while execution and the turn continue normally.
+    it('a {"continue":false} PreToolUse hook records stop and vetoes the tool body', async () => {
       const d = dir()
       const s = sh(d, 'stop.sh', '#!/usr/bin/env bash\necho \'{"continue":false,"stopReason":"halt"}\'\n')
       const path = hooks(d, { PreToolUse: [{ hooks: [{ type: 'command', command: s }] }] })
@@ -429,10 +427,29 @@ export function defineCoverageCases(group: CoverageGroup): void {
       agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
       await waitForIdle(ctx, agent)
       const res = events(agent).find(e => e.type === 'hook/result')
-      expect(res?.type === 'hook/result' && res.data.decision).toBe('stop') // recorded
-      expect(ran).toBe(true) // NOT honored: the tool still ran (halt is deferred)
+      expect(res?.type === 'hook/result' && res.data.decision).toBe('stop')
+      expect(ran).toBe(false)
+      const result = events(agent).find(e => e.type === 'tool/result')
+      expect(result?.type === 'tool/result' && result.data.message.content[0].content
+        .some(block => block.type === 'text' && block.text.includes('halt'))).toBe(true)
       const turnEnd = events(agent).findLast(e => e.type === 'turn/end')
-      expect(turnEnd?.type === 'turn/end' && turnEnd.data.reason.kind).toBe('completed') // ran to completion
+      expect(turnEnd?.type === 'turn/end' && turnEnd.data.reason.kind).toBe('completed')
+    })
+
+    it('a {"continue":false} PreToolUse hook without stopReason uses the stable fallback', async () => {
+      const d = dir()
+      const s = sh(d, 'stop.sh', '#!/usr/bin/env bash\necho \'{"continue":false}\'\n')
+      const path = hooks(d, { PreToolUse: [{ hooks: [{ type: 'command', command: s }] }] })
+      const adapter = new MockAdapter([toolCallResponse('c1', 'echo', {}), textResponse('done')])
+      const ctx = await harness(path, adapter)
+      let ran = false
+      ctx.tools.register(defineContentToolFixture({ name: 'echo', description: 'e', parameters: {}, async execute() { ran = true; return [{ type: 'text', text: 'ok' }] } }))
+      const agent = ctx.agentLoop.create(SessionId('cont-false-default-stop'), { provider: 'mock', model: 'mock' })
+      agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } })); await waitForIdle(ctx, agent)
+      expect(ran).toBe(false)
+      const result = events(agent).find(e => e.type === 'tool/result')
+      expect(result?.type === 'tool/result' && result.data.message.content[0].content
+        .some(block => block.type === 'text' && block.text.includes('stopped by PreToolUse hook'))).toBe(true)
     })
 
     it('a PostToolUse hook that BOTH blocks AND attaches additionalContext', async () => {

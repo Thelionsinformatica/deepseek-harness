@@ -6,7 +6,7 @@ English | [中文](README.zh.md)
 
 ## Composition
 
-Load this function plugin after `ctx.sessions`, `ctx.agents`, `ctx.tools`, `ctx.sessionPersistence`, and the persistence listener that implements Session flushes. Static injection makes a missing persistence service a composition error. The plugin listens only to later `agent/created` events, installs on runtime roots, and registers all tools through the exact `agent.ctx`. Agents that already existed when the plugin loaded and runtime children do not receive Schedule.
+Load this function plugin after `ctx.sessions`, `ctx.agents`, `ctx.tools`, `ctx.sessionPersistence`, and the persistence listener that implements Session flushes. Static injection makes a missing persistence service a composition error. The plugin listens only to later `agent/created` events, installs on runtime roots, and registers all tools through the exact `agent.ctx`. Agents that already existed when the plugin loaded, runtime children, and the shipped closed-surface `minimal` preset do not receive Schedule.
 
 Time-context is not a Schedule dependency. A composition may mount `@deepseek-ai/dsh-time-context` so the model can interpret natural language in the browser's request-local zone, as the official Schedule Web overlay does. The model must still pass an explicit offset or `time_zone` to `schedule_create`; Schedule never imports or infers from model context.
 

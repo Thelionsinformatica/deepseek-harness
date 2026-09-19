@@ -27,7 +27,13 @@ export function providerForOpenStep(
     // The loop bounds prove this indexed read exists.
     // oxlint-disable-next-line typescript/no-non-null-assertion
     const event = events[index]!
-    if (event.type === 'request/header') return event.data.header.config.provider
+    if (event.type === 'request/header') {
+      const { provider, model } = event.data.header.config
+      if (provider === '' || model === '') return undefined
+      return provider
+    }
   }
   return undefined
 }
+
+

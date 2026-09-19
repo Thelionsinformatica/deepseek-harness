@@ -10,12 +10,15 @@ import { makeTranslate, SlotTestRuntime } from '@deepseek-ai/dsh-client-test-run
 import type { QueuedMessage, SessionFace } from '@deepseek-ai/dsh-client-runtime/client'
 import { ComposerBlockRegistry } from '../src/client/input/blocks.ts'
 import { InputHub } from '../src/client/input/hub.ts'
-import { ConversationController, UnsupportedImageMediaTypeError } from '../src/client/service.ts'
+import { ConversationController } from '../src/client/service.ts'
 import { zh } from '../src/client/locales.ts'
 
 async function bench(readAttachment?: SessionFace['readAttachment']) {
   const runtime = await SlotTestRuntime.create()
-  const prompt = vi.fn(() => Promise.resolve({ ok: true as const, value: { accepted: true as const } }))
+  const prompt = vi.fn(() => Promise.resolve({
+    ok: true as const,
+    value: { accepted: true as const, messageId: 'message-1' as never },
+  }))
   const updateQueue = vi.fn(() => Promise.resolve({ ok: true as const, value: { accepted: true as const } }))
   const cancel = vi.fn(() => Promise.resolve({ ok: true as const, value: { accepted: true as const } }))
   const loadOlder = vi.fn(() => Promise.resolve())
@@ -103,14 +106,17 @@ describe('ConversationController', () => {
     await b.runtime.dispose()
   })
 
-  it('validates every MIME type before allocating previews', async () => {
+  it('routes image files to the image path and every other file to the file path', async () => {
     const b = await bench()
     const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:preview')
-    expect(() => b.root.createDraftImages([
-      new File([Uint8Array.of(1)], 'valid.png', { type: 'image/png' }),
-      new File([Uint8Array.of(2)], 'invalid.svg', { type: 'image/svg+xml' }),
-    ])).toThrow(UnsupportedImageMediaTypeError)
-    expect(created).not.toHaveBeenCalled()
+    const attachments = b.root.createDraftImages([
+      new File([Uint8Array.of(1)], 'foto.png', { type: 'image/png' }),
+      new File([Uint8Array.of(2)], 'notas.md', { type: 'text/markdown' }),
+    ])
+    // Only the image earns an object URL; the file carries an inline SVG badge.
+    expect(created).toHaveBeenCalledTimes(1)
+    expect(attachments.map(attachment => attachment.kind)).toEqual(['image', 'file'])
+    expect(attachments[1]?.previewUrl.startsWith('data:image/svg+xml')).toBe(true)
     created.mockRestore()
     await b.runtime.dispose()
   })

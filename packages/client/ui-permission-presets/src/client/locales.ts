@@ -11,6 +11,9 @@ export const zh = {
   'confirm.acknowledge': '我已了解风险，并愿意继续',
   'confirm.cancel': '取消',
   'confirm.enable': '启用 Full access',
+  'preset.readOnly': '只读',
+  'preset.workspaceWrite': '工作区写入',
+  'preset.fullAccess': '完全访问',
 } satisfies Record<string, string>
 
 /** The settings.permission namespace key union. */
@@ -27,6 +30,25 @@ export const en = {
   'confirm.acknowledge': 'I understand the risks and want to continue',
   'confirm.cancel': 'Cancel',
   'confirm.enable': 'Enable Full access',
+  'preset.readOnly': 'Read Only',
+  'preset.workspaceWrite': 'Workspace Write',
+  'preset.fullAccess': 'Full access',
+} satisfies Record<PermissionSettingsKey, string>
+
+/** Brazilian Portuguese dictionary for the permission settings row. */
+export const pt = {
+  'title': 'Permissão',
+  'description': 'Escolha o modo de permissão padrão para novas sessões',
+  'loading': 'Carregando',
+  'unavailable': 'Indisponível',
+  'confirm.title': 'Ativar acesso total?',
+  'confirm.description': 'O acesso total reduz as etapas de confirmação nas novas sessões e permite executar diretamente ações sensíveis, alterações em arquivos e comandos externos. Use somente em tarefas confiáveis.',
+  'confirm.acknowledge': 'Entendo os riscos e quero continuar',
+  'confirm.cancel': 'Cancelar',
+  'confirm.enable': 'Ativar acesso total',
+  'preset.readOnly': 'Somente leitura',
+  'preset.workspaceWrite': 'Gravar no espaço de trabalho',
+  'preset.fullAccess': 'Acesso total',
 } satisfies Record<PermissionSettingsKey, string>
 
 /** Simplified Chinese dictionary for the current-session popup gate. */
@@ -48,4 +70,13 @@ export const accessEn = {
   'confirm.acknowledge': 'I understand the risks and want to continue',
   'confirm.cancel': 'Cancel',
   'confirm.enable': 'Enable Full access',
+} satisfies Record<PermissionAccessKey, string>
+
+/** Brazilian Portuguese dictionary for the current-session popup gate. */
+export const accessPt = {
+  'confirm.title': 'Ativar acesso total?',
+  'confirm.description': 'O acesso total reduz as etapas de confirmação e permite que o agente execute diretamente ações sensíveis, alterações em arquivos e comandos externos. Use somente quando confiar na tarefa atual.',
+  'confirm.acknowledge': 'Entendo os riscos e quero continuar',
+  'confirm.cancel': 'Cancelar',
+  'confirm.enable': 'Ativar acesso total',
 } satisfies Record<PermissionAccessKey, string>

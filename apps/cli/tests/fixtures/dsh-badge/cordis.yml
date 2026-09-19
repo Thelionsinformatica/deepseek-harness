@@ -7,3 +7,6 @@
 
 - id: session-telemetry-otel
   disabled: true
+
+- id: llm-pi-ai
+  disabled: true

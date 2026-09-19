@@ -16,7 +16,8 @@
 
 ## 传输卫生
 
-- 只接受 `http:` 和 `https:` URL；拒绝 URL 中的凭据（`WEB_BLOCKED_URL`）以及过长／格式错误的 URL（`WEB_INVALID_URL`）。
+- 只接受 `http:` 和 `https:` URL；拒绝凭据和非公开目的地（`WEB_BLOCKED_URL`），也拒绝过长／格式错误的 URL（`WEB_INVALID_URL`）。非公开检查覆盖 localhost 别名、规范及替代形式的 IPv4 字面量、IPv4 映射及特殊用途 IPv6，以及私有、回环、链路本地、运营商级 NAT、文档、基准测试、多播和保留地址范围。
+- 每次连接前解析主机名；只要完整 DNS 答案中包含一个非公开地址，就拒绝该答案，并且只把验证后的地址列表交给 Undici。每个重定向跳使用新的请求级 dispatcher 重新验证，不能复用上一跳的 socket，也不能执行未经验证的第二次 DNS 查询。
 - 强制执行 URL 最大长度、响应字节上限（`WEB_FETCH_TOO_LARGE`）、解码主体字符上限、超时（`WEB_FETCH_TIMEOUT`）和重定向跳数上限。
 - 把调用方的中止信号（`WEB_ABORTED`）传播到网络请求与流式读取。
 - 只跟随**同源**重定向；跨源重定向以 `WEB_REDIRECT_BLOCKED` 失败，要求发起新的工具调用（沿用 Claude Code 的 WebFetch 模式）。
@@ -46,6 +47,6 @@
 
 ## 已知限制与暂缓事项
 
-- **SSRF／私有网络防护暂缓**：不会阻止私有、loopback、link-local、multicast 或其他非公开目标，也不进行 DNS 解析后验证或逐跳重新验证（见 [web 能力 seam Agent Note](../../../.agents/notes/implemented/architecture/2026-06-24-web-capability-seam.zh.md)）。在此功能落地前，该提供方是 SSRF 原语；能够访问敏感内部网络目标的部署**禁止启用它**。
+- **仅限公开目的地**：SSRF 策略没有绕过配置。确实需要访问 intranet、loopback 服务、私有地址或特殊用途网络的工作流，必须使用另一个具有明确权限的连接器，而不是这个匿名公开 Web 提供方（见[网络固定决策](../../../.agents/notes/implemented/bug-fix/2026-08-28-web-fetch-public-network-pinning.zh.md)）。
 - **只解码文本内容**：包括 html/xhtml 与 `text/*` 加 JSON/XML 家族；缺少 `Content-Type` 或任何二进制类型都会抛出 `WEB_UNSUPPORTED_CONTENT_TYPE`，可提取文本的 PDF 解码属于明确的暂缓工作。
 - **charset 只来自 `Content-Type` 标头**（默认为 UTF-8）：HTML `<meta charset>` 声明会被忽略；声明但无法识别的 charset 标签会抛出异常，而非回退。

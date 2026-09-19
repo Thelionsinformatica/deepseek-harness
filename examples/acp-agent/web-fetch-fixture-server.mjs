@@ -1,15 +1,15 @@
 /**
- * Deterministic loopback HTTP fixture for the web-fetch snapshot scenario: a
- * small HTML page (headings, named entities, a GFM table, nested formatting)
- * on a fixed port, so recording and keyless replay drive the REAL
- * `dsh-web-fetch-http` transport and `dsh-tool-web` markdown rendering
- * without external network. The port is fixed because the fetched URL is part
- * of the recorded model transcript.
+ * Deterministic, explicitly permissioned loopback connector for the web-fetch
+ * snapshot scenario. Production's anonymous public-web provider rejects
+ * private destinations by design; this fixture keeps that policy intact while
+ * exercising the real `dsh-tool-web` markdown rendering without external
+ * network. The port is fixed because the URL is part of the transcript.
  */
 import { createServer } from 'node:http'
 
 /** Fixed loopback port the scenario prompt points `web_fetch` at. */
 const PORT = 43117
+const FIXTURE_URL = `http://127.0.0.1:${PORT}/menu.html`
 
 const PAGE = `<!doctype html>
 <html><head><title>Menu</title><style>.x{color:red}</style><script>ignored()</script></head>
@@ -24,6 +24,7 @@ const PAGE = `<!doctype html>
 
 /** Cordis plugin name. */
 export const name = 'web-fetch-fixture-server'
+export const inject = ['web']
 
 /**
  * Start the fixture server on 127.0.0.1 and register its shutdown.
@@ -45,6 +46,22 @@ export async function apply(ctx) {
   })
   // The fixture must never hold the process open past protocol shutdown.
   server.unref()
+  ctx.web.registerFetchProvider({
+    id: 'snapshot-fixture',
+    available: () => true,
+    async fetch(request, signal) {
+      if (request.url !== FIXTURE_URL) {
+        throw new Error(`snapshot fixture only permits ${FIXTURE_URL}`)
+      }
+      const response = await fetch(FIXTURE_URL, { signal })
+      return {
+        url: response.url,
+        statusCode: response.status,
+        body: { kind: 'html', content: await response.text() },
+        truncated: false,
+      }
+    },
+  })
   ctx.effect(() => async () => {
     await new Promise((resolve, reject) => {
       server.close(error => error ? reject(error) : resolve(undefined))

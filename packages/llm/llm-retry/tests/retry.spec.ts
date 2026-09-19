@@ -197,6 +197,7 @@ describe('provider-routed retry policy', () => {
       turn: 1,
       step: 1,
       provider: 'mock',
+      model: 'mock',
       mode: 'normal',
       policyKey: '["normal",2,["RATE_LIMIT","SERVER"],500,10000,0]',
       retry: 1,

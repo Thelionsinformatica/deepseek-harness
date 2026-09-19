@@ -14,6 +14,7 @@ import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import type { ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { resolveDefaultWorkspace } from '@deepseek-ai/dsh-home-paths'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 // Empty type imports carry the loader Context merge for the settlement await
@@ -110,7 +111,7 @@ async function run(ctx: Context, task: string, io: HeadlessIo): Promise<void> {
   // (@deepseek-ai/dsh-agent-presets README, "Composing a child agent").
   const { agent } = await agents.create({
     sessionId: SessionId(`session-${randomUUID()}`),
-    meta: { cwd: process.cwd() },
+    meta: { cwd: resolveDefaultWorkspace() },
     agentOptions: { provider: selection.provider, model: selection.model },
     setup: (agentCtx) => {
       const selected: ModelSelectionRef = { current: selection, assembled: undefined }

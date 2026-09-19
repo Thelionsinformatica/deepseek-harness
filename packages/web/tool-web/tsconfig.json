@@ -7,6 +7,9 @@
   "include": ["src"],
   "references": [
     {
+      "path": "../../interaction/user-approval"
+    },
+    {
       "path": "../../../vendor/cosmokit"
     },
     {
@@ -29,6 +32,9 @@
     },
     {
       "path": "../web"
+    },
+    {
+      "path": "../web-access"
     },
     {
       "path": "../../runtime-diagnostics/invariants"

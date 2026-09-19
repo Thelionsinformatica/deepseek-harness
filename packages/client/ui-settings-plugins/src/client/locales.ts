@@ -53,6 +53,47 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   webSearchMaxUsesHint: 'How many times one request may search before it must answer.',
 }
 
+/** Brazilian Portuguese copy. */
+export const pt: Record<PluginsSettingsLocaleKey, string> = {
+  nav: 'Plugins',
+  title: 'Plugins',
+  intro: 'Configure e consulte os plugins instalados nesta implantação.',
+  tabs: 'Visualizações dos plugins',
+  configurableTab: 'Configuração dos plugins',
+  empty: 'Esta implantação não disponibiliza configurações de plugins.',
+  overridden: 'Personalizado',
+  reset: 'Restaurar padrão',
+  readOnly: 'As configurações desta implantação são somente leitura.',
+  expand: 'Mostrar configurações',
+  collapse: 'Ocultar configurações',
+  save: 'Salvar',
+  saving: 'Salvando…',
+  discard: 'Descartar',
+  unsaved: 'Não salvo',
+  saveFailed: 'A implantação não aceitou estes valores; corrija-os e tente novamente.',
+  invalidNumber: 'Informe um número ou deixe em branco para usar o padrão.',
+  bashTitle: 'Terminal',
+  bashDescription: 'Define limites para cada comando executado pelo agente.',
+  bashTimeoutMs: 'Tempo limite do comando (ms)',
+  bashTimeoutMsHint: 'Tempo máximo de execução de um comando antes de ele ser encerrado.',
+  bashMaxOutputBytes: 'Limite de saída por fluxo (bytes)',
+  bashMaxOutputBytesHint: 'A saída excedente é salva em um arquivo temporário em vez de ser perdida.',
+  agentLoopTitle: 'Ciclo do agente',
+  agentLoopDescription: 'Define como o agente distribui chamadas de ferramentas.',
+  agentLoopMaxParallel: 'Chamadas paralelas de ferramentas',
+  agentLoopMaxParallelHint: 'Limite de chamadas seguras executadas em paralelo dentro de uma etapa.',
+  webSearchTitle: 'Pesquisa na web',
+  webSearchDescription: 'Provedor de pesquisa do DeepSeek.',
+  webSearchApiKey: 'Chave de API',
+  webSearchApiKeyHint: 'Armazenada fora do arquivo de configurações. Deixe em branco para manter a chave atual.',
+  webSearchApiKeySet: 'Há uma chave configurada.',
+  webSearchApiKeyUnset: 'Nenhuma chave configurada; a pesquisa ficará indisponível até que uma seja adicionada.',
+  webSearchBaseUrl: 'Endpoint',
+  webSearchBaseUrlHint: 'Deixe em branco para usar o endereço padrão do provedor.',
+  webSearchMaxUses: 'Máximo de pesquisas por solicitação',
+  webSearchMaxUsesHint: 'Quantidade máxima de pesquisas antes de o agente precisar responder.',
+}
+
 /** Simplified Chinese copy. */
 export const zh: Record<PluginsSettingsLocaleKey, string> = {
   nav: '插件',

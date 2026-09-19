@@ -3,6 +3,11 @@
     - button "Use only Cordis tools. First" [disabled]
   - img
   - text: Standard mode
+  - button "Review memory":
+    - img
+    - text: Review memory
+  - button "Activity"
+  - button "Full screen"
   - button "Session log":
     - text: Session log
     - img
@@ -12,10 +17,6 @@
 - text: "Use only Cordis tools. First call cordis_inspect_self with no arguments. Then call cordis_define with plugin kind \"new\", idPrefix \"snap\", name \"snapshot noop\", purpose \"does nothing, for the snapshot\", code.host exactly \"return { name: \\\"snapshot-noop\\\", apply(ctx) {} }\" and code.client exactly \"return { inject: [\\\"slots\\\"], apply(ctx) { ctx.slots.register({ name: \\\"shell.overlay\\\", id: \\\"snapshot-probe\\\" }, () => React.createElement(\\\"div\\\", { \\\"data-snapshot-probe\\\": \\\"loaded\\\" })) } }\". Read its returned pluginId and packageId, then call cordis_run with those exact IDs and mode \"run\". After the run request returns, reply exactly CORDIS_UI_READY and stop. {{clock}}"
 - button "Copy":
   - img
-- button "Context injection @deepseek-ai/dsh-system-prompt":
-  - img
-  - img
-  - text: Context injection @deepseek-ai/dsh-system-prompt
 - button "Think I will inspect the current Session's dynamic Cordis Plugins before defining the snapshot Package.":
   - img
   - img
@@ -62,10 +63,6 @@
 - button "Branch into a new conversation":
   - img
 - text: {{clock}} Ran for {{duration}}
-- button "Context injection cordis-host-runner":
-  - img
-  - img
-  - text: Context injection cordis-host-runner
 - paragraph: The Cordis Plugin is running.
 - button "Copy":
   - img
@@ -93,12 +90,17 @@
   - img
 - text: {{clock}} Ran for {{duration}}
 - textbox "Message the agent"
-- button "Commands":
+- button "Add":
   - img
 - 'button "Access mode, current: Workspace Write"': Workspace Write
+- button "Enable web access for this session": Web
+- button "Start voice"
 - button "Select model, current DeepSeek-V4-Flash":
   - text: DeepSeek-V4-Flash
   - img
 - button "0% of context used"
 - button "Send message" [disabled]
-- text: 3 turns · 7 steps LLM {{duration}} · Tool call {{duration}} Cache hit 77% Input 66.5K tok · Output 321 tok
+- status:
+  - strong: Leon ready
+  - text: Ready for a new task.
+- text: 3 turns · 7 steps LLM {{duration}} · Tool call {{duration}} Cache hit 77% Input 66.5K tok · Output 321 tok 7 unaccounted call(s)

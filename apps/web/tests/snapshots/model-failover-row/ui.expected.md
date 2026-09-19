@@ -1,0 +1,36 @@
+- banner:
+  - navigation "Session hierarchy":
+    - button "Automatic model failover" [disabled]
+  - button "Review memory":
+    - img
+    - text: Review memory
+  - button "Session log":
+    - text: Session log
+    - img
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+- text: Continue even if the local model is unavailable. {{clock}}
+- button "Copy":
+  - img
+- status: ollama unavailableLeon automatically switched from qwen3.5:9b to gemini-3.1-pro-preview-customtools through the configured fallback.
+- paragraph: Automatic failover completed.
+- button "Copy":
+  - img
+- button "Good response":
+  - img
+- button "Bad response":
+  - img
+- button "Branch into a new conversation":
+  - img
+- text: {{clock}} Ran for {{duration}}
+- textbox "Message the agent"
+- button "Add":
+  - img
+- 'button "Access mode, current: Workspace Write"': Workspace Write
+- button "Start voice"
+- button "Leon Automatic, currently using Qwen 3.5 9B (Local), reasoning effort Off":
+  - text: Leon Automatic Qwen 3.5 9B (Local) · Off
+  - img
+- button "Send message" [disabled]
+- text: 1 turns · 1 steps LLM {{duration}} 1 unaccounted call(s) · 1 unaccounted attempt(s)

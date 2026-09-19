@@ -1,0 +1,13 @@
+{
+  "steps": [
+    { "op": "initialize" },
+    { "op": "newSession" },
+    {
+      "op": "promptAndWaitForAgentMessage",
+      "text": "Implement and validate a small project from start to finish.",
+      "waitForText": "INITIAL TASK STOP"
+    },
+    { "op": "waitForTurnStart", "minimumTurn": 2 },
+    { "op": "waitForTurnEnd" }
+  ]
+}

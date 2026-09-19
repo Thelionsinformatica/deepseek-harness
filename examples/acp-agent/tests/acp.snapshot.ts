@@ -54,6 +54,7 @@ const FS_CONFIG = fileURLToPath(new URL('../fs.cordis.yml', import.meta.url))
 const SESSION_QUERY_CONFIG = fileURLToPath(new URL('../session-query.cordis.yml', import.meta.url))
 const IMAGE_CONFIG = fileURLToPath(new URL('../image.cordis.yml', import.meta.url))
 const IMAGE_OFFLOAD_CONFIG = fileURLToPath(new URL('./fixtures/image-offload.cordis.yml', import.meta.url))
+const IMAGE_OFFLOAD_TIMEOUT_MS = process.platform === 'win32' ? 90_000 : 45_000
 const IMAGE_TEXT_ROUTE_CONFIG = fileURLToPath(new URL('../image-text-route.cordis.yml', import.meta.url))
 const PTY_CONFIG = fileURLToPath(new URL('../pty.cordis.yml', import.meta.url))
 const DEPTH_TWO_CONFIG = fileURLToPath(new URL('../depth-two.cordis.yml', import.meta.url))
@@ -426,6 +427,17 @@ const SCENARIOS: Scenario[] = [
   // the fixture scripts five identical todo_write calls and pins BOTH reminder
   // tiers (gentle at 3, detailed at 5) as injected user/message in transcript and log.
   { name: 'repeat-tool-reminder', hasModelTurn: true, recorded: false },
+  // Keyless authored replay: two identical reads of a missing file establish
+  // an equivalent failure chain and inject one logged recovery notice. A third
+  // unchanged model request is denied before dispatch, after which the model
+  // changes strategy and concludes. This pins the shipped base composition,
+  // not only the package-level event harness.
+  {
+    name: 'tool-failure-recovery-policy',
+    hasModelTurn: true,
+    recorded: false,
+    overridden: true,
+  },
   // Authored replay: a root AGENTS.md pins the session prefix, then a read in
   // nested/ discovers its narrower AGENTS.md as a raw, metadata-bearing
   // injected user/message. Both portable AGENTS.md fixtures are symlinks to a sibling
@@ -605,6 +617,7 @@ const SCENARIOS: Scenario[] = [
   { name: 'hook-cc-stop-continue', hasModelTurn: true, recorded: true },
   { name: 'hook-codex-promptsubmit-context', hasModelTurn: true, recorded: true },
   { name: 'hook-codex-pretool-block', hasModelTurn: true, recorded: true },
+  { name: 'hook-codex-pretool-stop', hasModelTurn: true, recorded: false },
   { name: 'hook-codex-posttool-block', hasModelTurn: true, recorded: true },
   { name: 'hook-codex-posttool-context', hasModelTurn: true, recorded: true },
   { name: 'hook-codex-stop-continue', hasModelTurn: true, recorded: true },
@@ -689,17 +702,53 @@ const SCENARIOS: Scenario[] = [
   },
 ]
 
+const BASH_REQUIRED_SCENARIOS = new Set([
+  'background-job-admission',
+  'bash-spill',
+  'bash-tool-turn',
+  'both-mode-turn',
+  'cancel-tool-calls',
+  'code-mode-read-image',
+  'code-mode-turn',
+  'escalation-approved',
+  'escalation-rejected',
+  'fs-delete-recreate',
+  'hook-cc-posttool-block',
+  'hook-cc-posttool-context',
+  'hook-cc-pretool-ask',
+  'hook-cc-pretool-deny',
+  'hook-codex-posttool-block',
+  'hook-codex-posttool-context',
+  'hook-codex-pretool-block',
+  'hook-codex-pretool-stop',
+  'max-tokens-continue',
+  'missing-sandbox-runner',
+  'packed-chunks',
+  'partial-landlock-child-failure',
+  'session-query-spill',
+  'tool-call-turn',
+  'workspace-edit',
+])
+const PORTABLE_SCENARIOS = SCENARIOS.map(scenario => (
+  BASH_REQUIRED_SCENARIOS.has(scenario.name) || scenario.name.startsWith('hook-')
+)
+  ? { ...scenario, bashOnly: true }
+  : scenario)
+
 // Hosts without a usable PowerShell skip the pwsh-tool-turn run (its fixtures
 // stay guarded); the probe follows the executor's own resolution so a Windows
 // host with only an install-location pwsh still runs the scenario.
-const hasPwsh = spawnSync(resolvePwshPath(), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$true'], { encoding: 'utf8' }).status === 0
+const hasPwsh = process.env.DSH_SKIP_REAL_PWSH !== '1'
+  && spawnSync(resolvePwshPath(), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$true'], { encoding: 'utf8' }).status === 0
+const hasBash = spawnSync('bash', ['--version'], { stdio: 'ignore' }).status === 0
 
 defineAcpSnapshotSuite({
   agent: AGENT,
   snapshotsDir: SNAPSHOTS_DIR,
-  scenarios: SCENARIOS,
+  scenarios: PORTABLE_SCENARIOS,
   mode: snapshotModeFromEnv(process.env.DSH_SNAPSHOT),
   hasPwsh,
+  hasBash,
 })
 
 it('pins native DeepSeek Files offload and inline fallback in assembled requests', async () => {
@@ -833,7 +882,10 @@ it('pins native DeepSeek Files offload and inline fallback in assembled requests
     )))]
     let toolContent = toolMessage.content
     for (const cwd of cwdSpellings) toolContent = toolContent.replaceAll(cwd, '{{cwd}}')
-    toolMessage.content = toolContent
+    toolMessage.content = toolContent.replace(
+      /(<path>)([^<]*)(<\/path>)/u,
+      (_match, open: string, path: string, close: string) => `${open}${path.replaceAll('\\', '/')}${close}`,
+    )
     expect(followup).toEqual([
       {
         role: 'user',
@@ -904,7 +956,7 @@ it('pins native DeepSeek Files offload and inline fallback in assembled requests
   } finally {
     await new Promise<void>(resolve => server.close(() => { resolve() }))
   }
-}, 45_000)
+}, IMAGE_OFFLOAD_TIMEOUT_MS)
 
 it('packed ACP fixture retains every chunk row kind without changing the logical session', () => {
   const source = fixtureText(PACKED_CHUNKS_SOURCE)

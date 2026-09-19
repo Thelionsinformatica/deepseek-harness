@@ -13,7 +13,7 @@
 | `web_search` | `queries`（必填 string[]） | 用于发现信息。返回可选答案与来源 URL。它会并发执行 1 至 `searchMaxQueries` 个不同搜索，按轮询顺序合并来源，再应用组合后的 `searchMaxResults` 上限。单元素数组执行一次搜索。完全相同的查询只执行一次。任何搜索失败都会中止批次中的其余搜索；批次结算完毕后调用才返回错误。两个上限都不面向模型。 |
 | `web_fetch` | `url`（string） | 获取特定 URL。HTML 主体渲染为 markdown（turndown，带 GFM 表格／删除线）；文本主体原样通过。非 2xx 状态会报告，而非报错。工具调用超时是部署策略（`dsh-tool-call-timeout-policy`），不是模型参数。 |
 
-两个工具都选择并发调度，因为提供方读取会返回内容，不会修改父 agent（智能体）的状态。
+两个工具在 `allow` 模式下选择并发调度。在 `ask` 模式下，agent（智能体）串行调度调用以避免交互式审批重叠；获准的多查询搜索仍会并发执行查询。
 
 规范化后的服务结果也是标准工具值：`WebSearchResult` 与 `WebFetchResult`。原生渲染器会保留下文所述的答案、来源和抓取正文文本；提供方对搜索结果数量和正文大小的上限仍属于获取限制，而非仅用于呈现的截断。
 
@@ -21,6 +21,7 @@
 
 | 配置键 | 默认值 | 含义 |
 |---|---|---|
+| `egressPolicy` | `allow` | `ask` 要求每次对外工具调用先取得新的、记入审计的批准，除非同一会话持有明确的 `dsh-web-access` 授权；`allow` 不增加 web 专用审批。Leon 预设选择 `ask`。 |
 | `search` | `true` | 注册 `web_search`。 |
 | `fetch` | `true` | 注册 `web_fetch`。 |
 | `searchMaxResults` | `8` | 一次 `web_search` 调用返回的来源数量上限（seam 截断各提供方列表；工具还会限制多查询组合列表）。 |
@@ -38,6 +39,8 @@
 
 ## 稳定注册
 
+当 `egressPolicy: ask` 时，执行器先校验参数；随后在调用 `ctx.web` 前请求 `ctx.approval`，除非当前 agent 会话的 [`dsh-web-access`](../web-access/README.zh.md) projection 明确报告已启用。该独立且可持久化的会话决定只适用于这些原生公开工具，`/web off` 会立即撤销；它不改变全局批准策略，也不授权其他网络路径。没有该会话授权时，只有 `allowed-once` 才会继续。请求以纯 JSON 包含完整查询或 URL，以及工具名称和调用 id；即使客户端只能从配对调用中渲染 shell 参数，审批内容仍可检查。这会将已经记录的参数复制到本地审批审计中，而不会复制会话历史或本地文件内容。每个后续未授权调用都需要独立决定，即使请求完全相同或来自同一 agent。缺少审批服务或 agent 时以 `WEB_APPROVAL_REQUIRED` 默认拒绝；拒绝、取消或无法回答时返回 `WEB_APPROVAL_DENIED`。审批策略为 `never` 的会话会拒绝，除非用户特意启用了这个狭窄的 Web 授权。即使迟到的答复同意访问，中止也会阻止提供方调用。协作式工具超时包含等待审批的时间。
+
 工具注册遵循产品**启用状态**，而非后端可用性。即使选中的提供方缺失、错误配置、存在歧义或暂时不可用，工具仍保持可见；seam 在执行时解析提供方，执行以结构化 `WebError`（例如 `WEB_PROVIDER_UNAVAILABLE`、`WEB_PROVIDER_AMBIGUOUS`）失败，`ToolRuntime.execute()` 会把它转为模型可读、钩子／UI 可路由的错误工具结果。这样无需把插件加载顺序、凭据状态或 HMR（热模块替换）时机纳入面向模型约定，也能保持模型 schema 稳定。要彻底移除 web 工具，请在此处通过配置将其禁用。
 
 工具绝不会调用提供方的 `available()`，也不会枚举提供方；唯一执行路径是 `ctx.web.search()`／`ctx.web.fetch()`，提供方不可用时，选择机制会在执行阶段抛出结构化 `WebError`，其错误码由工具接收。提供方选择完全留在 seam 内，由单一主体负责。
@@ -48,29 +51,29 @@
 
 #### 模型看到的内容
 
-搜索与抓取分别贡献以下 web-search 和 web-fetch 指引。搜索会在注册时根据配置选用启用抓取或仅搜索的文本。scope 工具限制不会移除这些独立注册的区段。
+搜索与抓取分别贡献以下精简的 web-search 和 web-fetch 指引。搜索会在注册时根据配置选用启用抓取或仅搜索的文本；查询数量限制同时保留在指引和工具 schema 中。scope 工具限制不会移除这些独立注册的区段。
 
 ##### 启用抓取时的 Web 搜索指引
 
 ```markdown
-Use the web_search tool to discover current information on the web. The required queries array accepts 1–4 non-empty search queries; use a one-item array for a single search. It returns an optional answer plus a list of source URLs. Follow up with web_fetch when you need the full content of a specific result, and cite the relevant URLs as markdown links.
+Use web_search for current information. It accepts 1–4 non-empty search queries. Cite relevant source URLs as markdown links; use web_fetch when a result needs full content.
 ```
 
 ##### 仅搜索时的 Web 搜索指引
 
 ```markdown
-Use the web_search tool to discover current information on the web. The required queries array accepts 1–4 non-empty search queries; use a one-item array for a single search. It returns an optional answer plus a list of source URLs. Use the returned source snippets when available, and cite the relevant URLs as markdown links.
+Use web_search for current information. It accepts 1–4 non-empty search queries. Use the returned source snippets when available and cite relevant source URLs as markdown links.
 ```
 
 ##### Web 抓取指引
 
 ```markdown
-Use the web_fetch tool to retrieve the content of a specific HTTP(S) URL (for example a result from web_search). It returns the page content decoded to text. Cite the URL as a markdown link when you use its content.
+Use web_fetch for full text from a specific HTTP(S) URL; cite that URL as a markdown link.
 ```
 
 #### Token 影响
 
-每个通过配置启用的工具都会为每次请求增加固定的指引 token 开销，即使限制隐藏了其 schema。切换抓取状态或更改 `searchMaxQueries` 会改变搜索指引；切换抓取状态还会注册或移除抓取区段。
+每个通过配置启用的工具都会为每次请求增加固定的指引 token 开销，即使限制隐藏了其 schema。切换抓取状态会改变搜索指引并注册或移除抓取区段；`searchMaxQueries` 会改变指引和工具 schema。
 
 #### KV Cache 影响
 
@@ -146,9 +149,23 @@ schema 校验会在执行前拒绝缺失或非数组的 `queries` 字段以及�
 
 仅追加；新可见内容位于可复用请求前缀之后，不会使现有 KV Cache 条目失效。
 
+### 对外访问批准
+
+#### 模型看到的内容
+
+未获准的调用产生 `Error: Saída web bloqueada: aprovação não concedida (<outcome>). Não tente enviar os mesmos dados por outra ferramenta.` 缺少审批路由时产生 `Error: Saída web bloqueada: não há canal de aprovação associado a esta chamada.` 调用方取消或工具截止时间可能将其替换为执行器的取消或超时诊断。成功结果的格式与工具 schema 保持不变。
+
+#### token 影响
+
+只有被拒绝调用保留的错误会增加模型 token。审批问题与决定属于审计事件，不是额外模型输入。
+
+#### KV Cache 影响
+
+结果变化仅追加；审批策略不添加系统提示词区段。
+
 ## 已知限制与暂缓事项
 
 - **没有覆盖整个批次的原生搜索计数器**：`searchMaxQueries` 限制 `ctx.web.search` 调用数，但提供方可以在每次调用内执行多次原生搜索。例如，配置了 `maxUses` 的模型型提供方最多可以执行 `searchMaxQueries × maxUses` 次原生搜索；`searchMaxResults` 只限制返回给调用方的组合来源。部署通过这些独立的消费方与提供方设置控制成本，因为通用 seam 不知道提供方内部的搜索计量单位。
 - **HTML→markdown 转换会在 GFM 无法安全表示的输入上降级**：[turndown](https://github.com/mixmark-io/turndown)（带 GFM 表格／删除线）通过真实 DOM 转换至多 `fetchMaxOutputChars` 个源字符。保守的 512 层词法守卫会将深层或嵌套有歧义的主体作为原始 HTML 直接透传，转换异常也会如此处理；表格的 `colspan` 会被忽略，因为 GFM 无法表示跨列单元格。这些限制可避免阻塞事件循环，也避免不受信任的数值属性使输出膨胀（[已归档的依赖决策](../../../.agents/notes/archived/simplification/2026-07-26-turndown-for-tool-web-html-markdown.md)）。
 - **面向模型的接口有意保持精简，后续扩展暂缓**：`max_results` 保持为配置上限（不是模型参数），`web_fetch` 只接受 `url`（没有 `format`／`prompt`／LLM（大语言模型）摘要模式）；两项都列为 [seam Agent Note](../../../.agents/notes/implemented/architecture/2026-06-24-web-capability-seam.zh.md) 中的后续步骤。
-- **没有 web 专用权限策略**：两个工具都不会请求 `ctx.approval` 就直接执行；需要确认的部署必须添加 `tools/pre-execute` 策略，该包不定义持久化的 URL／域名授权。
+- **批准不是数据防泄漏或网络隔离**：单次批准和明确的每会话 [`dsh-web-access`](../web-access/README.zh.md) 绕过只覆盖这两个原生工具，不覆盖直接调用 `ctx.web` 的代码、shell、浏览器、MCP、模型提供方流量或替换执行行为的可信插件。它们不识别秘密、不授予域名权限、不约束自定义提供方，也不能阻止用户批准发送私人数据。提供方的 SSRF 和重定向控制仍需独立存在。[对外访问批准决策](../../../.agents/notes/implemented/feature/2026-09-04-web-tool-outbound-consent.zh.md) 定义基础策略。

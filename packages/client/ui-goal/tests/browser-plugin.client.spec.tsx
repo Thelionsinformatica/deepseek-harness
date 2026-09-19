@@ -2,7 +2,7 @@
 /**
  * ui-goal browser half on a real cordis Context with fake slots/api/
  * sessions faces: the plugin registers the GoalBar dock entry at
- * conversation.input.dock, the inject face's four verbs read the CAS ref
+  * conversation.input.dock, the inject face's five actions read the CAS ref
  * from the session's CURRENT projected value at call time (no fence — the
  * Remote method's compare-and-set is the guard), a missing projection short-circuits
  * to the no-current-goal error without touching the wire, and a Remote failure
@@ -62,7 +62,7 @@ async function bench(options: {
   }
   const ref = { id: 'g-1', revision: 3 }
   const goals = (prefix: string) => ({
-    edit: answer(`${prefix}/edit`, { ref }),
+    edit: answer(`${prefix}/edit`, ref),
     pause: answer(`${prefix}/pause`, { ref }),
     resume: answer(`${prefix}/resume`, { ref }),
     clear: answer(`${prefix}/clear`, ref),
@@ -137,7 +137,7 @@ describe('ui-goal browser plugin', () => {
     // The strip forwards the Remote value verbatim; `answered` is the fake's
     // reply, unrelated to the CAS ref the call carries.
     const answered = { id: 'g-1', revision: 3 }
-    expect(await verbs.onEdit('New objective')).toEqual({ ok: true, value: { ref: answered } })
+    expect(await verbs.onEdit('New objective')).toEqual({ ok: true, value: answered })
     expect(await verbs.onPause()).toEqual({ ok: true, value: { ref: answered } })
     expect(await verbs.onResume()).toEqual({ ok: true, value: { ref: answered } })
     expect(await verbs.onClear()).toEqual({ ok: true, value: answered })
@@ -169,7 +169,13 @@ describe('ui-goal browser plugin', () => {
     // declares remote.goals in `inject`, so cordis disposes the dock entry along
     // with the namespace. Only a React closure that outlived that disposal can
     // reach these verbs, so no consumer-side guard renders it as an error.
-    for (const verb of [() => verbs.onEdit('x'), () => verbs.onPause(), () => verbs.onResume(), () => verbs.onClear()]) {
+    for (const verb of [
+      () => verbs.onEdit('x'),
+      () => verbs.onPause(),
+      () => verbs.onResume(),
+      () => verbs.onExtendAndResume(),
+      () => verbs.onClear(),
+    ]) {
       await expect(verb()).rejects.toThrow(TypeError)
     }
     expect(b.calls).toHaveLength(0)
@@ -180,7 +186,13 @@ describe('ui-goal browser plugin', () => {
       const b = await bench({ projection })
       await b.fiber.await()
       const verbs = b.entry()!.inject!(sid('s1'))
-      for (const result of [await verbs.onEdit('x'), await verbs.onPause(), await verbs.onResume(), await verbs.onClear()]) {
+      for (const result of [
+        await verbs.onEdit('x'),
+        await verbs.onPause(),
+        await verbs.onResume(),
+        await verbs.onExtendAndResume(),
+        await verbs.onClear(),
+      ]) {
         expect(result).toEqual({ ok: false, error: { code: 'no-current-goal', message: 'no current goal to mutate', details: {} } })
       }
       expect(b.calls).toHaveLength(0)
@@ -192,6 +204,31 @@ describe('ui-goal browser plugin', () => {
     await b.fiber.await()
     const verbs = b.entry()!.inject!(sid('s1'))
     expect(await verbs.onEdit('x')).toEqual({ ok: false, error: { code: 'internal', message: 'stale revision', details: {} } })
+  })
+
+  it('extends an exhausted round budget and resumes with the edit result ref', async () => {
+    const base = makeProjection(5)
+    const projection: GoalProjection = {
+      ...base,
+      goal: {
+        ...base.goal,
+        phase: 'blocked',
+        maxGoalRounds: 20,
+        blockedReason: { code: 'round-limit', message: 'limit reached' },
+      },
+      roundsStarted: 20,
+    }
+    const b = await bench({ projection })
+    await b.fiber.await()
+
+    expect(await b.entry()!.inject!(sid('s1')).onExtendAndResume()).toEqual({
+      ok: true,
+      value: { ref: { id: 'g-1', revision: 3 } },
+    })
+    expect(b.calls).toEqual([
+      { method: 'goals/edit', args: ['s1', { id: 'g-1', revision: 5 }, { maxGoalRounds: 40 }] },
+      { method: 'goals/resume', args: ['s1', { id: 'g-1', revision: 3 }] },
+    ])
   })
 
   it('drops the dock entry when the plugin fiber unloads (HMR safety)', async () => {
@@ -215,6 +252,7 @@ describe('GoalDock adapter', () => {
       onEdit: () => Promise.resolve({ ok: true, value: undefined }),
       onPause: () => Promise.resolve({ ok: true, value: undefined }),
       onResume: () => Promise.resolve({ ok: true, value: undefined }),
+      onExtendAndResume: () => Promise.resolve({ ok: true, value: undefined }),
       onClear: () => Promise.resolve({ ok: true, value: undefined }),
     }
     const t = makeTranslate(zh, commonZh)

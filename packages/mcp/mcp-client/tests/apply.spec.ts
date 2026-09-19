@@ -125,6 +125,23 @@ describe('mcp-client plugin module exports', () => {
     expect(resolved.serverName).toBe('github-prod_1')
   })
 
+  it('Config schema accepts a non-empty allowedTools list and rejects an empty one', () => {
+    const resolved = ConfigSchema({
+      transport: 'stdio',
+      serverName: 'memory',
+      command: 'echo',
+      allowedTools: ['memory_search'],
+    } as never)
+    expect(resolved.allowedTools).toEqual(['memory_search'])
+
+    expect(() => ConfigSchema({
+      transport: 'stdio',
+      serverName: 'memory',
+      command: 'echo',
+      allowedTools: [],
+    } as never)).toThrow()
+  })
+
   it('Config schema materializes reconnect defaults and merges partial overrides', () => {
     const omitted = ConfigSchema({
       transport: 'stdio',
@@ -179,6 +196,21 @@ describe('apply (plugin lifecycle)', () => {
     expect(mockSetNotificationHandler).toHaveBeenCalled()
     expect(ctx.tools.get('mcp__srv__remote')).toBeDefined()
     expect(ctx.tools.get('remote')).toBeUndefined()
+  })
+
+  it('publishes only configured raw tool names', async () => {
+    mockListTools.mockResolvedValue({
+      tools: [
+        { name: 'memory', inputSchema: { type: 'object' } },
+        { name: 'administration', inputSchema: { type: 'object' } },
+      ],
+      nextCursor: undefined,
+    })
+
+    await apply(ctx, { ...stdioConfig, allowedTools: ['memory'] })
+
+    expect(ctx.tools.get('mcp__srv__memory')).toBeDefined()
+    expect(ctx.tools.get('mcp__srv__administration')).toBeUndefined()
   })
 
   it('keeps the Cordis plugin loading until initial discovery publishes its tools', async () => {
@@ -290,6 +322,49 @@ describe('apply (plugin lifecycle)', () => {
     expect(ctx.tools.get('mcp__srv__remote')).toBeDefined()
     await ctx.fiber.dispose()
     expect(mockClose).toHaveBeenCalled()
+  })
+
+  it('rejects strict startup on a discovery cycle and closes the client', async () => {
+    mockListTools
+      .mockResolvedValueOnce({ tools: [], nextCursor: 'repeated' })
+      .mockResolvedValueOnce({ tools: [], nextCursor: 'repeated' })
+      .mockRejectedValue(new Error('requested beyond the cycle'))
+    try {
+      await expect(apply(ctx, { ...stdioConfig, failOnStartupError: true }))
+        .rejects.toMatchObject({
+          message: 'mcp-client(srv): initial connection or tool synchronization failed',
+          cause: { message: 'mcp-client(srv): server repeated a tools/list continuation cursor — invalid tool list' },
+        })
+      expect(mockListTools).toHaveBeenCalledTimes(2)
+      expect(ctx.tools.get('mcp__srv__remote')).toBeUndefined()
+      expect(mockClose).toHaveBeenCalled()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('retains a generation after a notification cycle and recovers on the next notification', async () => {
+    await apply(ctx, stdioConfig)
+    const handler = mockSetNotificationHandler.mock.calls[0]![1] as () => Promise<void>
+    mockListTools.mockReset()
+      .mockResolvedValueOnce({ tools: [], nextCursor: 'first' })
+      .mockResolvedValueOnce({ tools: [], nextCursor: 'second' })
+      .mockResolvedValueOnce({ tools: [], nextCursor: 'first' })
+      .mockRejectedValue(new Error('requested beyond the cycle'))
+    try {
+      await handler()
+      expect(mockListTools).toHaveBeenCalledTimes(3)
+      expect(ctx.tools.get('mcp__srv__remote')).toBeDefined()
+      mockListTools.mockReset()
+        .mockResolvedValueOnce({ tools: [], nextCursor: 'first' })
+        .mockResolvedValueOnce({ tools: [{ name: 'recovered', inputSchema: { type: 'object' } }] })
+      await handler()
+      expect(mockListTools).toHaveBeenCalledTimes(2)
+      expect(ctx.tools.get('mcp__srv__remote')).toBeUndefined()
+      expect(ctx.tools.get('mcp__srv__recovered')).toBeDefined()
+    } finally {
+      await ctx.fiber.dispose()
+    }
   })
 
   it('preserves strict startup registration when list_changed arrives before connect resolves', async () => {

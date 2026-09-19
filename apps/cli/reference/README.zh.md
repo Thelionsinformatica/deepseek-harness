@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-本参考定义 profile 启动、web 别名、插件管理和配置 dump 等命令模式。argv 由 [`src/args.ts`](../src/args.ts) 统一解析一次，[`src/bin.ts`](../src/bin.ts) 只会动态导入选中的运行器。
+本参考定义 profile 启动、web 别名、诊断、加密恢复、插件管理和配置 dump 等命令模式。argv 由 [`src/args.ts`](../src/args.ts) 统一解析一次，[`src/bin.ts`](../src/bin.ts) 只会动态导入选中的运行器。
 
 ## Profile 启动
 
@@ -37,6 +37,46 @@ dsh --profile web --patch ./extra.yml --dump-config
 ```
 
 `--dump-default-config` 只打印组合包各层；`--dump-config` 额外加上 profile 的 `cordis.patch.yml`、home 级的 `$DSH_HOME/cordis.patch.yml` 和 `--patch` overlay。两者都会打印注释，标明每行由哪个文件提供，以及哪些 overlay 修改过它；`!!js` 表达式保持未求值，找不到目标的 patch 会报告到 stderr。dump 操作不会运行应用的命令行参数提供方，因此展示的是解析任何应用参数之前的组合配置树；如果调用中包含应用参数，dump 会拒绝该调用。
+
+<a id="diagnosis"></a>
+
+## 诊断
+
+`dsh doctor` 是不启动 profile 的只读启动器模式。它根据 `^22.19 || >=24` 检查当前 Node 版本，在 Windows 上要求 `pwsh`，检查已解析 Harness home 与默认 workspace 的读写权限，在所选 profile 存在时验证其 `package.json` 和 `cordis.patch.yml`，并探测已构建的 `lib/bin.js`。home 缺失、profile 尚未初始化、Web 进程停止、源码执行时构建产物缺失，或 Ollama endpoint 不可用，均属于警告；运行时版本不受支持、workspace 无法访问、已安装 profile 不完整、Windows PowerShell 缺失，或预期 endpoint 由其他服务响应，则属于失败。
+
+Ollama 探测只发送 `GET <OLLAMA_HOST-or-loopback>/api/tags`，限制保留的响应前缀，并报告 Leon Automatic 所需的 `qwen3.5:9b` 是否存在。可手动选择的 Ornith 与 Qwen 3.8 模型不影响自动路由就绪状态。外部提供方（Google、OpenAI、NVIDIA NIM、OpenRouter）没有专属探测：它们是凭据引用的路由，而不是本机启动的服务。Web 探测向 `http://127.0.0.1:<port>/` 发送一次有界 GET，并通过返回页面的标题或 The Lions 品牌识别 Leon。这些请求都不发送提示词或凭据。该命令不会创建路径、初始化 profile、启动或停止服务、更改端口或尝试修复。
+
+```sh
+dsh doctor
+dsh doctor --profile headless --port 4175
+dsh doctor --json
+```
+
+人类可读报告使用 PT-BR。`--json` 输出一个 `schemaVersion: 1` 文档，包含产品、版本、时间、整体 `ok`/`warning`/`failed` 状态，以及带稳定 id、标签、摘要和可选细节的脱敏检查。输出不包含凭据值或文件内容。警告以 0 退出，因此已停止的可选服务不会中断安装程序编排；任何失败检查均以 1 退出。
+
+<a id="encrypted-recovery"></a>
+
+## 加密恢复
+
+恢复是不启动 profile 的启动器模式。`dsh backup --dry-run [--json]` 会枚举权威 allowlist 并计算 SHA-256，但不会创建目录、询问密码或初始化 profile。真实备份要求 `--confirm-stopped`，并且只要 `127.0.0.1:3080` 有服务响应就会拒绝执行。该 flag 是操作者声明，不是跨进程锁：v1 无法检测 headless 进程或使用其他端口的 Web 实例，因此提供该 flag 前必须停止全部 Leon 进程。
+
+```sh
+dsh backup --dry-run
+dsh backup --confirm-stopped
+dsh backup E:/offline/leon.leon-backup --confirm-stopped
+dsh restore E:/offline/leon.leon-backup
+dsh restore E:/offline/leon.leon-backup --target E:/restored/.dsh --apply --confirm-stopped
+```
+
+默认包路径为 `<resolveDefaultWorkspace()>/Backups/Leon/leon-<UTC>.leon-backup`。已有目标永远不会被覆盖；恢复包也不得位于源 Harness home 内，包括父目录经链接解析后进入 home 的情况。写入器先计算哈希计划，再把每个已规划的完整文件流式写入同级私有 staging 目录，并在加密期间重新计算哈希；随后验证 allowlist 路径集合没有变化、同步文件，并通过排他 hard link 发布。文件改变、截断、追加，或 allowlist 路径新增／移除都会中止发布。目标文件系统必须支持 hard link（例如 NTFS、APFS 或 ext4）；v1 不会为 FAT／exFAT 提供可能覆盖现有文件的低安全 fallback。启动器只有在重新打开并认证已发布恢复包后才会报告创建成功。发布后的清理或目录同步问题会作为 warning 返回，因为恢复包此时已经存在。
+
+allowlist 包含 `settings.yaml`、home patch 和全局 `AGENTS.md`；`session.jsonl`／`session.jsonl.zstd`；原始内容寻址附件对象；workspace、记忆、反馈、procedure-learning 和 failure-recovery 存储域；用户 skill、preset 和持久 spill；以及各 profile 的 manifest、patch、workspace 文件和 lockfile。系统会排除 `.credentials.yaml`、命名的 `.env`、`.npmrc`、凭据、密钥和证书文件、匿名遥测 id、会话临时写入、`session_projcache`、派生 request image、`node_modules`、浏览器／提供方缓存、workspace 内容及代码仓库、二进制文件和模型权重。这是一项文件名与范围策略，并不执行内容脱敏：会话、设置、指令、skill 和其他用户编写的文件仍可能包含用户粘贴的秘密，因此整个恢复包必须保持加密。加密 manifest 只把 workspace 路径与本地 Ollama 名称记录为重建提示。
+
+自定义 `LEONBK1` 容器使用 scrypt（`N=131072`、`r=8`、`p=1`、随机 128-bit salt）派生 AES-256-GCM 密钥。manifest 和每个文件分别使用唯一随机前缀 nonce，并通过路径／大小／哈希／mode AAD 认证。系统不使用压缩，也没有通用归档解压器。密码至少包含 16 个 Unicode code point，并从不回显的 TTY 提示读取；备份会要求再次确认。`--passphrase-stdin` 仅供可信安装程序自动化使用，只从重定向 stdin 读取一行且有长度上限。系统不存在密码命令行选项或环境变量。
+
+`dsh restore <file>` 仅执行验证：它解密 manifest，拒绝不支持的版本、声明包含受管凭据存储的包、不安全／不在 allowlist 的路径、Windows 保留名和 ADS、重复项、Unicode／大小写碰撞、文件／目录冲突、超限数量／payload、截断、尾随字节、GCM 失败或 SHA／大小不匹配；随后在不写输出的情况下流式认证每个 payload。`--apply` 还要求 `--confirm-stopped`、完全一致的 Leon 版本，以及尚不存在的目标。完整认证恢复包后，系统获取一个排他的同级 restore lock，在随机私有同级 staging 中通过可丢弃的 partial 文件提取并认证每个普通文件、同步文件、重新检查目标，再通过 rename 一次性发布完整目录。陈旧 lock 会令操作安全失败，必须先检查，系统不会自动移除。该 lock 会串行化配合此协议的 Leon 恢复；v1 并不声称能在所有支持的操作系统上抵御恶意且不配合的进程竞速修改文件系统。恢复绝不会跟随或重建链接、加载 profile、求值 `!!js`、安装依赖、启动 Leon、合并状态或故意替换现有 home。
+
+恢复后，应重新登记凭据、重新安装 profile 依赖与 manifest 中列出的模型，分别验证每个已引用 workspace／项目备份，运行 `dsh doctor`，再启动 Leon 并检查会话／记忆／附件数量。恢复包以密码学方式保护内容，但 Node 权限位不能建立私有 Windows DACL；未来 Windows 安装程序仍负责应用并验证目标 ACL。workspace／项目备份、外部 `.leon` 集成数据库、活动进程锁、带 rollback 的当前 home 替换，以及临时 spill 的持久迁移均不属于 v1。
 
 ## 插件管理
 
@@ -78,7 +118,7 @@ dsh web --help
 
 进程关闭时，插件树最多有 5 秒完成 dispose。首次收到 `SIGINT` 或 `SIGTERM` 时会开始优雅排空：`SIGTERM` 是监督进程发出的常规停止请求，在所有运行模式下都以 0 退出；`SIGINT` 则报告 130。第二次收到信号时会立即强制退出。如果一次性运行在正常结束时已经卡在 dispose 阶段，第一次按下 `Ctrl+C` 就会直接升级为强制退出，而不会被忽略。
 
-所有模式都将运行命令时所在的目录作为默认 workspace 根目录，以 65,536 字节渲染预算加载适用的 `AGENTS.md` 或 `CLAUDE.md` 指令，并使用内存 SQLite 会话内容索引。每次启动 profile 时，系统都会监视 profile 与 home 两个 `cordis.patch.yml` 配置层的有效变更，并以事务方式重新应用；一次性运行模式通过有界关闭流程退出，该流程会先 dispose 监视器。
+所有模式都使用 `resolveDefaultWorkspace()` 返回的根目录，优先级从高到低依次为：显式部署配置、`$LEON_DEFAULT_WORKSPACE`、`$DSH_DEFAULT_WORKSPACE`、`$DSH_CWD`，最后是 Windows 上的 `E:/computador` 或其他平台上的调用目录。系统以 65,536 字节渲染预算加载适用的 `AGENTS.md` 或 `CLAUDE.md` 指令，并使用内存 SQLite 会话内容索引。每次启动 profile 时，系统都会监视 profile 与 home 两个 `cordis.patch.yml` 配置层的有效变更，并以事务方式重新应用；一次性运行模式通过有界关闭流程退出，该流程会先 dispose 监视器。
 
 新会话默认使用 `workspace-write` 权限预设。Bash 和文件系统修改仅限于会话 workspace 与平台临时根目录；读取和网络访问不受限制，进程可见性则取决于所选沙箱后端——bwrap 在私有 PID 命名空间中运行命令并隐藏宿主进程，Landlock 与 Seatbelt 保持宿主进程可见性不变。`DSH_PERMISSION_MODE` 更改进程后备值。General settings 中存储的权限影响后续 Web 会话，不改变已打开的会话。
 

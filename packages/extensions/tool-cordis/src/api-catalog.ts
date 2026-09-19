@@ -87,6 +87,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Owns the default model selection independently of any Host or transport. The composition entry remains usable without a settings provider; when one is mounted, its user layer is read live.',
     methods: [
       {
+        signature: 'auxiliarySelection(role: AuxiliaryModelRole): ModelSelection | undefined',
+        description: 'Resolve a configured auxiliary route before the consumer logs and dispatches it.',
+        parameters: [{ name: 'role', description: 'fixed host-assigned function, never a participant display name.' }],
+        returns: 'a detached selection, or undefined to preserve existing inheritance.',
+        throws: ['when an external route lacks explicit consent or a route is incomplete.'],
+      },
+      {
         signature: 'currentSelection(): ModelSelection',
         description: 'Read the current default model selection.',
         parameters: [],
@@ -314,6 +321,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Resolve one exact live Agent\'s Team role.',
         parameters: [{ name: 'agent', description: 'exact live Agent used as the authority credential.' }],
         returns: 'its root, Team identity, role, and model-facing name.',
+      },
+      {
+        signature: 'registerCompletionReviewer(reviewer: TeamCompletionReviewer): () => void',
+        description: 'Register the sole trusted completion reviewer; models cannot register one through Team tools. The owner must verify current evidence and policy on every call, including after restart.',
+        parameters: [{ name: 'reviewer', description: 'bounded host verifier; must not call a Team mutation while holding its transaction.' }],
+        returns: 'disposer; disposal during a pending review also rejects that completion.',
       },
       {
         signature: 'listMembers(agent: Agent): TeamMemberView[]',
@@ -1053,6 +1066,145 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'memory',
+    summary: 'Durable memory service and registration-order-independent provider selector.',
+    description: 'Durable memory service and registration-order-independent provider selector.',
+    methods: [
+      {
+        signature: 'registerProvider(provider: MemoryProvider): () => void',
+        description: 'Register one provider for the lifetime chosen by the caller.',
+        parameters: [{ name: 'provider', description: 'Provider implementation keyed by its stable id.' }],
+        returns: 'disposer that removes this exact registration.',
+      },
+      {
+        signature: 'async create(request: MemoryCreateRequest, signal?: AbortSignal): Promise<MemoryRecord>',
+        description: 'Create one normalized durable memory through the selected provider.',
+        parameters: [{ name: 'request', description: 'Workspace scope, durable content, and session provenance.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'the created normalized record after durability.',
+      },
+      {
+        signature: 'async search(request: MemorySearchRequest, signal?: AbortSignal): Promise<readonly MemorySearchHit[]>',
+        description: 'Search only inside the request\'s workspace scope.',
+        parameters: [{ name: 'request', description: 'Workspace scope, query, and bounded result limit.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'ranked hits capped to the requested limit.',
+      },
+      {
+        signature: 'async list(request: MemoryListRequest, signal?: AbortSignal): Promise<MemoryListPage>',
+        description: 'Enumerate one bounded workspace partition for an authorized administrative surface.',
+        parameters: [{ name: 'request', description: 'Workspace scope, optional filters, and page coordinates.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'a stable page of provider-projected memory revisions.',
+      },
+      {
+        signature: 'async update(request: MemoryUpdateRequest, signal?: AbortSignal): Promise<MemoryRecord>',
+        description: 'Correct one exact memory revision through the selected provider.',
+        parameters: [{ name: 'request', description: 'Workspace scope, compare-and-set reference, and replacement content.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'the corrected record with its incremented revision.',
+      },
+      {
+        signature: 'async forget(request: MemoryForgetRequest, signal?: AbortSignal): Promise<void>',
+        description: 'Forget one exact memory revision through the selected provider.',
+        parameters: [{ name: 'request', description: 'Workspace scope and compare-and-set reference to delete.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'resolution after durable deletion.',
+      },
+    ],
+  },
+  {
+    key: 'memoryCandidateReview',
+    summary: 'Host service exposing only projected candidate rows through the generated Remote.',
+    description: 'Host service exposing only projected candidate rows through the generated Remote.',
+    methods: [
+      {
+        signature: 'async recordCandidate(record: MemoryCandidateRecord): Promise<void>',
+        description: 'Append one producer-owned candidate into the canonical queue. This host-only method is intentionally not exposed as a browser Remote.',
+        parameters: [{ name: 'record', description: 'complete validated candidate row with a unique id.' }],
+      },
+      {
+        signature: '@Remote(\'list\') async list(request: MemoryCandidateReviewListRequest): Promise<MemoryCandidateReviewListResult>',
+        description: 'List one workspace partition, using the addressed Session as authorization anchor.',
+        parameters: [{ name: 'request', description: 'session anchor, filters, and bounded page coordinates.' }],
+        returns: 'projected rows or an explicit ownership failure.',
+      },
+      {
+        signature: '@Remote(\'listMemories\') async listMemories(request: MemoryAdminListRequest): Promise<MemoryAdminListResult>',
+        description: 'List durable memories for the addressed Session\'s exact workspace partition.',
+        parameters: [{ name: 'request', description: 'Session authorization anchor, lifecycle filters, and bounded page coordinates.' }],
+        returns: 'Browser-safe workspace rows or an explicit administrative failure.',
+      },
+      {
+        signature: '@Remote(\'correctMemory\') correctMemory(request: MemoryAdminCorrectRequest): Promise<MemoryAdminCorrectResult>',
+        description: 'Correct one exact memory revision after explicit operator confirmation.',
+        parameters: [{ name: 'request', description: 'Session anchor, exact memory revision, replacement content, and confirmation.' }],
+        returns: 'The corrected browser-safe row and audit id, or an explicit failure.',
+      },
+      {
+        signature: '@Remote(\'forgetMemory\') forgetMemory(request: MemoryAdminForgetRequest): Promise<MemoryAdminForgetResult>',
+        description: 'Forget one exact memory lineage after explicit operator confirmation.',
+        parameters: [{ name: 'request', description: 'Session anchor, exact memory revision, and confirmation.' }],
+        returns: 'The forgotten reference and audit id, or an explicit failure.',
+      },
+      {
+        signature: '@Remote(\'listPersonalMemories\') async listPersonalMemories(request: MemoryAdminListRequest): Promise<PersonalMemoryAdminListResult>',
+        description: 'List the configured local owner\'s personal memories without exposing the owner id.',
+        parameters: [{ name: 'request', description: 'Session authorization anchor and bounded list filters.' }],
+        returns: 'Browser-safe personal rows plus the current enablement state, or an explicit failure.',
+      },
+      {
+        signature: '@Remote(\'rememberPersonalMemory\') rememberPersonalMemory(request: PersonalMemoryAdminRememberRequest): Promise<PersonalMemoryAdminRememberResult>',
+        description: 'Add one explicit personal fact after a visible confirmation.',
+        parameters: [{ name: 'request', description: 'Session provenance, complete fact, and explicit confirmation.' }],
+        returns: 'The created browser-safe row and content-free audit id, or an explicit failure.',
+      },
+      {
+        signature: '@Remote(\'correctPersonalMemory\') correctPersonalMemory(request: MemoryAdminCorrectRequest): Promise<MemoryAdminCorrectResult>',
+        description: 'Correct one exact personal-memory revision after confirmation.',
+        parameters: [{ name: 'request', description: 'Session anchor, exact revision, replacement text, and confirmation.' }],
+        returns: 'The corrected browser-safe row and content-free audit id, or an explicit failure.',
+      },
+      {
+        signature: '@Remote(\'forgetPersonalMemory\') forgetPersonalMemory(request: MemoryAdminForgetRequest): Promise<MemoryAdminForgetResult>',
+        description: 'Permanently remove one personal-memory lineage after confirmation.',
+        parameters: [{ name: 'request', description: 'Session anchor, exact personal-memory revision, and confirmation.' }],
+        returns: 'The forgotten reference and content-free audit id, or an explicit failure.',
+      },
+      {
+        signature: '@Remote(\'setPersonalMemoryEnabled\') setPersonalMemoryEnabled(request: PersonalMemoryAdminToggleRequest): Promise<PersonalMemoryAdminToggleResult>',
+        description: 'Persist the user\'s personal-memory enablement preference after confirmation.',
+        parameters: [{ name: 'request', description: 'Session anchor, desired state, and explicit confirmation.' }],
+        returns: 'The applied enablement state and content-free audit id, or an explicit failure.',
+      },
+      {
+        signature: '@Remote(\'markReviewed\') markReviewed(request: MemoryCandidateReviewMarkRequest): Promise<MemoryCandidateReviewMarkResult>',
+        description: 'Record one immutable human decision and optionally persist an authorized candidate.',
+        parameters: [{ name: 'request', description: 'session authorization anchor, candidate id, and decision.' }],
+        returns: 'the reviewed projection or an explicit business failure.',
+      },
+    ],
+  },
+  {
+    key: 'memoryContinuity',
+    summary: 'Provider-neutral exporter for local memory lineage.',
+    description: 'Provider-neutral exporter for local memory lineage.',
+    methods: [
+      {
+        signature: 'readonly id: string = \'memory-continuity\'',
+        description: 'Stable provider identifier for caller-owned registries.',
+        parameters: [],
+      },
+      {
+        signature: 'export(domains: readonly MemoryContinuityDomainSource[], options: { readonly exportedAt?: string } = {}): MemoryContinuitySnapshot',
+        description: 'Build a snapshot without mutating the source tables; invalid records throw.',
+        parameters: [{ name: 'domains', description: 'Caller-selected domains and their complete records.' }, { name: 'options', description: 'Optional timestamp; defaults to the current time.' }],
+        returns: 'A checksummed snapshot; journal persistence remains caller-owned.',
+      },
+      {
+        signature: 'async import( snapshot: MemoryContinuitySnapshot, targets: readonly MemoryContinuityDomainTarget[], ): Promise<MemoryContinuityImportResult>',
+        description: 'Validate every destination before writing, then atomically insert only missing ids. Storage failures may leave earlier writes committed; repeating the same import skips them.',
+        parameters: [{ name: 'snapshot', description: 'Snapshot with valid checksums and local memory records.' }, { name: 'targets', description: 'Destination tables with matching domain names and versions.' }],
+        returns: 'Import counters and a journal entry that the caller must persist.',
+      },
+    ],
+  },
+  {
     key: 'messageFeedback',
     summary: 'Storage-domain sidecar service.',
     description: 'Storage-domain sidecar service. It inspects persisted Session history and never creates or resumes an Agent or Session.',
@@ -1074,6 +1226,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Delete one feedback item. Absence is successful regardless of the supplied version; an existing item requires an exact version match.',
         parameters: [{ name: 'request', description: 'Session, message, and observed item version.' }],
         returns: 'the stable absent postcondition, or an explicit failure.',
+      },
+      {
+        signature: 'purgeSession(sessionId: SessionId): Promise<void>',
+        description: 'Durably remove the complete feedback sidecar row for one permanently deleted session. The operation does not inspect the now-deleted canonical log, is serialized with item puts/deletes for the same Session id, and is idempotent when the row is already absent.\n\nThis Host-internal lifecycle method is intentionally not a Gateway Remote: end users delete a session through the session orchestrator, which owns canonical-log deletion and all sidecar purges as one workflow.',
+        parameters: [{ name: 'sessionId', description: 'permanently deleted session whose feedback row must be absent.' }],
+        returns: 'resolution after the durable row deletion reaches its queue slot.',
       },
     ],
   },
@@ -1116,6 +1274,60 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'personalMemory',
+    summary: 'Personal-memory service with an independent provider registry and lifecycle.',
+    description: 'Personal-memory service with an independent provider registry and lifecycle.',
+    methods: [
+      {
+        signature: 'registerProvider(provider: PersonalMemoryProvider): () => void',
+        description: 'Register one personal-memory provider for the caller-controlled fiber lifetime.',
+        parameters: [{ name: 'provider', description: 'Provider implementation keyed by its stable id.' }],
+        returns: 'disposer that removes this exact registration.',
+      },
+      {
+        signature: 'isEnabled(): boolean',
+        description: 'Read whether model and mutation operations may use personal memory. Administrative listing and forgetting remain available while disabled so the user can inspect or delete data.',
+        parameters: [],
+        returns: 'the current process-local operation state.',
+      },
+      {
+        signature: 'setEnabled(enabled: boolean): void',
+        description: 'Apply a deployment or durable-settings preference to all personal-memory Consumers.',
+        parameters: [{ name: 'enabled', description: 'Whether create, search, and correction operations may reach a provider.' }],
+      },
+      {
+        signature: 'async create( request: PersonalMemoryCreateRequest, signal?: AbortSignal, ): Promise<PersonalMemoryRecord>',
+        description: 'Create one normalized personal fact in an explicit local-owner partition.',
+        parameters: [{ name: 'request', description: 'Owner scope, durable content, and session provenance.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'the durable normalized record.',
+      },
+      {
+        signature: 'async search( request: PersonalMemorySearchRequest, signal?: AbortSignal, ): Promise<readonly PersonalMemorySearchHit[]>',
+        description: 'Search one local-owner partition for relevant personal facts.',
+        parameters: [{ name: 'request', description: 'Owner scope, bounded query, and result limit.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'provider-ranked hits capped to the requested limit.',
+      },
+      {
+        signature: 'async list( request: PersonalMemoryListRequest, signal?: AbortSignal, ): Promise<PersonalMemoryListPage>',
+        description: 'Enumerate one bounded personal-memory partition for administration.',
+        parameters: [{ name: 'request', description: 'Owner scope, optional filters, and page coordinates.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'a stable page of personal-memory revisions.',
+      },
+      {
+        signature: 'async update( request: PersonalMemoryUpdateRequest, signal?: AbortSignal, ): Promise<PersonalMemoryRecord>',
+        description: 'Correct one exact personal-memory revision.',
+        parameters: [{ name: 'request', description: 'Owner scope, compare-and-set reference, and replacement content.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'the corrected record with an incremented revision.',
+      },
+      {
+        signature: 'async forget(request: PersonalMemoryForgetRequest, signal?: AbortSignal): Promise<void>',
+        description: 'Forget one exact personal-memory revision.',
+        parameters: [{ name: 'request', description: 'Owner scope and compare-and-set reference to delete.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'resolution after durable deletion.',
+      },
+    ],
+  },
+  {
     key: 'planMode',
     summary: '`ctx.planMode`: owns logged plan state, applies and narrates selected state at step start, the `plan:policy` section, the `/plan` command, and the stable exit tool.',
     description: '`ctx.planMode`: owns logged plan state, applies and narrates selected state at step start, the `plan:policy` section, the `/plan` command, and the stable exit tool. UIs observe committed flips through `session/event`; there is no live mirror.',
@@ -1131,6 +1343,55 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Select whether plan mode should be active. Between turns the method appends the change immediately because no in-turn pre-step will run until another prompt starts a turn. The open-turn fold is the idle signal: agent status stays `running` through post-turn checkpointing, when no further in-turn pre-step runs. During an open turn the selection remains pending until the next accepted in-turn pre-step. Repeated selection of the current or already-pending state is a no-op.',
         parameters: [{ name: 'agent', description: 'The agent to switch.' }, { name: 'active', description: 'Whether plan mode should be active.' }],
         returns: 'what happened: `committed` (logged now), `queued` (awaiting the next accepted in-turn pre-step), `cancelled` (an opposite pending selection was cleared; the logged state already matches), or `noop` (already in that state).',
+      },
+    ],
+  },
+  {
+    key: 'procedureLearning',
+    summary: 'Durable service that promotes only verified trajectories after explicit host review.',
+    description: 'Durable service that promotes only verified trajectories after explicit host review.',
+    methods: [
+      {
+        signature: 'async propose(request: ProcedureProposalRequest): Promise<ProcedureLearningResult>',
+        description: 'Persist a review candidate derived only from successful host-observed tool calls. Failed observations, credential-like arguments, duplicate call ids, and invalid validity windows are rejected before durable state changes.',
+        parameters: [{ name: 'request', description: 'Complete successful trajectory plus independent verification.' }],
+        returns: 'The candidate record or a stable validation failure.',
+      },
+      {
+        signature: 'inspect(request: ProcedureInspectRequest): ProcedureLearningResult',
+        description: 'Return one exact same-workspace record for operator inspection in any lifecycle state. Cross-workspace and missing ids share the same not-found result.',
+        parameters: [{ name: 'request', description: 'Workspace boundary and opaque procedure id.' }],
+        returns: 'A detached record or the stable not-found branch.',
+      },
+      {
+        signature: 'listCandidates(workspaceId: ProcedureRecord[\'workspaceId\']): readonly ProcedureRecord[]',
+        description: 'List pending review candidates for one exact workspace.',
+        parameters: [{ name: 'workspaceId', description: 'Workspace whose candidates may be disclosed.' }],
+        returns: 'Detached candidates ordered newest first.',
+      },
+      {
+        signature: 'review(request: ProcedureReviewRequest): Promise<ProcedureLearningResult>',
+        description: 'Promote or reject one exact candidate revision after explicit operator review. Acceptance fails once revalidation is due or the validity window has expired.',
+        parameters: [{ name: 'request', description: 'Workspace, exact revision, and immutable review decision.' }],
+        returns: 'The committed next revision or a stable business failure.',
+      },
+      {
+        signature: 'findReusable(request: ProcedureReuseRequest): ProcedureReuseResult',
+        description: 'Return relevant validated procedures only when their exact preconditions and validity windows admit reuse. Candidate, rejected, and revoked rows stay hidden.',
+        parameters: [{ name: 'request', description: 'Workspace query, current environment facts, and result bound.' }],
+        returns: 'Reusable rows plus relevant rows withheld for an actionable reason.',
+      },
+      {
+        signature: 'revalidate(request: ProcedureRevalidationRequest): Promise<ProcedureLearningResult>',
+        description: 'Commit one verifier outcome for an exact validated or stale revision. A failed verifier marks the procedure stale; a successful verifier requires a fresh validity window and can reactivate a stale procedure.',
+        parameters: [{ name: 'request', description: 'Exact revision, current preconditions, verifier observation, and optional new validity.' }],
+        returns: 'The committed next revision or a stable business failure.',
+      },
+      {
+        signature: 'revoke(request: ProcedureRevokeRequest): Promise<ProcedureLearningResult>',
+        description: 'Revoke one exact candidate, validated, or stale revision. Rejected and already revoked rows are immutable terminal states.',
+        parameters: [{ name: 'request', description: 'Workspace and exact procedure revision.' }],
+        returns: 'The committed revoked revision or a stable business failure.',
       },
     ],
   },
@@ -1210,6 +1471,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'id', description: 'the session the batch belongs to.' }, { name: 'events', description: 'the contiguous batch to persist, in seq order.' }],
       },
       {
+        signature: 'delete(id: SessionId): Promise<void>',
+        description: 'Permanently remove one session\'s backend-owned log. Implementations are idempotent for an already-absent id and serialize deletion with every append, preparation, and load for the same identity. A successful delete closes admission for that id for the lifetime of this service instance, preventing a queued writer from recreating the artifact.\n\nThis operation owns only the session persistence artifact. It must never remove the session cwd or any file contained by that user directory.',
+        parameters: [{ name: 'id', description: 'exact session identity to remove.' }],
+        returns: 'resolution after the durable deletion commit.',
+      },
+      {
         signature: 'async prepare(id: SessionId, signal?: AbortSignal): Promise<SessionPreparation>',
         description: 'Prepare the exact unpublished Session used by resume. Implementations may reuse object graphs retained by an earlier inspect after confirming their durable revision is still current; disposal releases an unpublished reservation. Revision retries require the durable log to remain unchanged for one read/check round trip; continuous external writers may delay completion.',
         parameters: [{ name: 'id', description: 'persisted session to prepare.' }, { name: 'signal', description: 'optional cancellation for preparation work.' }],
@@ -1263,6 +1530,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Durably checkpoint one live session NOW (both mandatory points call this; tests and carriers may too). The registry cut is snapshotted at this boundary (states are live references), then the whole record is replaced. NOT fail-soft — callers on the fail-soft paths contain it.',
         parameters: [{ name: 'session', description: 'the live session to checkpoint.' }],
         returns: 'resolution after durability and event emission.',
+      },
+      {
+        signature: 'purgeSession(id: SessionId): Promise<void>',
+        description: 'Durably remove one session\'s complete projection-cache row.\n\nThe purge synchronously fences new writes, invalidates writes and cold write-backs that began earlier, cancels armed timers, and then queues the idempotent row deletion behind already-admitted writes. A later `session/created` event for the same id opens a new lifecycle without allowing stale work from the purged lifecycle to cross the epoch barrier.',
+        parameters: [{ name: 'id', description: 'permanently deleted session whose cache row must be absent.' }],
+        returns: 'resolution after the durable row deletion reaches its queue slot.',
       },
       {
         signature: 'async coldSnapshot(id: SessionId, signal?: AbortSignal): Promise<ProjectionSnapshot>',
@@ -1349,6 +1622,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Search events within one live-preferred logical session.',
         parameters: [{ name: 'request', description: 'target session, query text, filters, page size, and cursor.' }, { name: 'exec', description: 'optional cancellation control.' }],
         returns: 'matching event hits and their target header from one indexed generation.',
+      },
+      {
+        signature: 'purgeSession(_sessionId: SessionId): Promise<void>',
+        description: 'Purge backend-owned derived data for one permanently deleted session.\n\nThe provider-independent engine owns no derived storage, so its default implementation is an idempotent no-op. Backends that materialize an index override this method and serialize the purge with their reads and reconciliation work. The authoritative live owner and persisted log must already be quiescent or absent before the caller publishes deletion.',
+        parameters: [{ name: '_sessionId', description: 'logical session whose derived rows must be absent.' }],
+        returns: 'resolution after the backend reaches the absent postcondition.',
       },
       {
         signature: 'listSessions(signal?: AbortSignal): Promise<SessionRecord[]>',
@@ -1933,6 +2212,79 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'teamMissions',
+    summary: 'Host-only state transitions and atomic reservations; not a model-facing authorization API.',
+    description: 'Host-only state transitions and atomic reservations; not a model-facing authorization API.',
+    methods: [
+      {
+        signature: 'getComposition(caller: Agent): TeamMissionBindings',
+        description: 'Read and verify durable functional identities against the current native roster.',
+        parameters: [{ name: 'caller', description: 'exact live Lead, including after a cold resume.' }],
+        returns: 'detached immutable host assignments; unready or changed rosters reject.',
+      },
+      {
+        signature: 'inspectStored(id: SessionId): TeamMissionRecord',
+        description: 'Inspect a stored mission without materializing an agent or draining its inbox.',
+        parameters: [{ name: 'id', description: 'root identity selected by the isolated, authenticated host entry.' }],
+        returns: 'detached scope-checked control state; this read does not mutate or emit events.',
+      },
+      {
+        signature: 'async stopStored(id: SessionId): Promise<TeamMissionRecord>',
+        description: 'Commit terminal STOP for an inactive root without loading any participant session. The host must hold the same exclusive directory ownership used by the live runner.',
+        parameters: [{ name: 'id', description: 'root identity selected outside model/tool initiator scope.' }],
+        returns: 'durable cancelled record; no lifecycle notification can activate pending inbox work.',
+      },
+      {
+        signature: 'async provisionTeam(caller: Agent, request: TeamMissionProvisionRequest): Promise<TeamMissionBindings>',
+        description: 'Provision exactly two native continuable workers before admitting model calls. Failure retains every roster/session record and blocks the mission without renewing limits.',
+        parameters: [{ name: 'caller', description: 'exact Lead invoked outside model/tool initiator scope.' }, { name: 'request', description: 'host-authored research and check requests; labels grant no authority.' }],
+        returns: 'persisted function-to-session assignments after full roster validation.',
+      },
+      {
+        signature: 'async waitForComposition(caller: Agent, signal: AbortSignal): Promise<TeamMissionBindings>',
+        description: 'Wait after message durability but before reservation/inference for host composition.',
+        parameters: [{ name: 'caller', description: 'exact current Lead resolved from the requesting participant.' }, { name: 'signal', description: 'request cancellation; the original mission deadline also bounds waiting.' }],
+        returns: 'validated function assignments; STOP, orphan provisioning, failure and extras reject.',
+      },
+      {
+        signature: 'async start(caller: Agent, objective: string, criteria: string): Promise<TeamMissionRecord>',
+        description: 'Start one host-authorized mission; a root can never reset its consumed budget.',
+        parameters: [{ name: 'caller', description: 'exact live Lead; caller authentication remains the host entry\'s responsibility.' }, { name: 'objective', description: 'authorized outcome, not a worker instruction.' }, { name: 'criteria', description: 'frozen acceptance text; cannot be edited through this API.' }],
+        returns: 'durable initial record; duplicate starts reject.',
+      },
+      {
+        signature: 'get(caller: Agent): TeamMissionRecord',
+        description: 'Read detached control state without exposing another configured workspace.',
+        parameters: [{ name: 'caller', description: 'exact live Lead.' }],
+        returns: 'current durable control state.',
+      },
+      {
+        signature: 'async transition(caller: Agent, revision: number, action: \'pause\' | \'stop\' | \'resume\'): Promise<TeamMissionRecord>',
+        description: 'Persist pause, terminal STOP, or an explicit resume from paused only. This transition does not itself cancel an in-flight model or subprocess.',
+        parameters: [{ name: 'caller', description: 'exact live Lead used by the authenticated host control.' }, { name: 'revision', description: 'observed revision for pause/resume; terminal STOP uses the latest committed record.' }, { name: 'action', description: 'host control action; cancelled missions cannot resume.' }],
+        returns: 'committed record, without resetting deadline, criteria or counters.',
+      },
+      {
+        signature: 'async reserveCall(caller: Agent): Promise<number>',
+        description: 'Durably spend one attempt before dispatch; failed calls are not refunded.',
+        parameters: [{ name: 'caller', description: 'exact Lead selected by the runtime\'s mission resolver.' }],
+        returns: 'committed reservation number; paused, cancelled, expired or exhausted missions reject.',
+      },
+      {
+        signature: 'async finish(caller: Agent, verify: () => Promise<{ passed: boolean; summary: string }>): Promise<TeamMissionRecord>',
+        description: 'Commit a host-verified outcome without granting a model an approval tool.',
+        parameters: [{ name: 'caller', description: 'exact live Lead controlled by the host runner.' }, { name: 'verify', description: 'trusted verifier of current artifacts and native task evidence.' }],
+        returns: 'committed outcome; verifier exceptions pause without approval or budget renewal, and concurrent controls win.',
+      },
+      {
+        signature: 'async close(): Promise<void>',
+        description: 'Reject new control calls and await admitted provisioning before closing its storage.',
+        parameters: [],
+        returns: 'once every admitted provisioning operation has settled.',
+      },
+    ],
+  },
+  {
     key: 'terminals',
     summary: 'In-process registry for replaceable PTY backends and exact-Agent sessions.',
     description: 'In-process registry for replaceable PTY backends and exact-Agent sessions.',
@@ -2090,6 +2442,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Present the calling scope\'s tools in `mode` instead of the deployment default. Nearest scope on the chain wins, so a preset\'s standing declaration covers every agent joined under it.\n\nScoped only, and one declaration per scope: this is how an agent preset composes Code Mode agents beside native ones in the same process, and a process-global override would be the `mode` config field instead.',
         parameters: [{ name: 'mode', description: 'the presentation the covered agents\' models see.' }],
         returns: 'the exact disposer that restores the deployment default.',
+      },
+      {
+        signature: 'compactDescriptions(maxLength: number): () => void',
+        description: 'Cap normalized tool and parameter descriptions in this scope\'s model-facing schemas. The registry and executable definitions retain their complete descriptions. Nearest scope wins, and disposal restores an inherited declaration.',
+        parameters: [{ name: 'maxLength', description: 'integer character limit, including the ellipsis; minimum 3.' }],
+        returns: 'the exact disposer that removes this scope\'s declaration.',
       },
       {
         signature: 'register(definition: ToolDefinition): () => void',
@@ -2251,6 +2609,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'webAccess',
+    summary: 'Host-plane controller for one explicit user-controlled web-access grant.',
+    description: 'Host-plane controller for one explicit user-controlled web-access grant. It does not contact the web itself and does not alter global approvals.',
+    methods: [
+      {
+        signature: 'isEnabled(session: Session): boolean',
+        description: 'Read the effective durable grant for one session.',
+        parameters: [{ name: 'session', description: 'session whose event history owns the decision.' }],
+        returns: 'whether native web tools may bypass per-call approval.',
+      },
+      {
+        signature: 'set(session: Session, enabled: boolean): boolean',
+        description: 'Change the complete session-scoped grant. Repeating the current value is intentionally a no-op so the durable log remains an audit of decisions.',
+        parameters: [{ name: 'session', description: 'session whose user decision changes.' }, { name: 'enabled', description: 'next complete grant state.' }],
+        returns: 'true only when a new durable event was appended.',
+      },
+    ],
+  },
+  {
     key: 'webServer',
     summary: 'The browser HTTP carrier service.',
     description: 'The browser HTTP carrier service. Activation listens immediately. Route registration order does not affect requests because configured named routes must be distinct, and the fallback handler answers anything not yet claimed during startup with 404 until its owner registers. A listen failure rejects initialization, and the boot process reports the failed fiber.',
@@ -2319,8 +2696,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: 'async create(path: string, title?: string): Promise<Workspace>',
-        description: 'Create or reuse a workspace for an existing directory. The path is canonicalized through `fs.realpath`; a nonexistent path rejects with the original error and a non-directory rejects. Repeated calls for the same canonical path return the existing entity without changing its title. A newly created workspace is prepended to the durable registry order. Different canonical paths may share a display title.',
-        parameters: [{ name: 'path', description: 'Existing directory to own, in any path spelling.' }, { name: 'title', description: 'Display title used only when a new record is created.' }],
+        description: 'Create or reuse a workspace for an existing directory. The fully qualified path is canonicalized through `fs.realpath`; a relative, nonexistent, or non-directory path rejects. Repeated calls for the same canonical path return the existing entity without changing its title. A newly created workspace is prepended to the durable registry order. Different canonical paths may share a display title.',
+        parameters: [{ name: 'path', description: 'Existing directory to own, in a fully qualified path spelling.' }, { name: 'title', description: 'Display title used only when a new record is created.' }],
         returns: 'the existing or newly durable workspace.',
       },
       {
@@ -2354,9 +2731,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'resolution after durability.',
       },
       {
+        signature: 'unarchiveSession(sessionId: SessionId): Promise<void>',
+        description: 'Remove one id from the durable archive set without changing its workspace position or persistence artifact. Idempotent when already unarchived.',
+        parameters: [{ name: 'sessionId', description: 'session to restore to grouping surfaces.' }],
+      },
+      {
+        signature: 'hasSessionReference(sessionId: SessionId): boolean',
+        description: 'Whether durable registry state or the validated header index still names a session. Used by a deletion retry after the canonical log has already committed its removal but registry/sidecar cleanup has not yet finished.',
+        parameters: [{ name: 'sessionId', description: 'session identity whose retained references are queried.' }],
+        returns: 'whether any durable or indexed workspace state still names it.',
+      },
+      {
+        signature: 'deleteSession(sessionId: SessionId): Promise<void>',
+        description: 'Remove one session from workspace accounting and the archive set. A durable marker makes the record/global multi-write recoverable; the canonical session log is owned and deleted separately by SessionPersistence. No cwd or user file is touched.',
+        parameters: [{ name: 'sessionId', description: 'exact session identity whose registry references clear.' }],
+      },
+      {
         signature: 'async resolveByPath(path: string): Promise<Workspace | undefined>',
         description: 'Resolve by canonical directory path without creating or mutating a workspace. A missing path rejects during `realpath`; an existing unowned directory returns `undefined`.',
-        parameters: [{ name: 'path', description: 'Existing directory path in any spelling.' }],
+        parameters: [{ name: 'path', description: 'Existing directory path in a fully qualified spelling.' }],
         returns: 'the workspace owning the canonical path, when one exists.',
       },
     ],
@@ -2448,7 +2841,7 @@ export const EVENT_API: readonly EventApiEntry[] = [
   {
     name: 'agent/request-error',
     mode: 'waterfall',
-    signature: '\'agent/request-error\'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; failure: LlmFailure; retryPolicy: ResolvedRetryPolicy | undefined; signal: AbortSignal }, next: () => Promise<RequestErrorAction>): Promise<RequestErrorAction>',
+    signature: '\'agent/request-error\'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; model?: string; failure: LlmFailure; retryPolicy: ResolvedRetryPolicy | undefined; signal: AbortSignal }, next: () => Promise<RequestErrorAction>): Promise<RequestErrorAction>',
     summary: 'Handle one failed model-request attempt before the loop retries or closes its step.',
     description: 'Handle one failed model-request attempt before the loop retries or closes its step. A listener returns `{ kind: \'retry\' }` without calling `next()` when it owns recovery, or calls `next()` to delegate. The default `undefined` leaves the failure terminal.',
     parameters: [{ name: 'payload', description: '.signal - the turn abort signal. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
@@ -2622,6 +3015,54 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'options', description: 'the full request. A LOOP-built request carries the process-local {@link markAgentLoopRequest} identity and arrives deep-frozen (mutation throws): its content is a pure function of the session log (the reconstructability Agent Note), so listeners read it, never rewrite it. Hand-built calls do not carry that marker; their messages already obey the immutable creation contract.' }],
   },
   {
+    name: 'memory/blocked',
+    mode: 'emit',
+    signature: '\'memory/blocked\'(event: MemoryBlockedEvent): void',
+    summary: 'A memory action was rejected before durable state could be mutated.',
+    description: 'A memory action was rejected before durable state could be mutated. Observers may surface the sanitized reason in security and integrity dashboards.',
+    parameters: [{ name: 'event', description: 'Block reason, source, workspace boundary, and optional safe detail.' }],
+  },
+  {
+    name: 'memory/candidate',
+    mode: 'emit',
+    signature: '\'memory/candidate\'(event: MemoryCandidateEvent): void',
+    summary: 'Candidate retrieval was screened and assigned a deterministic policy outcome.',
+    description: 'Candidate retrieval was screened and assigned a deterministic policy outcome. Observers may persist or aggregate this non-model-facing audit telemetry.',
+    parameters: [{ name: 'event', description: 'Candidate counts, operation source, and policy decision metadata.' }],
+  },
+  {
+    name: 'memory/operation',
+    mode: 'emit',
+    signature: '\'memory/operation\'(event: MemoryOperationEvent): void',
+    summary: 'A durable memory operation completed or failed after provider selection.',
+    description: 'A durable memory operation completed or failed after provider selection. Observers may record operational health without changing the operation result.',
+    parameters: [{ name: 'event', description: 'Operation outcome, workspace boundary, provider, and optional result metadata.' }],
+  },
+  {
+    name: 'memory/semantic-search',
+    mode: 'emit',
+    signature: '\'memory/semantic-search\'(event: LocalSemanticSearchEvent): void',
+    summary: 'Optional semantic retrieval completed or fell back without exposing query or memory text.',
+    description: 'Optional semantic retrieval completed or fell back without exposing query or memory text.',
+    parameters: [{ name: 'event', description: 'Retrieval mode, bounded cost counters, and sanitized failure class.' }],
+  },
+  {
+    name: 'personal-memory/blocked',
+    mode: 'emit',
+    signature: '\'personal-memory/blocked\'(event: PersonalMemoryBlockedEvent): void',
+    summary: 'A personal-memory operation was rejected before durable mutation.',
+    description: 'A personal-memory operation was rejected before durable mutation.',
+    parameters: [{ name: 'event', description: 'Sanitized operation, owner, reason, and error code.' }],
+  },
+  {
+    name: 'personal-memory/operation',
+    mode: 'emit',
+    signature: '\'personal-memory/operation\'(event: PersonalMemoryOperationEvent): void',
+    summary: 'A personal-memory operation completed or failed without exposing its content.',
+    description: 'A personal-memory operation completed or failed without exposing its content.',
+    parameters: [{ name: 'event', description: 'Content-free operation, provider, owner, and result metadata.' }],
+  },
+  {
     name: 'session-telemetry/record',
     mode: 'waterfall',
     signature: '\'session-telemetry/record\'(record: SessionTelemetryRecord, next: () => SessionTelemetryRecord): SessionTelemetryRecord',
@@ -2732,6 +3173,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'Emitted when any prompt provider changes.',
     description: 'Emitted when any prompt provider changes. This registry notification is unfiltered because a global change affects every scope.',
     parameters: [],
+  },
+  {
+    name: 'team-mission/changed',
+    mode: 'parallel',
+    signature: '\'team-mission/changed\'(lead: Agent, record: TeamMissionRecord): Promise<void>',
+    summary: 'Notification after a durable mission control transition commits.',
+    description: 'Notification after a durable mission control transition commits.',
+    parameters: [{ name: 'lead', description: 'exact authorized root Agent.' }, { name: 'record', description: 'detached committed record, not a second source of truth.' }],
   },
   {
     name: 'tools/change',
@@ -2998,6 +3447,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AuthorizationStatus = \'authorized\' | \'cancelled\';',
   },
   {
+    name: 'AuxiliaryModelRole',
+    declaration: 'export type AuxiliaryModelRole = \'title\' | \'compression\' | \'vision\' | \'worker\' | \'review\';',
+  },
+  {
     name: 'BackendRegistry',
     declaration: 'export class BackendRegistry {\n    register(name: string, backend: StorageBackend): () => void;\n    get(name: string): StorageBackend;\n    names(): string[];\n}',
   },
@@ -3012,6 +3465,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'BashEnvVariableInfo',
     declaration: 'export interface BashEnvVariableInfo extends BashEnvVariable {\n    contributor: string;\n    key: DshEnvironmentKey;\n}',
+  },
+  {
+    name: 'BlockedProcedureReuse',
+    declaration: 'export interface BlockedProcedureReuse {\n    readonly id: ProcedureId;\n    readonly revision: number;\n    readonly reason: ProcedureReuseBlockReason;\n    readonly verifier: ProcedureVerifier;\n}',
   },
   {
     name: 'Branded',
@@ -3463,7 +3920,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ImageRequestPolicy',
-    declaration: 'export interface ImageRequestPolicy {\n    maxPixels: number;\n    maxBytes: number;\n}',
+    declaration: 'export interface ImageRequestPolicy {\n    outputFormat?: \'png\';\n    maxPixels: number;\n    maxBytes: number;\n}',
   },
   {
     name: 'ImageVariantId',
@@ -3582,8 +4039,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface KvFacet {\n    open(descriptor: KvUnitDescriptor): Promise<KvUnit>;\n}',
   },
   {
+    name: 'KvRecordMutation',
+    declaration: 'export type KvRecordMutation<V, R> = {\n    readonly kind: \'keep\';\n    readonly result: R;\n} | {\n    readonly kind: \'put\';\n    readonly value: V;\n    readonly result: R;\n};',
+  },
+  {
     name: 'KvTable',
-    declaration: 'export interface KvTable<K extends string, V> {\n    get(key: K): V | undefined;\n    entries(): IterableIterator<[\n        K,\n        V\n    ]>;\n    keys(): IterableIterator<K>;\n    readonly size: number;\n    put(key: K, value: V): Promise<void>;\n    delete(key: K): Promise<boolean>;\n    update(key: K, fn: (current: V) => V): Promise<V>;\n}',
+    declaration: 'export interface KvTable<K extends string, V> {\n    get(key: K): V | undefined;\n    entries(): IterableIterator<[\n        K,\n        V\n    ]>;\n    keys(): IterableIterator<K>;\n    readonly size: number;\n    put(key: K, value: V): Promise<void>;\n    delete(key: K): Promise<boolean>;\n    update(key: K, fn: (current: V) => V): Promise<V>;\n    mutate<R>(key: K, fn: (current: V | undefined) => KvRecordMutation<V, R>): Promise<R>;\n}',
   },
   {
     name: 'KvUnit',
@@ -3650,6 +4111,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export class LlmRuntime extends Service {\n    constructor(ctx: Context);\n    registerAdapter(providers: string[], adapter: LlmAdapter): AdapterRegistrationHandle;\n    listProviders(): LlmProviderInfo[];\n    registerConfigurableProviders(entries: readonly LlmConfigurableProvider[]): DirectoryRegistrationHandle;\n    listConfigurableProviders(): LlmConfigurableProvider[];\n    registerModelDiscovery(settingsNs: string, discover: (request: LlmModelDiscoveryRequest) => Promise<readonly LlmDiscoveredModel[]>): () => void;\n    async discoverModels(settingsNs: string, request: LlmModelDiscoveryRequest): Promise<LlmDiscoveredModel[]>;\n    providerRetryPolicy(provider: string): ResolvedRetryPolicy;\n    async listModels(provider: string): Promise<LlmModelInfo[]>;\n    async resolveModelInfo(provider: string, model: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async resolveCallConfig(config: LlmCallConfig, signal?: AbortSignal): Promise<LlmCallConfig>;\n    async prepareCall(config: LlmCallConfig, signal?: AbortSignal): Promise<PreparedLlmCall>;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
   },
   {
+    name: 'LocalMemoryRecord',
+    declaration: 'export interface LocalMemoryRecord extends LocalMemoryVersion {\n    readonly workspaceId: WorkspaceIdentity;\n    readonly history?: readonly LocalMemoryVersion[];\n}',
+  },
+  {
+    name: 'LocalMemoryVersion',
+    declaration: 'export interface LocalMemoryVersion {\n    readonly content: string;\n    readonly revision: number;\n    readonly source: {\n        readonly kind: \'session\';\n        readonly sessionId: SessionIdentity;\n    };\n    readonly importance?: number;\n    readonly confidence?: number;\n    readonly validation?: MemoryValidation;\n    readonly schemaVersion: MemoryRecordSchemaVersion;\n    readonly validFrom?: string;\n    readonly validUntil?: string;\n    readonly expiresAt?: string;\n    readonly supersedes?: MemoryRef;\n    readonly supersededBy?: MemoryRef;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'LocalSemanticSearchEvent',
+    declaration: 'export interface LocalSemanticSearchEvent {\n    readonly schemaVersion: 1;\n    readonly workspaceId: MemorySearchRequest[\'scope\'][\'workspaceId\'];\n    readonly mode: \'hybrid\' | \'lexical-fallback\';\n    readonly model: string;\n    readonly candidateCount: number;\n    readonly embeddedCount: number;\n    readonly cacheHitCount: number;\n    readonly resultCount: number;\n    readonly durationMs: number;\n    readonly fallbackCode?: SemanticFallbackCode;\n}',
+  },
+  {
     name: 'LspHover',
     declaration: 'export interface LspHover {\n    readonly contents: string;\n    readonly range?: LspRange;\n}',
   },
@@ -3692,6 +4165,290 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ManualCompactAgentContext',
     declaration: 'export interface ManualCompactAgentContext extends CompactionAgentContext {\n    runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>;\n}',
+  },
+  {
+    name: 'MemoryAdminActionId',
+    declaration: 'export type MemoryAdminActionId = Branded<\'MemoryAdminActionId\'>;',
+  },
+  {
+    name: 'MemoryAdminConfirmationRequired',
+    declaration: 'export interface MemoryAdminConfirmationRequired {\n    readonly code: \'memory-admin-confirmation-required\';\n}',
+  },
+  {
+    name: 'MemoryAdminCorrectRequest',
+    declaration: 'export interface MemoryAdminCorrectRequest {\n    readonly sessionId: SessionId;\n    readonly id: MemoryAdminId;\n    readonly revision: number;\n    readonly content: string;\n    readonly confirmed: boolean;\n}',
+  },
+  {
+    name: 'MemoryAdminCorrectResult',
+    declaration: 'export type MemoryAdminCorrectResult = {\n    readonly ok: true;\n    readonly value: MemoryAdminCorrectValue;\n} | {\n    readonly ok: false;\n    readonly error: MemoryAdminFailure;\n};',
+  },
+  {
+    name: 'MemoryAdminCorrectValue',
+    declaration: 'export interface MemoryAdminCorrectValue {\n    readonly item: MemoryAdminItem;\n    readonly auditId: MemoryAdminActionId;\n}',
+  },
+  {
+    name: 'MemoryAdminFailure',
+    declaration: 'export type MemoryAdminFailure = MemoryCandidateReviewSessionNotFound | MemoryCandidateReviewWorkspaceUnavailable | MemoryAdminReadOnly | MemoryAdminConfirmationRequired | MemoryAdminSensitiveContent | MemoryAdminOperationFailed | PersonalMemoryAdminUnavailable;',
+  },
+  {
+    name: 'MemoryAdminForgetRequest',
+    declaration: 'export interface MemoryAdminForgetRequest {\n    readonly sessionId: SessionId;\n    readonly id: MemoryAdminId;\n    readonly revision: number;\n    readonly confirmed: boolean;\n}',
+  },
+  {
+    name: 'MemoryAdminForgetResult',
+    declaration: 'export type MemoryAdminForgetResult = {\n    readonly ok: true;\n    readonly value: MemoryAdminForgetValue;\n} | {\n    readonly ok: false;\n    readonly error: MemoryAdminFailure;\n};',
+  },
+  {
+    name: 'MemoryAdminForgetValue',
+    declaration: 'export interface MemoryAdminForgetValue {\n    readonly id: MemoryAdminId;\n    readonly revision: number;\n    readonly auditId: MemoryAdminActionId;\n}',
+  },
+  {
+    name: 'MemoryAdminId',
+    declaration: 'export type MemoryAdminId = Branded<\'MemoryId\'>;',
+  },
+  {
+    name: 'MemoryAdminItem',
+    declaration: 'export interface MemoryAdminItem {\n    readonly id: MemoryAdminId;\n    readonly revision: number;\n    readonly content?: string;\n    readonly redacted: boolean;\n    readonly status: MemoryAdminStatus;\n    readonly sourceSessionId: SessionId;\n    readonly importance?: number;\n    readonly confidence?: number;\n    readonly validation?: MemoryAdminValidation;\n    readonly validFrom?: string;\n    readonly validUntil?: string;\n    readonly expiresAt?: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'MemoryAdminListRequest',
+    declaration: 'export interface MemoryAdminListRequest {\n    readonly sessionId: SessionId;\n    readonly query?: string;\n    readonly statuses?: readonly MemoryAdminStatus[];\n    readonly offset?: number;\n    readonly limit?: number;\n}',
+  },
+  {
+    name: 'MemoryAdminListResult',
+    declaration: 'export type MemoryAdminListResult = {\n    readonly ok: true;\n    readonly value: MemoryAdminListValue;\n} | {\n    readonly ok: false;\n    readonly error: MemoryAdminFailure;\n};',
+  },
+  {
+    name: 'MemoryAdminListValue',
+    declaration: 'export interface MemoryAdminListValue {\n    readonly items: readonly MemoryAdminItem[];\n    readonly hasMore: boolean;\n    readonly nextOffset: number;\n    readonly readOnly: boolean;\n}',
+  },
+  {
+    name: 'MemoryAdminOperationFailed',
+    declaration: 'export interface MemoryAdminOperationFailed {\n    readonly code: \'memory-admin-operation-failed\';\n    readonly action: \'list\' | \'remember\' | \'correct\' | \'forget\' | \'toggle\';\n    readonly auditId?: MemoryAdminActionId;\n}',
+  },
+  {
+    name: 'MemoryAdminReadOnly',
+    declaration: 'export interface MemoryAdminReadOnly {\n    readonly code: \'memory-admin-read-only\';\n}',
+  },
+  {
+    name: 'MemoryAdminSensitiveContent',
+    declaration: 'export interface MemoryAdminSensitiveContent {\n    readonly code: \'memory-admin-sensitive-content\';\n}',
+  },
+  {
+    name: 'MemoryAdminStatus',
+    declaration: 'export type MemoryAdminStatus = \'active\' | \'scheduled\' | \'expired\' | \'superseded\';',
+  },
+  {
+    name: 'MemoryAdminValidation',
+    declaration: 'export type MemoryAdminValidation = \'explicit\' | \'reviewed\';',
+  },
+  {
+    name: 'MemoryBlockedEvent',
+    declaration: 'export interface MemoryBlockedEvent {\n    readonly schemaVersion: MemoryEventSchemaVersion;\n    readonly reason: \'cross-scope-write\' | \'sensitive-content\' | \'provider-invalid\' | \'provider-unavailable\' | \'provider-missing\' | \'validation\';\n    readonly workspaceId: WorkspaceId;\n    readonly source: \'memory-tool\' | \'memory-runtime\' | \'memory-local\';\n    readonly memoryId?: MemoryId;\n    readonly detail?: string;\n}',
+  },
+  {
+    name: 'MemoryCandidateAutoWriteFailed',
+    declaration: 'export interface MemoryCandidateAutoWriteFailed {\n    readonly code: \'memory-candidate-auto-write-failed\';\n    readonly id: MemoryCandidateId;\n}',
+  },
+  {
+    name: 'MemoryCandidateAutoWriteReason',
+    declaration: 'export type MemoryCandidateAutoWriteReason = \'feature-disabled\' | \'workspace-not-enabled\' | \'user-not-enabled\' | \'policy-not-eligible\' | \'human-ignored\' | \'human-rejected\' | \'write-started\' | \'approved-and-authorized\' | \'provider-failed\';',
+  },
+  {
+    name: 'MemoryCandidateAutoWriteStatus',
+    declaration: 'export type MemoryCandidateAutoWriteStatus = \'skipped\' | \'writing\' | \'stored\' | \'failed\';',
+  },
+  {
+    name: 'MemoryCandidateAutoWriteTrace',
+    declaration: 'export interface MemoryCandidateAutoWriteTrace {\n    readonly status: MemoryCandidateAutoWriteStatus;\n    readonly reason: MemoryCandidateAutoWriteReason;\n    readonly recordedAt: string;\n    readonly memoryId?: string;\n    readonly revision?: number;\n}',
+  },
+  {
+    name: 'MemoryCandidateCategory',
+    declaration: 'export type MemoryCandidateCategory = \'preference\' | \'decision\' | \'configuration\' | \'procedure\' | \'fact\';',
+  },
+  {
+    name: 'MemoryCandidateEvent',
+    declaration: 'export interface MemoryCandidateEvent {\n    readonly schemaVersion: MemoryEventSchemaVersion;\n    readonly source: \'tool-memory\';\n    readonly queryLength: number;\n    readonly total: number;\n    readonly omittedSensitive: number;\n    readonly inserted: number;\n    readonly operation: \'message_candidate\' | \'memory_recall\' | \'tool_call_memory_search\';\n    readonly category?: \'preference\' | \'decision\' | \'configuration\' | \'procedure\' | \'fact\';\n    readonly confidence?: number;\n    readonly importance?: number;\n    readonly sensitivity?: \'none\' | \'review\' | \'blocked\';\n    readonly policyDecision?: MemoryPolicyDecision;\n    readonly policyReason?: MemoryPolicyReason;\n    readonly policyVersion?: MemoryPolicyVersion;\n}',
+  },
+  {
+    name: 'MemoryCandidateId',
+    declaration: 'export type MemoryCandidateId = Branded<\'MemoryCandidateId\'>;',
+  },
+  {
+    name: 'MemoryCandidateOperation',
+    declaration: 'export type MemoryCandidateOperation = \'message_candidate\' | \'memory_recall\' | \'tool_call_memory_search\';',
+  },
+  {
+    name: 'MemoryCandidateRecord',
+    declaration: 'export interface MemoryCandidateRecord {\n    readonly id: MemoryCandidateId;\n    readonly workspaceId: WorkspaceIdentity;\n    readonly sessionId: SessionIdentity;\n    readonly userId?: string;\n    readonly source: \'tool-memory\';\n    readonly operation: MemoryCandidateOperation;\n    readonly queryLength: number;\n    readonly confidence: number;\n    readonly total: number;\n    readonly omittedSensitive: number;\n    readonly inserted: number;\n    readonly topScore: number;\n    readonly candidateContent?: string;\n    readonly category?: MemoryCandidateCategory;\n    readonly importance?: number;\n    readonly scopeCandidate?: \'workspace\';\n    readonly sensitivity?: MemoryCandidateSensitivity;\n    readonly policyVersion: MemoryPolicyVersion;\n    readonly policyDecision: MemoryPolicyDecision;\n    readonly policyReason: MemoryPolicyReason;\n    readonly reviewed: boolean;\n    readonly reviewDecision?: MemoryCandidateReviewDecision;\n    readonly reviewedAt?: string;\n    readonly reviewedBy?: string;\n    readonly autoWrite?: MemoryCandidateAutoWriteTrace;\n    readonly createdAt: string;\n    readonly schemaVersion: MemoryCandidateSchemaVersion;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewAlreadyReviewed',
+    declaration: 'export interface MemoryCandidateReviewAlreadyReviewed {\n    readonly code: \'memory-candidate-already-reviewed\';\n    readonly current: MemoryCandidateReviewItem;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewDecision',
+    declaration: 'export type MemoryCandidateReviewDecision = \'accept\' | \'ignore\' | \'reject\';',
+  },
+  {
+    name: 'MemoryCandidateReviewFailure',
+    declaration: 'export type MemoryCandidateReviewFailure = MemoryCandidateReviewSessionNotFound | MemoryCandidateReviewWorkspaceUnavailable | MemoryCandidateReviewNotFound | MemoryCandidateReviewWorkspaceMismatch | MemoryCandidateReviewAlreadyReviewed | MemoryCandidateReviewNotAcceptable | MemoryCandidateAutoWriteFailed;',
+  },
+  {
+    name: 'MemoryCandidateReviewItem',
+    declaration: 'export interface MemoryCandidateReviewItem {\n    readonly id: MemoryCandidateId;\n    readonly sessionId: SessionId;\n    readonly operation: MemoryCandidateOperation;\n    readonly candidateContent?: string;\n    readonly category?: MemoryCandidateCategory;\n    readonly confidence: number;\n    readonly importance?: number;\n    readonly sensitivity?: MemoryCandidateSensitivity;\n    readonly policyVersion: MemoryPolicyVersion;\n    readonly policyDecision: MemoryPolicyDecision;\n    readonly policyReason: MemoryPolicyReason;\n    readonly reviewed: boolean;\n    readonly reviewDecision?: MemoryCandidateReviewDecision;\n    readonly reviewedAt?: string;\n    readonly reviewedBy?: string;\n    readonly autoWrite?: MemoryCandidateAutoWriteTrace;\n    readonly createdAt: string;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewListRequest',
+    declaration: 'export interface MemoryCandidateReviewListRequest {\n    readonly sessionId: SessionId;\n    readonly reviewed?: boolean;\n    readonly reviewDecision?: MemoryCandidateReviewDecision;\n    readonly offset?: number;\n    readonly limit?: number;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewListResult',
+    declaration: 'export type MemoryCandidateReviewListResult = {\n    readonly ok: true;\n    readonly value: MemoryCandidateReviewListValue;\n} | {\n    readonly ok: false;\n    readonly error: MemoryCandidateReviewFailure;\n};',
+  },
+  {
+    name: 'MemoryCandidateReviewListValue',
+    declaration: 'export interface MemoryCandidateReviewListValue {\n    readonly items: readonly MemoryCandidateReviewItem[];\n    readonly hasMore: boolean;\n    readonly nextOffset: number;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewMarkRequest',
+    declaration: 'export interface MemoryCandidateReviewMarkRequest {\n    readonly sessionId: SessionId;\n    readonly id: MemoryCandidateId;\n    readonly decision: MemoryCandidateReviewDecision;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewMarkResult',
+    declaration: 'export type MemoryCandidateReviewMarkResult = {\n    readonly ok: true;\n    readonly value: MemoryCandidateReviewMarkValue;\n} | {\n    readonly ok: false;\n    readonly error: MemoryCandidateReviewFailure;\n};',
+  },
+  {
+    name: 'MemoryCandidateReviewMarkValue',
+    declaration: 'export interface MemoryCandidateReviewMarkValue {\n    readonly item: MemoryCandidateReviewItem;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewNotAcceptable',
+    declaration: 'export interface MemoryCandidateReviewNotAcceptable {\n    readonly code: \'memory-candidate-not-acceptable\';\n    readonly id: MemoryCandidateId;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewNotFound',
+    declaration: 'export interface MemoryCandidateReviewNotFound {\n    readonly code: \'memory-candidate-not-found\';\n    readonly id: MemoryCandidateId;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewSessionNotFound',
+    declaration: 'export interface MemoryCandidateReviewSessionNotFound {\n    readonly code: \'memory-review-session-not-found\';\n    readonly sessionId: SessionId;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewWorkspaceMismatch',
+    declaration: 'export interface MemoryCandidateReviewWorkspaceMismatch {\n    readonly code: \'memory-candidate-workspace-mismatch\';\n    readonly id: MemoryCandidateId;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewWorkspaceUnavailable',
+    declaration: 'export interface MemoryCandidateReviewWorkspaceUnavailable {\n    readonly code: \'memory-review-workspace-unavailable\';\n    readonly sessionId: SessionId;\n}',
+  },
+  {
+    name: 'MemoryCandidateSchemaVersion',
+    declaration: 'export type MemoryCandidateSchemaVersion = 2 | typeof MEMORY_CANDIDATE_SCHEMA_VERSION;',
+  },
+  {
+    name: 'MemoryCandidateSensitivity',
+    declaration: 'export type MemoryCandidateSensitivity = \'none\' | \'review\' | \'blocked\';',
+  },
+  {
+    name: 'MemoryContinuityDomainSnapshot',
+    declaration: 'export interface MemoryContinuityDomainSnapshot {\n    readonly name: string;\n    readonly version: number;\n    readonly table: string;\n    readonly records: ReadonlyArray<readonly [\n        MemoryIdentity,\n        LocalMemoryRecord\n    ]>;\n    readonly checksum: string;\n}',
+  },
+  {
+    name: 'MemoryContinuityDomainSource',
+    declaration: 'export interface MemoryContinuityDomainSource {\n    readonly name: string;\n    readonly version: number;\n    readonly table: string;\n    readonly records: Iterable<readonly [\n        MemoryIdentity,\n        LocalMemoryRecord\n    ]>;\n}',
+  },
+  {
+    name: 'MemoryContinuityDomainTarget',
+    declaration: 'export interface MemoryContinuityDomainTarget {\n    readonly name: string;\n    readonly version: number;\n    readonly table: KvTable<MemoryIdentity, LocalMemoryRecord>;\n}',
+  },
+  {
+    name: 'MemoryContinuityImportResult',
+    declaration: 'export interface MemoryContinuityImportResult {\n    readonly imported: number;\n    readonly skippedExisting: number;\n    readonly journalEntry: MemoryContinuityJournalEntry;\n}',
+  },
+  {
+    name: 'MemoryContinuityJournalEntry',
+    declaration: 'export interface MemoryContinuityJournalEntry {\n    readonly journalId: string;\n    readonly schemaVersion: typeof MEMORY_CONTINUITY_SCHEMA_VERSION;\n    readonly recordedAt: string;\n    readonly operation: \'export\' | \'import\';\n    readonly domains: readonly string[];\n    readonly recordCount: number;\n    readonly checksum: string;\n    readonly provenance: {\n        readonly reason?: string;\n        readonly source?: string;\n    };\n}',
+  },
+  {
+    name: 'MemoryContinuitySnapshot',
+    declaration: 'export interface MemoryContinuitySnapshot {\n    readonly schemaVersion: typeof MEMORY_CONTINUITY_SCHEMA_VERSION;\n    readonly exportedAt: string;\n    readonly format: \'dsh-memory-continuity/json\';\n    readonly domains: readonly MemoryContinuityDomainSnapshot[];\n    readonly checksum: string;\n}',
+  },
+  {
+    name: 'MemoryCreateRequest',
+    declaration: 'export interface MemoryCreateRequest {\n    readonly scope: MemoryScope;\n    readonly content: string;\n    readonly source: MemorySource;\n    readonly importance?: number;\n    readonly confidence?: number;\n    readonly validation?: MemoryValidation;\n    readonly validFrom?: string;\n    readonly expiresAt?: string;\n}',
+  },
+  {
+    name: 'MemoryEventSchemaVersion',
+    declaration: 'export type MemoryEventSchemaVersion = typeof MEMORY_EVENT_SCHEMA_VERSION;',
+  },
+  {
+    name: 'MemoryForgetRequest',
+    declaration: 'export interface MemoryForgetRequest {\n    readonly scope: MemoryScope;\n    readonly ref: MemoryRef;\n}',
+  },
+  {
+    name: 'MemoryId',
+    declaration: 'export type MemoryId = Branded<\'MemoryId\'>;',
+  },
+  {
+    name: 'MemoryListItem',
+    declaration: 'export interface MemoryListItem {\n    readonly record: MemoryRecord;\n    readonly status: MemoryStatus;\n}',
+  },
+  {
+    name: 'MemoryListPage',
+    declaration: 'export interface MemoryListPage {\n    readonly items: readonly MemoryListItem[];\n    readonly hasMore: boolean;\n    readonly nextOffset: number;\n}',
+  },
+  {
+    name: 'MemoryListRequest',
+    declaration: 'export interface MemoryListRequest {\n    readonly scope: MemoryScope;\n    readonly query?: string;\n    readonly statuses?: readonly MemoryStatus[];\n    readonly offset?: number;\n    readonly limit: number;\n}',
+  },
+  {
+    name: 'MemoryOperationEvent',
+    declaration: 'export interface MemoryOperationEvent {\n    readonly schemaVersion: MemoryEventSchemaVersion;\n    readonly operation: \'create\' | \'search\' | \'list\' | \'update\' | \'forget\';\n    readonly provider: string;\n    readonly success: boolean;\n    readonly workspaceId: WorkspaceId;\n    readonly resultCount?: number;\n    readonly memoryId?: MemoryId;\n    readonly revision?: number;\n    readonly errorCode?: string;\n    readonly durationMs?: number;\n}',
+  },
+  {
+    name: 'MemoryProvider',
+    declaration: 'export interface MemoryProvider {\n    readonly id: string;\n    available(): boolean;\n    create(request: MemoryCreateRequest, signal?: AbortSignal): Promise<MemoryRecord>;\n    search(request: MemorySearchRequest, signal?: AbortSignal): Promise<readonly MemorySearchHit[]>;\n    list(request: MemoryListRequest, signal?: AbortSignal): Promise<MemoryListPage>;\n    update(request: MemoryUpdateRequest, signal?: AbortSignal): Promise<MemoryRecord>;\n    forget(request: MemoryForgetRequest, signal?: AbortSignal): Promise<void>;\n}',
+  },
+  {
+    name: 'MemoryRecord',
+    declaration: 'export interface MemoryRecord {\n    readonly id: MemoryId;\n    readonly scope: MemoryScope;\n    readonly content: string;\n    readonly revision: number;\n    readonly source: MemorySource;\n    readonly importance?: number;\n    readonly confidence?: number;\n    readonly validation?: MemoryValidation;\n    readonly schemaVersion?: MemoryRecordSchemaVersion;\n    readonly validFrom?: string;\n    readonly validUntil?: string;\n    readonly expiresAt?: string;\n    readonly supersedes?: MemoryRef;\n    readonly supersededBy?: MemoryRef;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'MemoryRecordSchemaVersion',
+    declaration: 'export type MemoryRecordSchemaVersion = 1 | typeof MEMORY_RECORD_SCHEMA_VERSION;',
+  },
+  {
+    name: 'MemoryRef',
+    declaration: 'export interface MemoryRef {\n    readonly id: MemoryId;\n    readonly revision: number;\n}',
+  },
+  {
+    name: 'MemoryScope',
+    declaration: 'export interface MemoryScope {\n    readonly workspaceId: WorkspaceId;\n}',
+  },
+  {
+    name: 'MemorySearchHit',
+    declaration: 'export interface MemorySearchHit {\n    readonly record: MemoryRecord;\n    readonly score: number;\n}',
+  },
+  {
+    name: 'MemorySearchRequest',
+    declaration: 'export interface MemorySearchRequest {\n    readonly scope: MemoryScope;\n    readonly query: string;\n    readonly limit: number;\n    readonly includeHistory?: boolean;\n}',
+  },
+  {
+    name: 'MemorySource',
+    declaration: 'export interface MemorySource {\n    readonly kind: \'session\';\n    readonly sessionId: SessionId;\n}',
+  },
+  {
+    name: 'MemoryStatus',
+    declaration: 'export type MemoryStatus = \'active\' | \'scheduled\' | \'expired\' | \'superseded\';',
+  },
+  {
+    name: 'MemoryUpdateRequest',
+    declaration: 'export interface MemoryUpdateRequest {\n    readonly scope: MemoryScope;\n    readonly ref: MemoryRef;\n    readonly content: string;\n    readonly source?: MemorySource;\n    readonly validFrom?: string;\n    readonly expiresAt?: string | null;\n}',
+  },
+  {
+    name: 'MemoryValidation',
+    declaration: 'export type MemoryValidation = \'explicit\' | \'reviewed\';',
   },
   {
     name: 'Message',
@@ -3810,6 +4567,98 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PermissionSelect {\n    options: PresetOption[];\n    currentValue: string;\n}',
   },
   {
+    name: 'PersonalMemoryAdminListResult',
+    declaration: 'export type PersonalMemoryAdminListResult = {\n    readonly ok: true;\n    readonly value: PersonalMemoryAdminListValue;\n} | {\n    readonly ok: false;\n    readonly error: MemoryAdminFailure;\n};',
+  },
+  {
+    name: 'PersonalMemoryAdminListValue',
+    declaration: 'export interface PersonalMemoryAdminListValue extends MemoryAdminListValue {\n    readonly enabled: boolean;\n}',
+  },
+  {
+    name: 'PersonalMemoryAdminRememberRequest',
+    declaration: 'export interface PersonalMemoryAdminRememberRequest {\n    readonly sessionId: SessionId;\n    readonly content: string;\n    readonly confirmed: boolean;\n}',
+  },
+  {
+    name: 'PersonalMemoryAdminRememberResult',
+    declaration: 'export type PersonalMemoryAdminRememberResult = {\n    readonly ok: true;\n    readonly value: PersonalMemoryAdminRememberValue;\n} | {\n    readonly ok: false;\n    readonly error: MemoryAdminFailure;\n};',
+  },
+  {
+    name: 'PersonalMemoryAdminRememberValue',
+    declaration: 'export interface PersonalMemoryAdminRememberValue {\n    readonly item: MemoryAdminItem;\n    readonly auditId: MemoryAdminActionId;\n}',
+  },
+  {
+    name: 'PersonalMemoryAdminToggleRequest',
+    declaration: 'export interface PersonalMemoryAdminToggleRequest {\n    readonly sessionId: SessionId;\n    readonly enabled: boolean;\n    readonly confirmed: boolean;\n}',
+  },
+  {
+    name: 'PersonalMemoryAdminToggleResult',
+    declaration: 'export type PersonalMemoryAdminToggleResult = {\n    readonly ok: true;\n    readonly value: PersonalMemoryAdminToggleValue;\n} | {\n    readonly ok: false;\n    readonly error: MemoryAdminFailure;\n};',
+  },
+  {
+    name: 'PersonalMemoryAdminToggleValue',
+    declaration: 'export interface PersonalMemoryAdminToggleValue {\n    readonly enabled: boolean;\n    readonly auditId: MemoryAdminActionId;\n}',
+  },
+  {
+    name: 'PersonalMemoryAdminUnavailable',
+    declaration: 'export interface PersonalMemoryAdminUnavailable {\n    readonly code: \'memory-admin-personal-unavailable\';\n}',
+  },
+  {
+    name: 'PersonalMemoryBlockedEvent',
+    declaration: 'export interface PersonalMemoryBlockedEvent {\n    readonly schemaVersion: 1;\n    readonly operation: PersonalMemoryOperationEvent[\'operation\'];\n    readonly ownerId: PersonalMemoryOwnerId;\n    readonly reason: \'credential-like\' | \'disabled\' | \'validation\' | \'provider\';\n    readonly errorCode: string;\n}',
+  },
+  {
+    name: 'PersonalMemoryCreateRequest',
+    declaration: 'export type PersonalMemoryCreateRequest = Omit<MemoryCreateRequest, \'scope\'> & {\n    readonly scope: PersonalMemoryScope;\n};',
+  },
+  {
+    name: 'PersonalMemoryForgetRequest',
+    declaration: 'export type PersonalMemoryForgetRequest = Omit<MemoryForgetRequest, \'scope\'> & {\n    readonly scope: PersonalMemoryScope;\n};',
+  },
+  {
+    name: 'PersonalMemoryListItem',
+    declaration: 'export interface PersonalMemoryListItem extends Omit<MemoryListItem, \'record\'> {\n    readonly record: PersonalMemoryRecord;\n}',
+  },
+  {
+    name: 'PersonalMemoryListPage',
+    declaration: 'export interface PersonalMemoryListPage extends Omit<MemoryListPage, \'items\'> {\n    readonly items: readonly PersonalMemoryListItem[];\n}',
+  },
+  {
+    name: 'PersonalMemoryListRequest',
+    declaration: 'export type PersonalMemoryListRequest = Omit<MemoryListRequest, \'scope\'> & {\n    readonly scope: PersonalMemoryScope;\n};',
+  },
+  {
+    name: 'PersonalMemoryOperationEvent',
+    declaration: 'export interface PersonalMemoryOperationEvent {\n    readonly schemaVersion: 1;\n    readonly operation: \'create\' | \'search\' | \'list\' | \'update\' | \'forget\';\n    readonly provider: string;\n    readonly success: boolean;\n    readonly ownerId: PersonalMemoryOwnerId;\n    readonly resultCount?: number;\n    readonly memoryId?: MemoryRecord[\'id\'];\n    readonly revision?: number;\n    readonly errorCode?: string;\n    readonly durationMs?: number;\n}',
+  },
+  {
+    name: 'PersonalMemoryOwnerId',
+    declaration: 'export type PersonalMemoryOwnerId = Branded<\'PersonalMemoryOwnerId\'>;',
+  },
+  {
+    name: 'PersonalMemoryProvider',
+    declaration: 'export interface PersonalMemoryProvider {\n    readonly id: string;\n    available(): boolean;\n    create(request: PersonalMemoryCreateRequest, signal?: AbortSignal): Promise<PersonalMemoryRecord>;\n    search(request: PersonalMemorySearchRequest, signal?: AbortSignal): Promise<readonly PersonalMemorySearchHit[]>;\n    list(request: PersonalMemoryListRequest, signal?: AbortSignal): Promise<PersonalMemoryListPage>;\n    update(request: PersonalMemoryUpdateRequest, signal?: AbortSignal): Promise<PersonalMemoryRecord>;\n    forget(request: PersonalMemoryForgetRequest, signal?: AbortSignal): Promise<void>;\n}',
+  },
+  {
+    name: 'PersonalMemoryRecord',
+    declaration: 'export type PersonalMemoryRecord = Omit<MemoryRecord, \'scope\'> & {\n    readonly scope: PersonalMemoryScope;\n};',
+  },
+  {
+    name: 'PersonalMemoryScope',
+    declaration: 'export interface PersonalMemoryScope {\n    readonly ownerId: PersonalMemoryOwnerId;\n}',
+  },
+  {
+    name: 'PersonalMemorySearchHit',
+    declaration: 'export interface PersonalMemorySearchHit extends Omit<MemorySearchHit, \'record\'> {\n    readonly record: PersonalMemoryRecord;\n}',
+  },
+  {
+    name: 'PersonalMemorySearchRequest',
+    declaration: 'export type PersonalMemorySearchRequest = Omit<MemorySearchRequest, \'scope\'> & {\n    readonly scope: PersonalMemoryScope;\n};',
+  },
+  {
+    name: 'PersonalMemoryUpdateRequest',
+    declaration: 'export type PersonalMemoryUpdateRequest = Omit<MemoryUpdateRequest, \'scope\'> & {\n    readonly scope: PersonalMemoryScope;\n};',
+  },
+  {
     name: 'PostToolDecision',
     declaration: 'export type PostToolDecision = {\n    kind: \'accept\';\n    content?: ContentBlock[];\n    value?: never;\n    additionalContexts?: UserMessage[];\n} | {\n    kind: \'accept\';\n    value: JsonValue;\n    content?: never;\n    additionalContexts?: UserMessage[];\n} | {\n    kind: \'block\';\n    feedback: ContentBlock[];\n    additionalContexts?: UserMessage[];\n};',
   },
@@ -3848,6 +4697,82 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PreToolDecision',
     declaration: 'export type PreToolDecision = {\n    kind: \'allow\';\n} | {\n    kind: \'deny\';\n    reason: string;\n} | {\n    kind: \'ask\';\n    reason?: string;\n};',
+  },
+  {
+    name: 'ProcedureEvidence',
+    declaration: 'export interface ProcedureEvidence {\n    readonly kind: \'initial-validation\' | \'revalidation\';\n    readonly sessionId: SessionId;\n    readonly executionCallIds: readonly CallId[];\n    readonly verificationCallId: CallId;\n    readonly resultDigests: readonly string[];\n    readonly succeeded: boolean;\n    readonly recordedAt: string;\n}',
+  },
+  {
+    name: 'ProcedureId',
+    declaration: 'export type ProcedureId = Branded<\'ProcedureId\'>;',
+  },
+  {
+    name: 'ProcedureInspectRequest',
+    declaration: 'export interface ProcedureInspectRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly id: ProcedureId;\n}',
+  },
+  {
+    name: 'ProcedureLearningFailure',
+    declaration: 'export type ProcedureLearningFailure = {\n    readonly code: \'procedure-invalid-proposal\';\n    readonly reason: string;\n} | {\n    readonly code: \'procedure-sensitive-content\';\n} | {\n    readonly code: \'procedure-not-found\';\n    readonly id: ProcedureId;\n} | {\n    readonly code: \'procedure-revision-conflict\';\n    readonly id: ProcedureId;\n    readonly currentRevision: number;\n} | {\n    readonly code: \'procedure-invalid-state\';\n    readonly id: ProcedureId;\n    readonly status: ProcedureStatus;\n} | {\n    readonly code: \'procedure-validity-expired\';\n    readonly id: ProcedureId;\n} | {\n    readonly code: \'procedure-precondition-mismatch\';\n    readonly id: ProcedureId;\n};',
+  },
+  {
+    name: 'ProcedureLearningResult',
+    declaration: 'export type ProcedureLearningResult = {\n    readonly ok: true;\n    readonly value: ProcedureRecord;\n} | {\n    readonly ok: false;\n    readonly error: ProcedureLearningFailure;\n};',
+  },
+  {
+    name: 'ProcedurePrecondition',
+    declaration: 'export interface ProcedurePrecondition {\n    readonly key: string;\n    readonly expected: string;\n}',
+  },
+  {
+    name: 'ProcedureProposalRequest',
+    declaration: 'export interface ProcedureProposalRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly title: string;\n    readonly trigger: string;\n    readonly preconditions: readonly ProcedurePrecondition[];\n    readonly executions: readonly ProcedureToolObservation[];\n    readonly verification: ProcedureToolObservation;\n    readonly validity: ProcedureValidity;\n}',
+  },
+  {
+    name: 'ProcedureRecord',
+    declaration: 'export interface ProcedureRecord {\n    readonly id: ProcedureId;\n    readonly workspaceId: WorkspaceId;\n    readonly revision: number;\n    readonly title: string;\n    readonly trigger: string;\n    readonly preconditions: readonly ProcedurePrecondition[];\n    readonly steps: readonly ProcedureStep[];\n    readonly verifier: ProcedureVerifier;\n    readonly validity: ProcedureValidity;\n    readonly status: ProcedureStatus;\n    readonly evidence: readonly ProcedureEvidence[];\n    readonly proposedAt: string;\n    readonly updatedAt: string;\n    readonly reviewedAt?: string;\n    readonly reviewedBy?: string;\n    readonly lastValidatedAt?: string;\n    readonly staleAt?: string;\n    readonly revokedAt?: string;\n    readonly schemaVersion: 1;\n}',
+  },
+  {
+    name: 'ProcedureReuseBlockReason',
+    declaration: 'export type ProcedureReuseBlockReason = \'expired\' | \'precondition-mismatch\' | \'revalidation-required\' | \'stale\';',
+  },
+  {
+    name: 'ProcedureReuseRequest',
+    declaration: 'export interface ProcedureReuseRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly query: string;\n    readonly preconditions: Readonly<Record<string, string>>;\n    readonly limit?: number;\n}',
+  },
+  {
+    name: 'ProcedureReuseResult',
+    declaration: 'export interface ProcedureReuseResult {\n    readonly items: readonly ProcedureRecord[];\n    readonly blocked: readonly BlockedProcedureReuse[];\n}',
+  },
+  {
+    name: 'ProcedureRevalidationRequest',
+    declaration: 'export interface ProcedureRevalidationRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly id: ProcedureId;\n    readonly expectedRevision: number;\n    readonly preconditions: Readonly<Record<string, string>>;\n    readonly verification: ProcedureToolObservation;\n    readonly validity?: ProcedureValidity;\n}',
+  },
+  {
+    name: 'ProcedureReviewRequest',
+    declaration: 'export interface ProcedureReviewRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly id: ProcedureId;\n    readonly expectedRevision: number;\n    readonly decision: \'accept\' | \'reject\';\n}',
+  },
+  {
+    name: 'ProcedureRevokeRequest',
+    declaration: 'export interface ProcedureRevokeRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly id: ProcedureId;\n    readonly expectedRevision: number;\n}',
+  },
+  {
+    name: 'ProcedureStatus',
+    declaration: 'export type ProcedureStatus = \'candidate\' | \'validated\' | \'rejected\' | \'stale\' | \'revoked\';',
+  },
+  {
+    name: 'ProcedureStep',
+    declaration: 'export interface ProcedureStep {\n    readonly tool: string;\n    readonly arguments: JsonValue;\n}',
+  },
+  {
+    name: 'ProcedureToolObservation',
+    declaration: 'export interface ProcedureToolObservation {\n    readonly sessionId: SessionId;\n    readonly callId: CallId;\n    readonly tool: string;\n    readonly arguments: JsonValue;\n    readonly succeeded: boolean;\n    readonly resultDigest: string;\n    readonly observedAt: string;\n}',
+  },
+  {
+    name: 'ProcedureValidity',
+    declaration: 'export interface ProcedureValidity {\n    readonly revalidateAfter: string;\n    readonly validUntil: string;\n}',
+  },
+  {
+    name: 'ProcedureVerifier',
+    declaration: 'export interface ProcedureVerifier {\n    readonly tool: string;\n    readonly arguments: JsonValue;\n}',
   },
   {
     name: 'ProjectionChangeListener',
@@ -4060,6 +4985,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SearchResultView',
     declaration: 'export type SearchResultView = SearchMatchesResultView | SearchPathsResultView;',
+  },
+  {
+    name: 'SemanticFallbackCode',
+    declaration: 'export type SemanticFallbackCode = \'TIMEOUT\' | \'TRANSPORT\' | \'HTTP_ERROR\' | \'INVALID_RESPONSE\' | \'RESPONSE_TOO_LARGE\';',
   },
   {
     name: 'SendTeamMessageRequest',
@@ -4610,6 +5539,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type TableValueOf<S extends DomainSpec, N extends keyof S[\'tables\']> = S[\'tables\'][N] extends DomainTableSpec<string, infer V> ? V : never;',
   },
   {
+    name: 'TeamCompletionReviewer',
+    declaration: 'export type TeamCompletionReviewer = (caller: Agent, root: Agent, task: TeamTaskSnapshot) => Promise<boolean>;',
+  },
+  {
     name: 'TeamId',
     declaration: 'export type TeamId = Branded<\'TeamId\'>;',
   },
@@ -4626,12 +5559,28 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type TeamMessageId = Branded<\'TeamMessageId\'>;',
   },
   {
+    name: 'TeamMissionBindings',
+    declaration: 'export interface TeamMissionBindings {\n    readonly lead: SessionId;\n    readonly researcher: SessionId;\n    readonly checker: SessionId;\n}',
+  },
+  {
+    name: 'TeamMissionProvisionRequest',
+    declaration: 'export interface TeamMissionProvisionRequest {\n    readonly researcher: SpawnTeammateRequest;\n    readonly checker: SpawnTeammateRequest;\n}',
+  },
+  {
+    name: 'TeamMissionRecord',
+    declaration: 'export type TeamMissionRecord = z.infer<typeof missionRecord>;',
+  },
+  {
     name: 'TeamTaskAction',
     declaration: 'export type TeamTaskAction = \'claim\' | \'release\' | \'edit\' | \'set_dependencies\' | \'complete\' | \'reopen\' | \'reassign\' | \'delete\';',
   },
   {
     name: 'TeamTaskId',
     declaration: 'export type TeamTaskId = Branded<\'TeamTaskId\'>;',
+  },
+  {
+    name: 'TeamTaskSnapshot',
+    declaration: 'export interface TeamTaskSnapshot {\n    readonly id: TeamTaskId;\n    readonly revision: number;\n    readonly subject: string;\n    readonly description: string;\n    readonly status: TeamTaskStatus;\n    readonly ownerId?: SessionId;\n    readonly blockedBy: TeamTaskId[];\n    readonly writeScopes: string[];\n}',
   },
   {
     name: 'TeamTaskStatus',
@@ -4743,7 +5692,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'TokenUsage',
-    declaration: 'export interface TokenUsage {\n    inputTokens: number;\n    outputTokens: number;\n    cacheReadTokens?: number;\n    cacheWriteTokens?: number;\n    reasoningTokens?: number;\n}',
+    declaration: 'export interface TokenUsage {\n    inputTokens: number;\n    outputTokens: number;\n    cacheReadTokens?: number;\n    cacheWriteTokens?: number;\n    reasoningTokens?: number;\n    providerCostUsdNanos?: number;\n}',
   },
   {
     name: 'ToolCallKind',
@@ -4843,7 +5792,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ToolRuntime',
-    declaration: 'export class ToolRuntime extends Service {\n    static inject;\n    static Config: z<Config>;\n    readonly [TOOL_RUNTIME_SCHEDULER]: ToolRuntimeScheduler;\n    constructor(ctx: Context, config: Config = {});\n    presentAs(mode: ToolPresentationMode): () => void;\n    register(definition: ToolDefinition): () => void;\n    restrict(filter: ToolRestriction): () => void;\n    guard(guard: ToolGuard): () => void;\n    get(name: string, scope?: ScopeKey): ToolDefinition | undefined;\n    schemas(scope?: ScopeKey): ToolSchema[];\n    executionMode(exec: ToolExecutionInput): ToolExecutionMode;\n    async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>;\n}',
+    declaration: 'export class ToolRuntime extends Service {\n    static inject;\n    static Config: z<Config>;\n    readonly [TOOL_RUNTIME_SCHEDULER]: ToolRuntimeScheduler;\n    constructor(ctx: Context, config: Config = {});\n    presentAs(mode: ToolPresentationMode): () => void;\n    compactDescriptions(maxLength: number): () => void;\n    register(definition: ToolDefinition): () => void;\n    restrict(filter: ToolRestriction): () => void;\n    guard(guard: ToolGuard): () => void;\n    get(name: string, scope?: ScopeKey): ToolDefinition | undefined;\n    schemas(scope?: ScopeKey): ToolSchema[];\n    executionMode(exec: ToolExecutionInput): ToolExecutionMode;\n    async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>;\n}',
   },
   {
     name: 'ToolRuntimeScheduler',

@@ -6,6 +6,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { HarnessError } from '@deepseek-ai/dsh-llm'
+import { win32 } from 'node:path'
 import {
   SessionId,
   type SessionEvent,
@@ -77,14 +78,13 @@ async function authorizeTarget(
   signal: AbortSignal,
 ): Promise<void> {
   if (target === caller.id) return
-  const cwd = caller.header.cwd
-  if (cwd === undefined) throw serviceBoundary.unauthorizedTarget()
   const records = await serviceBoundary.call(ctx, signal, 'target authorization', () =>
     ctx.sessionQuery.filterSessions([
       { kind: 'id', values: [target] },
-      { kind: 'cwd', values: [cwd] },
     ], signal))
-  if (records.length !== 1) throw serviceBoundary.unauthorizedTarget()
+  if (records.length !== 1 || !recordAuthorized(records[0] as SessionRecord, caller)) {
+    throw serviceBoundary.unauthorizedTarget()
+  }
 }
 
 function recordAuthorized(record: SessionRecord, caller: Caller): boolean {
@@ -92,8 +92,45 @@ function recordAuthorized(record: SessionRecord, caller: Caller): boolean {
 }
 
 function headerAuthorized(header: SessionHeader, caller: Caller): boolean {
-  if (header.id === caller.id) return header.cwd === caller.header.cwd
-  return caller.header.cwd !== undefined && header.cwd === caller.header.cwd
+  if (header.id === caller.id) return sameWorkspace(header.cwd, caller.header.cwd)
+  return caller.header.cwd !== undefined && sameWorkspace(header.cwd, caller.header.cwd)
+}
+
+function sameWorkspace(left: string | undefined, right: string | undefined): boolean {
+  if (left === undefined || right === undefined) return left === right
+  const leftKey = windowsWorkspaceKey(left)
+  const rightKey = windowsWorkspaceKey(right)
+  if (leftKey === undefined || rightKey === undefined) return left === right
+  return leftKey === rightKey
+}
+
+function windowsWorkspaceKey(value: string): string | undefined {
+  if (!isAbsoluteWindowsWorkspace(value)) return undefined
+  const normalized = win32.normalize(value.replaceAll('/', '\\')).toLowerCase()
+  return /^[a-z]:\\$/u.test(normalized) ? normalized : normalized.replace(/\\+$/u, '')
+}
+
+function isAbsoluteWindowsWorkspace(value: string): boolean {
+  return /^[a-z]:[\\/]/iu.test(value)
+    || /^(?:\\\\|\/\/)[^\\/]+[\\/][^\\/]+(?:[\\/]|$)/u.test(value)
+}
+
+async function workspaceCwdValues(
+  ctx: Context,
+  caller: Caller,
+  signal: AbortSignal,
+): Promise<string[]> {
+  const cwd = caller.header.cwd
+  if (cwd === undefined) throw serviceBoundary.unauthorizedTarget()
+  if (windowsWorkspaceKey(cwd) === undefined) return [cwd]
+  const records = await serviceBoundary.call(ctx, signal, 'workspace alias discovery', () =>
+    ctx.sessionQuery.filterSessions([], signal))
+  const values = new Set([cwd])
+  for (const record of records) {
+    const observed = record.header.cwd
+    if (observed !== undefined && sameWorkspace(observed, cwd)) values.add(observed)
+  }
+  return [...values]
 }
 
 function assertObservedTargetAuthorized(
@@ -121,7 +158,6 @@ async function authorizeSessionIds(
   const records = await serviceBoundary.call(ctx, signal, 'session-id authorization', () =>
     ctx.sessionQuery.filterSessions([
       { kind: 'id', values: other },
-      { kind: 'cwd', values: [cwd] },
     ], signal))
   const requested = new Set(other)
   for (const record of records) {
@@ -242,6 +278,7 @@ function titleText(view: TitleView): string {
 export const workspaceAccess = {
   callerOf,
   targetId,
+  workspaceCwdValues,
   authorizeTarget,
   recordAuthorized,
   assertObservedTargetAuthorized,

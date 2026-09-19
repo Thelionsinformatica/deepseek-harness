@@ -26,7 +26,7 @@ function omitFixtureEnvelope(record: Record<string, unknown>): void {
 }
 
 /** A cwd-rooted path after volatile cwd replacement, through its last separator-delimited segment. */
-const CWD_ROOTED_PATH_RE = /\{\{cwd\}\}(?:[\\/][^\s<>"'`]+)+/g
+const CWD_ROOTED_PATH_RE = /\{\{cwd\}\}(?:[\\/]+[^\\/\s<>"'`]+)+/g
 const PATH_TAG_RE = /(<path>)([^<]*)(<\/path>)/g
 const ADDITIONAL_INSTRUCTIONS_PATH_RE = /(Additional instructions from: )([^\r\n]+)/g
 const EMBEDDED_EVENT_TIME_RE = /^(  "time": )\d+(?=,\r?$)/gm
@@ -101,7 +101,12 @@ function cwdSpellings(ctx: NormalizeContext): string[] {
   const macAliases = spellings
     .filter(spelling => spelling.startsWith('/') && !spelling.startsWith('/private/'))
     .map(spelling => `/private${spelling}`)
-  return [...new Set([...spellings, ...macAliases])]
+  const literalSpellings = [...new Set([...spellings, ...macAliases])]
+  // A tool result can itself contain JSON text. Once the outer session JSONL
+  // is parsed, that nested JSON still carries doubled backslashes, so include
+  // its JSON-string spelling as another representation of the same cwd.
+  const jsonEscaped = literalSpellings.map(spelling => JSON.stringify(spelling).slice(1, -1))
+  return [...new Set([...literalSpellings, ...jsonEscaped])]
     .sort((left, right) => right.length - left.length)
 }
 
@@ -161,7 +166,7 @@ function scrubString(value: string, ctx: NormalizeContext, cwdPathMode: CwdPathM
   if (cwdPathMode === 'canonical') {
     // Restrict separator conversion to paths rooted at the cwd token. A global
     // backslash rewrite would corrupt regexes, commands, and model-authored text.
-    out = out.replace(CWD_ROOTED_PATH_RE, path => path.replaceAll('\\', '/'))
+    out = out.replace(CWD_ROOTED_PATH_RE, path => path.replace(/[\\/]+/g, '/'))
     out = canonicalizeEmbeddedPaths(out)
   }
   out = out.replace(LOCAL_SPILL_PATH_RE, (_match, name: string) => `{{spillLocator:${name}}}`)

@@ -1,7 +1,7 @@
 import { MessageId, createUserMessage, createMessage } from '@deepseek-ai/dsh-llm'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { appendFile, mkdtemp, mkdir, rm, readFile, writeFile, readdir, stat, symlink } from 'node:fs/promises'
+import { appendFile, link, mkdtemp, mkdir, rm, readFile, writeFile, readdir, stat, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
@@ -1179,6 +1179,54 @@ describe('JsonlSessionPersistence: edge cases', () => {
     // A value whose JSON.stringify yields undefined (a bare function as data).
     const bad = [{ type: 'user/message', seq: 0, time: 1, data: (() => 0) as unknown }] as unknown as SessionEvent[]
     await expect(ctx.sessionPersistence.append(m.id, bad)).rejects.toThrow(/non-JSON-serializable/)
+  })
+
+  it.skipIf(process.platform === 'win32')('deletes a crash-left POSIX staging hard link with the canonical transcript', async () => {
+    const m = meta('delete-staging-hardlink', '/stored')
+    await ctx.sessionPersistence.create(m)
+    await ctx.sessionPersistence.append(m.id, oneTurnLog())
+    const path = rawLogPath(root, m.cwd, m.id)
+    const staging = `${path}.abcdef123456.tmp`
+    await link(path, staging)
+
+    await ctx.sessionPersistence.delete(m.id)
+
+    await expect(stat(path)).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(stat(staging)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('refuses to delete a transcript reached through a session-directory link outside the persistence root', async () => {
+    const m = meta('delete-outside-link', '/stored')
+    const externalRoot = await freshRoot()
+    const externalSession = join(externalRoot, 'external-session')
+    await mkdir(externalSession, { recursive: true })
+    const externalLog = join(externalSession, 'session.jsonl')
+    const content = [
+      JSON.stringify(toHeaderLine(m)),
+      ...oneTurnLog().map(event => JSON.stringify(event)),
+    ].join('\n') + '\n'
+    await writeFile(externalLog, content)
+    await mkdir(projectDir(root, m.cwd), { recursive: true })
+    await symlink(
+      externalSession,
+      sessionDir(root, m.cwd, m.id),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    )
+
+    await expect(ctx.sessionPersistence.delete(m.id)).rejects.toThrow(/outside persistence root/)
+    expect(await readFile(externalLog, 'utf8')).toBe(content)
+  })
+
+  it('deletes an exactly identified transcript even when a historical event body is corrupt', async () => {
+    const m = meta('delete-corrupt-body', '/stored')
+    await ctx.sessionPersistence.create(m)
+    await ctx.sessionPersistence.append(m.id, oneTurnLog())
+    const path = rawLogPath(root, m.cwd, m.id)
+    await appendFile(path, '{this-is-not-json}\n')
+
+    await ctx.sessionPersistence.delete(m.id)
+
+    await expect(stat(path)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('create snapshots its meta: mutating the caller object after the call is ignored', async () => {

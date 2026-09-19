@@ -6,6 +6,8 @@
 
 ## 配置
 
+创建模式以已注册且支持持续会话的提供方为准，并在添加或移除提供方时刷新。没有可用提供方时不提供创建工具；直接服务调用仍独立执行准入检查。
+
 ```yaml
 - id: tool-agent-team
   name: '@deepseek-ai/dsh-experimental-tool-agent-team'

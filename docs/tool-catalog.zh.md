@@ -34,6 +34,8 @@
 | `@deepseek-ai/dsh-tool-goal` | `create_goal`、`get_goal`、`update_goal` | `ctx.tools`、`ctx.agents`、`ctx.goals`、`ctx.systemPrompt`、`a calling Agent in an authorized open turn` | `tool/call`、`goal/change for mutations`、`tool/result` | - | create、edit、pause 和 resume 要求直接来自人类的根权限；complete 和 blocked 也接受确切的当前 Goal Round。blocked 的默认下限是 3 个获准的 Round。 |
 | `@deepseek-ai/dsh-schedule` | `schedule_create`、`schedule_delete`、`schedule_list` | `ctx.tools`、`ctx.sessions`、Session 持久化、未来创建的 live 根 Agent | `tool/call`、`schedule/change create or delete`、`tool/result` | - | 仅在选择启用的 Schedule 插件加载后创建的 live 根 Agent scope 内注册。版本 1 接受 after_seconds、显式绝对 at 和有界固定速率 every_seconds，并披露 session-local 交付；管理读取与变更必须通过共享的 Session 持久化 barrier。 |
 | `@deepseek-ai/dsh-tool-lsp` | `lsp` | `ctx.tools`、`ctx.lsp`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，因此其模型可见 schema 在更换提供方时保持稳定。运行时要求已注册提供方，例如 `@deepseek-ai/dsh-lsp-stdio`；如果没有提供方，查询会返回结构化 `LSP_UNAVAILABLE` 错误，而不会改变 schema。 |
+| `@deepseek-ai/dsh-tool-knowledge-base` | `knowledge_search`、`knowledge_status` | `ctx.tools`、`ctx.systemPrompt`、`ctx.subprocess`、一个经过精确授权的 `.leon/knowledge` 根目录 | `tool/call`、`tool/result` | - | 两个工具都是可信本地 JSON 辅助程序的只读封装，使用固定 argv 并限制输出。外部根目录部署必须配套授权守卫；Leon preset 要求由人类直接消息建立精确目标锁。 |
+| `@deepseek-ai/dsh-tool-memory` | `memory_forget`、`memory_remember`、`memory_search`、`memory_update`、`personal_memory_forget`、`personal_memory_remember`、`personal_memory_search`、`personal_memory_update` | `ctx.tools`、`ctx.systemPrompt`、`ctx.memory`、`ctx.personalMemory`、`ctx.workspaceRegistry`、具有已注册 workspace 的调用 Agent | `tool/call`、变更操作使用的提供方所属持久 workspace 或个人记忆、`tool/result` | - | Workspace 操作会将调用会话的 cwd 解析为稳定 workspace id。个人操作使用独立于 workspace 身份的显式所有者分区。写入必须遵守显式保留策略指引；纠正和删除需要使用搜索返回的精确 id 与 revision。 |
 | `@deepseek-ai/dsh-tool-ralph` | `ralph` | `ctx.tools`、`ctx.workflowEngine`、`ctx.subagents`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents every fresh round)` | `tool/call`、`tool/result`、`workflow and child session events during execution` | - | 固定的前台工作流会在每个 Round 启动一个全新的结构化子级；模型只能选择不可变目标和可选的 Round 上限。 |
 | `@deepseek-ai/dsh-tool-skill` | `skill` | `ctx.tools`、`ctx.agents`、`ctx.skills` | `tool/call`、`tool/result`、`user/message replacement catalogs via agent.inject()` | - | - |
 | `@deepseek-ai/dsh-tool-session-query` | `session_event_read`、`session_event_search`、`session_event_trace`、`session_search`、`session_trace` | `ctx.tools`、`ctx.systemPrompt`、`ctx.sessionQuery`、`a calling Agent for workspace authority` | `tool/call`、`tool/result` | - | 这 5 个只读工具会隐藏提供方游标，并根据不可变的调用 agent 会话为每个结果授权。该包需要选择启用；需要强制截止时间或限制行内输出的组合还会挂载通用超时或 spill 策略。 |
@@ -41,7 +43,7 @@
 | `@deepseek-ai/dsh-tool-subagent-control` | `interrupt_agent`、`list_agents`、`send_message` | `ctx.tools`、`ctx.subagents`、`ctx.agents and ctx.sessionProjections (list_agents only)` | `tool/call`、`tool/result`、`child session events through ctx.subagents` | - | 这些是控制可继续后台 subagent 的全局命名工具：绑定提供方的 `tool-subagent` 实例注册不同的委派工具；本包注册一次 `send_message` 和 `interrupt_agent`，另由 `list_agents` 通过单独加载的 `/list-agents` 插件提供，其目录行使用 sessionProjections 和实时 Agent 注册表。 |
 | `@deepseek-ai/dsh-tool-subagent-report` | `report` | `ctx.subagents`、`ctx.systemPrompt`、`a live continuable in-process child Agent` | `tool/call`、`tool/result`、`a user-role message in the direct parent session` | - | 按可继续的进程内子级注册，而非全局注册，因此该 schema 仅在这种子级内部可见，并且不受其全局 `toolFilter` 影响。同一份贡献还会安装子级作用域的 `tool:report` 系统提示词 section，本目录不渲染该 section。面向父级的 `send_message` 工具单独安装。 |
 | `@deepseek-ai/dsh-tool-jobs` | `job_kill`、`job_list`、`job_output` | `ctx.tools`、`ctx.jobs`、`ctx.systemPrompt` | `tool/call`、`tool/result`、`user/message via agent.inject() for background completion notices` | - | 与任务种类无关的后台任务控制器：后台 bash 命令、PTY 发送和 subagent 都通过相同的 3 个工具读取、列出和终止。加载该插件会挂接控制器，从而启用生产方的 `ctx.jobs.start()`。 |
-| `@deepseek-ai/dsh-experimental-tool-agent-team` | `followup_task`、`interrupt_agent`、`list_agents`、`send_message`、`spawn_teammate`、`team_task_create`、`team_task_get`、`team_task_list`、`team_task_update`、`wait_agent` | `ctx.tools`、`ctx.systemPrompt`、`ctx.agentTeams`、`an exact live Team member Agent` | `tool/call`、`team/member`、`team/message/queued`、`team/message/delivered`、`team/task`、`tool/result` | - | 这 10 个工具限定于隐式 Team Lead 与持久 teammate 作用域。随产品发布的 dsh-base bundle 默认禁用该包；文档中的 Agent Teams profile patch 会启用它，并禁用旧 continuable child 的同名控制工具。 |
+| `@deepseek-ai/dsh-experimental-tool-agent-team` | `followup_task`、`interrupt_agent`、`list_agents`、`send_message`、`spawn_teammate`、`team_task_create`、`team_task_get`、`team_task_list`、`team_task_update`、`wait_agent` | `ctx.tools`、`ctx.systemPrompt`、`ctx.agentTeams`、`ctx.subagents continuable providers`、`an exact live Team member Agent` | `tool/call`、`team/member`、`team/message/queued`、`team/message/delivered`、`team/task`、`tool/result` | - | 这 10 个工具限定于隐式 Team Lead 与持久 teammate 作用域。随产品发布的 dsh-base bundle 默认禁用该包；文档中的 Agent Teams profile patch 会启用它，并禁用旧 continuable child 的同名控制工具。 |
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`、`owning Agent session` | `tool/call`、`todo/write`、`tool/result` | - | todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为检查清单。`allowParallelInProgress` 是没有默认值的必填项，因此本目录明确选择 `true`，对应描述允许同时存在多个 `in_progress` 项。选择 `false` 的部署会获得同一工具，但描述会要求只能有 1 个活动任务。 |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`、`ctx.workflowEngine`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents the script children)` | `tool/call`、`tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`、`web_search` | `ctx.tools`、`ctx.web`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可见 schema 在更换后端时保持稳定。 |
@@ -229,7 +231,7 @@ bash 工具是 bash 执行器 seam 面向模型的消费方。使用 `run_in_bac
 
 ### `pwsh`
 
-执行 PowerShell 命令（`pwsh -Command`）并返回 stdout/stderr。每次调用都在新的 pwsh 进程中运行：调用之间不保留任何状态（cwd、变量、函数），请传入 `workdir`，不要使用 `cd`。路径采用 Windows 原生形式（`C:\...`）；使用 `$env:NAME` 读取环境变量。非零退出会报告为 `[exit code: N]`。当前 harness 环境信息通过托管的 `$env:DSH_*` 变量公开，需要时请检查这些变量。命令可能在文件沙箱中运行；被阻止的文件操作报告为 `[sandbox: file access denied under <mode> mode]`，这是策略拒绝，而不是命令缺陷，请勿换一种方式重试。较长的输出会截断，只保留尾部；如可用，完整输出会保存到文件并报告其路径。在 Windows 上，被强制终止的命令会以 `[exit code: 1]` 结算且不带信号标记，请将其视为中断，而不是命令失败。对于长时间运行的命令，请设置 `run_in_background: true`：调用会立即返回 job id；使用 `job_output` 读取输出，使用 `job_kill` 停止任务。
+执行 PowerShell 命令（`pwsh -Command`）并返回 stdout/stderr。每次调用都在新的 pwsh 进程中运行：调用之间不保留任何状态（cwd、变量、函数），请传入 `workdir`，不要使用 `cd`。路径采用 Windows 原生形式（`C:\...`）；使用 `$env:NAME` 读取环境变量。非零退出会报告为 `[exit code: N]`。当前 harness 环境信息通过托管的 `$env:DSH_*` 变量公开，需要时请检查这些变量。命令可能在文件沙箱中运行；被阻止的文件操作报告为 `[sandbox: file access denied under <mode> mode]`，这是策略拒绝，而不是命令缺陷，请勿换一种方式重试。较长的输出会截断，只保留尾部；如可用，完整输出会保存到文件并报告其路径。在 Windows 上，被强制终止的命令会以 `[exit code: 1]` 结算且不带信号标记，请将其视为中断，而不是命令失败。对于长时间运行的命令，请设置 `run_in_background: true`：调用会立即返回 job id；使用 `job_output` 读取输出，使用 `job_kill` 停止任务。启动本地服务器时，应在一次后台调用中只运行服务器启动命令，并在单独的前台调用中执行 HTTP 健康检查，随后用 `job_kill` 停止返回的任务。不得把健康检查放在同一个命令中的服务器启动之后。HTTP 检查失败或连接被拒绝时，应先用 `job_output` 读取该服务器任务；其 stderr 是主要运行时证据，然后才能更换端口。
 
 ```json
 {
@@ -1212,6 +1214,291 @@ create、edit、pause 和 resume 要求直接来自人类的根权限；complete
 
 lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，因此其模型可见 schema 在更换提供方时保持稳定。运行时要求已注册提供方，例如 `@deepseek-ai/dsh-lsp-stdio`；如果没有提供方，查询会返回结构化 `LSP_UNAVAILABLE` 错误，而不会改变 schema。
 
+<a id="deepseek-aidsh-tool-knowledge-base"></a>
+
+## `@deepseek-ai/dsh-tool-knowledge-base`
+
+### `knowledge_search`
+
+搜索一个精确本地 `.leon/knowledge` 根目录的索引 wiki。应使用本工具替代递归 glob/grep；它绝不会枚举或返回原始来源目录。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "knowledge_root": {
+      "type": "string",
+      "description": "Exact absolute path ending in .leon/knowledge from the current direct user request."
+    },
+    "query": {
+      "type": "string",
+      "description": "Focused search phrase, 1-512 characters."
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Maximum results from 1-20. Defaults to 8."
+    }
+  },
+  "required": [
+    "knowledge_root",
+    "query"
+  ]
+}
+```
+
+来源：[`packages/knowledge/tool-knowledge-base/src/index.ts`](../packages/knowledge/tool-knowledge-base/src/index.ts)
+
+### `knowledge_status`
+
+以确定性方式检查一个精确本地 `.leon/knowledge` 根目录。应在枚举文件系统前使用；它会返回已验证的来源数量、状态和完整性问题，不会把原始来源读入模型上下文。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "knowledge_root": {
+      "type": "string",
+      "description": "Exact absolute path ending in .leon/knowledge from the current direct user request."
+    }
+  },
+  "required": [
+    "knowledge_root"
+  ]
+}
+```
+
+来源：[`packages/knowledge/tool-knowledge-base/src/index.ts`](../packages/knowledge/tool-knowledge-base/src/index.ts)
+
+两个工具都是可信本地 JSON 辅助程序的只读封装，使用固定 argv 并限制输出。外部根目录部署必须配套授权守卫；Leon preset 要求由人类直接消息建立精确目标锁。
+
+<a id="deepseek-aidsh-tool-memory"></a>
+
+## `@deepseek-ai/dsh-tool-memory`
+
+### `memory_forget`
+
+使用 `memory_search` 返回的精确 id 和 revision，从当前 workspace 永久遗忘一条记忆。仅在用户要求遗忘或确认必须移除已保留事实时使用。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "memory_id": {
+      "type": "string",
+      "description": "Exact memory id returned by search."
+    },
+    "revision": {
+      "type": "number",
+      "description": "Exact positive revision returned by search."
+    }
+  },
+  "required": [
+    "memory_id",
+    "revision"
+  ]
+}
+```
+
+来源：[`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `memory_remember`
+
+在当前 workspace 持久保存一项稳定事实、偏好、决定或配置。仅用于显式记忆意图或清楚确认的持久事实。禁止存储凭据或身份验证 secret。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "content": {
+      "type": "string",
+      "description": "A self-contained fact to remember."
+    },
+    "valid_from": {
+      "type": "string",
+      "description": "Optional ISO timestamp that schedules activation."
+    },
+    "expires_at": {
+      "type": "string",
+      "description": "Optional ISO timestamp that expires active recall."
+    }
+  },
+  "required": [
+    "content"
+  ]
+}
+```
+
+来源：[`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `memory_search`
+
+搜索仅属于当前 workspace 的持久记忆。在声称无法记住先前的项目事实、偏好、决定或配置之前使用此工具。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "What to recall."
+    },
+    "limit": {
+      "type": "number",
+      "description": "Maximum results; defaults to 8."
+    },
+    "include_history": {
+      "type": "boolean",
+      "description": "Include superseded, scheduled, and expired revisions for an explicit audit."
+    }
+  },
+  "required": [
+    "query"
+  ]
+}
+```
+
+来源：[`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `memory_update`
+
+使用 `memory_search` 返回的精确 id 和 revision，纠正当前 workspace 中的一条记忆。陈旧 revision 会安全失败。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "memory_id": {
+      "type": "string",
+      "description": "Exact memory id returned by search."
+    },
+    "revision": {
+      "type": "number",
+      "description": "Exact positive revision returned by search."
+    },
+    "content": {
+      "type": "string",
+      "description": "Complete corrected fact."
+    }
+  },
+  "required": [
+    "memory_id",
+    "revision",
+    "content"
+  ]
+}
+```
+
+来源：[`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `personal_memory_forget`
+
+在用户请求或确认删除后，永久遗忘一条个人记忆。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "memory_id": {
+      "type": "string",
+      "description": "Exact memory id returned by search."
+    },
+    "revision": {
+      "type": "number",
+      "description": "Exact positive revision returned by search."
+    }
+  },
+  "required": [
+    "memory_id",
+    "revision"
+  ]
+}
+```
+
+来源：[`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `personal_memory_remember`
+
+跨项目 workspace 记住一条稳定、非敏感的个人事实。仅在用户明确要求记住或清楚确认后使用。绝不存储凭据。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "content": {
+      "type": "string",
+      "description": "Self-contained personal fact to remember."
+    }
+  },
+  "required": [
+    "content"
+  ]
+}
+```
+
+来源：[`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `personal_memory_search`
+
+搜索用户控制并在项目 workspace 之间共享的个人记忆。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "Personal preference or fact to recall."
+    },
+    "limit": {
+      "type": "number",
+      "description": "Maximum results; defaults to 8."
+    },
+    "include_history": {
+      "type": "boolean",
+      "description": "Include superseded, scheduled, and expired revisions."
+    }
+  },
+  "required": [
+    "query"
+  ]
+}
+```
+
+来源：[`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `personal_memory_update`
+
+使用搜索返回的精确 id 和 revision，纠正一条个人记忆。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "memory_id": {
+      "type": "string",
+      "description": "Exact memory id returned by search."
+    },
+    "revision": {
+      "type": "number",
+      "description": "Exact positive revision returned by search."
+    },
+    "content": {
+      "type": "string",
+      "description": "Complete corrected personal fact."
+    }
+  },
+  "required": [
+    "memory_id",
+    "revision",
+    "content"
+  ]
+}
+```
+
+来源：[`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+Workspace 操作会将调用会话的 cwd 解析为稳定 workspace id。个人操作使用独立于 workspace 身份的显式所有者分区。写入必须遵守显式保留策略指引；纠正和删除需要使用搜索返回的精确 id 与 revision。
+
 <a id="deepseek-aidsh-tool-ralph"></a>
 
 ## `@deepseek-ai/dsh-tool-ralph`
@@ -1339,7 +1626,7 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
     },
     "event_types": {
       "type": "array",
-      "description": "Event types to include.",
+      "description": "Optional canonical event types to include (for example \"user/message\" or \"tool/call\").",
       "items": {
         "type": "string"
       }
@@ -1411,11 +1698,11 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
     },
     "created_at_from": {
       "type": "string",
-      "description": "Inclusive timezone-qualified ISO 8601 creation-time lower bound."
+      "description": "Optional inclusive timezone-qualified ISO 8601 creation-time lower bound. Omit unless the user supplied a time constraint."
     },
     "created_at_to": {
       "type": "string",
-      "description": "Inclusive timezone-qualified ISO 8601 creation-time upper bound."
+      "description": "Optional inclusive timezone-qualified ISO 8601 creation-time upper bound. Omit unless the user supplied a time constraint."
     },
     "parent_session_ids": {
       "type": "array",
@@ -1457,7 +1744,7 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
     },
     "event_types": {
       "type": "array",
-      "description": "Event types to include.",
+      "description": "Optional canonical event types to include (for example \"user/message\" or \"tool/call\"). Omit for broad history search.",
       "items": {
         "type": "string"
       }
@@ -1826,7 +2113,7 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
     },
     "context": {
       "type": "string",
-      "description": "fresh starts without Lead history; fork inherits completed Lead turns. Defaults to fresh.",
+      "description": "Available modes: fresh, fork. fresh starts without Lead history; fork inherits completed Lead turns. Defaults to fresh.",
       "enum": [
         "fresh",
         "fork"

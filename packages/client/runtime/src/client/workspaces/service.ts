@@ -292,6 +292,19 @@ export class WorkspaceRuntime implements IWorkspaces {
     if (!result.ok) throw new Error(`session archive failed: ${result.error.code}: ${result.error.message}`)
   }
 
+  /** Restore one archived session without changing its workspace slot. */
+  async unarchiveSession(sessionId: SessionId): Promise<void> {
+    const result = await this.manager.unarchiveSession(sessionId)
+    if (!result.ok) throw new Error(`session restore failed: ${result.error.code}: ${result.error.message}`)
+  }
+
+  /** Apply one fully committed permanent deletion to both local mirrors. */
+  async deleteSession(sessionId: SessionId): Promise<void> {
+    const result = await this.manager.deleteSession(sessionId)
+    if (!result.ok) throw new Error(`session delete failed: ${result.error.code}: ${result.error.message}`)
+    this.sessions.remove(sessionId)
+  }
+
   /**
    * Move a session within its Workspace's manual order (DOM-insertBefore-like).
    * @param workspaceId - owning workspace.

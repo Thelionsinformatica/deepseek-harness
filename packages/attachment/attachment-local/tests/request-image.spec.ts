@@ -71,6 +71,23 @@ describe('request image dimensions', () => {
 })
 
 describe('local request-image cache', () => {
+  it('projects WebP to PNG for compatible routes while preserving the stored original and cache identity', async () => {
+    const attachments = await store()
+    const data = new Uint8Array(await sharp({
+      create: { width: 32, height: 32, channels: 4, background: { r: 255, g: 0, b: 0, alpha: 0.5 } },
+    }).webp().toBuffer())
+    const ref = await attachments.saveImage({ data, mediaType: 'image/webp' })
+    const policy = { maxPixels: 1024, maxBytes: 100_000 }
+    const original = await attachments.readImage(ref)
+    const normal = await attachments.readImageRequest(ref, policy)
+    const png = await attachments.readImageRequest(ref, { ...policy, outputFormat: 'png' })
+    expect(png.mediaType).toBe('image/png')
+    expect(png.variantId).not.toBe(normal.variantId)
+    expect(png.hasAlpha).toBe(true)
+    expect((await attachments.readImageRequest(ref, { ...policy, outputFormat: 'png' })).data).toEqual(png.data)
+    expect((await attachments.readImage(ref)).data).toEqual(original.data)
+  })
+
   it('passes through an in-budget attachment and composes ordered request reads', async () => {
     const attachments = await store()
     const first = await attachments.saveImage({ data: await image(8, 4), mediaType: 'image/png' })

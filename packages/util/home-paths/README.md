@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Shared filesystem path helpers for DeepSeek Harness user data.
+Shared filesystem path helpers for Harness user data and workspaces.
 
 ## DSH home
 
@@ -18,11 +18,15 @@ Shared filesystem path helpers for DeepSeek Harness user data.
 
 `expandHomePath()` expands `~`, `~/...`, and Windows-style `~\...` prefixes against the operating-system home directory. It leaves non-tilde paths and `~user/...` untouched.
 
+## Default workspace
+
+`resolveDefaultWorkspace()` assigns one absolute root to new Leon sessions. Precedence is an explicit argument, `$LEON_DEFAULT_WORKSPACE`, `$DSH_DEFAULT_WORKSPACE`, `$DSH_CWD`, then `E:/computador` on Windows or the invoking directory on other platforms. Blank overrides are ignored, supported tilde prefixes are expanded, and relative values resolve from the invoking directory. The resolver does not create the directory; the installer or operator owns that step.
+
 ## Watch paths
 
 `canonicalizeWatchPath()` gives a native filesystem watcher one stable spelling of its target. It resolves the deepest existing ancestor through `fs.realpath()` and restores any missing suffix, so a file or directory may still be watched before it is created. In particular, Windows 8.3 aliases cannot be mixed with the long paths emitted by the native watcher backend.
 
-This package is intentionally small and harness-dep-free so product packages can share user-data path conventions without depending on one another.
+This package is intentionally small and harness-dep-free so product packages can share filesystem path conventions without depending on one another.
 
 ## Known Limitations and Deferred Work
 

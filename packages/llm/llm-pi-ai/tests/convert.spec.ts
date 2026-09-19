@@ -6,7 +6,7 @@ import type { ContentBlock, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { AssistantMessage, AssistantMessageEvent, Usage } from '@earendil-works/pi-ai'
 import { toPiContext } from '../src/context.ts'
 import { toPiReplayState } from '../src/replay.ts'
-import { mapStopReason, mapUsage, toStreamChunks } from '../src/stream.ts'
+import { mapStopReason, mapUsage, providerCostUsdNanos, toStreamChunks } from '../src/stream.ts'
 
 function usage(input = 0, output = 0, cacheRead = 0, cacheWrite = 0): Usage {
   return {
@@ -792,6 +792,10 @@ describe('mapStopReason / mapUsage', () => {
       .toMatchObject({ kind: 'error', failure: { code: 'QUOTA' } })
     expect(mapStopReason(assistant({
       stopReason: 'error',
+      errorMessage: 'HTTP 429 RESOURCE_EXHAUSTED: Your prepayment credits are depleted.',
+    }))).toMatchObject({ kind: 'error', failure: { code: 'QUOTA' } })
+    expect(mapStopReason(assistant({
+      stopReason: 'error',
       errorMessage: 'OpenAI API error (429): You exceeded your current quota, please check your plan and billing details.',
     }))).toMatchObject({ kind: 'error', failure: { code: 'QUOTA' } })
     expect(mapStopReason(assistant({ stopReason: 'error', errorMessage: 'HTTP 500: backend down' })))
@@ -882,6 +886,16 @@ describe('mapStopReason / mapUsage', () => {
       cacheWriteTokens: 2,
     })
     expect(mapUsage(usage(10, 5))).toEqual({ inputTokens: 10, outputTokens: 5 })
+  })
+
+  it('parses OmniRoute decimal response charges without accepting unsafe billing data', () => {
+    expect(providerCostUsdNanos({ 'X-OmniRoute-Response-Cost': '0.0000000000' })).toBe(0)
+    expect(providerCostUsdNanos({ 'x-omniroute-response-cost': '0.0000000015' })).toBe(2)
+    expect(providerCostUsdNanos({ 'x-omniroute-response-cost': '-0.01' })).toBeUndefined()
+    expect(providerCostUsdNanos({ 'x-omniroute-response-cost': 'not-a-price' })).toBeUndefined()
+    expect(providerCostUsdNanos({
+      'x-omniroute-response-cost': '9007199254740992',
+    })).toBeUndefined()
   })
 })
 

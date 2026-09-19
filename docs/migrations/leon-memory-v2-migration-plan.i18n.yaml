@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/migrations/leon-memory-v2-migration-plan.md
+leon-memory-v2-migration-plan.md: 0d41fb52e8d00b9a817a4de9505a3d65e910f474
+leon-memory-v2-migration-plan.zh.md: 9bc1bd4147f6ab780f1714015aaf6bc85b26c029

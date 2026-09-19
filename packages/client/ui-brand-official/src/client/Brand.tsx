@@ -1,22 +1,40 @@
-import { BrandWordmark, FishLogo } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { HeroBrandMarkOwnerProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SidebarBrandMarkOwnerProps } from '@deepseek-ai/dsh-client-ui-sidebar/client'
+import styles from './Brand.module.css'
 
 type OfficialBrandMarkProps = HeroBrandMarkOwnerProps & SidebarBrandMarkOwnerProps
 
 /**
- * Render the official mark with the presentation requested by its host surface.
+ * Render the Leon lion mark with the presentation requested by its host surface.
  * @param props - Host-supplied mark presentation.
- * @returns the official whale mark.
+ * @returns the The Lions Informática lion mark.
  */
 export function OfficialBrandMark({ size, className }: OfficialBrandMarkProps) {
-  return <FishLogo size={size} className={className} />
+  const classes = className === undefined ? styles.mark : `${styles.mark} ${className}`
+  return (
+    <span
+      style={{ width: size, height: size }}
+      className={classes}
+      role="img"
+      aria-label="The Lions Informática — Leon"
+    >
+      <img src="/favicon.ico" alt="" aria-hidden="true" />
+    </span>
+  )
 }
 
 /**
- * Render the official name artwork without its independently slotted mark.
- * @returns the official name wordmark.
+ * Render The Lions Informática with Leon as the highlighted product name.
+ * @returns the Leon wordmark.
  */
 export function OfficialBrandName() {
-  return <BrandWordmark includeMark={false} />
+  return (
+    <div className={styles.wordmark} aria-label="The Lions Informática — Leon">
+      <strong className={styles.leon}>LEON</strong>
+      <span className={styles.company}>
+        <strong>THE LIONS</strong>
+        <span>INFORMÁTICA</span>
+      </span>
+    </div>
+  )
 }

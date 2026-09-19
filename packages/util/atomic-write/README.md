@@ -32,6 +32,8 @@ await withFileLock('/home/u/.dsh/settings.yaml', async () => {
 
 How long a contender waits is a property of the operation the holder runs, so it is stated per call through `waitMs`. The default is sized for file work alone; a holder whose cycle includes a network round trip — a credential mutation that refreshes an expired token — states a longer one, because leaving the default would fail every other writer of that file for the duration. The retry cadence stays fixed: it governs how often a contender asks, which no caller has a reason to vary.
 
+On Windows, atomic replacement retries `EACCES`, `EBUSY`, and `EPERM` up to eight times, retaining the same complete temporary file. Other errors fail immediately; exhaustion preserves the old target and removes the temporary file. This does not add crash durability. See the [retry decision](../../../.agents/notes/implemented/bug-fix/2026-08-29-windows-atomic-replace-retry.md).
+
 ## Model Experience
 
 None, as this is a pure filesystem primitive; nothing here reaches a model request.

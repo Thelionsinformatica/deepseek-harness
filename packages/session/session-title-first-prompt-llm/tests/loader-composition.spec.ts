@@ -11,6 +11,7 @@ import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SessionTitleService from '@deepseek-ai/dsh-session-title'
 import * as providerPlugin from '@deepseek-ai/dsh-session-title-first-prompt-llm'
+import AgentDefaultModelConfig from '@deepseek-ai/dsh-agent-default-model'
 
 let root: string | undefined
 let context: Context | undefined
@@ -32,11 +33,17 @@ afterEach(async () => {
   root = undefined
 })
 
-async function loadComposition(): Promise<Context> {
+async function loadComposition(auxiliary = false): Promise<Context> {
   root = await mkdtemp(join(tmpdir(), 'dsh-title-loader-'))
   const configPath = join(root, 'cordis.yml')
   await writeFile(configPath, [
     "- name: '@deepseek-ai/dsh-llm'",
+    ...auxiliary ? [
+      "- name: '@deepseek-ai/dsh-agent-default-model'",
+      '  config:', '    provider: main-route', '    model: main-model',
+      '    auxiliaryModels:', '      localProviders: [title-route]',
+      '      roles:', '        title:', '          provider: title-route', '          model: auxiliary-title',
+    ] : [],
     "- name: '@deepseek-ai/dsh-session'",
     "- name: '@deepseek-ai/dsh-session-title'",
     '  config:',
@@ -61,6 +68,7 @@ async function loadComposition(): Promise<Context> {
   context.loader.builtins.include = Include
   const modules = new Map<string, unknown>([
     ['@deepseek-ai/dsh-llm', LlmRuntime],
+    ['@deepseek-ai/dsh-agent-default-model', AgentDefaultModelConfig],
     ['@deepseek-ai/dsh-session', SessionStore],
     ['@deepseek-ai/dsh-session-title', SessionTitleService],
     ['@deepseek-ai/dsh-session-title-first-prompt-llm', providerPlugin],
@@ -81,8 +89,8 @@ async function loadComposition(): Promise<Context> {
 }
 
 describe('session-title Loader composition', () => {
-  it('loads the service and one model provider with required deployment policy', async () => {
-    const ctx = await loadComposition()
+  it.each([false, true])('loads and records the title route with auxiliary opt-in %s', async (auxiliary) => {
+    const ctx = await loadComposition(auxiliary)
     const unloaded = [...ctx.loader.entries()]
       .filter(entry => entry.fiber === undefined && !entry.disabled)
       .map(entry => entry.options.name)
@@ -105,14 +113,34 @@ describe('session-title Loader composition', () => {
     })
     await new Promise(resolve => setTimeout(resolve, 0))
 
-    expect(adapter.requests[0]).toMatchObject({ provider: 'title-route', model: 'title-model' })
+    const expectedModel = auxiliary ? 'auxiliary-title' : 'title-model'
+    expect(adapter.requests[0]).toMatchObject({ provider: 'title-route', model: expectedModel })
+    const transcript = adapter.requests.map(request => ({ provider: request.provider, model: request.model, purpose: request.purpose }))
+    if (auxiliary) expect(transcript).toMatchInlineSnapshot(`
+      [
+        {
+          "model": "auxiliary-title",
+          "provider": "title-route",
+          "purpose": "session-title",
+        },
+      ]
+    `)
+    else expect(transcript).toMatchInlineSnapshot(`
+      [
+        {
+          "model": "title-model",
+          "provider": "title-route",
+          "purpose": "session-title",
+        },
+      ]
+    `)
     expect(ctx.sessionTitle.get(session)).toMatchObject({
       title: 'Loader composed title',
       messageSeqs: [message.seq],
       source: {
         kind: 'provider',
         provider: 'session-title-first-prompt-llm',
-        model: { provider: 'title-route', model: 'title-model' },
+        model: { provider: 'title-route', model: expectedModel },
       },
     })
   })

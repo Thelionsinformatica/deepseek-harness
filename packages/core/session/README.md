@@ -6,6 +6,8 @@ Event-sourced session log and in-memory store. A `Session` is the append-only so
 
 The optional `@deepseek-ai/dsh-session/invariant` companion registers this package's relational trace checks with `ctx.invariants`: monotonic sequence numbers, turn/step enclosure, and same-step tool call/result pairing. It replays existing sessions when loaded or reloaded; storage validation, snapshotting, freezing, cited source-event validation, and surface acceptance remain always-on responsibilities of the root session package.
 
+The same `./invariant` entry exports `installSessionEventValidation(ctx, validate)` for stateless package-owned event checks. Its returned promise joins setup of a child with `sessions` injected, validates retained histories and newly announced session seeds, then rejects invalid candidate events through pre-dispatch before append or downstream observers. Call and await it inside an invariant registration; listeners are scoped to that registration and removed on disposal. The validator must be synchronous and side-effect free, and use the owning package's bound failure reporter. Stateful trace projections still require their own committed-event handling.
+
 ## Service: `SessionStore` (ctx key: `sessions`)
 
 Creates and holds event-sourced `Session` instances. Persistence is intentionally not implemented here — plugins subscribe to `session/event`, flush on `session/flush`, and may mirror the paired `session/created`/`session/disposed` lifecycle.

@@ -259,6 +259,9 @@ describe('ModelsSection', () => {
     expect(configured.closest('li')?.textContent).toContain('openai')
     const missing = screen.getByRole('img', { name: en.credentialMissing })
     expect(missing.closest('li')?.textContent).toContain('DeepSeek')
+    const rows = screen.getAllByRole('listitem')
+    expect(rows[0]?.textContent).toContain('openai')
+    expect(rows[1]?.textContent).toContain('DeepSeek')
     // The card is still one click away.
     fireEvent.click(screen.getByRole('button', { name: deepSeekCopy(en.editProvider) }))
     expect(screen.getByLabelText(en.keyInput)).toBeTruthy()

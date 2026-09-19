@@ -7,12 +7,14 @@
 
 import { EventEmitter } from 'node:events'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import * as yaml from 'js-yaml'
 import { Context } from '@deepseek-ai/cordis'
+import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import { createLaunchEnvironmentSnapshot, DSH_LAUNCH_ENVIRONMENT_KEY } from '@deepseek-ai/dsh-launch-environment'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import type { WebServer } from '@deepseek-ai/dsh-host-webserver'
@@ -74,6 +76,7 @@ function fakeHttpServer(host: '127.0.0.1' | '0.0.0.0' = '127.0.0.1'): { server: 
   const server = {
     host,
     port: 4567,
+    register: () => () => {},
     registerFallback: (handler: unknown) => {
       fallback = handler
       return () => { fallback = undefined }
@@ -95,6 +98,167 @@ interface BashContribution {
 }
 
 describe('web-app runtime glue', () => {
+  it('pins Leon Automatic to Qwen locally with Gemini and OpenAI fallbacks', () => {
+    const patch = readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
+    const start = patch.indexOf('    - id: api-gateway')
+    const end = patch.indexOf('\n    - id:', start + 1)
+    const gateway = patch.slice(start, end)
+    expect(gateway).toContain('provider: ollama')
+    expect(gateway).toContain('fastProvider: ollama')
+    expect(gateway).toContain('mainProvider: ollama')
+    expect(gateway).toContain('expertProvider: ollama')
+    expect(gateway).toContain('fastModel: qwen3.5:2b')
+    expect(gateway).toContain('mainModel: qwen3.8-9b-distill-uncensored-heretic:latest')
+    expect(patch).not.toContain('qwen3.5:4b')
+    expect(gateway).toContain('expertModel: mistral-nemo:12b-q4_K_M')
+    expect(gateway).toContain('mainReasoningEffort: medium')
+    expect(gateway).toContain('fromRound: 1')
+    expect(gateway).toContain('model: qwen3.5:9b')
+    expect(patch).toContain('mistral-nemo:12b-q4_K_M')
+    expect(gateway).toContain('fromProviders:')
+    expect(gateway).toContain('- ollama')
+    expect(gateway).not.toContain('provider: freellmapi')
+    expect(gateway).toContain('provider: google')
+    expect(gateway).toContain('provider: openai')
+    expect(gateway).toContain('model: gemini-3.1-pro-preview-customtools')
+    expect(gateway).toContain('model: gpt-5.6-luna')
+    expect(patch).toContain('apiKeyEnv: GEMINI_API_KEY')
+    expect(patch).toContain('apiKeyEnvFallbacks:')
+    expect(patch).toContain('- GOOGLE_API_KEY')
+    expect(gateway).toContain('reasoningEffort: low')
+    expect(gateway).toContain('fromRound: 3')
+    expect(gateway).toContain('qwen3.8-9b-distill-uncensored-heretic:latest')
+    expect(gateway).toContain('fromRound: 6')
+    expect(gateway).toContain('mistral-nemo:12b-q4_K_M')
+    expect(gateway).toContain('specialtyRoutes:')
+    expect(gateway).toContain('id: automacao')
+    expect(gateway).toContain('id: codigo-redes')
+    expect(gateway).toContain('id: documentos')
+    expect(gateway).toContain('model: mistral-nemo-uncensored:latest')
+    expect(gateway).toContain('model: llama3.1-uncensored:latest')
+    expect(gateway).not.toContain('deepseek-ai/deepseek-v4-flash-0731')
+    expect(gateway).toContain('- TRANSPORT')
+    expect(gateway).not.toContain('- NO_ADAPTER')
+    expect(gateway).toContain('policyVersion: leon-shadow-v2')
+    expect(gateway).toContain('externalPolicy: fallback-only')
+    expect(gateway).toContain('residency: local')
+    expect(gateway).toContain('residency: external')
+    expect(gateway).not.toMatch(/(?:provider|fastModel|mainModel|expertModel|model):.*deepseek/iu)
+    expect(patch).toContain("- id: ui-voice\n      name: '@deepseek-ai/dsh-client-ui-voice'")
+    expect(patch).toContain("- id: lsp\n      name: '@deepseek-ai/dsh-lsp'")
+    expect(patch).toContain("- id: lsp-stdio\n      name: '@deepseek-ai/dsh-lsp-stdio'")
+    expect(patch).toContain('typescript-language-server/lib/cli.mjs')
+    expect(patch).toContain('.tsx: typescriptreact')
+    expect(patch).toContain("path: !!js dshHomePath('storages/session-query.sqlite')")
+    expect(patch).toContain('openAt: first-search')
+
+    const parsed = yaml.load(patch, { schema: entryListSchema })
+    const rows = (parsed as { insert?: { id?: string; config?: Record<string, unknown> }[] }[])
+      .flatMap(entry => entry.insert ?? [])
+    expect(rows.find(row => row.id === 'api-gateway')?.config).toMatchObject({
+      adaptiveRouting: {
+        expertProvider: 'ollama',
+        expertModel: 'mistral-nemo:12b-q4_K_M',
+        goalRoundTiers: [
+          {
+            fromRound: 1, provider: 'ollama', model: 'qwen3.5:9b', reasoningEffort: 'medium',
+          },
+          {
+            fromRound: 3, provider: 'ollama', model: 'qwen3.8-9b-distill-uncensored-heretic:latest', reasoningEffort: 'high',
+          },
+          {
+            fromRound: 6, provider: 'ollama', model: 'mistral-nemo:12b-q4_K_M', reasoningEffort: 'high',
+          },
+        ],
+        failovers: [
+          {
+            fromProviders: ['ollama'],
+            provider: 'google',
+            model: 'gemini-3.1-pro-preview-customtools',
+            residency: 'external',
+            failureCodes: ['TRANSPORT', 'TIMEOUT', 'SERVER'],
+          },
+          {
+            fromProviders: ['google'],
+            provider: 'openai',
+            model: 'gpt-5.6-luna',
+            reasoningEffort: 'low',
+            residency: 'external',
+          },
+        ],
+      },
+    })
+    const shadow = (rows.find(row => row.id === 'api-gateway')?.config as {
+      adaptiveRouting?: {
+        shadow?: {
+          policyVersion: string
+          externalPolicy: string
+          routes: Array<{ provider: string; model: string; residency: string }>
+        }
+      }
+    } | undefined)?.adaptiveRouting?.shadow
+    expect(shadow).toMatchObject({
+      policyVersion: 'leon-shadow-v2',
+      externalPolicy: 'fallback-only',
+    })
+    expect(shadow?.routes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ provider: 'ollama', model: 'qwen3.5:9b', residency: 'local' }),
+      expect.objectContaining({ provider: 'ollama', model: 'qwen3.8-9b-distill-uncensored-heretic:latest', residency: 'local' }),
+      expect.objectContaining({ provider: 'ollama', model: 'mistral-nemo:12b-q4_K_M', residency: 'local' }),
+      expect.objectContaining({ provider: 'google', model: 'gemini-3.1-pro-preview-customtools', residency: 'external' }),
+      expect.objectContaining({ provider: 'openai', model: 'gpt-5.6-luna', residency: 'external' }),
+    ]))
+    const prices = rows.find(row => row.id === 'session-stats')?.config?.prices as unknown[]
+    const localModels = [
+      'qwen3.5:9b',
+      'qwen3.5:9b-q4_K_M',
+      'qwen3.5:9b-q6_K',
+      'qwen3.5-uncensored:latest',
+      'qwen3.5:2b',
+      'llama3.1:8b-q6_K',
+      'llama3.1-uncensored:latest',
+      'mistral-nemo:12b-q4_K_M',
+      'mistral-nemo-uncensored:latest',
+      'qwen3.8-9b-distill-uncensored-heretic:latest',
+    ]
+    for (const model of localModels) {
+      expect(prices).toContainEqual({
+        provider: 'ollama', model,
+        inputUsdPerMillion: 0, outputUsdPerMillion: 0,
+      })
+    }
+    expect(prices).toContainEqual({
+      provider: 'google', model: 'gemini-3.1-pro-preview-customtools',
+      inputUsdPerMillion: 2, outputUsdPerMillion: 12,
+      cacheReadUsdPerMillion: 0.2,
+    })
+    expect(prices).not.toContainEqual(expect.objectContaining({ provider: 'freellmapi' }))
+    expect(prices).toContainEqual({
+      provider: 'openrouter', model: 'nvidia/nemotron-3.5-lightning:free',
+      inputUsdPerMillion: 0, outputUsdPerMillion: 0,
+    })
+    expect(prices).toContainEqual({
+      provider: 'openai', model: 'gpt-5.6-luna',
+      inputUsdPerMillion: 0.2, outputUsdPerMillion: 1.2,
+      cacheReadUsdPerMillion: 0.02,
+    })
+    expect(prices).toContainEqual({
+      provider: 'nvidia', model: 'moonshotai/kimi-k2.6',
+      inputUsdPerMillion: 0, outputUsdPerMillion: 0,
+    })
+  })
+
+  it('ships local semantic memory retrieval as an explicit opt-in', () => {
+    const patch = readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
+    const parsed = yaml.load(patch, { schema: entryListSchema })
+    const rows = (parsed as { insert?: { id?: string; config?: Record<string, unknown> }[] }[])
+      .flatMap(entry => entry.insert ?? [])
+
+    expect(rows.find(row => row.id === 'memory-local')?.config).toMatchObject({
+      semanticSearch: { enabled: false },
+    })
+  })
+
   it('mounts dist serving, prompt section, bash variables, and publishes the URL with the LAN snapshot', async () => {
     stageDist()
     const ctx = new Context()
@@ -137,13 +301,20 @@ describe('web-app runtime glue', () => {
     ])
     const assembly = await ctx.systemPrompt.assemble()
     expect(assembly.sections.find(entry => entry.name === 'harness:source')?.text).toContain('DeepSeek Harness implementation checkout')
+    expect(assembly.sections.find(entry => entry.name === 'app:web-surface')?.text).toContain('Leon Web GUI')
     const section = assembly.sections.find(entry => entry.name === 'app:web-surface')
     expect(section?.text).toContain('http://127.0.0.1:4567')
     // The single update contract: the receiver is always on; no-refresh
     // reloads additionally need the rebuild watcher.
     expect(section?.text).toContain('pnpm run dev:web')
     const webRuntime = contributions.find(contribution => contribution.name === 'web-runtime')
-    expect(webRuntime?.resolve()).toEqual({ DSH_WEB_URL: 'http://127.0.0.1:4567' })
+    expect(Object.keys(webRuntime?.variables ?? {}).sort()).toEqual([
+      'DSH_NODE', 'DSH_PLAYWRIGHT_CLI', 'DSH_WEB_URL',
+    ])
+    const resolvedRuntime = webRuntime?.resolve()
+    expect(resolvedRuntime?.DSH_NODE).toBe(process.execPath)
+    expect(resolvedRuntime?.DSH_PLAYWRIGHT_CLI).toMatch(/[\\/]@playwright[\\/]cli[\\/]playwright-cli\.js$/u)
+    expect(resolvedRuntime?.DSH_WEB_URL).toBe('http://127.0.0.1:4567')
     await ctx.fiber.dispose()
   })
 

@@ -274,10 +274,11 @@ describe.skipIf(process.platform === 'win32')('terminal-bash real shell', () => 
   }, 35_000)
 })
 
-const hasPwsh = spawnSync(
-  resolvePwshPath(), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$true'],
-  { encoding: 'utf8' },
-).status === 0
+const hasPwsh = process.env.DSH_SKIP_REAL_PWSH !== '1'
+  && spawnSync(
+    resolvePwshPath(), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$true'],
+    { encoding: 'utf8' },
+  ).status === 0
 
 describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
   it('bootstraps a persistent pwsh, persists state, and scrubs secrets', async () => {

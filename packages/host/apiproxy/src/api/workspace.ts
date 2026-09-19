@@ -106,4 +106,17 @@ export interface WorkspaceApi {
    */
   archiveSession(request: RpcRequest<{ sessionId: SessionId }>):
   Promise<RpcResponse<{ archivedSessionIds: SessionId[] }>>
+
+  /** Restore an archived session without changing its persisted log or workspace slot. */
+  unarchiveSession(request: RpcRequest<{ sessionId: SessionId }>):
+  Promise<RpcResponse<{ archivedSessionIds: SessionId[] }>>
+
+  /**
+   * Permanently remove one exact session identity and its Leon-owned derived
+   * records. The session cwd and all user files remain untouched. Concurrent
+   * duplicate requests coalesce; a completed duplicate is idempotent until
+   * that id is explicitly recreated.
+   */
+  deleteSession(request: RpcRequest<{ sessionId: SessionId }>):
+  Promise<RpcResponse<{ deleted: true; archivedSessionIds: SessionId[] }>>
 }

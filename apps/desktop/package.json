@@ -1,0 +1,71 @@
+{
+  "name": "@deepseek-ai/dsh-desktop",
+  "description": "Leon desktop shell for the existing local Web host",
+  "version": "0.1.1-rc.2",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/local-main.js",
+  "files": [
+    "lib"
+  ],
+  "scripts": {
+    "build": "tsc -b && tsdown",
+    "dev": "pnpm run build && electron .",
+    "package": "pnpm run build && electron-builder --win nsis portable",
+    "package:local": "node package-local.mjs",
+    "smoke:installed": "node tests/local-installed.smoke.mjs"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh": "workspace:^",
+    "@types/node": "^22.20.0",
+    "electron": "^37.2.6",
+    "electron-builder": "^26.0.12",
+    "tsdown": "^0.22.2",
+    "typescript": "^6.0.3"
+  },
+  "build": {
+    "appId": "br.com.thelions.leon",
+    "productName": "Leon",
+    "asar": true,
+    "npmRebuild": false,
+    "extraMetadata": {
+      "type": "module"
+    },
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "lib/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "artifactName": "Leon-Setup-${version}-${arch}.${ext}",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "portable": {
+      "artifactName": "Leon-Portable-${version}-${arch}.${ext}"
+    }
+  }
+}

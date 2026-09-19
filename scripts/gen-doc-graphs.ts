@@ -98,6 +98,13 @@ const GROUP_ORDER = [
 
 const SERVICE_ROLES: ServiceRole[] = [
   {
+    key: 'memoryContinuity',
+    pkg: 'memory-continuity',
+    title: 'Portable local memory restore',
+    mode: 'core',
+    note: 'Exports lineage snapshots and restores missing records to caller-supplied tables; journal persistence remains caller-owned.',
+  },
+  {
     key: 'attachments',
     pkg: 'attachment',
     title: 'Durable binary attachment storage',
@@ -238,6 +245,39 @@ const SERVICE_ROLES: ServiceRole[] = [
     mode: 'core',
     consumers: ['apiproxy'],
     note: 'Owns WorkspaceId-branded records over the domain facility; stable sessionIds accounts drive Host RPC and GUI projections.',
+  },
+  {
+    key: 'memory',
+    pkg: 'memory',
+    title: 'Durable workspace memory seam',
+    mode: 'seam',
+    implementations: ['memory-local'],
+    consumers: ['tool-memory'],
+    note: 'Provider-neutral create, search, correct, and forget operations stay scoped by WorkspaceId; the local backend persists through storage-domain while tool-memory owns the model policy.',
+  },
+  {
+    key: 'personalMemory',
+    pkg: 'personal-memory',
+    title: 'Durable personal memory seam',
+    mode: 'seam',
+    implementations: ['personal-memory-local'],
+    consumers: ['tool-memory'],
+    note: 'A separate owner-scoped provider registry and storage domain retain explicit non-sensitive personal facts across workspaces without using telemetry identity.',
+  },
+  {
+    key: 'memoryCandidateReview',
+    pkg: 'tool-memory',
+    title: 'Workspace-isolated memory candidate review',
+    mode: 'core',
+    note: 'Owns the local shadow queue, derives workspace authority from a live or persisted Session, and records immutable human decisions through a projected Remote without writing final memory.',
+  },
+  {
+    key: 'procedureLearning',
+    pkg: 'tool-memory',
+    title: 'Evidence-gated procedure learning',
+    mode: 'core',
+    consumers: ['tool-memory'],
+    note: 'Turns unique successful durable tool trajectories plus independent verifier evidence into reviewable, revalidatable, and revocable workspace procedures without retaining credentials or raw tool results.',
   },
   {
     key: 'sessionQuery',
@@ -496,6 +536,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Owns the implicit-root roster, durable peer mailbox, shared task DAG, and continuable-child lifecycle; tool-agent-team contributes the scoped model policy and controls.',
   },
   {
+    key: 'teamMissions',
+    pkg: 'agent-team',
+    title: 'Optional Team mission control',
+    mode: 'core',
+    consumers: [],
+    note: 'Host-only durable mission scope, terminal STOP and atomic attempt ledger; model dispatch and cancellation enforcement are not wired by this entry.',
+  },
+  {
     key: 'jobs',
     pkg: 'jobs',
     title: 'Background job registry',
@@ -509,9 +557,17 @@ const SERVICE_ROLES: ServiceRole[] = [
     pkg: 'web',
     title: 'Web access provider registry',
     mode: 'seam',
-    implementations: ['web-search-exa', 'web-search-perplexity', 'web-search-deepseek', 'web-fetch-http'],
+    implementations: ['web-search-exa', 'web-search-perplexity', 'web-search-deepseek', 'web-search-google', 'web-fetch-http'],
     consumers: ['tool-web'],
     note: 'Search and fetch providers register into one ctx.web seam; tool-web owns the stable model-facing names.',
+  },
+  {
+    key: 'webAccess',
+    pkg: 'web-access',
+    title: 'Per-session web-access grant',
+    mode: 'core',
+    consumers: ['tool-web'],
+    note: 'Folds the latest web/access event into an explicit durable per-session grant; tool-web consults it before allowing native search/fetch egress.',
   },
   {
     key: 'spillStore',

@@ -10,7 +10,7 @@ agent-preset 设置页带着一个网页 YAML 编辑器：`agentPreset.write` �
 
 ## 决策
 
-创作改为宿主端复制，文件就是编辑器。`agentPreset.write` 变为 `agentPreset.copy { from, agentPreset, name? }`：两个由宿主对照自身根目录解析的 id 加一个可选显示名，整目录 `cp`（符号链接解引用，权限收紧为仅属主并保留属主执行位），元数据重写为保留来源描述、但绝不保留其名称与 `order`。页面变为：随附组装的只读查看器、作为唯一创建入口的复制对话框（不再有空白「新建预设」——从零手写 YAML 不是人会做的事）、自定义行的删除，以及通向文件的位置操作——`agentPreset.openDocument { agentPreset }` 在宿主端解析目录并原生打开，部署没有桌面时回答 `{ opened: false, path }` 供该行以文本形式展示（`list` 上的 `hasDocument`；在 `canOpenNativePath` 平台探测会失真处由网关的 `nativeOpen` 配置钉死，例如 e2e 与容器）。
+创作改为宿主端复制，文件就是编辑器。`agentPreset.write` 变为 `agentPreset.copy { from, agentPreset, name? }`：两个由宿主对照自身根目录解析的 id 加一个可选显示名，整目录 `cp`（符号链接解引用；POSIX mode 收紧为仅属主并保留属主执行位；Windows 条目继承可写根目录的 DACL），元数据重写为保留来源描述、但绝不保留其名称与 `order`。页面变为：随附组装的只读查看器、作为唯一创建入口的复制对话框（不再有空白「新建预设」——从零手写 YAML 不是人会做的事）、自定义行的删除，以及通向文件的位置操作——`agentPreset.openDocument { agentPreset }` 在宿主端解析目录并原生打开，部署没有桌面时回答 `{ opened: false, path }` 供该行以文本形式展示（`list` 上的 `hasDocument`；在 `canOpenNativePath` 平台探测会失真处由网关的 `nativeOpen` 配置钉死，例如 e2e 与容器）。
 
 ## 后果
 

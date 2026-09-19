@@ -38,6 +38,11 @@ describe('reasoning schema boundary', () => {
 })
 
 describe('modality schema boundary', () => {
+  it('accepts only the explicit PNG request encoding and leaves other routes unchanged', () => {
+    expect(routeWith({ requestImageOutputFormat: 'png' })).not.toThrow()
+    expect(routeWith({ requestImageOutputFormat: 'webp' })).toThrow()
+    expect(routeWith({})).not.toThrow()
+  })
   it('rejects a modality pi-ai does not know, at either level', () => {
     expect(configWith({ input: ['audio'] })).toThrow(/expected/)
     expect(routeWith({ defaultInput: ['text', 'audio'] })).toThrow(/expected/)

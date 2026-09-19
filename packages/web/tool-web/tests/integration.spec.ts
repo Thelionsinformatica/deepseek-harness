@@ -2,8 +2,8 @@
  * Integration: the real fetch backend (`dsh-web-fetch-http`) + a real search provider
  * (`dsh-web-search-exa`) + the real seam (`dsh-web`) + the model tool (`dsh-tool-web`) + the
  * tool-call timeout policy (`dsh-tool-call-timeout-policy`), exercised through `ctx.tools.execute()` —
- * nothing bypasses the tool registry. Fetch verifies world effects against loopback HTTP; search
- * uses the real Exa provider with only its network boundary stubbed.
+ * nothing bypasses the tool registry. Fetch and search use their real providers with only their
+ * network boundaries redirected to deterministic local fixtures.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -28,18 +28,57 @@ let base: string
 let handler: Handler
 let ctx: Context
 let fiber: Awaited<ReturnType<Context['plugin']>>
+let unregisterFetch: () => void
+
+type TestPublicAddress = { readonly address: string; readonly family: 4 | 6 }
+
+const PUBLIC_TEST_ADDRESS: TestPublicAddress = { address: '93.184.216.34', family: 4 }
+
+function localFetchNetwork(loopbackHostname: string) {
+  return {
+    resolve: async () => [PUBLIC_TEST_ADDRESS],
+    request: async (
+      url: URL,
+      _addresses: readonly TestPublicAddress[],
+      options: { headers: Readonly<Record<string, string>>; signal: AbortSignal },
+    ) => {
+      const localUrl = new URL(url)
+      localUrl.hostname = loopbackHostname
+      return {
+        response: await fetch(localUrl, {
+          method: 'GET',
+          redirect: 'manual',
+          headers: options.headers,
+          signal: options.signal,
+        }),
+        release: async () => {},
+      }
+    },
+  }
+}
+
+function fetchLimits(timeoutMs = 30_000) {
+  return {
+    maxUrlLength: 2048,
+    maxResponseBytes: 5_000_000,
+    maxBodyChars: 100_000,
+    timeoutMs,
+    maxRedirects: 5,
+    userAgent: 'integration-test',
+  }
+}
 
 beforeEach(async () => {
   handler = (_req, res) => { res.writeHead(200, { 'content-type': 'text/html' }); res.end('<h1>Hello</h1><p>World</p>') }
   server = createServer((req, res) => { handler(req, res) })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
-  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  base = `http://public.test:${(server.address() as AddressInfo).port}`
 
   ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(WebRuntime, { searchProvider: WebSearchExa.EXA_PROVIDER_ID, fetchProvider: WebFetchLocal.LOCAL_FETCH_PROVIDER_ID })
-  await ctx.plugin(WebFetchLocal, {})
+  unregisterFetch = ctx.web.registerFetchProvider(new WebFetchLocal.HttpFetchProvider(fetchLimits(), localFetchNetwork('127.0.0.1')))
   await ctx.plugin(WebSearchExa, { apiKey: 'exa-key', baseURL: 'https://api.exa.test' })
   // The shipped deployment shape: the tool-call budget is declared by tool-web
   // config (default 30s, attached as ToolDefinition.timeoutMs) and enforced by
@@ -51,6 +90,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await fiber.dispose()
+  unregisterFetch()
   vi.unstubAllGlobals()
   await new Promise<void>(resolve => server.close(() => { resolve() }))
 })
@@ -121,6 +161,7 @@ describe('tool-call timeout returns TOOL_TIMEOUT (deadline wins over a slow fetc
   let openSockets: ServerResponse[]
   let tctx: Context
   let tfiber: Awaited<ReturnType<Context['plugin']>>
+  let unregisterTimeoutFetch: () => void
 
   beforeEach(async () => {
     // A server that never responds: it holds the connection open until the
@@ -129,14 +170,16 @@ describe('tool-call timeout returns TOOL_TIMEOUT (deadline wins over a slow fetc
     openSockets = []
     slowServer = createServer((_req, res) => { openSockets.push(res) })
     await new Promise<void>(resolve => slowServer.listen(0, '127.0.0.1', resolve))
-    slowBase = `http://127.0.0.1:${(slowServer.address() as AddressInfo).port}`
+    slowBase = `http://public.test:${(slowServer.address() as AddressInfo).port}`
 
     tctx = new Context()
     await tctx.plugin(SystemPrompt)
     await tctx.plugin(ToolRuntime)
     await tctx.plugin(WebRuntime, { fetchProvider: WebFetchLocal.LOCAL_FETCH_PROVIDER_ID })
     // Provider backstop well ABOVE the tool-call budget, so the policy wins.
-    await tctx.plugin(WebFetchLocal, { timeoutMs: 30_000 })
+    unregisterTimeoutFetch = tctx.web.registerFetchProvider(
+      new WebFetchLocal.HttpFetchProvider(fetchLimits(), localFetchNetwork('127.0.0.1')),
+    )
     await tctx.plugin(TimeoutPolicy)
     // The tool-call budget is declared by tool-web config, enforced by the policy.
     tfiber = await tctx.plugin(ToolWeb, { fetchTimeoutMs: 50 })
@@ -145,6 +188,7 @@ describe('tool-call timeout returns TOOL_TIMEOUT (deadline wins over a slow fetc
   afterEach(async () => {
     for (const res of openSockets) res.destroy()
     await tfiber.dispose()
+    unregisterTimeoutFetch()
     await new Promise<void>(resolve => slowServer.close(() => { resolve() }))
   })
 
@@ -161,14 +205,7 @@ describe('tool-call timeout returns TOOL_TIMEOUT (deadline wins over a slow fetc
   it('the provider backstop still protects a direct provider call (no tool-call policy in that path)', async () => {
     // A direct provider caller bypasses tools/execute, so a short configured backstop
     // must produce provider-owned WEB_FETCH_TIMEOUT rather than TOOL_TIMEOUT.
-    const direct = new WebFetchLocal.HttpFetchProvider({
-      maxUrlLength: 2048,
-      maxResponseBytes: 5_000_000,
-      maxBodyChars: 100_000,
-      timeoutMs: 50,
-      maxRedirects: 5,
-      userAgent: 'integration-test',
-    })
+    const direct = new WebFetchLocal.HttpFetchProvider(fetchLimits(50), localFetchNetwork('127.0.0.1'))
     const err = await direct.fetch({ url: slowBase }).then(
       () => undefined,
       (e: unknown) => e as { code?: string },

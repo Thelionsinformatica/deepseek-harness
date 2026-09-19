@@ -6,7 +6,7 @@
 
 ## 组合
 
-请在 `ctx.sessions`、`ctx.agents`、`ctx.tools`、`ctx.sessionPersistence`，以及实现 Session flush 的持久化监听器之后加载此函数插件。静态注入会使缺少持久化服务的组合直接失败。此插件只监听后续的 `agent/created` 事件，在运行时根 agent 上安装，并通过完全相同的 `agent.ctx` 注册所有工具。插件加载时已经存在的 agent 与运行时子 agent 不会获得 Schedule。
+请在 `ctx.sessions`、`ctx.agents`、`ctx.tools`、`ctx.sessionPersistence`，以及实现 Session flush 的持久化监听器之后加载此函数插件。静态注入会使缺少持久化服务的组合直接失败。此插件只监听后续的 `agent/created` 事件，在运行时根 agent 上安装，并通过完全相同的 `agent.ctx` 注册所有工具。插件加载时已经存在的 agent、运行时子 agent，以及随附的封闭工具面 `minimal` preset 不会获得 Schedule。
 
 Time-context 不是 Schedule 的依赖。组合可以挂载 `@deepseek-ai/dsh-time-context`，使模型能够按浏览器的请求本地时区解释自然语言；官方 Schedule Web overlay 正是如此。模型仍必须向 `schedule_create` 传入显式偏移量或 `time_zone`；Schedule 绝不会从模型上下文中导入或推断该值。
 

@@ -27,6 +27,7 @@ import { clientBuildEnvironmentDefines } from '../../scripts/client-build-enviro
 const CSS_VIRTUAL_PREFIX = '\0dsh-css:'
 const GLOBAL_CSS_VIRTUAL_PREFIX = '\0dsh-global-css:'
 const INLINE_CSS_VIRTUAL_PREFIX = '\0dsh-inline-css:'
+const PNG_DATA_VIRTUAL_PREFIX = '\0dsh-png-data:'
 const CSS_VIRTUAL_SUFFIX = '.mjs'
 const INLINE_CSS_QUERY = '?inline'
 
@@ -494,6 +495,23 @@ function clientConfig(id: string, entry: string): UserConfig {
           + 'cross-plugin value imports are forbidden; declare a non-default module request or collaborate through cordis services '
           + '(type-only imports are erased and never reach this gate)',
         )
+      },
+    }, {
+      // Product marks are small, package-owned PNGs. Inline them as data URLs
+      // so a dynamically loaded UI plugin remains a single portable artifact
+      // with no extra public-file route or installation-time asset copy.
+      name: 'dsh-png-data-inline',
+      resolveId(source: string, importer: string | undefined) {
+        if (!source.endsWith('.png')) return null
+        const abs = importer !== undefined ? sourceAssetPath(source, importer) : source
+        return PNG_DATA_VIRTUAL_PREFIX + abs
+      },
+      async load(virtualId: string) {
+        if (!virtualId.startsWith(PNG_DATA_VIRTUAL_PREFIX)) return null
+        const fileId = virtualId.slice(PNG_DATA_VIRTUAL_PREFIX.length)
+        this.addWatchFile(fileId)
+        const source = await readFile(fileId)
+        return `export default ${JSON.stringify(`data:image/png;base64,${source.toString('base64')}`)};`
       },
     }, {
       name: 'dsh-css-modules-inline',

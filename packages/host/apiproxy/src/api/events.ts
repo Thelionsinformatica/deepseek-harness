@@ -135,6 +135,8 @@ export type HostFrame =
     agentPreset?: string
   }
   | { type: 'host/session-removed'; sessionId: SessionId }
+  /** Permanent deletion commit; unlike session-removed, durable subagents are removed too. */
+  | { type: 'host/session-deleted'; sessionId: SessionId }
   | { type: 'host/session-status'; sessionId: SessionId; running: boolean }
   | { type: 'host/agent-error'; sessionId: SessionId; message: string }
   | { type: 'host/workspace-changed'; workspace: WorkspaceView }

@@ -167,22 +167,29 @@ export function apply(ctx: Context, config: Config): void {
     provider: string,
     profile: ResolvedPiAiProviderProfile,
   ): Promise<string | undefined> => {
-    const ref = profile.apiKeyEnv
+    const refs = profile.apiKeyEnv === undefined
+      ? []
+      : [profile.apiKeyEnv, ...profile.apiKeyEnvFallbacks]
     // Only a profile that names no credential at all defers to pi-ai's
     // provider-native discovery. Once one is named, a miss must fail loud:
     // handing pi-ai `undefined` would let it pick up an unrelated ambient key
     // (OPENAI_API_KEY and friends), billing another tenant for a request the
     // deployment meant to authenticate differently.
-    if (ref === undefined) return undefined
+    if (refs.length === 0) return undefined
     const credentials = ctx.get('credentials')
-    const hit = credentials !== undefined
-      ? (await credentials.resolve(ref))?.value
-      // Without the seam the environment is the whole credential plane.
-      : launchEnvironmentOf(ctx).get(ref)?.value
-    if (hit !== undefined && hit.length > 0) return assertUsableApiKey(hit, 'llm-pi-ai', ref)
+    for (const ref of refs) {
+      const hit = credentials !== undefined
+        ? (await credentials.resolve(ref))?.value
+        // Without the seam the environment is the whole credential plane, but
+        // only references explicitly declared by this profile are consulted.
+        : launchEnvironmentOf(ctx).get(ref)?.value
+      if (hit !== undefined && hit.length > 0) return assertUsableApiKey(hit, 'llm-pi-ai', ref)
+    }
+    const describedRefs = refs.map(ref => `"${ref}"`).join(' then ')
     throw new LlmError(
-      `llm-pi-ai: no credential for provider route "${provider}"; its profile resolves ${ref}, which is not`
-      + ` set — store ${ref} through the credentials service (the web Models page writes it) or export it,`
+      `llm-pi-ai: no credential for provider route "${provider}"; its profile resolves ${describedRefs}, none of which are`
+      + ' set — store one of those declared references through the credentials service (the web Models page writes it)'
+      + ' or export it,'
       + ' and remove apiKeyEnv only if this provider should authenticate from pi-ai\'s own environment discovery',
       'MISSING_CREDENTIAL',
     )

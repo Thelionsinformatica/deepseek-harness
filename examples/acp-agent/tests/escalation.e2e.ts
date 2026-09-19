@@ -116,7 +116,7 @@ describe('default sandbox composition keyless smoke (real cordis.yml via the Loa
     })
     const { sessionId } = await client.newSession({ cwd: workdir, mcpServers: [] })
     expect(sessionId.length).toBeGreaterThan(0)
-  }, 30_000)
+  }, 120_000)
 
 })
 

@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-DeepSeek Harness 用户数据的共享文件系统路径辅助工具。
+Harness 用户数据与 workspace 的共享文件系统路径辅助工具。
 
 ## DSH 主目录
 
@@ -18,11 +18,15 @@ DeepSeek Harness 用户数据的共享文件系统路径辅助工具。
 
 `expandHomePath()` 使用操作系统主目录展开 `~`、`~/...` 和 Windows 风格的 `~\...` 前缀。它会保留非波浪号路径和 `~user/...` 原样不变。
 
+## 默认 workspace
+
+`resolveDefaultWorkspace()` 为新 Leon 会话分配一个绝对根目录。优先级从高到低依次为：显式参数、`$LEON_DEFAULT_WORKSPACE`、`$DSH_DEFAULT_WORKSPACE`、`$DSH_CWD`，最后是 Windows 上的 `E:/computador` 或其他平台上的调用目录。空白覆盖值会被忽略，受支持的波浪号前缀会被展开，相对值则以调用目录为基准解析。解析器不会创建目录；该步骤由安装程序或操作者负责。
+
 ## 监听路径
 
 `canonicalizeWatchPath()` 为原生文件系统 watcher 提供一种稳定的目标路径表示。它通过 `fs.realpath()` 解析层级最深的现有祖先路径，再拼回缺失的后缀，因此即使文件或目录尚未创建也仍可监听。尤其是，Windows 8.3 别名不能与原生 watcher 后端发出的长路径混用。
 
-该包刻意保持规模小且不依赖 harness，以便产品包共享用户数据路径约定，而不必彼此依赖。
+该包刻意保持规模小且不依赖 harness，以便产品包共享文件系统路径约定，而不必彼此依赖。
 
 ## 已知限制与暂缓事项
 

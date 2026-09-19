@@ -96,6 +96,8 @@ interface StoredImageAttachment {
 ```ts type-equiv
 /** Deterministic request-image policy selected by one exact model route. */
 interface ImageRequestPolicy {
+  /** Force a compatible request encoding without modifying the stored original. */
+  outputFormat?: 'png'
   /** Maximum width multiplied by height after aspect-preserving projection. */
   maxPixels: number
   /** Encoded-byte cap before base64 expansion or Files API upload. */

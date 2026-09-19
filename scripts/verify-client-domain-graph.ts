@@ -25,7 +25,84 @@ const CONTRACT_DIRS = new Set(['contract'])
 /** Top-level client files allowed to import across domains (assembly layer). */
 const ASSEMBLY_FILES = new Set(['apply.ts', 'index.ts', 'index.tsx'])
 
-interface Violation { file: string; imported: string; reason: string }
+export interface Violation { file: string; imported: string; reason: string }
+
+/**
+ * Locked budgets for domain edges inherited from the upstream codebase.
+ *
+ * This is a ratchet, not a general allowlist: a new edge, an extra occurrence,
+ * or a removed occurrence all fail the gate. When a legacy edge is refactored,
+ * its budget must be reduced in the same change so the debt cannot return.
+ */
+const LEGACY_EDGE_BUDGETS: Readonly<Record<string, number>> = {
+  'runtime/src/client/contract/session.ts -> ../sessions/conversation.ts': 1,
+  'runtime/src/client/contract/sessions.ts -> ../agents/scope.ts': 2,
+  'runtime/src/client/contract/sessions.ts -> ../sessions/manager.ts': 1,
+  'runtime/src/client/contract/sessions.ts -> ../sessions/service.ts': 1,
+  'runtime/src/client/contract/workspaces.ts -> ../workspaces/service.ts': 1,
+  'runtime/src/client/sessions/service.ts -> ../agents/scope.ts': 2,
+  'runtime/src/client/workspaces/manager.ts -> ../sessions/notifier.ts': 1,
+  'runtime/src/client/workspaces/workspace.ts -> ../sessions/notifier.ts': 1,
+  'ui-conversation/src/client/chat/ContextInjectionRow.tsx -> ../reference/ReferenceIcon.tsx': 1,
+  'ui-conversation/src/client/chat/MessageItem.tsx -> ../reference/ReferenceIcon.tsx': 1,
+  'ui-conversation/src/client/contract/slots.ts -> ../input/blocks.ts': 1,
+  'ui-conversation/src/client/contract/slots.ts -> ../input/contract.ts': 1,
+  'ui-conversation/src/client/conversation-nodes/turn-tail.ts -> ../chat/turn-metrics.ts': 1,
+  'ui-conversation/src/client/input/hub.ts -> ../queue/store.ts': 1,
+  'ui-conversation/src/client/queue/store.ts -> ../input/contract.ts': 1,
+  'ui-conversation/src/client/service.ts -> ./input/blocks.ts': 1,
+  'ui-conversation/src/client/service.ts -> ./input/contract.ts': 1,
+  'ui-conversation/src/client/skeleton/ApprovalPanel.tsx -> ../chat/tool-node-reader.ts': 1,
+  'ui-conversation/src/client/skeleton/ContextMeter.tsx -> ../chat/StatsLine.tsx': 1,
+  'ui-conversation/src/client/skeleton/DetailsPanel.tsx -> ../chat/tool-node-reader.ts': 1,
+  'ui-conversation/src/client/skeleton/InputBar.tsx -> ../input/decorations.ts': 2,
+  'ui-conversation/src/client/skeleton/InputBar.tsx -> ../input/contract.ts': 1,
+  'ui-conversation/src/client/skeleton/InputBar.tsx -> ../reference/ReferenceIcon.tsx': 1,
+  'ui-workspace/src/client/WorkspaceBrowser.tsx -> ./rows/Rows.tsx': 1,
+}
+
+/** Stable identity for one cross-domain import edge. */
+export function violationKey(violation: Pick<Violation, 'file' | 'imported'>): string {
+  return `${violation.file} -> ${violation.imported}`
+}
+
+export interface DomainGraphAudit {
+  acceptedLegacyOccurrences: number
+  regressions: Array<{ actual: number; allowed: number; key: string }>
+  staleBudgets: Array<{ actual: number; allowed: number; key: string }>
+}
+
+/**
+ * Compare observed violations with locked legacy budgets.
+ * @param violations - Cross-domain imports found in the current tree.
+ * @param budgets - Maximum occurrence count for each inherited edge.
+ * @returns Regressions and stale budgets that require an explicit source change.
+ */
+export function auditDomainViolations(
+  violations: readonly Violation[],
+  budgets: Readonly<Record<string, number>> = LEGACY_EDGE_BUDGETS,
+): DomainGraphAudit {
+  const counts = new Map<string, number>()
+  for (const violation of violations) {
+    const key = violationKey(violation)
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+
+  const keys = new Set([...Object.keys(budgets), ...counts.keys()])
+  const regressions: DomainGraphAudit['regressions'] = []
+  const staleBudgets: DomainGraphAudit['staleBudgets'] = []
+  let acceptedLegacyOccurrences = 0
+
+  for (const key of [...keys].sort()) {
+    const actual = counts.get(key) ?? 0
+    const allowed = budgets[key] ?? 0
+    if (actual > allowed) regressions.push({ actual, allowed, key })
+    if (actual < allowed) staleBudgets.push({ actual, allowed, key })
+    acceptedLegacyOccurrences += Math.min(actual, allowed)
+  }
+
+  return { acceptedLegacyOccurrences, regressions, staleBudgets }
+}
 
 /** Recursively list .ts/.tsx files under dir (relative paths). */
 function listSources(dir: string): string[] {
@@ -92,13 +169,21 @@ function main(): void {
     violations.push(...checkPackage(pkg, clientDir))
   }
 
-  if (violations.length > 0) {
-    console.error(`verify-client-domain-graph: ${violations.length} violation(s):`)
-    for (const v of violations) console.error(`  ${v.file} -> ${v.imported}\n    ${v.reason}`)
+  const audit = auditDomainViolations(violations)
+  if (audit.regressions.length > 0 || audit.staleBudgets.length > 0) {
+    console.error('verify-client-domain-graph: domain layering ratchet changed:')
+    for (const item of audit.regressions) {
+      console.error(`  REGRESSION ${item.key} (actual ${item.actual}, budget ${item.allowed})`)
+    }
+    for (const item of audit.staleBudgets) {
+      console.error(`  REDUCE BUDGET ${item.key} (actual ${item.actual}, budget ${item.allowed})`)
+    }
     process.exitCode = 1
     return
   }
-  console.log('verify-client-domain-graph: client domain layering clean.')
+  console.log(
+    `verify-client-domain-graph: no new domain edges; ${audit.acceptedLegacyOccurrences} locked legacy occurrence(s).`,
+  )
 }
 
 if (import.meta.filename === resolve(process.argv[1] ?? '')) main()

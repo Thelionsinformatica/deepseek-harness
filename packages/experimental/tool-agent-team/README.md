@@ -6,6 +6,8 @@ Scoped model-facing adapter for [`ctx.agentTeams`](../agent-team/README.md). It 
 
 ## Config
 
+Creation modes follow registered continuable providers and refresh when providers are added or removed. With no eligible provider, the creation tool is omitted; direct service calls still enforce admission independently.
+
 ```yaml
 - id: tool-agent-team
   name: '@deepseek-ai/dsh-experimental-tool-agent-team'

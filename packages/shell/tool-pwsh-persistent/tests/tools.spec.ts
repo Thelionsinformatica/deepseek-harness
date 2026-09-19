@@ -113,6 +113,7 @@ class StubTerminalSession implements TerminalBackendSession {
   closed: string[] = []
   mode: StubMode
   sends = 0
+  submitted: string[] = []
   pendingText = ''
   historyTruncated = false
   throwOnSend = false
@@ -123,6 +124,7 @@ class StubTerminalSession implements TerminalBackendSession {
 
   startSend(request: TerminalSendRequest): TerminalSendOperation {
     this.sends += 1
+    this.submitted.push(request.text)
     if (request.text.startsWith('function prompt')) {
       if (this.mode === 'init-exit') {
         this.statusValue = { kind: 'exited', exitCode: 1, signal: null }
@@ -178,7 +180,7 @@ class StubTerminalSession implements TerminalBackendSession {
     if (this.mode === 'with-echo') {
       // The PSReadLine echo renders the submitted wrapper before the real
       // markers; the tool must strip it from the captured result.
-      const output = `${sent}\n${start ?? ''}\nhello from stub\n${end ?? ''}0\n${this.motd}`
+      const output = `${sent}\n${start ?? ''}\nhello from stub\n${end ?? ''}0   \n${this.motd}`
       this.scrollback += output
       return this.operation(Promise.resolve(this.result(output, 'stdin_read')))
     }
@@ -363,6 +365,18 @@ describe('tool-pwsh-persistent', () => {
     expect(result).not.toContain('__DSH_PERSISTENT_PWSH_START_')
     expect(result).not.toContain('__DSH_PERSISTENT_PWSH_END_')
     expect(result).not.toContain('Invoke-Expression')
+  })
+
+  it('finishes an unterminated console row before the completion marker', async () => {
+    const { ctx, owner, stub } = await setup({ backendType: 'stub' })
+    await call(ctx, owner, "[Console]::Out.Write('PWSH_OK')")
+    const wrapper = stub.sessions[0]?.submitted.find(text => text.includes('Invoke-Expression'))
+    expect(wrapper).toContain(
+      'if ([Console]::CursorLeft -ne 0) { [Console]::Out.WriteLine() };',
+    )
+    expect(wrapper).toMatch(
+      /Write-Output \('__DSH_PERSISTENT_PWSH_END_[^']+' \+ \$__s\)$/,
+    )
   })
 
   it('preserves command output that equals the private shell prompt', async () => {

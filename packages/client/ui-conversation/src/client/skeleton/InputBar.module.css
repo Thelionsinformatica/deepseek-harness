@@ -116,6 +116,130 @@
   height: 0;
 }
 
+.fileInput {
+  display: none;
+}
+
+/* The plus launcher presents product actions; slash commands retain their
+   independent completion menu. */
+.addMenu {
+  position: absolute;
+  bottom: 4px;
+  left: 0;
+  z-index: 110;
+  display: flex;
+  flex-direction: column;
+  width: min(430px, 100%);
+  max-height: min(480px, calc(100vh - 120px));
+  overflow: hidden;
+  padding: 6px;
+  border: 1px solid var(--dsw-alias-border-inverted);
+  border-radius: 14px;
+  background: var(--dsw-specific-menu);
+  box-shadow: var(--dsw-shadow-lv3);
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.addMenuViewport {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.addMenuTitle {
+  padding: 7px 10px 3px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.addMenuTitle:not(:first-child) {
+  margin-top: 4px;
+}
+
+.addMenuHeader,
+.addMenuItem {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.addMenuHeader {
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.addMenuItem {
+  gap: 10px;
+  min-height: 48px;
+  padding: 7px 10px;
+}
+
+.addMenuHeader:hover,
+.addMenuItem:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.addMenuIcon,
+.addMenuChevron {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.addMenuIcon {
+  width: 16px;
+  height: 16px;
+}
+
+.addMenuChevron {
+  margin-left: auto;
+}
+
+.addMenuText {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.addMenuLabel,
+.addMenuDetail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.addMenuLabel {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.addMenuDetail,
+.addMenuStatus {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.addMenuStatus {
+  padding: 10px;
+}
+
+.addMenuDivider {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--dsw-alias-border-inverted);
+}
+
 /* The draft's scrollport, and the ONLY scrolling box in the composer: the
    caret is the textarea's and every visible glyph is the backdrop's, so the two
    layers stay together only by riding one offset the browser applies to both at

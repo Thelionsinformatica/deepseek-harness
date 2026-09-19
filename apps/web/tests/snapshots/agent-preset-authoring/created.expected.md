@@ -19,7 +19,7 @@
     - text: 关闭
   - heading "Agent 预设" [level=2]
   - paragraph: 预设即一个会话的 Agent 所运行的插件组装 —— 它的工具、提示词与能力。复制一份既有预设改成自己的，或用「创造模式」让 Agent 帮你创建。
-  - heading "内置" [level=3]
+  - heading "主要助手" [level=3]
   - list:
     - listitem:
       - 'button "当前使用: 标准模式" [disabled] [pressed]':
@@ -29,6 +29,21 @@
         - img
         - text: 查看
       - 'button "复制: 标准模式"':
+        - img
+        - text: 复制
+  - heading "高级模式 4" [level=3]
+  - button "收起" [expanded]:
+    - text: 收起
+    - img
+  - list:
+    - listitem:
+      - 'button "设为默认: Leon"':
+        - text: Leon 内置 The Lions Informática 助手，面向编程、项目工程和自动化，并支持可选持久记忆。
+        - code: leon
+      - 'button "查看: Leon"':
+        - img
+        - text: 查看
+      - 'button "复制: Leon"':
         - img
         - text: 复制
     - listitem:

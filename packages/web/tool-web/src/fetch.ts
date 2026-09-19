@@ -13,6 +13,7 @@ import type { GenericCallView, JsonValue, ToolResult, WebFetchResultView } from 
 import type { WebFetchBody, WebFetchResult } from '@deepseek-ai/dsh-web'
 import { assertNever } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-system-prompt'
+import { authorizeWebEgress } from './egress.ts'
 
 /**
  * The shared HTML→markdown converter: turndown over its bundled domino DOM,
@@ -425,12 +426,13 @@ export function presentFetchResult(args: { url: string }, result: ToolResult): W
  *   `ToolDefinition.timeoutMs` for `@deepseek-ai/dsh-tool-call-timeout-policy` to enforce.
  * @param maxOutputChars - cap on the complete rendered tool output (see
  *   {@link formatFetchOutput}) and on source characters converted synchronously.
+ * @param egressPolicy - whether each call requires a fresh outbound approval.
  */
-export function applyWebFetchTool(ctx: Context, timeoutMs: number, maxOutputChars: number): void {
+export function applyWebFetchTool(ctx: Context, timeoutMs: number, maxOutputChars: number, egressPolicy: 'ask' | 'allow'): void {
   ctx.systemPrompt.section({
     name: 'tool:web_fetch',
     order: 111,
-    text: 'Use the web_fetch tool to retrieve the content of a specific HTTP(S) URL (for example a result from web_search). It returns the page content decoded to text. Cite the URL as a markdown link when you use its content.',
+    text: 'Use web_fetch for full text from a specific HTTP(S) URL; cite that URL as a markdown link.',
   })
 
   ctx.tools.register(defineTool({
@@ -474,10 +476,11 @@ export function applyWebFetchTool(ctx: Context, timeoutMs: number, maxOutputChar
       presentationMeta: (_args, value) => fetchMetaFromValue(value, maxOutputChars),
     },
     timeoutMs,
-    // Provider reads do not mutate parent-agent state.
-    isConcurrencySafe: () => true,
+    // Interactive approvals stay serial in the agent's tool scheduler.
+    isConcurrencySafe: () => egressPolicy === 'allow',
     async execute(args, exec) {
       const input = parseFetchArgs(args)
+      await authorizeWebEgress(ctx, exec, egressPolicy)
       const result = await ctx.web.fetch(
         { url: input.url },
         exec.signal,

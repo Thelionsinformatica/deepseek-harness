@@ -193,6 +193,13 @@ export interface PersistenceBackend<TornMarker = unknown> {
   commitRepair(meta: SessionHeader, tornMarker: TornMarker | undefined, closers: readonly SessionEvent[]): Promise<void>
 
   /**
+   * Permanently remove the exact stored identity. Missing ids are an
+   * idempotent success. The implementation must not remove any containing
+   * project/cwd directory or unrelated user file.
+   */
+  deleteStored?(id: SessionId): Promise<void>
+
+  /**
    * List all stored (materialized) sessions' metadata.
    * @param signal - optional cancellation for backend listing work.
    */
@@ -599,6 +606,10 @@ export class PersistenceCoordinator<TornMarker = unknown> {
    * same id, so writes for one session never interleave. Keyed by session id.
    */
   private chains = new Map<SessionId, Promise<unknown>>()
+  /** Identities whose delete has closed admission but not yet committed. */
+  private readonly deletions = new Map<SessionId, Promise<void>>()
+  /** Committed tombstones prevent late queued work from resurrecting a log. */
+  private readonly deleted = new Set<SessionId>()
   /** Resolved fixed write-batching window shared by per-session controllers. */
   private readonly writeBatchMaxDelayMs: number
 
@@ -639,10 +650,16 @@ export class PersistenceCoordinator<TornMarker = unknown> {
     if (!Number.isSafeInteger(snapshot.createdAt) || snapshot.createdAt < 0) {
       return Promise.reject(new TypeError('session metadata createdAt must be a non-negative safe integer'))
     }
+    try {
+      this.assertAdmitted(snapshot.id, 'create')
+    } catch (error: unknown) {
+      return Promise.reject(error instanceof Error ? error : new Error(String(error)))
+    }
     return this.serialize(snapshot.id, () => this.createCore(snapshot))
   }
 
   private async createCore(meta: SessionHeader): Promise<void> {
+    this.assertAdmitted(meta.id, 'create')
     // Do NOT clobber an existing session: the SessionId IS the identity.
     if (this.states.has(meta.id) || this.preparations.has(meta.id)) {
       throw new Error(`session "${meta.id}" already exists in this backend`)
@@ -676,10 +693,12 @@ export class PersistenceCoordinator<TornMarker = unknown> {
     if (batch === undefined) {
       throw new TypeError('session event batch is not losslessly JSON-serializable because it contains non-JSON-serializable data')
     }
+    this.assertAdmitted(id, 'append')
     return this.serialize(id, () => this.appendCore(id, batch))
   }
 
   private async appendCore(id: SessionId, events: readonly SessionEvent[]): Promise<void> {
+    this.assertAdmitted(id, 'append')
     // Every append route converges here: the public service, live write-behind
     // drains, and HMR seed/suffix adoption. Legacy-shape rejection stays at
     // this shared boundary so a stale JavaScript plugin cannot persist a
@@ -719,6 +738,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
    */
   async prepare(id: SessionId, signal?: AbortSignal): Promise<SessionPreparation> {
     for (;;) {
+      this.assertAdmitted(id, 'prepare')
       await this.waitForRetirement(id, signal)
       if (this.ctx.sessions.get(id) !== undefined) {
         throw new Error(`cannot prepare session "${id}" while it is live`)
@@ -755,6 +775,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
    */
   async load(id: SessionId): Promise<SessionInspection> {
     for (;;) {
+      this.assertAdmitted(id, 'load')
       await this.waitForRetirement(id)
       const live = this.ctx.sessions.get(id)
       if (live !== undefined) return this.loadLiveSnapshot(live)
@@ -786,6 +807,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
    */
   async inspect(id: SessionId, signal?: AbortSignal): Promise<SessionInspection> {
     for (;;) {
+      this.assertAdmitted(id, 'inspect')
       signal?.throwIfAborted()
       if (this.retirements.has(id)) await this.waitForRetirement(id, signal)
       const live = this.ctx.sessions.get(id)
@@ -843,6 +865,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
     fromSeq: number,
     signal?: AbortSignal,
   ): Promise<{ meta: SessionHeader; events: SessionEvent[] }> {
+    this.assertAdmitted(id, 'read')
     signal?.throwIfAborted()
     if (this.backend.loadStoredFrom !== undefined) {
       let suffix: StoredSuffix | undefined
@@ -874,6 +897,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
     id: SessionId,
     signal?: AbortSignal,
   ): Promise<{ meta: SessionHeader; events: SessionEvent[] }> {
+    this.assertAdmitted(id, 'read')
     signal?.throwIfAborted()
     const stored = await this.backend.loadStored(id, signal)
     signal?.throwIfAborted()
@@ -890,6 +914,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
 
   /** Read, repair in memory, validate, and freeze one cold source once. */
   private async prepareCore(id: SessionId): Promise<PreparedSessionSource<TornMarker>> {
+    this.assertAdmitted(id, 'prepare')
     const stored = await this.backend.loadStored(id)
     if (stored === undefined) throw new Error(`session "${id}" not found`)
     try {
@@ -935,6 +960,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
     source: PreparedSessionSource<TornMarker>,
   ): Promise<{ source: PreparedSessionSource<TornMarker>; state: SessionState } | undefined> {
     const id = source.inspection.meta.id
+    this.assertAdmitted(id, 'prepare')
     const cursor = source.inspection.events.length
     const existing = this.states.get(id)
     if (existing?.owner !== undefined) {
@@ -995,6 +1021,54 @@ export class PersistenceCoordinator<TornMarker = unknown> {
     return signal === undefined
       ? retired
       : observeQueuedAbort(retired, signal, () => false)
+  }
+
+  /**
+   * Permanently delete one exact identity after its live lifecycle retired.
+   * Concurrent callers share one commit; later calls are idempotent. The
+   * admission gate is installed before entering the per-id chain, so no
+   * append/prepare/load accepted after this call can queue behind deletion
+   * and recreate the artifact.
+   * @param id - exact session identity whose canonical artifact is removed.
+   * @returns resolution after the canonical artifact reaches the absent postcondition.
+   */
+  delete(id: SessionId): Promise<void> {
+    if (this.deleted.has(id)) return Promise.resolve()
+    const existing = this.deletions.get(id)
+    if (existing !== undefined) return existing
+    if (this.ctx.sessions.get(id) !== undefined) {
+      return Promise.reject(new Error(`cannot delete session "${id}" while it is live`))
+    }
+
+    const operation = (async () => {
+      await this.waitForRetirement(id)
+      await this.serialize(id, async () => {
+        if (this.ctx.sessions.get(id) !== undefined) {
+          throw new Error(`cannot delete session "${id}" while it is live`)
+        }
+        this.preparations.assertDeletable(id)
+        if (this.backend.deleteStored === undefined) {
+          throw new Error(
+            `${this.backend.name} session persistence backend does not support permanent deletion`,
+          )
+        }
+        await this.backend.deleteStored(id)
+        this.states.delete(id)
+        this.preparations.invalidate(id)
+        this.deleted.add(id)
+      })
+    })()
+    const tracked = operation.finally(() => {
+      if (this.deletions.get(id) === tracked) this.deletions.delete(id)
+    })
+    this.deletions.set(id, tracked)
+    return tracked
+  }
+
+  /** Refuse any post-delete operation with one stable diagnostic. */
+  private assertAdmitted(id: SessionId, operation: string): void {
+    if (!this.deleted.has(id) && !this.deletions.has(id)) return
+    throw new Error(`cannot ${operation} session "${id}": the identity is being deleted or was deleted`)
   }
 
   // Listing is a direct backend read and needs no coordinator state.
@@ -1236,6 +1310,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
    */
   private async onCreated(session: Session, seed: readonly SessionEvent[]): Promise<void> {
     const id = session.header.id
+    this.assertAdmitted(id, 'create')
     const tracked = this.states.get(id)
     if (tracked !== undefined) {
       // case 1: already tracked.

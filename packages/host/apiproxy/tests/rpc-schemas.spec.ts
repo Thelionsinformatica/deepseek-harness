@@ -22,11 +22,13 @@ import {
 import {
   workspaceArchiveSessionRequestSchema, workspaceArchiveSessionValueSchema,
   workspaceCreateRequestSchema, workspaceCreateValueSchema, workspaceIdSchema,
+  workspaceDeleteSessionRequestSchema, workspaceDeleteSessionValueSchema,
   workspaceDeleteRequestSchema, workspaceDeleteValueSchema,
   workspaceInsertBeforeRequestSchema, workspaceInsertBeforeValueSchema,
   workspaceInsertSessionBeforeRequestSchema, workspaceInsertSessionBeforeValueSchema,
   workspaceListRequestSchema, workspaceListValueSchema,
   workspaceRenameRequestSchema, workspaceRenameValueSchema, workspaceViewSchema,
+  workspaceUnarchiveSessionRequestSchema, workspaceUnarchiveSessionValueSchema,
 } from '../src/api/workspace.schema.ts'
 import { skillEntrySchema, skillListRequestSchema, skillListValueSchema } from '../src/api/skills.schema.ts'
 import {
@@ -207,6 +209,10 @@ describe('sessions domain schemas', () => {
     expect(sessionModelsValueSchema.parse({
       current: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'max' },
       routable: true,
+      automatic: true,
+      automaticAvailable: true,
+      externalFailoverAvailable: true,
+      externalFailoverConsent: false,
       groups: [{
         id: 'deepseek-official',
         name: 'DeepSeek',
@@ -230,9 +236,13 @@ describe('sessions domain schemas', () => {
       provider: 'deepseek-official',
       model: 'deepseek-v4-pro',
       reasoningEffort: 'max',
-    }).reasoningEffort).toBe('max')
+      automatic: true,
+      externalFailoverConsent: true,
+    }).externalFailoverConsent).toBe(true)
     expect(sessionSelectModelValueSchema.parse({
       selected: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'max' },
+      automatic: false,
+      externalFailoverConsent: false,
     }).selected.reasoningEffort).toBe('max')
     expect(() => sessionSelectModelRequestSchema.parse({
       sessionId: 's1',
@@ -266,12 +276,17 @@ describe('sessions domain schemas', () => {
       sessionId: 's1', mode: 'queue', content: [],
     }).clientTimeZone).toBeUndefined()
     expect(() => sessionPromptRequestSchema.parse({ sessionId: 's1', mode: 'inject', content: [] })).toThrow()
-    expect(sessionPromptValueSchema.parse({ accepted: true }).accepted).toBe(true)
+    expect(sessionPromptValueSchema.parse({ accepted: true, messageId: 'm1' })).toEqual({
+      accepted: true,
+      messageId: 'm1',
+    })
+    expect(() => sessionPromptValueSchema.parse({ accepted: true })).toThrow()
+    expect(() => sessionPromptValueSchema.parse({ accepted: true, messageId: '' })).toThrow()
     // The command slot appears only when the prompt dispatched a slash command.
-    const dispatched = sessionPromptValueSchema.parse({ accepted: true, command: { kind: 'success', text: 'Goal set' } })
+    const dispatched = sessionPromptValueSchema.parse({ accepted: true, messageId: 'm2', command: { kind: 'success', text: 'Goal set' } })
     expect(dispatched.command?.text).toBe('Goal set')
-    expect(sessionPromptValueSchema.parse({ accepted: true, command: { kind: 'success' } }).command).toEqual({ kind: 'success' })
-    expect(() => sessionPromptValueSchema.parse({ accepted: true, command: { kind: 'failure' } })).toThrow()
+    expect(sessionPromptValueSchema.parse({ accepted: true, messageId: 'm3', command: { kind: 'success' } }).command).toEqual({ kind: 'success' })
+    expect(() => sessionPromptValueSchema.parse({ accepted: true, messageId: 'm4', command: { kind: 'failure' } })).toThrow()
     expect(sessionCancelRequestSchema.parse({ sessionId: 's1' }).sessionId).toBe('s1')
     expect(sessionUpdateQueueRequestSchema.parse({
       sessionId: 's1',
@@ -369,6 +384,16 @@ describe('workspace domain schemas', () => {
     expect(workspaceArchiveSessionValueSchema.parse({ archivedSessionIds: ['s1', 's2'] }).archivedSessionIds)
       .toEqual(['s1', 's2'])
     expect(() => workspaceArchiveSessionValueSchema.parse({ archivedSessionIds: 's1' })).toThrow()
+  })
+
+  it('validates restore and permanent session deletion receipts', () => {
+    expect(workspaceUnarchiveSessionRequestSchema.parse({ sessionId: 's1' }).sessionId).toBe('s1')
+    expect(workspaceUnarchiveSessionValueSchema.parse({ archivedSessionIds: ['s2'] }).archivedSessionIds)
+      .toEqual(['s2'])
+    expect(workspaceDeleteSessionRequestSchema.parse({ sessionId: 's1' }).sessionId).toBe('s1')
+    expect(workspaceDeleteSessionValueSchema.parse({ deleted: true, archivedSessionIds: [] }))
+      .toEqual({ deleted: true, archivedSessionIds: [] })
+    expect(() => workspaceDeleteSessionValueSchema.parse({ deleted: false, archivedSessionIds: [] })).toThrow()
   })
 
   it('insertSessionBefore accepts an anchored and an anchorless move', () => {
@@ -518,6 +543,7 @@ describe('events frame schemas', () => {
       { type: 'host/session-added', sessionId: 's', blank: true, parentSessionId: 'p' },
       { type: 'host/session-added', sessionId: 's', blank: true },
       { type: 'host/session-removed', sessionId: 's' },
+      { type: 'host/session-deleted', sessionId: 's' },
       { type: 'host/session-status', sessionId: 's', running: true },
       { type: 'host/agent-error', sessionId: 's', message: 'boom' },
       { type: 'host/workspace-changed', workspace: {

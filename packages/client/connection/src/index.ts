@@ -11,6 +11,13 @@ import { assertTrustedAuthority, isTrustedApiRequest } from './api-request-trust
 import { HostConnectionService } from './rpc-host.ts'
 import { rejectWebSocketUpgrade, WebSocketDownlinks } from './websocket-downlink.ts'
 
+// Exact `/api` route owners must apply the same fence as the prefix bridge.
+// Export the already-imported bindings directly: the Node bundler otherwise
+// treats a parallel `export ... from` as redundant with the private import and
+// can omit the public runtime names even though the declarations still list
+// them.
+export { assertTrustedAuthority, isTrustedApiRequest }
+
 export type {
   ConnectionRpcAuthority,
   ConnectionRpcEndpointMatcher,

@@ -6,6 +6,7 @@ import AgentDefaultModelConfig, { AGENT_DEFAULT_MODEL_SETTINGS_NAMESPACE } from 
 import { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 
 /** The smallest real provider: one in-memory document, always writable. */
 class MemorySettings extends SettingsProvider {
@@ -41,6 +42,33 @@ async function boot(): Promise<{
 }
 
 describe('AgentDefaultModelConfig', () => {
+  it('keeps auxiliary overrides unavailable without deployment opt-in', async () => {
+    const bench = await boot()
+    expect(bench.defaultModel.auxiliarySelection('worker')).toBeUndefined()
+    await bench.ctx.fiber.dispose()
+  })
+
+  it('persists independent roles, resets inheritance and refuses unconsented gateways', async () => {
+    const ctx = new Context()
+    await ctx.plugin(MemorySettings)
+    await ctx.plugin(AgentDefaultModelConfig, {
+      provider: 'local', model: 'main', auxiliaryModels: { localProviders: ['local'] },
+    })
+    const ns = settingsNamespace('agent-model-roles')
+    const route = { provider: 'local', model: 'small', reasoningEffort: 'off' }
+    for (const role of ['title', 'compression', 'vision', 'worker', 'review'] as const) {
+      await ctx.settings.replace(ns, { [role]: route })
+      expect(ctx.agentDefaultModel.auxiliarySelection(role)).toEqual(route)
+    }
+    await ctx.settings.replace(ns, { review: { provider: 'localhost-gateway', model: 'external' } })
+    expect(() => ctx.agentDefaultModel.auxiliarySelection('review')).toThrow('explicit consent')
+    await ctx.settings.replace(ns, { review: { provider: 'localhost-gateway', model: 'external', allowExternal: true } })
+    expect(ctx.agentDefaultModel.auxiliarySelection('review')).toEqual({ provider: 'localhost-gateway', model: 'external' })
+    await ctx.settings.replace(ns, {})
+    expect(ctx.agentDefaultModel.auxiliarySelection('review')).toBeUndefined()
+    expect(ctx.agentDefaultModel.currentSelection()).toEqual({ provider: 'local', model: 'main' })
+    await ctx.fiber.dispose()
+  })
   it('resolves the user layer over the composition entry', async () => {
     const bench = await boot()
     expect(bench.defaultModel.currentSelection()).toEqual({

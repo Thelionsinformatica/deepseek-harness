@@ -1,0 +1,15 @@
+89e2cf95d HEAD@{0}: commit (amend): fix: account for routed API costs
+cbb80b38a HEAD@{1}: commit: fix: account for routed API costs
+fefd4565a HEAD@{2}: commit: fix: route Leon automatic prompts per message
+f05aa3959 HEAD@{3}: commit: fix: harden Leon automatic failover
+ff5817a18 HEAD@{4}: commit: feat: add personal memory controls
+9d8fc1e47 HEAD@{5}: commit: feat: add isolated personal memory
+025850e40 HEAD@{6}: commit: docs: close Letta memory experiment
+40561e787 HEAD@{7}: commit: docs: close memory stabilization phase
+8628e3ce6 HEAD@{8}: commit: test: add keyless Leon memory evaluation
+08c55d486 HEAD@{9}: commit: feat: add workspace memory administration
+b7149616d HEAD@{10}: commit: feat: preserve temporal memory history
+207f1d25a HEAD@{11}: commit: feat: compose safe automatic memory context
+ded89930d HEAD@{12}: commit: feat: add deterministic final memory ranking
+02503a82e HEAD@{13}: commit: feat: add optional local semantic memory retrieval
+5d80b6572 HEAD@{14}: commit: feat: enable controlled reviewed memory writes

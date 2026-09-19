@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-07-28-todo-plan-clears-on-next-turn.md
-2026-07-28-todo-plan-clears-on-next-turn.md: 55a0d4f307bef5cd04add0baae220ea763772ee9
-2026-07-28-todo-plan-clears-on-next-turn.zh.md: c5fb809694c680951e1f2238d5596e771e8bcec8
+2026-07-28-todo-plan-clears-on-next-turn.md: 939014e3d0fe49fde0fd5691e08c21d1c0383bac
+2026-07-28-todo-plan-clears-on-next-turn.zh.md: 2e9dc12379732bc9396eda8abe712b70dd277714

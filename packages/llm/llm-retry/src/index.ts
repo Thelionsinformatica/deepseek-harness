@@ -14,7 +14,7 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { RetryId } from './brand.ts'
 import type { LlmRetryEventData } from './types.ts'
 
-export type { LlmRetryEventData, LlmRetryStartedEventData } from './types.ts'
+export type { LlmFailoverEventData, LlmRetryEventData, LlmRetryStartedEventData } from './types.ts'
 export { RetryId } from './brand.ts'
 
 export const name = 'llm-retry'
@@ -114,6 +114,7 @@ export function apply(ctx: Context, config: Config = {}, internals: RetryInterna
     step: number,
     failure: LlmFailure,
     provider: string,
+    model: string | undefined,
     policy: ResolvedRetryPolicy,
     policyKey: string,
     retry: number,
@@ -129,6 +130,7 @@ export function apply(ctx: Context, config: Config = {}, internals: RetryInterna
         turn,
         step,
         provider,
+        ...(model === undefined ? {} : { model }),
         mode: policy.mode,
         policyKey,
         retry,
@@ -141,6 +143,7 @@ export function apply(ctx: Context, config: Config = {}, internals: RetryInterna
         turn,
         step,
         provider,
+        ...(model === undefined ? {} : { model }),
         mode: policy.mode,
         policyKey,
         retry,
@@ -154,7 +157,7 @@ export function apply(ctx: Context, config: Config = {}, internals: RetryInterna
   }
 
   async function recover(
-    { agent, turn, step, provider, failure, retryPolicy: policy, signal }: Parameters<Events['agent/request-error']>[0],
+    { agent, turn, step, provider, model, failure, retryPolicy: policy, signal }: Parameters<Events['agent/request-error']>[0],
     next: () => Promise<RequestErrorAction>,
   ): Promise<RequestErrorAction> {
     if (policy === undefined) return next()
@@ -204,7 +207,7 @@ export function apply(ctx: Context, config: Config = {}, internals: RetryInterna
       delayMs = localDelay(policy, retry, random)
     }
 
-    return backoff(agent, turn, step, failure, provider, policy, policyKey, retry, retryId, delayMs, signal)
+    return backoff(agent, turn, step, failure, provider, model, policy, policyKey, retry, retryId, delayMs, signal)
   }
 
   const disposeListener = ctx.on('agent/request-error', (

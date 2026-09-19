@@ -83,6 +83,12 @@ describe('web e2e: fresh round trip through the real assembly', () => {
     if (settledSessionId === undefined) throw new Error('the drive turn did not publish a session id')
     const agent = scaffold.ctx.agents.get(settledSessionId)
     if (agent === undefined) throw new Error(`the settled Web agent ${settledSessionId} is no longer live`)
+    if (MODE !== 'record') {
+      expect(agent.session.requestHeader()?.config).toEqual({
+        provider: 'deepseek-official',
+        model: 'deepseek-v4-flash',
+      })
+    }
     const system = agent.session.requestHeader()?.system
     if (system === undefined) throw new Error('the settled Web request has no system prompt')
     const prefix = system.split('\n\n').slice(0, 4).join('\n\n')

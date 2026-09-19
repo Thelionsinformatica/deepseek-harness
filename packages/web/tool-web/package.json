@@ -32,6 +32,8 @@
   ],
   "license": "MIT",
   "peerDependencies": {
+    "@deepseek-ai/dsh-user-approval": "workspace:^",
+    "@deepseek-ai/dsh-web-access": "workspace:^",
     "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/dsh-llm": "workspace:^",
     "@deepseek-ai/dsh-system-prompt": "workspace:^",
@@ -39,12 +41,22 @@
     "@deepseek-ai/dsh-web": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-user-approval": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-web-access": {
+      "optional": true
+    }
+  },
   "dependencies": {
     "@joplin/turndown-plugin-gfm": "^1.0.67",
     "@deepseek-ai/schemastery": "workspace:^",
     "turndown": "^7.2.4"
   },
   "devDependencies": {
+    "@deepseek-ai/dsh-user-approval": "workspace:^",
+    "@deepseek-ai/dsh-web-access": "workspace:^",
     "@deepseek-ai/dsh-agent": "workspace:^",
     "@types/turndown": "^5.0.6",
     "@deepseek-ai/dsh-invariants": "workspace:^",

@@ -81,6 +81,38 @@ describe('UI renderer plugin', () => {
     expect(el.querySelector('[data-testid="root-probe"]')).toBeNull()
   })
 
+  it('recovers when HMR replaces the root registration after the application mounted', async () => {
+    const { ctx, slots } = await bench()
+    const disposeFirst = slots.register(
+      { name: 'root' },
+      () => <div data-testid="root-first" />,
+    )
+    const el = container()
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    act(() => { mounted.push(ctx.get('uiRenderer')!.mount(el)) })
+    expect(el.querySelector('[data-testid="root-first"]')).toBeTruthy()
+
+    // HMR unloads the old layout fiber before the replacement bundle applies.
+    await act(async () => {
+      disposeFirst()
+      await Promise.resolve()
+    })
+    expect(el.querySelector('[data-slot-pending="root"]')).toBeTruthy()
+
+    let disposeSecond = (): void => {}
+    await act(async () => {
+      disposeSecond = slots.register(
+        { name: 'root' },
+        () => <div data-testid="root-second" />,
+      )
+      await Promise.resolve()
+    })
+    expect(el.querySelector('[data-testid="root-second"]')).toBeTruthy()
+    expect(el.querySelector('[data-slot-pending="root"]')).toBeNull()
+    expect(error).not.toHaveBeenCalled()
+    disposeSecond()
+  })
+
   it('retracts the service and renderer with its fiber', async () => {
     const { ctx, slots, fiber } = await bench()
     await stabilize(() => fiber.dispose())

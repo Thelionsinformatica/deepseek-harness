@@ -6,6 +6,8 @@
 
 ## 配置
 
+准入会在预留成员名称或名额之前拒绝不存在或没有 `prepareContinuable` 的提供方。准入后的失败仍记录为持久化失败成员，包括在创建过程中移除提供方的情况。
+
 ```yaml
 - id: agent-team
   name: '@deepseek-ai/dsh-experimental-agent-team'
@@ -15,6 +17,7 @@
     maxPendingMessagesPerMember: 64
     maxMessageBytes: 65536
     disposalTimeoutMs: 5000
+    completionRequiresReview: false
 ```
 
 每个限制都必须是正的安全整数。`maxMembers` 统计所有曾 provision 的名字，包括失败成员，因为名字永不复用。`maxTasks` 统计未删除任务。mailbox 限额按目标成员计算；字节限制覆盖完整的投递帧，包括稳定 id 与发送者名称。`disposalTimeoutMs` 限制已获准创建、mailbox dispatch 与 Team 自有 Activation 的 settlement 时长，使插件 reload 与进程 shutdown 在异常时明确失败，而不是无限等待。
@@ -47,9 +50,59 @@ roster 同时报告持久 provisioning／failed phase 与实时 `running`／`idl
 
 `writeScopes` 会规范化为 workspace-relative 路径前缀。view 会对与 in-progress 任务的重叠发出警告，但绝不会阻止 claim 或授予文件写权限。它们是协作提示，不是锁。
 
+启用 `completionRequiresReview: true` 时，完成任务还需要通过 `registerCompletionReviewer()` 注册的唯一宿主审核器批准。任务事务先校验当前修订，再调用审核器，并保持串行执行直到审核结束。审核器缺失、拒绝、抛错或被撤销时，任务不能完成，其依赖任务也不会被释放。审核器负责证据验证，必须有执行时限，不得修改同一 Team，并须在重启后重新验证持久证据。注册属于可释放的宿主能力，不是模型工具或持久批准。该选项本身不实现任务预算、STOP、产物验证或文件系统隔离。
+
 `waitForChange()` 可以等待注册后发生的下一条 roster、task、mailbox 或实时 status 边，时长范围为 10 秒到 1 小时；它只报告等待是否超时，也不会回放调用前已经发生的变化。运行时 dispose 会释放当前等待，并使后续等待不经超时立即返回。调用方需要在唤醒或超时后重新读取权威状态。取消会保留 Error reason；非 Error reason 则通过 `TEAM_WAIT_ABORTED` 以结构化检查结果报告，不再强制转成 object 字符串。`interrupt()` 仅限 Lead，并委托 continuable-subagent 的 interrupt 路径以 `keepInbox` 只取消 live teammate 的当前 turn；它既不释放任务 owner，也不删除持久 mail。
 
 独立的 `./invariant` 配套模块会把每条候选 Team event 对照已提交 Session 前缀回放。回放会先验证每个当前版本 Team payload，再将其纳入折叠状态；随后会在 append 前拒绝非法 member 转换、名字复用、超出范围的数字 task id、不连续任务 revision、非法任务依赖、重复 queue／ack，以及 target 不匹配的 acknowledgement。顺序与时间由 Session event 的 `seq` 和 `time` 负责，不在 snapshot 中重复保存。
+
+## 可选任务控制
+
+独立的 `./mission-control` Loader 入口通过原生 `storageDomain` 提供 `ctx.teamMissions`。必须显式配置 `domainName`、`owner`、绝对路径 `workspace`、`maxCalls` 和 `durationMs`。普通 Team 入口不会挂载它。任务和消息仍以现有 Session 日志为真源。
+
+宿主启动任务时固定目标、验收条件、截止时间和调用上限。原子预留在调用前消耗次数；并发调用方无法超过已存储的上限。检查版本的暂停和恢复操作保留消耗和截止时间。STOP 对该根会话是终态，重新打开存储后仍然有效；再次启动不能重置它。其他所有者或工作区不能复用该记录。
+
+离线宿主命令在创建任何 agent（智能体）之前调用 `inspectStored(rootId)` 和 `stopStored(rootId)`。检查返回已核对所有者及工作区的独立状态副本，不执行写入。离线 STOP 原子保留限额、消耗和组合，对已取消记录具有幂等性，且不发送可能唤醒待处理工作的生命周期事件。它拒绝实时根会话；实时 STOP 使用正常控制器。两个 API 均拒绝模型或工具发起者作用域，宿主仍须独占任务目录的所有权。
+
+此入口是控制账本，不是完整执行器：它不拦截模型调用，不取消活动子进程，不串行化推理，也不限制本地路由或文件写入。宿主必须连接这些边界后才能启用任务。不支持多个进程共享同一存储。`team.cordis.snapshot.yml` 使用确定性适配器测试此入口，而非本地模型。
+
+### 宿主创建的组合
+
+显式启用任务控制设置 `hostComposition: true` 时，必须恰好包含 Lead、researcher 和 checker 三个会话。`requiresComposition` 向宿主入口提供该策略。首次模型请求前，宿主通过两个原生 `SpawnTeammateRequest` 调用 `provisionTeam(lead, { researcher, checker })`。每个原生成员具有独立且不可变的会话 ID；请求的显示名称不授予职能。职能绑定及 provisioning/ready/failed 状态存入现有任务记录，不创建第二个任务数据库。模型或工具发起者作用域不能调用创建操作。重复设置、额外成员或持久 ID 不匹配均会被拒绝。
+
+执行插件在 `agent/request` 和 `llm/stream` 等待全部绑定持久化为 ready。它不在 `agent/pre-step` 等待；此时 inbox 消息已被取走但尚未进入持久用户历史，等待可能阻止原生成员创建完成。直接预留调用也拒绝未完成的组合。STOP 或暂停会取消正在进行的创建；失败保留原生成员名单、部分会话、原截止时间及已消耗调用。关闭存储前会等待已取消的创建操作完全结束。
+
+重新加载时，`getComposition(lead)` 将已保存绑定与完整原生成员名单核对，不激活成员也不消耗 token。暂停任务仍要求正常的显式恢复；运行中的任务可能保留先前已接受的 inbox 工作。不得为 ready 组合再次调用 `provisionTeam`。进程消失后残留的 provisioning 明确标为未完成，不会静默重建工作者、重置限额，或将持久 running 标记视为活动进程的证据。[宿主组合决策](../../../.agents/notes/implemented/feature/2026-09-12-host-mission-composition.zh.md)记录准入和恢复的取舍。
+
+## 隔离导入实验
+
+终态 STOP 基于任务最新修订提交，因此并发调用预留不会使使用旧修订发出的停止请求被拒绝。暂停/恢复仍要求观察到的修订。审核器抛出异常时暂停任务，不批准完成，保留原有上限，并允许检查后显式恢复。无论审核成功还是抛错，并发 STOP 均优先。在 `reviewing` 状态发生进程崩溃仍需要操作者核查。
+
+`mission_task` 使用宿主读取的修订号启动或提交调用工作者的原生任务。并发启动串行执行而不复制任务；完成仍调用原生证据审核器。实验隐藏通用任务修改工具，并在最终调度时拒绝它们。不建立第二个任务存储。
+
+`mission_task_complete` 是兼容别名，使用相同的 phase 参数和审核器。每轮八步后将控制权交回宿主，不更新任务预算。最终审核在收集证据前原子关闭新的推理准入；在 `reviewing` 状态崩溃不会自动批准或恢复。
+
+`examples/headless-agent/collective.cordis.yml` 在普通配置之外组合 `./execution` 和 `./import-lab`。执行入口检查任务状态、固定提供方/模型及最终工具白名单，串行化生成，在调度前预留调用，并在暂停/STOP 时取消活动轮次。部署必须验证真实本地服务；回环 URL 本身不能证明本地推理。
+
+`lib/lab-bin.js run <absolute-empty-directory> <absolute-config>` 建立独占所有者锁和受限导入策略样例。它复用原生 Team 会话、任务和消息。只有 Lead 能凭当前摘要修改该样例。不暴露任意代码、shell、文件系统或网络工具。宿主验证当前输出、已完成任务，以及工作者接收同伴证据后的验证。这是狭窄演示，不是通用编码沙箱或生产集成。
+
+运行器从标准输入接受 `status`、`pause`、`stop`。退出后 `resume` 仅接受暂停任务；STOP 持久化且为终态。离线 `status` 和 `stop` 使用同一目录/配置。崩溃后遗留的 `.owner.lock` 必须检查 PID 后由操作者处理；不得删除活动所有者锁。恢复及纠正反馈均不延长原预算或期限。
+
+标准输入暂停控制器在任务仍运行时重试陈旧修订，次数上限为剩余调用额度加一。其他失败写入 stderr；只有已提交的控制变更才会在 stdout 确认。服务保留暂停和恢复的修订检查。这不提供突然崩溃后的恢复。
+
+实验通过原生持久化上下文快照注入真实身份、成员和任务视图。这增加上下文 token，并改变动态后缀而不重写静态身份。工具结果和同伴消息仍进入普通会话日志。确定性 Loader 测试证明组合，不证明 Qwen 能力或硬件性能。
+
+可选执行配置 `reviewReserve: { calls, reviewerSessionId }` 将任务最后正整数次调用预留给宿主指定的持久 teammate 会话，不包括 Lead；必须至少留出一次普通调用。旧的 `reviewerName` 配置无效：宿主必须创建参与者并明确配置其持久会话 id；未转换的集成在推理前保持阻塞。执行器取得推理 slot 后、预订调用前检查持久计数器，拒绝的尝试不消耗预算。省略配置保持普通准入规则。这不会安排审核、保证产物有效，也不会阻止审核者将额度用于无关工作。宿主必须请求并验证最终证据；宿主直接预订调用和多个运行时进程的并发操作不在此执行器策略范围内。
+
+启用宿主组合时，`reviewReserve: { calls: 8, reviewerRole: checker }` 选择已保存的 checker ID，而不要求在原生成员创建前知道其 UUID。这是显式选择的实验预留额度变体；它不修改现有配置、48 次调用额度或原截止时间。关闭宿主组合时，职能形式被拒绝。名为 `checker` 的 researcher 仍不能使用该预留额度；恢复后的 checker 按原会话 ID 保留资格。
+
+import-lab 配置 `requirePeerReviewAfterReceipt: true` 是单独显式启用的 v2 完成契约，要求宿主组合。只有宿主持久绑定的 checker 必须提供成功的 `mission_verify` 结果，其中 `passed: true` 且摘要对应当前产物，并且工具调用必须发生在收到与 Lead 日志匹配的原生同伴消息之后。更早的验证、陈旧摘要、失败的验证或普通观察均不能批准该 checker 的任务。拒绝报告 `MISSION_CHECKER_PEER_REVIEW_REQUIRED`，保持任务及其修订不变；不会自动运行验证或完成任务。显示名称不授予豁免。researcher 的完成仍遵循现有证据规则；省略或设为 `false` 保持 v1 行为。最终任务验证器复用同一个同伴证据谓词，不改变产物、成员、任务或协作标准。该选项不改变提示词、调用额度、截止时间、预留额度或以前尝试的分类。
+
+## 仅规划原型
+
+`LeonBlackboard` 和 `LeonExecutive` 保存临时计划预览，不代表原生任务、会话、权限或执行证据。读取计划返回独立副本；复用任务 id 不会恢复状态。所有 blackboard 操作方法均以 `COLLECTIVE_RUNTIME_UNAVAILABLE` 拒绝，包括直接认领、发现、交付、拒绝和完成。Executive 汇总明确显示未执行的计划，绝不授权任务完成。
+
+`CoordinatorEvolution.generatePostMortem()` 拒绝未验证的计划结果，`persistInsight()` 拒绝操作且不创建目录、不修改文件。历史 JSONL 保持不变；渲染已有报告会将其声明标为未验证，不会批准记忆。原生 TeamService 的所有权、持久事件、宿主审核和现有记忆审批仍是必需的执行路径。这些限制仅适用于预览辅助类，不影响上述显式启用的运行时。
 
 ## 模型体验
 

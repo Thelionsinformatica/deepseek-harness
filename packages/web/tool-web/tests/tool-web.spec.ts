@@ -489,8 +489,9 @@ describe('tool-web registration', () => {
     const { fiber, ctx } = await mountTools()
     const prompt = await ctx.systemPrompt.assemble()
     const text = prompt.sections.map(s => s.text).join('\n')
-    expect(text).toContain(`Use the web_search tool to discover current information on the web. The required queries array accepts 1–${WEB_SEARCH_MAX_QUERIES} non-empty search queries; use a one-item array for a single search. It returns an optional answer plus a list of source URLs. Follow up with web_fetch when you need the full content of a specific result, and cite the relevant URLs as markdown links.`)
-    expect(text).toContain('Use the web_fetch tool to retrieve the content of a specific HTTP(S) URL')
+    expect(text).toContain('Use web_search for current information.')
+    expect(text).toContain('use web_fetch when a result needs full content')
+    expect(text).toContain('Use web_fetch for full text from a specific HTTP(S) URL')
     await fiber.dispose()
   })
 

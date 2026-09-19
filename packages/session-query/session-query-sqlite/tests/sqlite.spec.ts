@@ -187,6 +187,42 @@ async function liveContext(config: ConstructorParameters<typeof SqliteSessionQue
 }
 
 describe('SQLite session search', () => {
+  it('bounds parallel cold inspections and reuses unchanged indexed revisions', async () => {
+    TestPersistence.reset(Array.from({ length: 5 }, (_, i) => ({
+      meta: header(`parallel-${i}`), events: messageEvents('parallel needle'),
+    })))
+    const ctx = await liveContext({ path: ':memory:', persistedInspectConcurrency: 2 })
+    const persistence = await ctx.plugin(TestPersistence)
+    const original = ctx.sessionPersistence.inspect.bind(ctx.sessionPersistence)
+    const admitted = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    let active = 0
+    let peak = 0
+    const spy = vi.spyOn(ctx.sessionPersistence, 'inspect').mockImplementation(async (...args) => {
+      active++
+      peak = Math.max(peak, active)
+      if (active === 2) admitted.resolve(undefined)
+      try {
+        await release.promise
+        return await original(...args)
+      } finally {
+        active--
+      }
+    })
+    const pending = ctx.sessionQuery.searchSessions({ query: 'needle' })
+    await admitted.promise
+    expect(spy).toHaveBeenCalledTimes(2)
+    release.resolve(undefined)
+    expect((await pending).items).toHaveLength(5)
+    expect(peak).toBe(2)
+    expect(active).toBe(0)
+    expect(spy).toHaveBeenCalledTimes(5)
+    expect((await ctx.sessionQuery.searchSessions({ query: 'needle' })).items).toHaveLength(5)
+    expect(spy).toHaveBeenCalledTimes(5)
+    spy.mockRestore()
+    await (ctx.sessionQuery as SqliteSessionQueryEngine).close()
+    await persistence.dispose()
+  })
   it('defaults and validates opening policy and persisted inspection concurrency through its Cordis config', async () => {
     const defaultCtx = await liveContext()
     expect((defaultCtx.sessionQuery as SqliteSessionQueryEngine).config.openAt).toBe('startup')
@@ -726,6 +762,56 @@ describe('SQLite session search', () => {
 })
 
 describe('SQLite reconciliation and source lifecycle', () => {
+  it('purges persistent FTS and TEMP rows atomically and idempotently', async () => {
+    const shared = header('purged-derived-session', 10, { cwd: '/work' })
+    TestPersistence.reset([{ meta: shared, events: messageEvents('persisted purge marker') }])
+    const ctx = await liveContext()
+    await ctx.plugin(TestPersistence)
+    const service = ctx.sessionQuery as SqliteSessionQueryEngine
+    await expect(service.searchSessions({ query: 'persisted purge marker' }))
+      .resolves.toMatchObject({ items: [{ header: shared, live: false, persisted: true }] })
+    const live = ctx.sessions.prepare(shared.id, {
+      seed: messageEvents('live purge marker'),
+      meta: shared,
+      seedSource: 'persistence',
+    })
+    const detach = ctx.sessions.enter(live)
+    ctx.sessions.announce(live)
+
+    await expect(service.searchSessions({ query: 'purge marker' }))
+      .resolves.toMatchObject({ items: [{ header: shared, live: true, persisted: true }] })
+    const db = (service as unknown as { _db: DatabaseSync })._db
+    expect(db.prepare('SELECT COUNT(*) AS count FROM persisted_sessions WHERE id = ?').get(shared.id))
+      .toEqual({ count: 1 })
+    expect(db.prepare('SELECT COUNT(*) AS count FROM persisted_docs WHERE session_id = ?').get(shared.id))
+      .toEqual({ count: 1 })
+    expect(db.prepare('SELECT COUNT(*) AS count FROM temp.live_sessions WHERE id = ?').get(shared.id))
+      .toEqual({ count: 1 })
+    expect(db.prepare('SELECT COUNT(*) AS count FROM temp.live_docs WHERE session_id = ?').get(shared.id))
+      .toEqual({ count: 1 })
+
+    TestPersistence.entries.delete(shared.id)
+    TestPersistence.revisions.delete(shared.id)
+    detach()
+    const before = db.prepare(
+      'SELECT global_generation FROM search_state WHERE singleton = 1',
+    ).get() as { global_generation: number }
+    await service.purgeSession(shared.id)
+    await service.purgeSession(shared.id)
+
+    expect(db.prepare('SELECT COUNT(*) AS count FROM persisted_sessions WHERE id = ?').get(shared.id))
+      .toEqual({ count: 0 })
+    expect(db.prepare('SELECT COUNT(*) AS count FROM persisted_docs WHERE session_id = ?').get(shared.id))
+      .toEqual({ count: 0 })
+    expect(db.prepare('SELECT COUNT(*) AS count FROM temp.live_sessions WHERE id = ?').get(shared.id))
+      .toEqual({ count: 0 })
+    expect(db.prepare('SELECT COUNT(*) AS count FROM temp.live_docs WHERE session_id = ?').get(shared.id))
+      .toEqual({ count: 0 })
+    expect(db.prepare('SELECT global_generation FROM search_state WHERE singleton = 1').get())
+      .toEqual({ global_generation: before.global_generation + 1 })
+    await expect(service.searchSessions({ query: 'purge marker' })).resolves.toEqual({ items: [] })
+  })
+
   it('owns queued request and filter values before waiting for the serializer', async () => {
     const durable = header('owned')
     TestPersistence.reset([{ meta: durable, events: messageEvents('durable needle') }])
@@ -1547,7 +1633,7 @@ describe('SQLite schema, cancellation, and real persistence integration', () => 
       { meta: first, events: messageEvents('first needle') },
       { meta: second, events: messageEvents('second needle') },
     ])
-    const ctx = await liveContext()
+    const ctx = await liveContext({ path: ':memory:', persistedInspectConcurrency: 1 })
     await ctx.plugin(TestPersistence)
     const started = Promise.withResolvers<AbortSignal>()
     const cleanup = Promise.withResolvers<undefined>()

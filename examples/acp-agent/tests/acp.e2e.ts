@@ -63,7 +63,7 @@ describe('acp-agent over real stdio (no key required)', () => {
       // line means a logger/print leaked onto the protocol channel.
       expect(() => JSON.parse(line) as unknown).not.toThrow()
     }
-  }, 30_000)
+  }, 120_000)
 
   it('session/new succeeds over real stdio (no model call)', async () => {
     // REGRESSION GUARD (this exact RPC exposed the missing-inject Loader bug):

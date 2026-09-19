@@ -12,9 +12,9 @@ Status: implemented
 
 ## 决策
 
-在 `examples/mcp-memory` 下交付三份默认关闭的 Cordis overlay 示例：Memorix、MCP Reference Memory 和 Engram。每个文件只插入一个 `@deepseek-ai/dsh-mcp-client` 配置项。交付组合不会引用这些文件；CLI（命令行界面）仅声明通用桥接器，使用户显式选择 overlay 时可以解析它。
+在 `examples/mcp-memory` 下交付四份默认关闭的 Cordis overlay 示例：Memorix、MCP Reference Memory、Engram，以及通过社区 Letta MCP Server 接入的 Letta。每个文件只插入一个 `@deepseek-ai/dsh-mcp-client` 配置项。交付组合不会引用这些文件；CLI（命令行界面）仅声明通用桥接器，使用户显式选择 overlay 时可以解析它。Letta 配置项只允许 `letta_memory_unified`；其 agent、工具、数据源、任务、文件和 MCP 管理工具不会进入 harness 注册表。
 
-这些第三方配置仅作为互操作参考；收录不代表 DeepSeek 的认可、推荐、合作关系或持续支持承诺。系统没有记忆预设注册表、提供方专属 DSH 插件、通用记忆服务、安装 UI、迁移层、健康检查器或重连控制器。其他记忆 MCP 服务器可以使用同一份文档中的 stdio 或 Streamable HTTP 配置项。
+这些第三方配置仅作为互操作参考；收录不代表 DeepSeek 的认可、推荐、合作关系或持续支持承诺。系统没有记忆预设注册表、提供方专属 DSH 插件、通用记忆服务、安装 UI、迁移层或提供方专属健康检查器。其他记忆 MCP 服务器可以使用同一份文档中的 stdio 或 Streamable HTTP 配置项。
 
 ## 职责边界
 
@@ -24,8 +24,9 @@ Status: implemented
 | 启动 stdio 命令，并在插件 dispose（资源释放）时将其停止 | 是 | 安装固定版本的可执行文件 |
 | 连接 Streamable HTTP 并发现工具 | 是 | 运行并监管 HTTP 服务 |
 | 以 `mcp__<serverName>__<rawName>` 注册工具 | 是 | 定义工具 schema 和行为 |
+| 应用原始名称确切允许列表，并在有限预算内重连丢失的传输 | 是 | 保持提供方服务可达且兼容 |
 | 账户、认证、模型、embedding、存储初始化 | 否 | 是 |
-| 提供方数据迁移、重试、崩溃恢复 | 否 | 是 |
+| 提供方数据迁移和提供方服务恢复 | 否 | 是 |
 
 通用 stdio 传输会清除环境中名称类似凭据的变量和 `DSH_*` 变量，同时继承其他环境变量。基线示例仅添加必需的覆盖项；可选的提供方密钥必须添加到 `config.env`，或配置在提供方自己的文件中。
 
@@ -36,8 +37,9 @@ Status: implemented
 | Memorix | npm `1.3.0`，tag commit `500792cad3144142293bfbb20acb4841c9f7fcfa` |
 | MCP Reference Memory | npm `2026.7.4`，package commit `6dd0a683e198783e30feabf7abaf42f925bd18b1` |
 | Engram | tag `v1.20.0`，commit `ba9e46ced152c37a7cb9e576153c41995873e2fc` |
+| Letta MCP Server | npm `3.0.3`，package commit `ea8b0b19fa689bb303207e027d3fbd06b8b377e2` |
 
-存储仍由提供方负责。Memorix 默认使用 `~/.memorix/data`，Engram 默认使用 `~/.engram`。Reference Memory 示例设置稳定的 `$HOME/.dsh-mcp-reference-memory.jsonl` 路径，而不是写入已安装的 npm 包目录。每个提供方自己的环境变量都可以在 DSH 启动前覆盖这些位置。
+存储仍由提供方负责。Memorix 默认使用 `~/.memorix/data`，Engram 默认使用 `~/.engram`。Reference Memory 示例设置稳定的 `$HOME/.dsh-mcp-reference-memory.jsonl` 路径，而不是写入已安装的 npm 包目录。Letta 在配置的 `LETTA_BASE_URL` 后负责自己的数据库、记忆块、归档、embedding 和迁移；其 overlay 只向已清理的桥接进程传递该 URL 与 `LETTA_PASSWORD`，绝不会转发 DSH 模型凭据。每个提供方自己的环境变量都可以在 DSH 启动前覆盖这些位置。
 
 项目身份仍由提供方负责：Memorix 和 Engram 使用 DSH 工作目录中的 Git 项目，其中 Engram 还可以选择接受 `ENGRAM_PROJECT`。
 
@@ -51,7 +53,7 @@ Status: implemented
 
 ## 验证约定
 
-远程 CI 不会访问第三方服务或消耗密钥。无密钥套件解析全部三份 overlay 文件，检查其通用桥接器和密钥边界，将上游端点替换为包自带的 MCP fixture（测试前置数据）服务器，通过真实 Cordis Loader 启动，并验证工具发现。
+远程 CI 不会访问第三方服务或消耗密钥。无密钥套件解析全部四份 overlay 文件，检查其通用桥接器、允许列表和密钥边界，将上游端点替换为包自带的 MCP fixture（测试前置数据）服务器，通过真实 Cordis Loader 启动，并验证工具发现。
 
 合并前，每个固定版本的提供方都必须分别提供以下人工证据：
 
@@ -59,7 +61,7 @@ Status: implemented
 2. 新的 DSH 会话 B 在相同的提供方存储范围下调用搜索或召回，不借助会话 A 的 transcript（文本记录）便可返回该值。
 3. 会话 B 在后续回答中使用该召回值。
 
-「新会话」是指同一个 Host 中新建的 DSH 会话，不需要重启 Host。通用 MCP 客户端以异步方式发现工具，子进程或 HTTP 传输关闭后不会自动重连；验证会在第一轮之前等待工具出现，并且只在崩溃后使用 HMR 或重启 Host。
+「新会话」是指同一个 Host 中新建的 DSH 会话，不需要重启 Host。通用 MCP 客户端以异步方式发现工具，并以有界指数退避重连丢失的传输。验证会在第一轮之前等待工具出现；只有重连预算耗尽后才需要 HMR 或重启 Host。
 
 ## 考虑过的替代方案
 
@@ -71,8 +73,10 @@ Status: implemented
 
 **由通用 MCP 客户端注入共用指令。** 不予采纳，因为该桥接器也服务于非记忆类 MCP 服务器，而且通用提示词变更会把提供方语义重新带入共享运行时代码。
 
+**公开 Letta MCP Server 的全部工具。** 不予采纳，因为 agent、工具、数据源、任务、文件和 MCP 管理并非记忆操作，会扩大模型权限，并为每次请求增加 schema token。Letta overlay 按原始名称精确允许唯一的整合记忆工具。
+
 ## 后果
 
-选择一个文件后，模型可以使用提供方发现到的完整 MCP 工具接口；工具 schema 和 token 成本由提供方决定。移除 `--config` 就会移除记忆服务器。用户直接接受各上游的许可证、数据政策、云服务费用和运维模式。
+选择一个文件后，模型可以使用提供方发现并通过配置允许列表的 MCP 工具；工具 schema 和 token 成本由获准集合决定。移除 `--patch` 就会移除记忆服务器。用户直接接受各上游的许可证、数据政策、云服务费用和运维模式。
 
 通用方案取代了早期针对特定提供方的改动。未来出现提供方版本偏移时，只需更新并重新验证一份小型示例的固定版本，不必向 DSH 添加运行时分支。

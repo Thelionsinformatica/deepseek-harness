@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-25-deterministic-final-memory-ranking.md
+2026-08-25-deterministic-final-memory-ranking.md: fec6e2e539c8f4e8300d2ed42ca62d1c21326643
+2026-08-25-deterministic-final-memory-ranking.zh.md: 8a11b7e874dda141e30ae83442749b89faf64755

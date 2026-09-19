@@ -1,0 +1,8 @@
+{
+  "steps": [
+    {
+      "op": "prompt",
+      "text": "List the pending reviewed-learning procedure candidates for this workspace."
+    }
+  ]
+}

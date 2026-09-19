@@ -93,7 +93,7 @@ const PARALLEL_TODOS = [
 
 describe('tool-todo real Loader composition through cordis.yml', () => {
   it('allowParallelInProgress: false narrows the description and rejects a parallel write', async () => {
-    const ctx = await boot(['    allowParallelInProgress: false'])
+    const ctx = await boot(['    allowParallelInProgress: false', '    preserveExistingItems: false'])
     const description = ctx.tools.schemas().find(s => s.name === 'todo_write')?.description ?? ''
     expect(description).toContain('Keep AT MOST ONE todo `in_progress`')
     expect(description).not.toContain('several at once')
@@ -112,7 +112,7 @@ describe('tool-todo real Loader composition through cordis.yml', () => {
   }, 30_000)
 
   it('allowParallelInProgress: true permits a parallel write end to end', async () => {
-    const ctx = await boot(['    allowParallelInProgress: true'])
+    const ctx = await boot(['    allowParallelInProgress: true', '    preserveExistingItems: false'])
     const description = ctx.tools.schemas().find(s => s.name === 'todo_write')?.description ?? ''
     expect(description).toContain('several at once when work genuinely runs in parallel')
 
@@ -130,10 +130,29 @@ describe('tool-todo real Loader composition through cordis.yml', () => {
 
   it.each([
     { label: 'is omitted', configLines: [], failure: '$.allowParallelInProgress missing required value' },
-    { label: 'is not boolean', configLines: ['    allowParallelInProgress: "no"'], failure: '$.allowParallelInProgress expected boolean' },
+    {
+      label: 'is not boolean',
+      configLines: ['    allowParallelInProgress: "no"', '    preserveExistingItems: false'],
+      failure: '$.allowParallelInProgress expected boolean',
+    },
   ])('fails loading when allowParallelInProgress $label', async ({ configLines, failure }) => {
     // The policy is self-contained, so misconfiguration fails at load: the
     // entry's apply rejects and boot never reaches a running tool.
+    await expect(boot(configLines)).rejects.toThrow(failure)
+  }, 30_000)
+
+  it.each([
+    {
+      label: 'is omitted',
+      configLines: ['    allowParallelInProgress: true'],
+      failure: '$.preserveExistingItems missing required value',
+    },
+    {
+      label: 'is not boolean',
+      configLines: ['    allowParallelInProgress: true', '    preserveExistingItems: "no"'],
+      failure: '$.preserveExistingItems expected boolean',
+    },
+  ])('fails loading when preserveExistingItems $label', async ({ configLines, failure }) => {
     await expect(boot(configLines)).rejects.toThrow(failure)
   }, 30_000)
 })

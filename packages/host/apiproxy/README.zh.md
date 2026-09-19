@@ -1,8 +1,20 @@
 # @deepseek-ai/dsh-host-apiproxy
 
+启用 `adaptiveRouting.coordinatorMode: true` 后，自动文本请求使用已保存的主模型。图像输入或持久历史中的图像改用已配置的视觉分配或自适应视觉路由。手动选择仍保持手动；不可用的路由仍会拒绝请求。此选项本身不委派图像分析，也不压缩过大的历史。
+
 [English](README.md) | 中文
 
-所有客户端共用的 API 网关由三部分组成：TypeScript API 约定（`src/api/`，不依赖 Node，可从浏览器导入）、fetch 载体对（`src/fetch/`：宿主侧的 `toFetchHandler`，以及客户端侧的 `AbstractApiClient` 与平台子类）和宿主侧实现（`src/api-proxy.ts`：`createApiProxy` 加上默认导出的 `ApiProxyService` 网关插件，其配置为 `{nativeOpen?, sessionExportCompressionLevel?, coldBlankProbeMaxBytes?}`，提供 `ctx.apiProxy`）。该包不注册任何路由；HTTP 等载体自行包装 `ctx.apiProxy`。随发行版交付的 Web 组合位于 [`packages/bundle/web-app/cordis.patch.yml`](../../bundle/web-app/cordis.patch.yml)，其默认 Agent（智能体）模型选择属于 base 组合包中的 [`@deepseek-ai/dsh-agent-default-model`](../../core/agent-default-model/README.zh.md)。
+## 显式任务验收
+
+`acceptance.arithmeticTests` 是 `expectedText` 的替代条件，不可同时提供。宿主要求 `readOnly: true`、一至八个严格的 `{ a, b, expected }` 对象，以及范围 [-1,000,000, 1,000,000] 内的有限数值。受限运算语法和纠正诊断由原生策略负责；不接受可执行验证器或终端命令。
+
+可选的 `acceptance.readOnly: true` 将本轮仅允许 read/glob/grep 的限制传递给原生执行器守卫；不会从自然语言指令推断权限。
+
+`session.prompt` 接受可选的 `acceptance: { expectedText, maxRecoveries, requiredReadPath? }`，仅适用于 `queue` 模式下空闲且收件箱为空、已挂载原生任务验收策略的 agent。宿主验证有界输入、串行化接纳并保留请求来源。无效输入或缺少策略会被拒绝；忙碌 agent 不会收到条件归属不明确的任务。预设提供方必须隔离 `taskAcceptance`，并通过预设服务作用域解析。条件不授予工具访问权限或外发许可。哈希、纠正及验证限制见[精确任务验收](../../guard/completion-claim-policy/README.zh.md)。未提供聊天条件编辑器。
+
+所有客户端共用的 API 网关由三部分组成：TypeScript API 约定（`src/api/`，不依赖 Node，可从浏览器导入）、fetch 载体对（`src/fetch/`：宿主侧的 `toFetchHandler`，以及客户端侧的 `AbstractApiClient` 与平台子类）和宿主侧实现（`src/api-proxy.ts`：`createApiProxy` 加上默认导出的 `ApiProxyService` 网关插件，其配置为 `{nativeOpen?, sessionExportCompressionLevel?, coldBlankProbeMaxBytes?, adaptiveRouting?}`，提供 `ctx.apiProxy`）。该包不注册任何路由；HTTP 等载体自行包装 `ctx.apiProxy`。随发行版交付的 Web 组合位于 [`packages/bundle/web-app/cordis.patch.yml`](../../bundle/web-app/cordis.patch.yml)，其默认 Agent（智能体）模型选择属于 base 组合包中的 [`@deepseek-ai/dsh-agent-default-model`](../../core/agent-default-model/README.zh.md)。
+
+Web 会话创建时如未显式指定 workspace，`ApiProxyService` 会为其分配 `resolveDefaultWorkspace()`。Leon 在 Windows 上的默认值是 `E:/computador`；部署环境覆盖值与非 Windows 行为由 [`dsh-home-paths`](../../util/home-paths/README.zh.md)负责。客户端显式选择的 workspace 始终具有最终效力。
 
 ## 共享 Agent 默认值（`agent-default-model` Settings 分节）
 
@@ -17,6 +29,8 @@ Settings 分节中的 `reasoningEffort` 在 agent-default-model 插件配置中�
 存储的选择独立于目录成员关系。默认值指向不可用的提供方时，它仍会作为会话的 `current` 送到 `session.models`，让选择器请求用户重新选择，而不是静默选用其他模型。反过来，适配器也可以服务其目录中未公布的模型。
 
 ## 约定层（`/api`）
+
+未分类工具的成功结果，包括持久终端读取和自定义集成，会撤销之前的自动外部故障切换许可。只有明确标为公开的 `web_search` 和 `web_fetch` 结果保留该许可。这种保守分类可能让无害的自定义工具也需要额外同意；它不授权这些工具自身的联网或手动使用外部模型。
 
 协议消息组成一个四象限可辨识联合：发起方 × 请求／响应，与物理通道解耦。四种消息分别是 `ClientRequest`（POST `/api/<method>` 的请求体）、`ServerResponse`（该 POST 的响应体）、`ServerRequest`（SSE（Server-Sent Events）帧）和 `ClientResponse`（POST `/api/respond` 的请求体）。响应始终回显对应请求的 `rpcId`，绝不签发新值。方法的参数与返回值结构只存在于领域接口签名（`SessionsApi`、`HostApi`、`EventsApi`）中；`RpcMethodMap` 注册方法，其他所有位置均通过 `RequestPayload<K>`／`ResponseValue<K>` 派生。Zod schema 以 `satisfies z.ZodType<Wire<T>>` 锚定类型，并分两层解析：先解析信封，再解析业务载荷，随后按方法分发。业务错误由 `RpcResult` 的错误分支承载（`RpcErrorDetailsMap` 封闭错误码集合）；HTTP 状态只表达载体层结果。每个 `/api` POST 都必须声明 `application/json` 媒体类型——否则在分发前即以 415 拒绝，因此跨站「简单请求」（浏览器不经 CORS 预检就会发出）永远无法盲目执行有副作用的方法。
 
@@ -36,13 +50,21 @@ Settings 分节中的 `reasoningEffort` 在 agent-default-model 插件配置中�
 
 会话模型选择属于会话领域约定。`session.models` 将当前 `ModelSelection` 与按提供方分组的建议性模型、精确模型的推理元数据和逐提供方查询失败记录分开返回。该选择可能不在这些分组中，也绝不会作为合成行注入；客户端可以提示用户作出另一项选择，而无需把目录变成路由白名单。`session.selectModel` 校验由适配器持有的可选推理强度，并指定下次组装提示词时使用的完整选择。目录成员关系不构成校验：适配器可以解析未列出的模型，而不可用的提供方或不受支持的推理强度会返回 `model-unavailable`。`session.models` 还会报告 `routable`，即当前是否有适配器为所选提供方提供服务。该值刻意不从分组推导，因为适配器可以服务未公布的模型。`session.prompt` 会依据同一事实，在开启轮次之前以 `model-unavailable` 拒绝；客户端禁用 composer 只是提示性设计，这个方法始终可被调用。
 
-`session.prompt` 和 `subagent.prompt` 接受可选的请求本地 `clientTimeZone` 来源信息。若提供该值，Host 会在进入 Agent 前校验 `UTC` 或 IANA Area/Location 并将其规范化；无效输入以 `invalid-time-zone` 拒绝，规范值则与 `rpcId` 一起记录在这条确切的 `user-rpc` 消息上。该值不属于 Session、连接、create、resume 或 fork 状态；非浏览器调用方可以省略它。
+配置 `adaptiveRouting` 后，每个普通会话默认进入自动模式。空白会话公布模型状态前，网关会在无历史条件下预置已配置的快速路由，因此新的 Leon 会话会明确显示将处理简单请求的路由。在空闲提示词的接纳边界，确定性的分类器会选择已配置的快速、主或可选专家路由，并在可用性与图片检查之前安装该路由。当普通 follow-up 在上一轮仍在收尾时获准进入，网关会解析其路由而不改变该轮，并把决定绑定到确切的 `MessageId`；`agent/inbox/claimed` 会在下一轮组装提示词前安装它。`fastProvider`、`mainProvider` 与 `expertProvider` 可以指定不同的已注册提供方；省略时各自使用 `provider`。分类器不访问网络，也不会依据提示词推导出已配置层级之外的路由。随附 Leon 策略让简短请求使用最低推理力度的 `ollama/qwen3.5:9b`，让较长、多行、代码、技术及依赖上下文的继续工作使用该模型的中等推理力度，并把图片、超大结构化提示词、明确的高复杂度工作及自动目标轮次提升到高推理力度的本地 `ollama/ornith-1.5:9b` 专家。待处理的 `completion-claim-policy` 证据恢复通知会在提示词组装前，把自动会话提升到已配置的专家路由（未配置专家模型时使用主路由）和专家推理强度；同一轮中已经持久化的通知会在请求边界执行相同的兜底。此恢复只是在已配置层级中作出决定，不是 `llm/failover`，也不会授予外部故障转移同意。`session.models` 会在实际当前路由旁公开 `automatic` 与 `automaticAvailable`，让客户端显示真正进入请求的模型。手动调用 `session.selectModel` 会同时停用普通自适应路由与恢复提升，并照常持久化显式选择；传入 `automatic: true` 则重新启用已配置策略，而不替换保存的默认值。Steering 输入绝不会改变已经运行的轮次，丢弃 queued 消息时也会丢弃它尚未应用的路由决定。
+
+自动提示接收在分类器或路由解析失败时返回 `ADAPTIVE_ROUTE_UNAVAILABLE`，而不是发送到此前选择的模型。恢复升级失败也会停止请求组装。手动选择仍然可用；此检查不会将任意配置的提供方归类为本地，也不会为调用定价。
+
+可选且有序的 `adaptiveRouting.failovers` 列表会指定允许替换的失败提供方、提供方无关的失败代码、替代提供方／模型／推理强度路由，以及每条路由必填的 `residency`。自动模式中的首个合格且可解析条目会追加 `llm/failover`，安装已验证的替代路由，并在普通提供方退避之前通过该路由重试同一请求。外部替代路由默认被拒绝，只有用户为该会话明确授予 `externalFailoverConsent` 后才符合条件；该权限仅存在于当前进程，Host 重启时撤销，而且手动模型选择无法启用它。一次授权只覆盖提交时已经存在的受保护会话历史、workspace 记忆、个人记忆和 Leon 知识结果；后续本地检索会使该授权失效，直到用户为扩展后的上下文再次明确保存授权。当中间替代路由因为适配器或模型不可用而无法解析时，网关会沿该替代路由已配置的故障转移边继续前进，而不会发送请求。已访问提供方集合与 16 跳上限会拒绝循环和错误的无界策略。获得同意后，新提供方再次失败时会重新评估，因此随附 Web 策略可依次经过 `ollama -> google/gemini-3.1-pro-preview-customtools -> openai/gpt-5.6-luna`。Ollama 仅因 `TRANSPORT`、`TIMEOUT` 或 `SERVER` 进入该链；`UNKNOWN_MODEL` 与 `NO_ADAPTER` 会在本地暴露配置错误，而不会越过外部驻留边界。Gemini 与随后的 OpenAI 是直接的外部故障转移路由。若没有剩余的可解析替代路由，恢复流程只会向活动提供方的重试策略委托一次。手动模型选择绝不会自动跨提供方切换。
+
+`adaptiveRouting.shadow` 是环绕精确且已冻结的 `llm/stream` 请求运行的被动第二代预检。它解析已注册模型的上下文、输出和模态能力，并结合当前 token-meter 压力、输出与工具循环预留量、部署质量与优先级、本地和外部策略、依据已配置价格得到的预计费用，以及进程内路由健康状态，随后追加仅写入日志的 `llm/routing-shadow` 建议。最低质量由请求压力与模态决定，不使用当前模型的目录质量，也不把每次请求都提供的工具 schema 数量当作任务难度。该事件只包含结构化计数、路由、有序拒绝原因、健康摘要和费用估计，绝不包含提示词、系统提示词、工具 schema、消息或凭据内容。上下文溢出和输出截断会作为同一会话的容量信号保留，而不会误算为提供方健康故障。观察器不改变真实 stream，也没有替换、重试、阻止或延迟模型的权限；手动模式会话不受观察。随附 Web 策略只把 Qwen 作为本地候选，把外部路由限制为仅回退使用，并记录建议是否会改变实际路由，以便在考虑任何后续强制模式之前先积累证据。
+
+`session.prompt` 和 `subagent.prompt` 接受可选的请求本地 `clientTimeZone` 来源信息。若提供该值，Host 会在进入 Agent 前校验 `UTC` 或 IANA Area/Location 并将其规范化；无效输入以 `invalid-time-zone` 拒绝，规范值则与 `rpcId` 一起记录在这条确切的 `user-rpc` 消息上。两个方法都会返回 Host 所接纳的那条确切持久用户消息的 `messageId`，供调用方将 RPC 与后续 inbox 及 Session 事件关联。该值不属于 Session、连接、create、resume 或 fork 状态；非浏览器调用方可以省略它。
 
 待处理的 queued 输入属于实时控制平面约定，而非对话历史。网关根据持久 `agent/inbox/spliced` 变更派生完整的 `next-turn` 队列，并在每次变更后及重连时广播权威 `session/queue` 快照；待处理的 `next-step` steering（中途引导）不进入此 Web 投影。在 `next-step` 内，用户来源的消息携带 `steering` placement，而注入上下文（审批通知、任务完成、附加快照）携带 `context`，领取前不对外呈现。面向单条消息的 `agent/inbox/inserted`、`claimed` 与 `discarded` 通知仍供生命周期观察方使用，但不用于构建队列视图。`session.updateQueue` 通过 `MessageId` 寻址单个项；编辑和移除经已挂载 Agent 的 `Inbox.splice()` 修改队列。认领操作的纯删除 splice 会在 pre-step 准入前赢得竞态，因此之后的操作返回 `queue-item-not-found`。`session.cancel` 仅中止活动轮次并保留待处理 inbox 工作；取消达到完全停稳且结束中的轮次完成 flush 后，AgentLoop 按 FIFO 顺序认领下一条可唤醒消息，浏览器绝不重发或提升它。队列操作绝不恢复冷会话，客户端也绝不根据轮次或状态事件推断某项已退出队列。
 
 后台任务沿用同一种实时推送姿态。当组合中有 `ctx.jobs` 时，网关订阅它的变更订阅，并在注册表每一次改变某个会话可见内容的提交后——注册、转入 stopping、结算，以及 owner 销毁时的移除——广播一份完整的 `session/jobs` 快照，另外为每个已经有任务的会话发送订阅 baseline（没有 baseline 即表示空集；把集合清空的那次变更仍然发送 `[]`）。带 owner 的变更通过那个确切的 `Agent` 读取，因此推送在其 scope 拆除期间依然正确；baseline 读 `ctx.agents.get(sessionId)`，对没有活体 Agent 的会话只得到无主任务，且绝不恢复冷会话。无主变更向每一个已订阅会话扇出，因为无主任务对所有调用方可见。线路上的 `JobView` 丢弃 `ownerSession`、`reported` 和 `outputLimitBytes`：第一个由帧自身的 `sessionId` 携带，另外两个分别是内部通知位和模型呈现策略。没有该注册表的组合不发出这类帧。
 
-Workspace 列表与 Session 列表是相互独立的重连基线。`workspace.create({ path })` 会接纳已有的规范目录，并允许由 basename 派生的标题重复。`workspace.insertBefore({ workspaceId, beforeWorkspaceId? })` 提交一次注册表顺序移动并应答完整顺序；单纯重排序会通过 `host/workspace-order-changed` 推送同一份完整顺序，而未知来源或锚点返回 `workspace-not-found`。`workspace.delete` 只移除 Workspace 注册记录，`session.create` 接受可选的预分配 Session id，`host/workspace-changed`、`host/workspace-removed` 与 `host/session-added` 则以任意到达顺序携带已提交的增量。`workspace.archiveSession` 向注册表级全局归档集合添加一个会话，并应答完整的更新后集合；`workspace.list` 携带该集合作为重连基线，`host/archived-sessions-changed` 在每次持久变更后推送完整快照。归档只把会话从各分组视图中隐藏，不触碰其日志和 workspace 记账；既非活动会话也未持久化的会话以 `session-not-found` 失败。删除注册记录会保留目录和会话日志；相关 Session 仍留在 `session.list` 中，并进入 Ungrouped。`SessionSummary.blank` 与 `host/session-added` 帧携带是否已开始过轮次：客户端隐藏空白会话并按 workspace 复用它们，在首个 `host/session-status(running:true)` 时翻转 blank，并以 `session.list` 作为重连权威。已附加摘要折叠实时日志。冷摘要信任缓存的 `blank: false`，但把缓存的 `true` 与 cache miss 都视为未经验证；当 `locate()` 报告的工件不大于 `coldBlankProbeMaxBytes` 资格阈值（默认 1 KiB）时，网关通过 `readFrom()` 读取该 Session，同时折叠空白状态与最新真人 prompt。更大、无位置、已消失或不可读的工件保持可见。异步冷读取结束后，期间已附加的 Session 会改用实时日志生成摘要。`updatedAt` 依次采用实时折叠、小工件精确折叠或 projection cache，缺失时回退到 `createdAt`；拾起边界及其他写入都不会提升 Session 排序。
+Workspace 列表与 Session 列表是相互独立的重连基线。`workspace.create({ path })` 会接纳已有的规范目录，并允许由 basename 派生的标题重复。`workspace.insertBefore({ workspaceId, beforeWorkspaceId? })` 提交一次注册表顺序移动并应答完整顺序；单纯重排序会通过 `host/workspace-order-changed` 推送同一份完整顺序，而未知来源或锚点返回 `workspace-not-found`。`workspace.delete` 只移除 Workspace 注册记录，`session.create` 接受可选的预分配 Session id，`host/workspace-changed`、`host/workspace-removed` 与 `host/session-added` 则以任意到达顺序携带已提交的增量。`workspace.archiveSession` 向注册表级全局归档集合添加一个会话并应答完整更新集合；`workspace.unarchiveSession` 在不改变记账的情况下移除它。`workspace.list` 携带归档集合作为重连基线，`host/archived-sessions-changed` 在每次持久变更后推送完整快照。归档只把会话从各分组视图中隐藏，不触碰其日志和 workspace 记账；既非活动会话也未持久化的会话以 `session-not-found` 失败。`workspace.deleteSession` 只有在取消并等待 gateway 自有 Agent 完全停稳、删除规范持久化日志、清理可选的投影／搜索／反馈派生记录，以及完成可恢复的 workspace 注册表清理之后，才永久移除 Session。该工作流期间会抑制普通 detach 帧；只有最终已提交的 `host/session-deleted` 帧才会让其他客户端移除它。由本 gateway 之外主体拥有的实时 Session 返回 `agent-busy`，不支持删除的持久化后端会失败且不发布成功。cwd、用户文件、单独保留的个人记忆以及共享 attachment 对象都不在该级联范围内。删除注册记录会保留目录和会话日志；相关 Session 仍留在 `session.list` 中，并进入 Ungrouped。`SessionSummary.blank` 与 `host/session-added` 帧携带是否已开始过轮次：客户端隐藏空白会话并按 workspace 复用它们，在首个 `host/session-status(running:true)` 时翻转 blank，并以 `session.list` 作为重连权威。已附加摘要折叠实时日志。冷摘要信任缓存的 `blank: false`，但把缓存的 `true` 与 cache miss 都视为未经验证；当 `locate()` 报告的工件不大于 `coldBlankProbeMaxBytes` 资格阈值（默认 1 KiB）时，网关通过 `readFrom()` 读取该 Session，同时折叠空白状态与最新真人 prompt。更大、无位置、已消失或不可读的工件保持可见。异步冷读取结束后，期间已附加的 Session 会改用实时日志生成摘要。`updatedAt` 依次采用实时折叠、小工件精确折叠或 projection cache，缺失时回退到 `createdAt`；拾起边界及其他写入都不会提升 Session 排序。
 
 `session.search` 是以 `session.list` 所列会话为范围的有界内容搜索投影。网关向可选的 `ctx.sessionQuery` 服务请求全局排序后的当前内容视图中的 user、assistant 和 steering 匹配项，并持续消费该结果流，直到获得至多 20 个可见会话／snippet 对及一个前瞻项；返回前仍会依据从列表推导的授权集合重新校验每个命中。提供方分页初始请求 20 个命中；如果第一页请求因这一上限被拒绝，网关会依次探测 10、5、2、1，并在续传和陈旧世代重启中沿用探测所得的页面大小。返回的 snippet 最多包含 240 个 Unicode 码点，响应 schema 则会在每个客户端边界独立强制执行该上限。将授权集合保留在宿主内存中，可在不削弱可见性或排序的前提下避开有效大型语料库的 SQLite 变量上限。
 

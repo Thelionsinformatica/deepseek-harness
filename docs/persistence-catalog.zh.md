@@ -426,6 +426,17 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 来源：[`packages/goal/goal/src/domain.ts:66`](../packages/goal/goal/src/domain.ts)
 
+<a id="goalcompletion-audit--log-only"></a>
+
+#### `goal/completion-audit` — log-only
+
+```ts persistence-catalog
+/** Content-free receipt proving that an exact goal revision passed independent review. */
+'goal/completion-audit': GoalCompletionAuditMeta
+```
+
+来源：[`packages/goal/tool-goal/src/completion-evidence.ts:45`](../packages/goal/tool-goal/src/completion-evidence.ts)
+
 ### `hook/*`
 
 <a id="hookinvoked--log-only"></a>
@@ -478,6 +489,17 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 ### `llm/*`
 
+<a id="llmfailover--log-only"></a>
+
+#### `llm/failover` — log-only
+
+```ts persistence-catalog
+/** Durable notice that automatic routing replaced an unavailable provider before retrying the request. */
+'llm/failover': LlmFailoverEventData
+```
+
+来源：[`packages/llm/llm-retry/src/types.ts:13`](../packages/llm/llm-retry/src/types.ts)
+
 <a id="llmretry--log-only"></a>
 
 #### `llm/retry` — log-only
@@ -499,6 +521,17 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 ```
 
 来源：[`packages/llm/llm-retry/src/types.ts:11`](../packages/llm/llm-retry/src/types.ts)
+
+<a id="llmrouting-shadow--log-only"></a>
+
+#### `llm/routing-shadow` — log-only
+
+```ts persistence-catalog
+/** Durable, non-surface recommendation from a router that has no authority to change the active model. */
+'llm/routing-shadow': AdaptiveRoutingShadowEventData
+```
+
+来源：[`packages/host/apiproxy/src/adaptive-routing-shadow.ts:163`](../packages/host/apiproxy/src/adaptive-routing-shadow.ts)
 
 ### `permission/*`
 
@@ -712,6 +745,26 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 来源：[`packages/subagent/subagent/src/descriptor.ts:37`](../packages/subagent/subagent/src/descriptor.ts)
 
+### `task/*`
+
+<a id="taskvalidation--log-only"></a>
+
+#### `task/validation` — log-only
+
+```ts persistence-catalog
+/** Exact-output decision; does not assert general correctness or retract streamed text. */
+'task/validation': {
+  messageId: MessageId
+  responseId: MessageId
+  turn: number
+  attempt: number
+  status: 'passed' | 'retry' | 'failed'
+  reason: 'matched' | 'output-mismatch' | 'read-missing'
+}
+```
+
+来源：[`packages/guard/completion-claim-policy/src/task-acceptance.ts:36`](../packages/guard/completion-claim-policy/src/task-acceptance.ts)
+
 ### `team/*`
 
 <a id="teammember--log-only"></a>
@@ -725,7 +778,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 类型：[TeamId](subsystems/agent-team.zh.md) · [TeamMemberSnapshot](subsystems/agent-team.zh.md)
 
-来源：[`packages/experimental/agent-team/src/types.ts:206`](../packages/experimental/agent-team/src/types.ts)
+来源：[`packages/experimental/agent-team/src/types.ts:208`](../packages/experimental/agent-team/src/types.ts)
 
 <a id="teammessagedelivered--log-only"></a>
 
@@ -743,7 +796,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 类型：[TeamId](subsystems/agent-team.zh.md) · [TeamMessageId](subsystems/agent-team.zh.md)
 
-来源：[`packages/experimental/agent-team/src/types.ts:212`](../packages/experimental/agent-team/src/types.ts)
+来源：[`packages/experimental/agent-team/src/types.ts:214`](../packages/experimental/agent-team/src/types.ts)
 
 <a id="teammessagequeued--log-only"></a>
 
@@ -756,7 +809,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 类型：[TeamId](subsystems/agent-team.zh.md) · [TeamMessageSnapshot](subsystems/agent-team.zh.md)
 
-来源：[`packages/experimental/agent-team/src/types.ts:210`](../packages/experimental/agent-team/src/types.ts)
+来源：[`packages/experimental/agent-team/src/types.ts:212`](../packages/experimental/agent-team/src/types.ts)
 
 <a id="teamtask--log-only"></a>
 
@@ -769,7 +822,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 类型：[TeamId](subsystems/agent-team.zh.md) · [TeamTaskSnapshot](subsystems/agent-team.zh.md)
 
-来源：[`packages/experimental/agent-team/src/types.ts:208`](../packages/experimental/agent-team/src/types.ts)
+来源：[`packages/experimental/agent-team/src/types.ts:210`](../packages/experimental/agent-team/src/types.ts)
 
 ### `todo/*`
 
@@ -997,6 +1050,17 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 ### `web/*`
 
+<a id="webaccess--log-only"></a>
+
+#### `web/access` — log-only
+
+```ts persistence-catalog
+/** Complete post-change state of the explicit native web-access grant. */
+'web/access': WebAccessProjection
+```
+
+来源：[`packages/web/web-access/src/index.ts:39`](../packages/web/web-access/src/index.ts)
+
 <a id="webdeepseek-search-llm-request--log-only"></a>
 
 #### `web/deepseek-search-llm-request` — log-only
@@ -1007,3 +1071,14 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 ```
 
 来源：[`packages/web/web-search-deepseek/src/provider.ts:83`](../packages/web/web-search-deepseek/src/provider.ts)
+
+<a id="webgoogle-search-llm-request--log-only"></a>
+
+#### `web/google-search-llm-request` — log-only
+
+```ts persistence-catalog
+/** Secret-free auxiliary Gemini Google Search request recorded before dispatch. */
+'web/google-search-llm-request': GoogleSearchLlmRequest
+```
+
+来源：[`packages/web/web-search-google/src/provider.ts:52`](../packages/web/web-search-google/src/provider.ts)

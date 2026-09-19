@@ -46,6 +46,7 @@
           - option "openai-completions" [selected]
           - option "openai-responses"
           - option "anthropic-messages"
+          - option "google-generative-ai"
         - region "模型目录":
           - text: 模型目录 已自定义模型目录
           - button "恢复默认模型"

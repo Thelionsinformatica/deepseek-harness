@@ -92,6 +92,7 @@ export class SessionInputShell implements SessionInput {
     removeImage: (id) => { this.removeImage(id) },
     pruneImages: (ids) => { this.pruneImages(ids) },
     submit: () => { this.submit('queue') },
+    submitTracked: () => this.submitTracked('queue'),
   }
 
   // Real wall clock: the typing-run merge window must actually expire in
@@ -100,8 +101,13 @@ export class SessionInputShell implements SessionInput {
   private noticeSeq = 0
   private lastMirroredDraft = ''
   private imageIds: readonly DraftAttachmentId[] = []
-  /** One image-only send at a time: Enter during the Host round-trip is a no-op. */
-  private imageSendInFlight = false
+  /** One abortable image-only send at a time; its receipt cannot outlive this shell. */
+  private imageSend: {
+    readonly controller: AbortController
+    readonly settle: (outcome: SubmitOutcome) => void
+  } | null = null
+  /** Causal receipts requested by non-visual clients such as live voice. */
+  private readonly trackedSubmits = new Map<number, (outcome: SubmitOutcome) => void>()
   private disposed = false
   /** Draft persistence mirror (chat store write; receives the clipboard projection, never display-only ranges). */
   private mirrorFn: ((text: string) => void) | undefined
@@ -207,21 +213,58 @@ export class SessionInputShell implements SessionInput {
    * dismisses and the menu tracks frozen.
    */
   submit(mode: InputSubmitMode = 'queue'): void {
+    void this.submitTracked(mode)
+  }
+
+  /** Submit while retaining the exact settlement of the admitted transaction. */
+  submitTracked(mode: InputSubmitMode = 'queue'): Promise<SubmitOutcome> {
     if (this.snapshot.draft.trim() === '' && this.imageIds.length > 0) {
-      if (this.snapshot.phase === 'plain' && !this.imageSendInFlight) {
+      if (this.snapshot.phase === 'plain' && this.imageSend === null) {
         const imageIds = [...this.imageIds]
-        this.imageSendInFlight = true
-        void this.deps.defaultSink('', imageIds, mode, new AbortController().signal).then((outcome) => {
-          this.imageSendInFlight = false
-          if (this.disposed) return
-          if (outcome.kind === 'success') this.commitSend(imageIds)
-          else if (outcome.text !== undefined) this.notify('error', outcome.text)
-        }, (error: unknown) => {
-          this.imageSendInFlight = false
-          if (!this.disposed) this.notify('error', error instanceof Error ? error.message : String(error))
+        const controller = new AbortController()
+        return new Promise<SubmitOutcome>((resolve) => {
+          let settled = false
+          const settle = (outcome: SubmitOutcome): void => {
+            if (settled) return
+            settled = true
+            controller.signal.removeEventListener('abort', onAbort)
+            if (this.imageSend?.controller === controller) this.imageSend = null
+            resolve(outcome)
+          }
+          const onAbort = (): void => { settle({ kind: 'error' }) }
+          this.imageSend = { controller, settle }
+          controller.signal.addEventListener('abort', onAbort, { once: true })
+          if (controller.signal.aborted) {
+            onAbort()
+            return
+          }
+          let pending: Promise<SubmitOutcome>
+          try {
+            pending = this.deps.defaultSink('', imageIds, mode, controller.signal)
+          } catch (error) {
+            if (!this.disposed) {
+              this.notify('error', error instanceof Error ? error.message : String(error))
+            }
+            settle({ kind: 'error' })
+            return
+          }
+          void pending.then((outcome) => {
+            if (this.disposed || controller.signal.aborted) {
+              settle({ kind: 'error' })
+              return
+            }
+            if (outcome.kind === 'success') this.commitSend(imageIds)
+            else if (outcome.text !== undefined) this.notify('error', outcome.text)
+            settle(outcome)
+          }, (error: unknown) => {
+            if (!this.disposed && !controller.signal.aborted) {
+              this.notify('error', error instanceof Error ? error.message : String(error))
+            }
+            settle({ kind: 'error' })
+          })
         })
       }
-      return
+      return Promise.resolve({ kind: 'error' })
     }
     // Claimed pre-gate: a claim that does not declare image acceptance never
     // submits while images are attached — one notice, everything retained.
@@ -230,14 +273,24 @@ export class SessionInputShell implements SessionInput {
     const before = this.snapshot
     if (before.phase === 'claimed' && this.imageIds.length > 0 && before.claim?.images !== true) {
       this.notify('error', this.deps.commandImages.unsupportedNotice(before.claim?.token ?? before.draft))
-      return
+      return Promise.resolve({ kind: 'error' })
     }
-    this.run(this.core.dispatch({ type: 'enter', mode }))
+    const effects = this.core.dispatch({ type: 'enter', mode })
+    const admission = effects.find((effect): effect is Extract<InputEffect, { readonly attempt: SubmitAttempt }> => (
+      'attempt' in effect
+    ))
+    if (admission === undefined) {
+      this.run(effects)
+      return Promise.resolve({ kind: 'error' })
+    }
+    const tracked = this.trackSubmit(admission.attempt)
+    this.run(effects)
     const phase = this.snapshot.phase
     if (phase === 'adjudicating' || phase === 'submitting') {
       this.deps.popup?.()?.dismiss()
       this.deps.inputTriggers?.()?.track(this.snapshot.draft, 0, { tier: 'frozen' }, this.snapshot.draftRev)
     }
+    return tracked
   }
 
   /**
@@ -392,6 +445,7 @@ export class SessionInputShell implements SessionInput {
   /** Teardown: abort any in-flight attempt and stop accepting async settlements. */
   dispose(): void {
     this.disposed = true
+    this.imageSend?.controller.abort()
     this.run(this.core.dispatch({ type: 'release' }))
   }
 
@@ -457,7 +511,7 @@ export class SessionInputShell implements SessionInput {
     const imageIds = [...this.imageIds]
     const occurrences = this.core.state.occurrences
     if (occurrences.length === 0) {
-      this.settleSubmit(attempt, this.deps.defaultSink(draft.trim(), imageIds, mode, attempt.signal), imageIds)
+      this.submitToDefaultSink(attempt, draft.trim(), imageIds, mode)
       return
     }
     const inputTriggers = this.deps.inputTriggers?.()
@@ -481,15 +535,33 @@ export class SessionInputShell implements SessionInput {
           cursor = part.offset + part.length
         }
         out += draft.slice(cursor)
-        this.settleSubmit(attempt, this.deps.defaultSink(out.trim(), imageIds, mode, attempt.signal), imageIds)
+        this.submitToDefaultSink(attempt, out.trim(), imageIds, mode)
       },
       (error: unknown) => {
         controller.abort()
         if (this.dead(attempt)) return
-        const message = error instanceof Error ? error.message : String(error)
-        this.run(this.core.dispatch({ type: 'submit-settled', attempt, ok: false, message }))
+        this.settleSubmitError(attempt, this.toErrorMessage(error))
       },
     )
+  }
+
+  /**
+   * Invoke the Host sink behind the same settlement boundary used for its
+   * asynchronous result. Implementations may throw before returning a Promise;
+   * that is still a rejected submit and must release the input transaction.
+   */
+  private submitToDefaultSink(
+    attempt: SubmitAttempt,
+    draft: string,
+    imageIds: readonly DraftAttachmentId[],
+    mode: InputSubmitMode,
+  ): void {
+    try {
+      this.settleSubmit(attempt, this.deps.defaultSink(draft, imageIds, mode, attempt.signal), imageIds)
+    } catch (error) {
+      if (this.dead(attempt)) return
+      this.settleSubmitError(attempt, this.toErrorMessage(error))
+    }
   }
 
   /** Settle one admission attempt; successful sends consume only their captured images. */
@@ -511,15 +583,11 @@ export class SessionInputShell implements SessionInput {
           ok: outcome.kind === 'success',
           outcome,
         }))
+        this.settleTracked(attempt, outcome)
       },
       (error: unknown) => {
         if (this.dead(attempt)) return
-        this.run(this.core.dispatch({
-          type: 'submit-settled',
-          attempt,
-          ok: false,
-          message: error instanceof Error ? error.message : String(error),
-        }))
+        this.settleSubmitError(attempt, this.toErrorMessage(error))
       },
     )
   }
@@ -536,11 +604,15 @@ export class SessionInputShell implements SessionInput {
       (outcome: PickOutcome) => {
         if (this.dead(attempt)) return
         this.run(this.core.dispatch({ type: 'adjudicated', attempt, outcome }))
+        if (outcome !== undefined && (outcome === 'handled' || !('claim' in outcome))) {
+          this.settleTracked(attempt, { kind: 'success' })
+        }
       },
       (error: unknown) => {
         if (this.dead(attempt)) return
-        const message = error instanceof Error ? error.message : String(error)
+        const message = this.toErrorMessage(error)
         this.run(this.core.dispatch({ type: 'adjudication-failed', attempt, message }))
+        this.settleTracked(attempt, { kind: 'error', text: message })
       },
     )
   }
@@ -574,13 +646,45 @@ export class SessionInputShell implements SessionInput {
             type: 'submit-settled', attempt, ok: outcome.kind === 'success', outcome,
             ...(outcome.kind === 'error' && outcome.text === undefined ? { message: 'command failed' } : {}),
           }))
+          this.settleTracked(attempt, outcome)
         },
         (error: unknown) => {
           if (this.dead(attempt)) return
-          const message = error instanceof Error ? error.message : String(error)
-          this.run(this.core.dispatch({ type: 'submit-settled', attempt, ok: false, message }))
+          this.settleSubmitError(attempt, this.toErrorMessage(error))
         },
       )
+  }
+
+  /** Bind one attempt signal to a promise that can never outlive its session. */
+  private trackSubmit(attempt: SubmitAttempt): Promise<SubmitOutcome> {
+    return new Promise((resolve) => {
+      let settled = false
+      const finish = (outcome: SubmitOutcome): void => {
+        if (settled) return
+        settled = true
+        attempt.signal.removeEventListener('abort', onAbort)
+        this.trackedSubmits.delete(attempt.seq)
+        resolve(outcome)
+      }
+      const onAbort = (): void => { finish({ kind: 'error' }) }
+      this.trackedSubmits.set(attempt.seq, finish)
+      attempt.signal.addEventListener('abort', onAbort, { once: true })
+      if (attempt.signal.aborted) onAbort()
+    })
+  }
+
+  /** Resolve the tracked face after the ordinary machine state has settled. */
+  private settleTracked(attempt: SubmitAttempt, outcome: SubmitOutcome): void {
+    this.trackedSubmits.get(attempt.seq)?.(outcome)
+  }
+
+  private settleSubmitError(attempt: SubmitAttempt, message: string): void {
+    this.run(this.core.dispatch({ type: 'submit-settled', attempt, ok: false, message }))
+    this.settleTracked(attempt, { kind: 'error', text: message })
+  }
+
+  private toErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error)
   }
 
   /** Late-settlement guard: superseded attempts and disposed facades drop silently. */

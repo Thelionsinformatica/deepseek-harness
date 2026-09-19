@@ -158,7 +158,16 @@ async function launchScrollWorld(options: ScrollWorldOptions): Promise<ScrollWor
         replayContextWindow: REPLAY_CONTEXT_WINDOW,
       })
     } else {
-      scaffold = await launchWebScaffold({})
+      // These history-only worlds make no model call, but their seeded
+      // request headers name the replay route. Mount the same catalog-only
+      // provider used by other call-free Web scenarios so the composer stays
+      // available without contacting Ollama or accepting an unrecorded call.
+      replayDir = await mkdtemp(join(tmpdir(), 'dsh-chat-scroll-catalog-'))
+      const catalogFixture = join(replayDir, 'catalog-only.jsonl')
+      await writeFile(catalogFixture, `${JSON.stringify({
+        type: 'session', version: 0, id: 'chat-scroll-catalog-only', createdAt: 0, cwd: '{{cwd}}',
+      })}\n`)
+      scaffold = await launchWebScaffold({ replayFixture: catalogFixture, replayProvidersOnly: true })
     }
     for (const seed of options.seeds) await seedSession(scaffold, seed.fixture.log, seed.id)
     const events: SessionEvent[] = []
@@ -749,13 +758,15 @@ describe('web e2e: long Chat scroll contract', () => {
       await expectBottom(world.page)
       const backToBottom = world.page.getByRole('button', { name: 'Back to bottom', exact: true })
 
-      // Focus rides the last seeded tool row (a tabbable button whose keydown
-      // handler passes scrolling keys through). End first normalizes the
-      // focus-driven scrollIntoView back to the floor.
-      const lastToolRow = world.page.locator(
-        `[data-chat-call-id="chat-scroll-${String(INPUTS_FIXTURE.turns).padStart(3, '0')}-1"] [data-sample="bash"]`,
-      )
-      await lastToolRow.focus()
+      // Exercise the conversation's keyboard contract directly. Seeded tool
+      // rows are not guaranteed to be expandable or focusable, so using one as
+      // the target can leave focus in the composer and turn End into caret
+      // navigation instead of transcript scrolling.
+      const scrollport = world.page.locator('[data-conversation-scroll]')
+      await scrollport.focus()
+      await expect.poll(
+        () => scrollport.evaluate(element => document.activeElement === element),
+      ).toBe(true)
       await world.page.keyboard.press('End')
       await expectBottom(world.page)
       await expect.poll(() => backToBottom.count(), { timeout: 10_000 }).toBe(0)

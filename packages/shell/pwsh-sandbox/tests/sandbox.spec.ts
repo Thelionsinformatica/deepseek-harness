@@ -7,9 +7,9 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { SandboxProvider, SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
@@ -22,9 +22,12 @@ import { classifyRunnerFailure, isRunnerSpawnFailure, matchesSignature } from '.
 
 // The same probe pwsh-local's suites and the vitest coverage exemption use:
 // spawnSync never throws on a missing binary (it reports status null), and
-// `where.exe pwsh` exits 1 when pwsh is absent — only the status is truth.
+// `where.exe pwsh` exits 1 when pwsh is absent — only the resolved PowerShell
+// invocation's status is truth.
+const pwshPath = resolvePwshPath()
+
 function pwshAvailable(): boolean {
-  return spawnSync(resolvePwshPath(), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$true'], { encoding: 'utf8' }).status === 0
+  return spawnSync(pwshPath, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$true'], { encoding: 'utf8' }).status === 0
 }
 
 const spillDir = mkdtempSync(join(tmpdir(), 'dsh-pwsh-sandbox-spec-'))
@@ -149,6 +152,21 @@ describe('helpers (pure)', () => {
   })
 })
 
+describe('SandboxPwshExecutor fail-closed confinement', () => {
+  it('does not launch PowerShell when the sandbox provider refuses confinement', async () => {
+    const marker = join(spillDir, 'provider-refusal-marker.txt')
+    const { executor } = await setup(() => {
+      throw new SandboxUnavailableError('read-only', 'test provider refused confinement')
+    })
+
+    await expect(executor.run(executor.resolve({
+      command: `Set-Content -LiteralPath '${marker}' -Value 'must not run'`,
+      sandboxPolicy: { mode: 'read-only', workspaceRoot: spillDir },
+    }))).rejects.toThrow(SandboxUnavailableError)
+    expect(existsSync(marker)).toBe(false)
+  })
+})
+
 describe.skipIf(!pwshAvailable())('SandboxPwshExecutor', () => {
   // Denial device for the POSIX classification cases: a mode-0555 directory
   // INSIDE a temp scratch tree (the same device as bash-sandbox's suites) —
@@ -175,7 +193,8 @@ describe.skipIf(!pwshAvailable())('SandboxPwshExecutor', () => {
     const call = calls[0]
     expect(call?.policy).toEqual(RO)
     // The confined argv is the pwsh invocation, ready for a runner prefix.
-    expect(call?.argv[0]).toMatch(/pwsh(\.exe)?$/u)
+    expect(call?.argv[0]).toBe(pwshPath)
+    if (process.platform === 'win32') expect(isAbsolute(call?.argv[0] ?? '')).toBe(true)
     expect(call?.argv).toContain('-NonInteractive')
     expect(call?.argv.at(-1)).toContain('echo wrapped')
     expect(result.sandbox).toEqual({ mode: 'read-only', denied: false, enforcement: 'full' })

@@ -10,6 +10,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { GenericCallView, JsonValue, ToolResult, WebSearchResultView, WebSource } from '@deepseek-ai/dsh-tools'
 import type { WebSearchResult, WebSearchSource } from '@deepseek-ai/dsh-web'
 import type {} from '@deepseek-ai/dsh-system-prompt'
+import { authorizeWebEgress } from './egress.ts'
 
 /**
  * Default upper bound on returned sources (the `searchMaxResults` config).
@@ -305,6 +306,7 @@ function mergeSearchResults(
  *   `ToolDefinition.timeoutMs` for `@deepseek-ai/dsh-tool-call-timeout-policy` to enforce.
  * @param fetchEnabled - whether the same composition exposes `web_fetch`, which
  *   controls whether search guidance may recommend that follow-up tool.
+ * @param egressPolicy - whether each call requires a fresh outbound approval.
  */
 export function applyWebSearchTool(
   ctx: Context,
@@ -312,13 +314,14 @@ export function applyWebSearchTool(
   maxQueries: number,
   timeoutMs: number,
   fetchEnabled: boolean,
+  egressPolicy: 'ask' | 'allow',
 ): void {
   ctx.systemPrompt.section({
     name: 'tool:web_search',
     order: 110,
     text: fetchEnabled
-      ? `Use the web_search tool to discover current information on the web. The required queries array accepts 1–${maxQueries} non-empty search queries; use a one-item array for a single search. It returns an optional answer plus a list of source URLs. Follow up with web_fetch when you need the full content of a specific result, and cite the relevant URLs as markdown links.`
-      : `Use the web_search tool to discover current information on the web. The required queries array accepts 1–${maxQueries} non-empty search queries; use a one-item array for a single search. It returns an optional answer plus a list of source URLs. Use the returned source snippets when available, and cite the relevant URLs as markdown links.`,
+      ? `Use web_search for current information. It accepts 1–${maxQueries} non-empty search queries. Cite relevant source URLs as markdown links; use web_fetch when a result needs full content.`
+      : `Use web_search for current information. It accepts 1–${maxQueries} non-empty search queries. Use the returned source snippets when available and cite relevant source URLs as markdown links.`,
   })
 
   ctx.tools.register(defineTool({
@@ -359,10 +362,11 @@ export function applyWebSearchTool(
       presentationMeta: (_args, value) => searchMetaFromValue(value),
     },
     timeoutMs,
-    // Provider reads do not mutate parent-agent state.
-    isConcurrencySafe: () => true,
+    // Interactive approvals stay serial in the agent's tool scheduler.
+    isConcurrencySafe: () => egressPolicy === 'allow',
     async execute(args, exec) {
       const queries = parseSearchArgs(args, maxQueries)
+      await authorizeWebEgress(ctx, exec, egressPolicy)
       const result = await runSearchQueries(ctx, queries, maxResults, exec.signal)
       return {
         ...result.content !== undefined ? { content: result.content } : {},

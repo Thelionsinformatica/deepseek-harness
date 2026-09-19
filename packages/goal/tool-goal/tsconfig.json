@@ -8,6 +8,7 @@
     "src"
   ],
   "references": [
+    { "path": "../../core/agent-default-model" },
     {
       "path": "../../../vendor/cosmokit"
     },
@@ -31,6 +32,9 @@
     },
     {
       "path": "../../core/system-prompt"
+    },
+    {
+      "path": "../../subagent/subagent"
     },
     {
       "path": "../goal"

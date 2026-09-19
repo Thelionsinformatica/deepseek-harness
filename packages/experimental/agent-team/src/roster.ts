@@ -272,6 +272,13 @@ export class TeamRoster {
       if (state.members.size >= this.maxMembers) {
         throw new TeamError(`Team member limit ${this.maxMembers} reached`, 'TEAM_MEMBER_LIMIT')
       }
+      const provider = this.ctx.subagents.getProvider(member.provider)
+      if (provider?.prepareContinuable === undefined) {
+        throw new TeamError(
+          `provider "${member.provider}" is unavailable for continuable teammates; no name or slot was reserved`,
+          'TEAM_PROVIDER_UNAVAILABLE',
+        )
+      }
       await this.journal.appendAndFlush(root, 'team/member', { version: 1, teamId: TeamId(root.id), member })
     })
 

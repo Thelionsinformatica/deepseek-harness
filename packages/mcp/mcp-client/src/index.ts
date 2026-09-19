@@ -66,6 +66,8 @@ export interface StdioConfig {
   cwd: string
   /** Per-tool-call timeout in milliseconds. */
   toolCallTimeoutMs: number
+  /** Exact raw MCP tool names to expose; omission exposes every advertised tool. */
+  allowedTools?: string[]
   /** Fail plugin activation when the initial connection or tool synchronization fails. */
   failOnStartupError: boolean
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
@@ -88,6 +90,8 @@ export interface StreamableHttpConfig {
   headers: Record<string, string>
   /** Per-tool-call timeout in milliseconds. */
   toolCallTimeoutMs: number
+  /** Exact raw MCP tool names to expose; omission exposes every advertised tool. */
+  allowedTools?: string[]
   /** Fail plugin activation when the initial connection or tool synchronization fails. */
   failOnStartupError: boolean
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
@@ -104,6 +108,8 @@ const Reconnect: z<ReconnectConfig> = z.object({
   maxAttempts: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(RECONNECT_DEFAULTS.maxAttempts),
 })
 
+const AllowedTools = z.array(z.string().min(1)).min(1).default(undefined as unknown as string[])
+
 export const Config = z.union([
   z.object({
     transport: z.const('stdio'),
@@ -113,6 +119,7 @@ export const Config = z.union([
     env: z.dict(String).default({}),
     cwd: z.string().default(''),
     toolCallTimeoutMs: z.number().default(DEFAULT_TOOL_CALL_TIMEOUT_MS),
+    allowedTools: AllowedTools,
     failOnStartupError: z.boolean().default(false),
     reconnect: Reconnect,
   }),
@@ -122,6 +129,7 @@ export const Config = z.union([
     url: z.string().required(),
     headers: z.dict(String).default({}),
     toolCallTimeoutMs: z.number().default(DEFAULT_TOOL_CALL_TIMEOUT_MS),
+    allowedTools: AllowedTools,
     failOnStartupError: z.boolean().default(false),
     reconnect: Reconnect,
   }),

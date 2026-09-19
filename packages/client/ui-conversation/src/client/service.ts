@@ -59,12 +59,38 @@ export interface IConversation {
   loadOlder(): Promise<void>
 }
 
+/** Image media types the composer submits through the durable image path. */
+const SUBMIT_IMAGE_TYPES: readonly string[] = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
+
+/** Whether one browser file travels the image path rather than the file path. */
+function isSubmitImage(file: File): boolean {
+  return SUBMIT_IMAGE_TYPES.includes(file.type)
+}
+
+/**
+ * Rail thumbnail for a non-image attachment: an inline SVG badge carrying the
+ * file extension. Using a data URL keeps the rail's image contract untouched —
+ * no consumer of the attachment slot changes shape.
+ */
+function fileBadgeUrl(name: string): string {
+  const dot = name.lastIndexOf('.')
+  const extension = dot > 0 ? name.slice(dot + 1) : ''
+  const label = (extension === '' ? 'DOC' : extension).toUpperCase().slice(0, 4)
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96">'
+    + '<rect width="96" height="96" rx="10" fill="#eef3fa" stroke="#c8d8ec"/>'
+    + '<path d="M30 18h24l14 14v46a4 4 0 0 1-4 4H30a4 4 0 0 1-4-4V22a4 4 0 0 1 4-4z" fill="#ffffff" stroke="#9db8d6" stroke-width="2"/>'
+    + `<text x="48" y="66" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="600" fill="#1d4f8c" text-anchor="middle">${label}</text>`
+    + '</svg>'
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+}
+
 /** Create one browser-only draft descriptor; only its id enters input state. */
 function browserDraftAttachment(file: File): ComposerAttachment {
+  const image = isSubmitImage(file)
   return {
-    kind: 'image',
+    kind: image ? 'image' : 'file',
     id: crypto.randomUUID() as DraftAttachmentId,
-    previewUrl: URL.createObjectURL(file),
+    previewUrl: image ? URL.createObjectURL(file) : fileBadgeUrl(file.name),
     file,
   }
 }
@@ -153,12 +179,12 @@ export class ConversationController extends Service implements IConversation {
     if (attachments.length !== imageIds.length) {
       throw new Error('conversation.sendSession: one or more draft images are no longer available')
     }
-    const uploaded = await this.serializeImages(attachments.map(attachment => attachment.file))
+    const uploaded = await this.serializeAttachments(attachments.map(attachment => attachment.file))
     const content = [...uploaded, ...(text === '' ? [] : [{ type: 'text' as const, text }])]
     const result = await session.prompt(content, mode, signal)
     if (!result.ok) return { kind: 'error' }
     this.releaseDraftImages(attachments)
-    return { kind: 'success' }
+    return { kind: 'success', messageId: result.value.messageId }
   }
 
   /**
@@ -167,7 +193,9 @@ export class ConversationController extends Service implements IConversation {
    * @returns ordered draft descriptors.
    */
   createDraftImages(files: readonly File[]): readonly ComposerAttachment[] {
-    for (const file of files) imageMediaType(file.type)
+    // Only image files are validated against the image media list: every other
+    // file travels the file path, whose bytes the Host persists to disk.
+    for (const file of files) if (isSubmitImage(file)) imageMediaType(file.type)
     return files.map((file) => {
       const attachment = browserDraftAttachment(file)
       this.draftAttachments.set(attachment.id, attachment)
@@ -332,9 +360,19 @@ export class ConversationController extends Service implements IConversation {
     return sessions
   }
 
-  /** Convert browser files to canonical base64 prompt parts. */
-  private serializeImages(images: readonly File[]): Promise<Parameters<SessionFace['prompt']>[0]> {
-    return Promise.all(images.map(async file => ({ type: 'image' as const, ...await this.encodeImage(file) })))
+  /**
+   * Convert browser files to canonical base64 prompt parts: images travel the
+   * durable image path, every other file travels the file path (the Host stores
+   * its bytes below `<DSH_HOME>/uploads` and names the path in context).
+   */
+  private serializeAttachments(files: readonly File[]): Promise<Parameters<SessionFace['prompt']>[0]> {
+    return Promise.all(files.map(async file => isSubmitImage(file)
+      ? { type: 'image' as const, ...await this.encodeImage(file) }
+      : {
+        type: 'file' as const,
+        name: file.name === '' ? 'anexo' : file.name,
+        data: bytesToBase64(new Uint8Array(await file.arrayBuffer())),
+      }))
   }
 
   /** Canonical base64 wire form of one browser image file. */

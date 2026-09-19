@@ -9,6 +9,7 @@
  * fixtures and rewrites expected outputs.
  */
 
+import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -53,6 +54,19 @@ const MINIMAL_BASH_DESCRIPTION = `Run commands in a bash shell
 const mode = process.env.DSH_SNAPSHOT ?? 'replay'
 const recording = mode === 'record'
 const refreshing = mode === 'refresh'
+const bashAvailable = spawnSync('bash', ['--version'], { stdio: 'ignore' }).status === 0
+
+/** Absolute Windows bash for PTY spawn; PATH lookup works for `bash -c` but not node-pty. */
+function resolveWindowsBashPath(): string | undefined {
+  if (process.platform !== 'win32') return undefined
+  const listing = spawnSync('where', ['bash'], { encoding: 'utf8' })
+  if (listing.status !== 0) return undefined
+  const candidates = listing.stdout.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0)
+  // Prefer a real Windows binary (for example Git Bash) over the WSL launcher in System32.
+  return candidates.find(candidate => !candidate.toLowerCase().includes('system32')) ?? candidates[0]
+}
+
+const windowsBashPath = resolveWindowsBashPath()
 
 function dirOf(url: string): string {
   return fileURLToPath(new URL('.', url))
@@ -108,7 +122,10 @@ const SCENARIOS: SdkScenario[] = [
     sessionId: 'persistent-tools-snapshot',
     children: 0,
     configs: { live: minimalLiveConfig, replay: minimalReplayConfig },
-    environment: { DSH_SYSTEM_PROMPT: MINIMAL_SYSTEM_PROMPT },
+    environment: {
+      DSH_SYSTEM_PROMPT: MINIMAL_SYSTEM_PROMPT,
+      ...windowsBashPath === undefined ? {} : { DSH_BASH_PATH: windowsBashPath },
+    },
     expectedFiles: { 'note.txt': 'target:\n\tnew\n' },
     expectedTools: { bash: ['command'], str_replace_editor: ['command', 'path'] },
     expectedSystem: MINIMAL_SYSTEM_PROMPT,
@@ -194,27 +211,43 @@ function assembledRuntimeContexts(log: PersistedLog): string[] {
   })
 }
 
+/** The forward-slash cwd spelling hydration writes into replayed paths. */
+function forwardSlashCwd(cwd: string): string {
+  return cwd.replaceAll('\\', '/')
+}
+
+/** Aliases hydration introduces: replayed arguments carry the forward-slash cwd. */
+function cwdAliasesFor(cwd: string): string[] {
+  const forward = forwardSlashCwd(cwd)
+  return forward === cwd ? [] : [forward]
+}
+
 function contextOf(logs: readonly { content: string; header: Record<string, unknown> }[], cwd: string): NormalizeContext {
   return {
     sessionIds: logs.flatMap(log => typeof log.header.id === 'string' ? [log.header.id] : []),
     cwd,
+    cwdAliases: cwdAliasesFor(cwd),
   }
 }
 
 function contextOfContents(contents: readonly string[]): NormalizeContext {
   const headers = contents.map(content => JSON.parse(content.slice(0, content.indexOf('\n'))) as Record<string, unknown>)
+  const cwd = typeof headers[0]?.cwd === 'string' ? headers[0].cwd : '\0no-cwd\0'
   return {
     sessionIds: headers.flatMap(header => typeof header.id === 'string' ? [header.id] : []),
-    cwd: typeof headers[0]?.cwd === 'string' ? headers[0].cwd : '\0no-cwd\0',
+    cwd,
+    cwdAliases: cwdAliasesFor(cwd),
   }
 }
 
 async function hydrateReplayFixtures(scenario: SdkScenario, cwd: string): Promise<string[]> {
   const root = join(cwd, '.replay-fixtures')
   await mkdir(root, { recursive: true })
+  // Forward slashes need no JSON escape, so one spelling is valid inside both
+  // plain fixture strings and the nested JSON of tool-call arguments on Windows.
   return Promise.all(fixtureFiles(scenario).map(async (source) => {
     const destination = join(root, basename(source))
-    await writeFile(destination, (await readFile(source, 'utf8')).replaceAll('{{cwd}}', cwd))
+    await writeFile(destination, (await readFile(source, 'utf8')).replaceAll('{{cwd}}', forwardSlashCwd(cwd)))
     return destination
   }))
 }
@@ -347,122 +380,124 @@ function fixtureFiles(scenario: SdkScenario): string[] {
 
 describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
   for (const scenario of SCENARIOS) {
-    it(`replays ${scenario.name} through the SDK`, async () => {
-      const scenarioDir = join(snapshotsDir, scenario.name)
-      const notificationsExpectedPath = join(scenarioDir, 'notifications.expected.jsonl')
-      const resultExpectedPath = join(scenarioDir, 'result.expected.json')
+    it.skipIf(!bashAvailable && ['bash-tool', 'persistent-tools'].includes(scenario.name))(
+      `replays ${scenario.name} through the SDK`, async () => {
+        const scenarioDir = join(snapshotsDir, scenario.name)
+        const notificationsExpectedPath = join(scenarioDir, 'notifications.expected.jsonl')
+        const resultExpectedPath = join(scenarioDir, 'result.expected.json')
 
-      const { result, notifications, logs, observedFiles, cwd } = await runScenario(scenario)
-      const ordered = orderLogs(logs, scenario)
-      const actualContext = contextOf(ordered, cwd)
-      const files = fixtureFiles(scenario)
+        const { result, notifications, logs, observedFiles, cwd } = await runScenario(scenario)
+        const ordered = orderLogs(logs, scenario)
+        const actualContext = contextOf(ordered, cwd)
+        const files = fixtureFiles(scenario)
 
-      if (recording) {
+        if (recording) {
         // Fixtures carry tokenized request headers; llm-replay reads only
         // assistant output and tool traffic, so scrubbing keeps prompts and
         // schemas out of the corpus without affecting replay.
-        await mkdir(scenarioDir, { recursive: true })
-        const existing = await Promise.all(files.map(async file => existsSync(file) ? readFile(file, 'utf8') : ''))
-        const fixtures = stabilizeFixtureMessageIds(
-          ordered.map(log => scrubSessionSnapshot(tokenizeSessionFixtureCwd(log.content))),
-          existing,
-        )
-        await Promise.all(fixtures.map(async (fixture, index) => {
-          const file = files[index]
-          if (file === undefined) throw new Error(`no fixture path for persisted log ${index}`)
-          await writeFile(file, fixture)
-        }))
-      }
-
-      let expectedContents = await Promise.all(files.map(file => readFile(file, 'utf8')))
-
-      if (refreshing) {
-        const harvested = ordered.map((log): HarvestedLog => ({
-          id: String(log.header.id),
-          createdAt: Number(log.header.createdAt),
-          ...typeof log.header.parentSession === 'string' ? { parentSession: log.header.parentSession } : {},
-          content: log.content,
-        }))
-        const replacements = refreshFixtureReplacements(harvested, expectedContents)
-        const refreshed = ordered.map((log, index) => {
-          const existing = expectedContents[index]
-          if (existing === undefined) throw new Error(`no fixture for persisted log ${index}`)
-          return scrubSessionSnapshot(tokenizeSessionFixtureCwd(
-            stabilizeRefreshLog(log.content, existing, replacements, actualContext),
-          ))
-        })
-        expectedContents = stabilizeFixtureMessageIds(refreshed, expectedContents)
-        await Promise.all(expectedContents.map(async (stable, index) => {
-          const file = files[index]
-          if (file === undefined) throw new Error(`no fixture for persisted log ${index}`)
-          await writeFile(file, stable)
-        }))
-      }
-
-      for (const [index, expected] of expectedContents.entries()) {
-        expect(scrubRequestHeaders(expected), `${scenario.name} session fixture ${index} carries request-header bulk`)
-          .toBe(expected)
-      }
-
-      // Persisted transcripts match the committed fixtures.
-      const expectedContext = contextOfContents(expectedContents)
-      for (const [index, log] of ordered.entries()) {
-        const expected = expectedContents[index]
-        if (expected === undefined) throw new Error(`no fixture for persisted log ${index}`)
-        expect(normalizeSessionSnapshot(log.content, actualContext))
-          .toBe(normalizeSessionSnapshot(expected, expectedContext))
-      }
-
-      // The SDK-visible wire stream and turn result match their expected outputs.
-      const normalizedNotifications = normalizeNotifications(notifications, actualContext)
-      const normalizedResult = normalizeResult(result, actualContext)
-      if (recording || refreshing) {
-        await writeFile(notificationsExpectedPath, normalizedNotifications)
-        await writeFile(resultExpectedPath, normalizedResult)
-      }
-      expect(normalizedNotifications).toBe(await readFile(notificationsExpectedPath, 'utf8'))
-      expect(normalizedResult).toBe(await readFile(resultExpectedPath, 'utf8'))
-
-      // Wire-shape invariants that must hold in every mode.
-      expect(notifications.at(-1)).toMatchObject({
-        method: 'session.status',
-        params: { status: 'idle' },
-      })
-      expect(observedFiles).toEqual(scenario.expectedFiles ?? {})
-      if (scenario.expectedTools !== undefined) {
-        const parent = ordered[0]
-        if (parent === undefined) throw new Error(`${scenario.name} has no parent session log`)
-        expect(assembledToolRequirements(parent)).toEqual(scenario.expectedTools)
-      }
-      if (scenario.expectedSystem !== undefined) {
-        const parent = ordered[0]
-        if (parent === undefined) throw new Error(`${scenario.name} has no parent session log`)
-        expect(assembledSystem(parent)).toBe(scenario.expectedSystem)
-      }
-      if (scenario.expectedToolDescriptions !== undefined) {
-        const parent = ordered[0]
-        if (parent === undefined) throw new Error(`${scenario.name} has no parent session log`)
-        expect(assembledToolDescriptions(parent)).toMatchObject(scenario.expectedToolDescriptions)
-      }
-      if (scenario.runtimeContext !== undefined) {
-        const parent = ordered[0]
-        if (parent === undefined) throw new Error(`${scenario.name} has no parent session log`)
-        const contexts = assembledRuntimeContexts(parent)
-        if (scenario.runtimeContext === false) {
-          expect(contexts).toEqual([])
-        } else {
-          expect(contexts).toHaveLength(1)
-          const context = contexts[0] as string
-          for (const clause of scenario.runtimeContext.includes) expect(context).toContain(clause)
-          for (const clause of scenario.runtimeContext.excludes) expect(context).not.toContain(clause)
-          const system = assembledSystem(parent)
-          for (const clause of scenario.runtimeContext.includes) expect(system).not.toContain(clause)
+          await mkdir(scenarioDir, { recursive: true })
+          const existing = await Promise.all(files.map(async file => existsSync(file) ? readFile(file, 'utf8') : ''))
+          const fixtures = stabilizeFixtureMessageIds(
+            ordered.map(log => scrubSessionSnapshot(tokenizeSessionFixtureCwd(log.content))),
+            existing,
+          )
+          await Promise.all(fixtures.map(async (fixture, index) => {
+            const file = files[index]
+            if (file === undefined) throw new Error(`no fixture path for persisted log ${index}`)
+            await writeFile(file, fixture)
+          }))
         }
-      }
-      if (scenario.children > 0) {
-        expect(notifications.some(n => n.method === 'subagent.started')).toBe(true)
-        expect(notifications.some(n => n.method === 'subagent.finished')).toBe(true)
-      }
-    })
+
+        let expectedContents = await Promise.all(files.map(file => readFile(file, 'utf8')))
+
+        if (refreshing) {
+          const harvested = ordered.map((log): HarvestedLog => ({
+            id: String(log.header.id),
+            createdAt: Number(log.header.createdAt),
+            ...typeof log.header.parentSession === 'string' ? { parentSession: log.header.parentSession } : {},
+            content: log.content,
+          }))
+          const replacements = refreshFixtureReplacements(harvested, expectedContents)
+          const refreshed = ordered.map((log, index) => {
+            const existing = expectedContents[index]
+            if (existing === undefined) throw new Error(`no fixture for persisted log ${index}`)
+            return scrubSessionSnapshot(tokenizeSessionFixtureCwd(
+              stabilizeRefreshLog(log.content, existing, replacements, actualContext),
+            ))
+          })
+          expectedContents = stabilizeFixtureMessageIds(refreshed, expectedContents)
+          await Promise.all(expectedContents.map(async (stable, index) => {
+            const file = files[index]
+            if (file === undefined) throw new Error(`no fixture for persisted log ${index}`)
+            await writeFile(file, stable)
+          }))
+        }
+
+        for (const [index, expected] of expectedContents.entries()) {
+          expect(scrubRequestHeaders(expected), `${scenario.name} session fixture ${index} carries request-header bulk`)
+            .toBe(expected)
+        }
+
+        // Persisted transcripts match the committed fixtures.
+        const expectedContext = contextOfContents(expectedContents)
+        for (const [index, log] of ordered.entries()) {
+          const expected = expectedContents[index]
+          if (expected === undefined) throw new Error(`no fixture for persisted log ${index}`)
+          expect(normalizeSessionSnapshot(log.content, actualContext))
+            .toBe(normalizeSessionSnapshot(expected, expectedContext))
+        }
+
+        // The SDK-visible wire stream and turn result match their expected outputs.
+        const normalizedNotifications = normalizeNotifications(notifications, actualContext)
+        const normalizedResult = normalizeResult(result, actualContext)
+        if (recording || refreshing) {
+          await writeFile(notificationsExpectedPath, normalizedNotifications)
+          await writeFile(resultExpectedPath, normalizedResult)
+        }
+        expect(normalizedNotifications).toBe(await readFile(notificationsExpectedPath, 'utf8'))
+        expect(normalizedResult).toBe(await readFile(resultExpectedPath, 'utf8'))
+
+        // Wire-shape invariants that must hold in every mode.
+        expect(notifications.at(-1)).toMatchObject({
+          method: 'session.status',
+          params: { status: 'idle' },
+        })
+        expect(observedFiles).toEqual(scenario.expectedFiles ?? {})
+        if (scenario.expectedTools !== undefined) {
+          const parent = ordered[0]
+          if (parent === undefined) throw new Error(`${scenario.name} has no parent session log`)
+          expect(assembledToolRequirements(parent)).toEqual(scenario.expectedTools)
+        }
+        if (scenario.expectedSystem !== undefined) {
+          const parent = ordered[0]
+          if (parent === undefined) throw new Error(`${scenario.name} has no parent session log`)
+          expect(assembledSystem(parent)).toBe(scenario.expectedSystem)
+        }
+        if (scenario.expectedToolDescriptions !== undefined) {
+          const parent = ordered[0]
+          if (parent === undefined) throw new Error(`${scenario.name} has no parent session log`)
+          expect(assembledToolDescriptions(parent)).toMatchObject(scenario.expectedToolDescriptions)
+        }
+        if (scenario.runtimeContext !== undefined) {
+          const parent = ordered[0]
+          if (parent === undefined) throw new Error(`${scenario.name} has no parent session log`)
+          const contexts = assembledRuntimeContexts(parent)
+          if (scenario.runtimeContext === false) {
+            expect(contexts).toEqual([])
+          } else {
+            expect(contexts).toHaveLength(1)
+            const context = contexts[0] as string
+            for (const clause of scenario.runtimeContext.includes) expect(context).toContain(clause)
+            for (const clause of scenario.runtimeContext.excludes) expect(context).not.toContain(clause)
+            const system = assembledSystem(parent)
+            for (const clause of scenario.runtimeContext.includes) expect(system).not.toContain(clause)
+          }
+        }
+        if (scenario.children > 0) {
+          expect(notifications.some(n => n.method === 'subagent.started')).toBe(true)
+          expect(notifications.some(n => n.method === 'subagent.finished')).toBe(true)
+        }
+      },
+    )
   }
 })

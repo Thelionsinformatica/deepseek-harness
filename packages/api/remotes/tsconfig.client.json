@@ -40,6 +40,9 @@
       "path": "../../feedback/message-feedback"
     },
     {
+      "path": "../../memory/tool-memory"
+    },
+    {
       "path": "../../host/plugin-inventory"
     },
     {

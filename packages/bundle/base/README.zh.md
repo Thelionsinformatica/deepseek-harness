@@ -2,15 +2,21 @@
 
 [English](README.md) | 中文
 
-以 profile 组合包形式交付的共享 dsh 核心：[`cordis.patch.yml`](cordis.patch.yml) 在空的 profile 根之上插入全部基础插件行——模型适配器、共享的 [`agent-default-model`](../../core/agent-default-model/README.zh.md) 选择、工具、持久化、策略、settings／credentials、遥测与核心 spawn／fork subagent provider——作为每个 profile 的 `dsh.profile.bundles` 列表中的第一层。可选的 Codex 与 Claude Code provider 不属于本包及其生产依赖闭包；Profile 仅在需要时安装任一[产品 provider Bundle](../../subagent/README.zh.md)。因此，默认的 `@deepseek-ai/dsh` 生产依赖闭包既不包含任一产品 provider、Claude Agent SDK，也不包含 Codex wrapper 及其平台载荷。后续的组合包层（例如 [`dsh-web-app`](../web-app/README.zh.md)）和用户 profile 的 `cordis.patch.yml` 按 id 覆盖这些行；patch 会替换目标行的整个 `config`，因此模式专属的值放在各模式组合包中，而不是这里。该包没有运行时 API；profile 组合器通过 manifest（元数据清单）的 `dsh.bundle.patch` 字段解析 patch，绝不通过代码。
+以 profile 组合包形式交付的共享 dsh 核心：[`cordis.patch.yml`](cordis.patch.yml) 在空的 profile 根之上插入全部基础插件行——模型适配器、共享的 [`agent-default-model`](../../core/agent-default-model/README.zh.md) 选择、工具、持久化、策略（包括[工具与最终响应恢复 guard](../../guard/failure-recovery-policy/README.zh.md)）、settings／credentials、遥测与核心 spawn／fork subagent provider——作为每个 profile 的 `dsh.profile.bundles` 列表中的第一层。可选的 Codex 与 Claude Code provider 不属于本包及其生产依赖闭包；Profile 仅在需要时安装任一[产品 provider Bundle](../../subagent/README.zh.md)。因此，默认的 `@deepseek-ai/dsh` 生产依赖闭包既不包含任一产品 provider、Claude Agent SDK，也不包含 Codex wrapper 及其平台载荷。后续的组合包层（例如 [`dsh-web-app`](../web-app/README.zh.md)）和用户 profile 的 `cordis.patch.yml` 按 id 覆盖这些行；patch 会替换目标行的整个 `config`，因此模式专属的值放在各模式组合包中，而不是这里。该包没有运行时 API；profile 组合器通过 manifest（元数据清单）的 `dsh.bundle.patch` 字段解析 patch，绝不通过代码。
 
 patch 在自身上按平台门控两个 shell 栈：`bash-sandbox`/`tool-bash` 携带 `disabled: !!js process.platform === 'win32'`（bash 没有 Windows runner），它们的孪生行 `pwsh-sandbox`/`tool-pwsh` 以取反的表达式仅在 win32 挂载——同一份 patch 文件，每个宿主恰好挂载一个 shell 栈。权限面与 POSIX 完全一致：`sandbox`/`sandbox-policy` 通过 Windows ACL 受限令牌 runner（`dsh-sandbox-local` 的 win32 链 → `@deepseek-ai/dsh-sandbox-windows-acl`）执行文件效果策略，权限切换器与 approval 服务原样运行，`fs-sandbox` 继续围栏 `ctx.fs` 写入——在其旁再挂载 `dsh-fs-local` 会重复注册 `ctx.fs` 并在加载时失败。偏好不受沙盒约束的本地 pwsh 执行器或完整访问的 Windows 主机通过其 profile 或 home 的 `cordis.patch.yml` 覆盖这些行（bash 恢复配方必须完整：禁用 `pwsh-sandbox`/`tool-pwsh` 并重新启用 `bash-sandbox`/`tool-bash`——两个执行器家族注册同一个 `bash` 服务，配方不完整会在加载时直接报错）。POSIX 主机看到的是被禁用的 pwsh 行。
 
 行集合及其设计依据以行内注释写在 patch 文件里；[生成的组合图](../../../apps/cli/composition.md)负责渲染它。
 
+base 组合包为后备沙箱策略与沙箱文件系统解析同一个部署 workspace。Leon 在 Windows 上的默认值是 `E:/computador`；环境覆盖值与非 Windows 后备值由 [`resolveDefaultWorkspace()`](../../util/home-paths/README.zh.md)负责。每个会话自身的 workspace 根目录在请求时仍会覆盖这个部署后备值。
+
+Leon Automatic 的快速层级使用 `ollama/qwen3.5:9b`；随着目标轮次与复杂度上升，自动升级到目标轮次 3 起的 `ollama/qwen3.8-9b-distill-uncensored-heretic:latest`，再到轮次 6 起的 `ollama/mistral-nemo:12b-q4_K_M`（2026-09-05 更新：此前的 `mainModel`/`expertModel` 组合 `ollama/ornith-1.5:9b-q6_K` 与 `ollama/qwen3.8-distill:9b-q8` 指向本机从未拉取过的 Ollama 标签，会话一旦到达第 3 轮就会 404；两者已从目录中移除）。`ollama/qwen3.8-9b-distill-uncensored-heretic:latest` 公布配置的 16k 上下文限制。Ollama 运行故障可以进入有界的 `google/gemini-3.1-pro-preview-customtools` → 低推理强度 `openai/gpt-5.6-luna` 链，而 `UNKNOWN_MODEL` 与 `NO_ADAPTER` 会失败关闭，不会把错误配置的请求外传。`nvidia/deepseek-ai/deepseek-v4-flash-0731` 与 `openrouter/nvidia/nemotron-3.5-lightning:free` 同样仅供手动使用。这些路由都不会改变 Leon 的身份，且所有外部凭据始终保存在 credential 服务中。Gemini 路由先解析 `GEMINI_API_KEY`，再解析旧版 `GOOGLE_API_KEY` 引用；它不会复制机密，也不会读取未声明的 ambient 密钥。DeepSeek 自有 provider 与搜索适配器仅保留为兼容包，不挂载到模型目录。基础组合禁用面向模型的 Web 搜索与抓取；部署必须显式挂载 provider 与对应工具，本地上下文才可能因检索而离开本机。
+
+在 Windows 上，启动器设置 `LEON_OPENCODE_ENABLED=1` 后，该组合包可以通过通用 ACP subagent provider 公开一个项目范围的 `opencode` 委派工具。启动器只能在验证 `E:/computador/.leon` 下的可执行文件与隔离配置后设置该开关，因此缺失的可选运行时不会阻止 Leon 启动。子进程以 Ornith 作为主要编程模型、Qwen 作为小模型，只继承所选 workspace 路径，并仅把最终文本返回给 Leon。其配置把文件操作限制在该 workspace 内，并拒绝 commit、push、hard reset、递归删除、外部目录访问及嵌套 Agent。
+
 ## 模型体验
 
-通过插入的行间接产生影响：该组合包选定了随发行版交付的无 persona 提示词基座、工具集合与 DeepSeek 适配器，供各模式组合包进一步特化；它自身不贡献任何模型可见文本。
+通过插入的行间接产生影响：该组合包选定随发行版交付的无 persona 提示词基座、工具集合与供模式组合包特化的提供方路由，而每个插入包负责其自身的模型可见行为。
 
 #### KV Cache 影响
 
@@ -19,4 +25,8 @@ patch 在自身上按平台门控两个 shell 栈：`bash-sandbox`/`tool-bash` �
 ## 已知限制与暂缓事项
 
 - **patch 会替换整行 `config`**：profile 覆盖必须重述该行需要保留的每个字段；不存在深度合并层。
+- **自动本地路由要求 Ollama 与 Qwen**：回环端点为 `http://127.0.0.1:11434/v1`，安装程序必须确保 `qwen3.5:9b` 可用。手动路由只在用户选择它们时才是必需项。
+- **OpenRouter 是手动的外部路由，不是本地服务**：请求发往 `https://openrouter.ai/api/v1`，通过 `apiKeyEnv` 读取 `OPENROUTER_API_KEY`；本机不安装、不启动、也不健康检查它（2026-09-05：取代了此前的本地回环 FreeLLMAPI 网关及其生命周期脚本）。
+- **OpenCode 是由安装程序持有、显式启用的 Windows 运行时**：默认命令与配置位于 `E:/computador/.leon` 下；部署环境变量可以覆盖这些路径，且只有启动器验证完成后设置 `LEON_OPENCODE_ENABLED=1` 才会启用该提供方。运行时缺失、无效或宿主不是 Windows 时，提供方保持禁用且不会阻塞 Leon 启动。
+- **Web 检索需要显式 profile 覆盖**：基础组合挂载提供方中立的 seam，但既不启用搜索提供方，也不启用面向模型的 Web 工具。只启用提供方而不启用工具，或只启用工具而没有可用提供方，都属于不完整的部署配置。
 - **Windows 的临时目录授权是按会话的私有子目录**——`workspace-write` 把写入限制在工作区与会话自己的 temp 子目录（`<temp>\dsh-<hash>`，受限子进程的 TMP/TEMP 被改写）；`read-only` 不授予任何临时目录写入权限。见 `@deepseek-ai/dsh-sandbox-windows-acl`。

@@ -8,7 +8,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { useEffect } from 'react'
 import type {
   AssistantMessageNode, CommandNode, CompactionSummaryNode, ConversationNode, ConversationSnapshot,
-  ModelRetryNode, RunningToolCall, SessionId, SessionListState, ToolCallBlock, ToolResultNode, TurnErrorNode,
+  ModelFailoverNode, ModelRetryNode, RunningToolCall, SessionId, SessionListState, ToolCallBlock, ToolResultNode, TurnErrorNode,
   TurnMaxTokensNode, UserMessageNode, WorkspaceListState,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
@@ -27,7 +27,7 @@ import { zh } from '../src/client/locales.ts'
 import { AssistantNodeView } from '../src/client/chat/AssistantNodeView.tsx'
 import { CommandNodeView, ManualCompactionNodeView } from '../src/client/chat/CommandNodeView.tsx'
 import {
-  CompactionNodeView, ContextMessageNodeView, RetryNodeView, TurnErrorNodeView,
+  CompactionNodeView, ContextMessageNodeView, ModelFailoverNodeView, RetryNodeView, TurnErrorNodeView,
   TurnMaxTokensNodeView, UnknownNodeView, UserMessageNodeView,
 } from '../src/client/chat/MessageItem.tsx'
 import { TurnTailNodeView } from '../src/client/chat/TurnTailNodeView.tsx'
@@ -103,6 +103,13 @@ const retry = (seq: number): ModelRetryNode => ({
   retry: 1, maxRetries: 2, delayMs: 450,
   failure: { code: 'TRANSPORT', message: '连接被重置' },
 })
+const failover = (seq: number): ModelFailoverNode => ({
+  kind: 'model-failover', seq, time: seq * 1_000, turn: 1, step: 0,
+  from: { provider: 'ollama', model: 'qwen3.5:9b' },
+  to: { provider: 'google', model: 'gemini-3.6-flash' },
+  failure: { code: 'TRANSPORT', message: 'connection refused' },
+  reason: 'provider-unavailable',
+})
 const turnError = (seq: number, code?: string): TurnErrorNode => ({
   kind: 'turn-error', seq, time: seq * 1_000, turn: 1, step: 0,
   message: seq === 2 ? 'API key is invalid' : 'plugin exploded',
@@ -165,6 +172,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
   // Selection rides the REAL chat store (same construction path as
   // production; the view reads it through the PropsStore useStore share).
   const chat = createChatStore().create()
+  const technicalContextVisible = createSnapshotStore(false)
   const t = makeTranslate(zh, commonZh)
   const toolOwners: Array<{
     callId: string
@@ -218,6 +226,8 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
         return <CompactionNodeView {...nodeProps<'compaction'>()} />
       case 'model-retry':
         return <RetryNodeView {...nodeProps<'model-retry'>()} />
+      case 'model-failover':
+        return <ModelFailoverNodeView {...nodeProps<'model-failover'>()} />
       case 'turn-error':
         return <TurnErrorNodeView {...nodeProps<'turn-error'>()} />
       case 'turn-max-tokens':
@@ -275,8 +285,10 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
       removeImage: () => {},
       pruneImages: () => {},
       submit: () => {},
+      submitTracked: async () => ({ kind: 'success' }),
     },
     useStore: bindSnapshotSelector(chat),
+    useTechnicalContextVisible: bindSnapshotSelector(technicalContextVisible),
     actions: chat.actions,
     renderSlot,
     SessionProvider: SessionProviderStub,
@@ -295,7 +307,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
   const setSelection = (next: SelectionTarget | null): void => { chat.actions.select(next) }
   return {
     set, ChatView, props, openDetails, openFile, loadOlder, inspectCall,
-    chatScroll, forkAt, setSelection, toolOwners,
+    chatScroll, forkAt, setSelection, toolOwners, technicalContextVisible,
   }
 }
 
@@ -377,6 +389,54 @@ describe('Chat node rendering', () => {
 })
 
 describe('ChatView', () => {
+  it('follows each live tool once without reopening on output updates', () => {
+    const h = makeHarness({ running: true, runningCalls: [runningCall('live-1')] })
+    render(<h.ChatView {...h.props} />)
+    expect(h.openDetails).toHaveBeenCalledExactlyOnceWith({ callId: 'live-1', toolName: 'bash', turnSeq: 2, stepSeq: 1 })
+    act(() => { h.set({ runningCalls: [{ ...runningCall('live-1'), argsRaw: '{"command":"updated"}' }] }) })
+    expect(h.openDetails).toHaveBeenCalledTimes(1)
+    act(() => { h.set({ runningCalls: [runningCall('live-2', 'read')] }) })
+    expect(h.openDetails).toHaveBeenLastCalledWith({ callId: 'live-2', toolName: 'read', turnSeq: 2, stepSeq: 1 })
+    act(() => { h.set({ running: false, runningCalls: [] }) })
+    expect(h.openDetails).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not label historical tool material as a new live action', () => {
+    const h = makeHarness({ running: false, runningCalls: [runningCall('historical')] })
+    render(<h.ChatView {...h.props} />)
+    expect(h.openDetails).not.toHaveBeenCalled()
+  })
+
+  it('keeps prompt-assembly events hidden by default and reveals them on demand', () => {
+    const context = {
+      kind: 'context', seq: 2, time: 2_000,
+      content: [{ type: 'text', text: 'internal prompt preparation' }],
+      source: null,
+      provenance: { role: 'inject', label: 'skill-catalog' },
+      form: null,
+    } as const satisfies ConversationNode
+    const recall = {
+      kind: 'context', seq: 3, time: 3_000,
+      content: [{ type: 'text', text: 'remembered decision' }],
+      source: null,
+      provenance: { role: 'recall', label: 'project-memory' },
+      form: null,
+    } as const satisfies ConversationNode
+    const h = makeHarness({ nodes: [user(1, 'hello'), context, recall, assistant(4, 'ready')] })
+    const view = render(<h.ChatView {...h.props} />)
+
+    expect(view.queryByText('上下文注入')).toBeNull()
+    expect(view.getByText('跨会话召回')).toBeDefined()
+    expect(view.getByText('hello')).toBeDefined()
+    expect(view.getByText('ready')).toBeDefined()
+
+    act(() => { h.technicalContextVisible.set(true) })
+    expect(view.getByText('上下文注入')).toBeDefined()
+
+    act(() => { h.technicalContextVisible.set(false) })
+    expect(view.queryByText('上下文注入')).toBeNull()
+  })
+
   it('hands a windowless tool result to the Tool seat with an empty tool name', () => {
     const h = makeHarness({
       nodes: [{ ...toolResult(3, 'w1'), call: null }],
@@ -549,14 +609,14 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     const disclosure = view.container.querySelector('details') as HTMLDetailsElement
     expect(disclosure.dataset.active).toBe('true')
-    expect(within(disclosure).getByRole('status').textContent).toBe('正在重试模型请求（1/2） · 1s')
+    expect(within(disclosure).getByRole('status').textContent).toBe('正在重试模型请求（1/2）… · 1s')
 
     act(() => {
       h.set({ nodes: [user(1, 'try'), nextRetry] })
     })
     expect(within(disclosure).getAllByRole('status')).toHaveLength(1)
     expect(view.container.querySelector('details')).toBe(disclosure)
-    expect(within(disclosure).getByRole('status').textContent).toBe('正在重试模型请求（2/2） · 1s')
+    expect(within(disclosure).getByRole('status').textContent).toBe('正在重试模型请求（2/2）… · 1s')
 
     act(() => {
       h.set({
@@ -578,6 +638,31 @@ describe('ChatView', () => {
     const cancelledDisclosure = view.container.querySelector('details') as HTMLDetailsElement
     expect(cancelledDisclosure.dataset.active).toBeUndefined()
     expect(within(cancelledDisclosure).getByRole('status').textContent).toContain('重试已取消')
+  })
+
+  it('shows the automatic API replacement as a durable status row', () => {
+    const h = makeHarness({ nodes: [user(1, 'continue'), failover(2)], running: true })
+    render(<h.ChatView {...h.props} />)
+
+    const status = screen.getByText('ollama 不可用').closest('[role="status"]')
+    expect(status?.textContent).toContain('ollama 不可用')
+    expect(status?.textContent).toContain('Leon 已通过配置的故障转移自动从 qwen3.5:9b 切换到 gemini-3.6-flash。')
+  })
+
+  it('distinguishes exhausted provider credits from a transient outage', () => {
+    const quota = {
+      ...failover(2),
+      from: { provider: 'google', model: 'gemini-3.6-flash' },
+      to: { provider: 'openai', model: 'gpt-5.6-terra' },
+      failure: { code: 'QUOTA', message: 'prepayment credits are depleted' },
+    } satisfies ModelFailoverNode
+    const h = makeHarness({ nodes: [user(1, 'continue'), quota], running: true })
+    render(<h.ChatView {...h.props} />)
+
+    const status = screen.getByText('google 没有可用额度').closest('[role="status"]')
+    expect(status?.textContent).toContain('该提供方报告额度或点数已耗尽')
+    expect(status?.textContent).toContain('gemini-3.6-flash')
+    expect(status?.textContent).toContain('gpt-5.6-terra')
   })
 
   it('renders terminal turn failures inline with their durable message and optional code', () => {
@@ -875,7 +960,7 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     expect(view.getByTestId('tool-seat-r1')).toBeTruthy()
     expect(h.toolOwners[0]?.block).toMatchObject({ callId: 'r1', argsRaw: '{"command":"cmd-r1"}' })
-    expect(view.getByRole('status').textContent).toBe('Deep diving...')
+    expect(view.getByRole('status').textContent).toBe('Leon 正在工作…')
   })
 
   it('keeps the Tool renderer mounted when a running call settles into log order', () => {
@@ -935,7 +1020,7 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     // Freshly mounted (as after a reload) yet already past the 15s gate.
     const status = view.getByRole('status')
-    expect(status.textContent).toMatch(/^Deep diving\.\.\.2分0\d秒$/)
+    expect(status.textContent).toMatch(/^Leon 正在工作…2分0\d秒$/)
     expect(status.querySelector('[aria-hidden="true"]')).not.toBeNull()
     act(() => {
       h.set({ queue: [{
@@ -947,7 +1032,7 @@ describe('ChatView', () => {
         text: 'also',
       }] })
     })
-    expect(status.textContent).toMatch(/^Deep diving\.\.\.2分0\d秒$/)
+    expect(status.textContent).toMatch(/^Leon 正在工作…2分0\d秒$/)
   })
 
   it('hands each ordered root call to the keyed business-node slot', () => {

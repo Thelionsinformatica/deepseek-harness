@@ -10,6 +10,11 @@ import { join } from 'node:path'
 import { credentialKey, credentialRef } from '@deepseek-ai/dsh-credentials'
 import { LocalCredentialProvider } from '../src/index.ts'
 
+vi.mock('../src/windows-protection.ts', async importOriginal => ({
+  ...await importOriginal<typeof import('../src/windows-protection.ts')>(),
+  credentialProtectorForPlatform: () => undefined,
+}))
+
 /** Credential documents are seeded owner-only, exactly as the provider creates them. */
 function writeCredentials(file: string, text: string): Promise<void> {
   return writeFile(file, text, { mode: 0o600 })

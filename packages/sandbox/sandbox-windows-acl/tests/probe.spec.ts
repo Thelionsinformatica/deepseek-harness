@@ -12,23 +12,20 @@
  * sibling. Nothing under the user profile is touched.
  */
 
-import { execFileSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
+import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import { AclSandbox } from '../src/index.ts'
 
 const isWin32 = process.platform === 'win32'
+const pwshPath = resolvePwshPath()
 
 function pwshAvailable(): boolean {
-  try {
-    execFileSync('where.exe', ['pwsh'], { stdio: 'ignore' })
-    return true
-  } catch {
-    return false
-  }
+  return spawnSync(pwshPath, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$true'], { stdio: 'ignore' }).status === 0
 }
 
 describe.skipIf(!isWin32 || !pwshAvailable())('AclSandbox write restriction', () => {
@@ -74,7 +71,7 @@ describe.skipIf(!isWin32 || !pwshAvailable())('AclSandbox write restriction', ()
       `try{Get-Content '${secretFile}' -ErrorAction Stop | Out-Null;'SECRET-READ: OK'}catch{'SECRET-READ: DENIED'}`,
     ].join('')
     const child = sandbox.spawn({
-      command: 'pwsh',
+      command: pwshPath,
       args: ['/NoLogo', '/NonInteractive', '/NoProfile', '/Command', probe],
       cwd: writableDir,
     })

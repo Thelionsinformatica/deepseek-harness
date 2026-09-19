@@ -197,4 +197,32 @@ async fetch(request: WebFetchRequest, signal?: AbortSignal): Promise<WebFetchRes
 ```
 
 Source: [`packages/web/web/src/index.ts`](../../packages/web/web/src/index.ts)
+
+<a id="ctxwebaccess--webaccessservice"></a>
+
+### `ctx.webAccess` — `WebAccessService`
+
+Host-plane controller for one explicit user-controlled web-access grant. It does not contact the web itself and does not alter global approvals.
+
+```ts cordis-catalog
+/**
+ * Read the effective durable grant for one session.
+ * @param session - session whose event history owns the decision.
+ * @returns whether native web tools may bypass per-call approval.
+ */
+isEnabled(session: Session): boolean
+
+/**
+ * Change the complete session-scoped grant. Repeating the current value is
+ * intentionally a no-op so the durable log remains an audit of decisions.
+ * @param session - session whose user decision changes.
+ * @param enabled - next complete grant state.
+ * @returns true only when a new durable event was appended.
+ */
+set(session: Session, enabled: boolean): boolean
+```
+
+Types: [Session](session.zh.md)
+
+Source: [`packages/web/web-access/src/index.ts`](../../packages/web/web-access/src/index.ts)
 <!-- END GENERATED cordis-surface -->

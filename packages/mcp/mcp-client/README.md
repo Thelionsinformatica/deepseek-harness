@@ -44,6 +44,7 @@ The model sees `mcp__github__create_issue`, `mcp__web__search`, … — the same
 | `url` | http | yes | MCP server URL |
 | `headers` | http | no | Extra headers (e.g. auth tokens) |
 | `toolCallTimeoutMs` | both | no | Timeout per `callTool` invocation (default 60000) |
+| `allowedTools` | both | no | Non-empty list of exact raw MCP tool names to expose; omission exposes every advertised tool |
 | `failOnStartupError` | both | no | Reject plugin activation when initial connection or tool synchronization fails (default `false`) |
 | `reconnect.enabled` | both | no | Reconnect automatically after a lost connection (default `true`) |
 | `reconnect.initialDelayMs` | both | no | First reconnect delay in ms; doubles per consecutive failed attempt (default 500) |
@@ -57,11 +58,12 @@ Every MCP tool has two names: the raw MCP name (sent on the wire in `tools/call`
 - Two servers publishing the same raw name (e.g. `search`) coexist under their namespaces.
 - A duplicate `serverName` across live instances fails the later plugin instance at load.
 - A server listing the same tool name twice is rejected as an invalid tool list.
+- A repeated non-empty `tools/list` continuation cursor rejects the synchronization, including cycles through empty pages. The previous generation stays callable, and later updates can reuse the same cursors.
 - A foreign registration squatting on this server's namespace rolls back the whole generation (never a partial set), with a loud error.
 
 ## Behavior
 
-- On connect: plugin activation awaits `listTools()` and registers each tool via `ctx.tools.register()` under its public name before the composition starts its first turn. Initial connection, discovery, or registration failure is always logged; it rejects activation when `failOnStartupError` is true and otherwise activates with no tools.
+- On connect: plugin activation awaits `listTools()` and registers each admitted tool via `ctx.tools.register()` under its public name before the composition starts its first turn. When `allowedTools` is present, every configured raw name must be advertised and all other tools stay unregistered. Initial connection, discovery, allowlist, or registration failure is always logged; it rejects activation when `failOnStartupError` is true and otherwise activates with no tools.
 - Listens for `notifications/tools/list_changed` → re-syncs; a fetch-phase failure keeps the previous generation registered, while a registration conflict rolls back the attempted generation and leaves no tools from that server.
 - Tool execute: `client.callTool({ name: rawName, arguments }, { signal })` with timeout + abort support—the public name is never sent to the server.
 - Canonical success is `{ content: JsonValue[], structuredContent? }`; complete JSON MCP blocks survive for programmatic callers. A supported advertised `outputSchema` validates `structuredContent`; unsupported schema vocabulary falls back to unconstrained `JsonValue`.
@@ -84,11 +86,11 @@ Every MCP tool has two names: the raw MCP name (sent on the wire in `tools/call`
 
 #### What the model sees
 
-After initial discovery succeeds, each advertised MCP tool appears as a native tool named `mcp__<serverName>__<rawName>` (or its deterministic normalized form), with the server-provided description and input schema. A successful re-sync — including the one after an automatic reconnect — replaces the generation; plugin disposal or an exhausted reconnect budget removes it.
+After initial discovery succeeds, each admitted MCP tool appears as a native tool named `mcp__<serverName>__<rawName>` (or its deterministic normalized form), with the server-provided description and input schema. `allowedTools` keeps every unlisted raw name out of the registry and model prompt. A successful re-sync — including the one after an automatic reconnect — replaces the generation; plugin disposal or an exhausted reconnect budget removes it.
 
 #### Token effect
 
-Data-dependent schema cost is paid on every request while the tools are registered. Re-sync replaces rather than accumulates schemas, and the server-qualified name adds tokens to every tool definition and call.
+Data-dependent schema cost is paid on every request while the tools are registered. An `allowedTools` list limits this cost to the selected schemas. Re-sync replaces rather than accumulates schemas, and the server-qualified name adds tokens to every tool definition and call.
 
 #### KV Cache effect
 
@@ -111,7 +113,7 @@ Append-only; newly visible content follows the reusable request prefix and does 
 ## Known Limitations and Deferred Work
 
 - **Tools are the only bridged MCP capability** — Resources and Prompts have no harness consumer and are deferred.
-- **Startup timeout is inherited from the MCP SDK** — DSH does not yet expose a connection/discovery timeout. Each initialize or paginated `tools/list` request uses the SDK's 60-second default, so an unresponsive server or cursor chain can delay both activation and teardown while the initial synchronization settles.
+- **Startup timeout is inherited from the MCP SDK** — DSH does not yet expose a connection/discovery timeout. Each initialize or paginated `tools/list` request uses the SDK's 60-second default. Repeated cursors are rejected, but an unresponsive server or an unbounded chain of distinct cursors can delay both activation and teardown while initial synchronization settles.
 - **Reconnect triggers on transport close** — a crashed stdio child fires it; Streamable HTTP failures surface per request and through the SDK transport's own SSE-stream recovery, so an unreachable HTTP server is retried per call rather than respawned by the supervisor.
 - **Image is the only durable rich-result bridge** — PNG, JPEG, WebP, and GIF can enter Native context after exact capability proof. Audio and embedded-resource payloads remain execution-local with explicit diagnostics, while resource links preserve only their name and URI as text.
 - **Unsupported MCP output schemas are not enforced** — `structuredContent` falls back to `JsonValue` when the advertised schema uses vocabulary outside the harness subset.

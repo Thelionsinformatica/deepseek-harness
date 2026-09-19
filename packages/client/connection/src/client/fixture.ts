@@ -2468,6 +2468,8 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         // The fixture's routes all serve; a surface exercising the blocked
         // posture drives it through its own stub.
         routable: true,
+        automatic: false,
+        automaticAvailable: false,
         groups: fixtureModelGroups(),
         failures: [],
       }),
@@ -2480,7 +2482,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
             : { reasoningEffort: request.payload.reasoningEffort },
         }
         modelSelections.set(request.payload.sessionId, selected)
-        return ok(request, { selected })
+        return ok(request, { selected, automatic: request.payload.automatic ?? false })
       },
       prompt: (request) => {
         const { sessionId: id, mode, content } = request.payload
@@ -2508,6 +2510,9 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         const userText = content.map(b => (b.type === 'text' ? b.text : '')).join('')
         const durable: ContentBlock[] = content.map((block) => {
           if (block.type === 'text') return block
+          // Non-image attachment: the fixture mirrors the Host, which stores the
+          // bytes below <DSH_HOME>/uploads and names the stored path in context.
+          if (block.type === 'file') return { type: 'text', text: `[arquivo anexado] ${block.name}` }
           const attachment: ImageAttachmentRef = {
             attachmentId: `fixture:${randomUuid()}` as AttachmentIdType,
             mediaType: block.mediaType,
@@ -2523,10 +2528,11 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           attachments.set(String(attachment.attachmentId), { attachment, data: block.data })
           return { type: 'image', attachment }
         })
+        const message = userMessage(durable)
         if (mode === 'steer' && replays.has(id)) {
           // Steering: the durable user/message lands inside the current turn; the replay continues.
-          append(id, { type: 'user/message', surfaceOp: 'append', data: userMessage(durable) })
-          return ok(request, { accepted: true as const })
+          append(id, { type: 'user/message', surfaceOp: 'append', data: message })
+          return ok(request, { accepted: true as const, messageId: message.id })
         }
         const turn = nextTurn.get(id) ?? 0
         nextTurn.set(id, turn + 1)
@@ -2538,7 +2544,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         if (plan.wanted !== null && plan.wanted !== plan.active) {
           append(id, { type: 'plan/mode', data: { active: plan.wanted } })
         }
-        append(id, { type: 'user/message', surfaceOp: 'append', data: userMessage(durable) })
+        append(id, { type: 'user/message', surfaceOp: 'append', data: message })
         // Capacity parallel of the host token-meter's request/context record:
         // log-only, appended inside the open turn, and deduplicated against the
         // route already recorded (the fixture never varies contextWindow).
@@ -2562,7 +2568,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
               })()
               : `回声：${userText}。这是 fixture 的流式回复，用于验证打字机增长与定稿切换。`,
         )
-        return ok(request, { accepted: true as const })
+        return ok(request, { accepted: true as const, messageId: message.id })
       },
       attachment: (request) => {
         const stored = attachments.get(String(request.payload.attachmentId))
@@ -2787,6 +2793,35 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           emitHost({ type: 'host/archived-sessions-changed', archivedSessionIds: [...archivedSessionIds] })
         }
         return ok(request, { archivedSessionIds: [...archivedSessionIds] })
+      },
+      unarchiveSession: (request) => {
+        const { sessionId } = request.payload
+        const index = archivedSessionIds.indexOf(sessionId)
+        if (index !== -1) {
+          archivedSessionIds.splice(index, 1)
+          emitHost({ type: 'host/archived-sessions-changed', archivedSessionIds: [...archivedSessionIds] })
+        }
+        return ok(request, { archivedSessionIds: [...archivedSessionIds] })
+      },
+      deleteSession: (request) => {
+        const missing = requireSession(request)
+        if (missing !== undefined) return missing
+        const { sessionId } = request.payload
+        const summaryIndex = sessions.findIndex(summary => summary.sessionId === sessionId)
+        const [removed] = sessions.splice(summaryIndex, 1)
+        if (removed?.running === true) attachedSessions--
+        logs.delete(sessionId)
+        modelSelections.delete(sessionId)
+        nextTurn.delete(sessionId)
+        const archivedIndex = archivedSessionIds.indexOf(sessionId)
+        if (archivedIndex !== -1) archivedSessionIds.splice(archivedIndex, 1)
+        for (const workspace of workspaces) {
+          if (!workspace.sessionIds.includes(sessionId)) continue
+          workspace.sessionIds = workspace.sessionIds.filter(id => id !== sessionId)
+          workspace.updatedAt = new Date().toISOString()
+        }
+        emitHost({ type: 'host/session-deleted', sessionId })
+        return ok(request, { deleted: true as const, archivedSessionIds: [...archivedSessionIds] })
       },
     },
     agentPresets: {
@@ -3203,6 +3238,8 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'workspace.insertBefore': return this.api.workspace.insertBefore(request)
       case 'workspace.insertSessionBefore': return this.api.workspace.insertSessionBefore(request)
       case 'workspace.archiveSession': return this.api.workspace.archiveSession(request)
+      case 'workspace.unarchiveSession': return this.api.workspace.unarchiveSession(request)
+      case 'workspace.deleteSession': return this.api.workspace.deleteSession(request)
       case 'skill.list': return this.api.skills.list(request)
       case 'agentPreset.list': return this.api.agentPresets.list(request)
       case 'agentPreset.select': return this.api.agentPresets.select(request)

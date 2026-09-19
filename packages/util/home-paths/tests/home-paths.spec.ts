@@ -4,12 +4,17 @@ import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   DEFAULT_DSH_HOME_DISPLAY,
+  DSH_CWD_ENV,
+  DSH_DEFAULT_WORKSPACE_ENV,
   DSH_HOME_DIR_NAME,
+  LEON_DEFAULT_WORKSPACE_ENV,
+  LEON_WINDOWS_DEFAULT_WORKSPACE,
   canonicalizeWatchPath,
   defaultDshHome,
   dshHomeDisplay,
   dshHomePath,
   expandHomePath,
+  resolveDefaultWorkspace,
   resolveDshHome,
 } from '@deepseek-ai/dsh-home-paths'
 
@@ -43,6 +48,38 @@ describe('dsh path helpers', () => {
   it('treats an empty or whitespace-only DSH_HOME as unset', () => {
     expect(resolveDshHome(undefined, { DSH_HOME: '' })).toBe(defaultDshHome())
     expect(resolveDshHome(undefined, { DSH_HOME: '   ' })).toBe(defaultDshHome())
+  })
+
+  it('resolves Leon workspace overrides in stable precedence order', () => {
+    const cwd = resolve('workspace-base')
+    const env = {
+      [LEON_DEFAULT_WORKSPACE_ENV]: 'leon',
+      [DSH_DEFAULT_WORKSPACE_ENV]: 'deployment',
+      [DSH_CWD_ENV]: 'legacy',
+    }
+
+    expect(resolveDefaultWorkspace('explicit', env, cwd)).toBe(resolve(cwd, 'explicit'))
+    expect(resolveDefaultWorkspace(undefined, env, cwd)).toBe(resolve(cwd, 'leon'))
+    expect(resolveDefaultWorkspace(undefined, {
+      ...env,
+      [LEON_DEFAULT_WORKSPACE_ENV]: ' ',
+    }, cwd)).toBe(resolve(cwd, 'deployment'))
+    expect(resolveDefaultWorkspace(undefined, {
+      [DSH_CWD_ENV]: 'legacy',
+    }, cwd)).toBe(resolve(cwd, 'legacy'))
+  })
+
+  it('uses the Leon Windows root or invoking directory when no override exists', () => {
+    const cwd = resolve('workspace-fallback')
+    const expected = process.platform === 'win32'
+      ? resolve(cwd, LEON_WINDOWS_DEFAULT_WORKSPACE)
+      : cwd
+    expect(resolveDefaultWorkspace(undefined, {}, cwd)).toBe(expected)
+  })
+
+  it('expands a configured workspace below the operating-system home', () => {
+    expect(resolveDefaultWorkspace('~/leon-workspace', {}, '/unused'))
+      .toBe(join(homedir(), 'leon-workspace'))
   })
 
   it('joins child segments onto the resolved DSH_HOME', () => {

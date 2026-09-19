@@ -29,6 +29,8 @@ If either integration is missing because dependencies were restored from cache o
 node scripts/install-lefthook.mjs
 ```
 
+The Windows desktop shell reuses the Web profile inside an Electron window. After the regular repository build, start it with `pnpm run desktop:dev`; create the x64 NSIS installer with `pnpm run desktop:package`. The shell binds the host only to loopback and keeps renderer Node.js access disabled. The packaged build registers Leon to start automatically with the Windows user session; development launches do not.
+
 If the wrapper rejects existing Git configuration or reports a stale lock, follow its diagnostic and the linked Agent Note rather than editing worktree metadata speculatively. After moving a checkout, rerun the wrapper to regenerate the owned path.
 
 Run typecheck once after a fresh clone:

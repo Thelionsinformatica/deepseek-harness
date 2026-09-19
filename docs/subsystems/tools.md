@@ -496,6 +496,16 @@ Tool registry and execution pipeline. Scoped registrations shadow globals; one v
 presentAs(mode: ToolPresentationMode): () => void
 
 /**
+ * Cap normalized tool and parameter descriptions in this scope's
+ * model-facing schemas. The registry and executable definitions retain their
+ * complete descriptions. Nearest scope wins, and disposal restores an
+ * inherited declaration.
+ * @param maxLength - integer character limit, including the ellipsis; minimum 3.
+ * @returns the exact disposer that removes this scope's declaration.
+ */
+compactDescriptions(maxLength: number): () => void
+
+/**
  * Register globally or in the calling agent scope. Scoped tools shadow
  * globals; duplicates within one layer and the reserved `run_code` name fail.
  * @param definition - tool schema, execution, and optional finalization/presentation callbacks.

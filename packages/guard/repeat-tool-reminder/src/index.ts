@@ -1,8 +1,8 @@
 /**
- * Advisory per-agent repeat-call detector. It enriches post-execute decisions
- * with logged model context without vetoing or rewriting calls. Configuration
- * and chain semantics live in the package README; rationale lives in the
- * repeat-tool-reminder Agent Note.
+ * Advisory per-agent detector for identical successful calls. It enriches
+ * post-execute decisions with logged model context without vetoing or
+ * rewriting calls. Failed calls belong to the separate failure-recovery
+ * policy and reset this advisory chain.
  * @module @deepseek-ai/dsh-repeat-tool-reminder
  */
 
@@ -141,8 +141,7 @@ function validateThresholds(values: number[]): number[] {
 }
 
 /**
- * Prepend the guard's reminder while preserving every downstream context's
- * source and metadata.
+ * Prepend the reminder while preserving every downstream context's source and metadata.
  */
 function prependContext(ours: UserMessage, theirs: UserMessage[] | undefined): UserMessage[] {
   return [ours, ...theirs ?? []]
@@ -179,12 +178,8 @@ export function apply(ctx: Context, config: Config): void {
   }
 
   /**
-   * Advance the calling agent's chain for one attempt and return the reminder
-   * to deliver, if this attempt's run length hits a configured threshold.
-   * Counting happens here — in post-execute — because denied calls also flow
-   * through this waterfall (`ToolRuntime.execute` routes a deny through the
-   * same pipeline), and a model hammering a denied call is exactly the loop
-   * worth breaking.
+   * Advance the calling agent's chain for one successful call and return the
+   * reminder whose configured threshold matches the new run length.
    */
   function observe(exec: ToolExecution): UserMessage | undefined {
     // A direct `ctx.tools.execute()` caller has no model to remind and no id
@@ -206,17 +201,17 @@ export function apply(ctx: Context, config: Config): void {
     })
   }
 
-  // Observe-and-enrich, never veto: count first (state advances regardless of
-  // the downstream outcome), DELEGATE so a later listener can still block or
-  // replace, then fold the reminder onto whatever came back — additionalContexts
-  // rides both decision variants, so a blocked call still gets the nudge.
-  ctx.on('tools/post-execute', async (exec, _result, next): Promise<PostToolDecision> => {
-    const reminder = observe(exec)
+  // A failed or policy-blocked tracked call resets this advisory chain. The
+  // failure-recovery policy owns error repetition and its stronger response.
+  ctx.on('tools/post-execute', async (exec, result, next): Promise<PostToolDecision> => {
     const downstream = await next()
-    if (!reminder) return downstream
-    if (downstream.kind === 'block') {
-      return { kind: 'block', feedback: downstream.feedback, additionalContexts: prependContext(reminder, downstream.additionalContexts) }
+    if (exec.agent !== undefined && tracked(exec.name)
+      && (result.isError || downstream.kind === 'block')) {
+      chains.delete(exec.agent)
+      return downstream
     }
+    const reminder = observe(exec)
+    if (!reminder) return downstream
     return {
       ...downstream,
       additionalContexts: prependContext(reminder, downstream.additionalContexts),

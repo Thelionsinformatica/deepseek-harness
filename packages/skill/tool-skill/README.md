@@ -16,6 +16,8 @@ The catalog is omitted when no model-invocable skills are initially available, a
 
 `catalogDescriptionMaxLength` controls normalized catalog descriptions; rendering XML-escapes them. Its default is `500` and values must be integers of at least `3`, which reserves room for a truncation ellipsis. The [skill catalog hot-refresh Agent Note](../../../.agents/notes/implemented/feature/2026-07-27-skill-catalog-hot-refresh.md) owns the durable initial catalog and replacement lifecycle.
 
+`autoLoad` is an optional deployment-owned list of `{ name, contains[] }` rules. The plugin normalizes Unicode width, case, whitespace, and slash direction, then matches configured literals only against direct human text. A match injects the current full skill body through the same `skill-invocation` context used by an explicit `/name` gesture. Catalogs, history, documents, tool results, and plugin injections cannot activate a rule. Automatic loading requires a model-invocable skill; a direct `/name` gesture continues to use the skill's user-invocation policy. Blank markers and invalid skill names fail plugin loading.
+
 ## Tool: `skill`
 
 | Arg | Type | Notes |
@@ -158,6 +160,20 @@ Each gesture adds one rendered skill body to that turn as injected context — t
 #### KV Cache effect
 
 Append-only; the injection lands after the reusable request prefix inside the step's message batch and does not invalidate existing KV-cache entries.
+
+### Deployment-triggered automatic loading
+
+#### What the model sees
+
+When direct human text contains a configured `autoLoad.contains` literal, the model receives the same complete `<skill_content>` block as a user-explicit invocation, after the catalog and other background injections. Windows and portable slash forms match the same literal after normalization. Repeating a literal or combining it with `/name` injects that skill once.
+
+#### Token effect
+
+Each matched rule adds the current skill body to that step. Deployments should use narrow, distinctive literals so unrelated turns do not pay for or receive the skill.
+
+#### KV Cache effect
+
+Append-only at the matched step; earlier reusable prompt tokens remain intact.
 
 ## Known Limitations and Deferred Work
 

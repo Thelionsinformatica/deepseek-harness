@@ -266,7 +266,7 @@ interface AppIdentity {
 
 ## `TokenUsage`
 
-Per-call token accounting. Counts are **disjoint**: `inputTokens` is uncached input only; cached input is reported separately, and billed input is the sum of the three. Adapters whose providers fold cache hits into a single prompt total (DeepSeek's `prompt_tokens`) subtract them back out. `reasoningTokens`, when present, is informational detail already included in `outputTokens`; totals must not add it again.
+Per-call token accounting. Counts are **disjoint**: `inputTokens` is uncached input only; cached input is reported separately, and billed input is the sum of the three. Adapters whose providers fold cache hits into a single prompt total (DeepSeek's `prompt_tokens`) subtract them back out. `reasoningTokens`, when present, is informational detail already included in `outputTokens`; totals must not add it again. `providerCostUsdNanos`, when present, is the exact charge reported by the serving provider or gateway rather than a catalog estimate.
 
 ```ts type-equiv
 /**
@@ -283,6 +283,8 @@ interface TokenUsage {
   cacheReadTokens?: number
   cacheWriteTokens?: number
   reasoningTokens?: number
+  /** Exact request charge reported by the serving provider or gateway, in billionths of one US dollar. */
+  providerCostUsdNanos?: number
 }
 ```
 

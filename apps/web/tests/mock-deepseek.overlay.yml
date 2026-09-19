@@ -1,0 +1,11 @@
+# These real-CLI smokes own a loopback DeepSeek mock. Keep their route
+# deterministic even when the shipped Web composition is local-first.
+- insert:
+    - id: llm-deepseek-smoke
+      name: '@deepseek-ai/dsh-llm-deepseek'
+- id: agent-default-model
+  config:
+    provider: deepseek-official
+    model: deepseek-v4-flash
+- id: api-gateway
+  config: {}

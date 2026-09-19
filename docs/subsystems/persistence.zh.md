@@ -296,6 +296,20 @@ abstract create(meta: SessionHeader): Promise<void>
 abstract append(id: SessionId, events: readonly SessionEvent[]): Promise<void>
 
 /**
+ * Permanently remove one session's backend-owned log. Implementations are
+ * idempotent for an already-absent id and serialize deletion with every
+ * append, preparation, and load for the same identity. A successful delete
+ * closes admission for that id for the lifetime of this service instance,
+ * preventing a queued writer from recreating the artifact.
+ *
+ * This operation owns only the session persistence artifact. It must never
+ * remove the session cwd or any file contained by that user directory.
+ * @param id - exact session identity to remove.
+ * @returns resolution after the durable deletion commit.
+ */
+delete(id: SessionId): Promise<void>
+
+/**
  * Prepare the exact unpublished Session used by resume. Implementations may
  * reuse object graphs retained by an earlier {@link inspect} after confirming
  * their durable revision is still current; disposal releases an unpublished

@@ -88,6 +88,11 @@ export type {
 export interface PiAiProviderProfile {
   /** Credential reference (environment-variable name) resolved per request through `ctx.credentials`. */
   apiKeyEnv?: string
+  /**
+   * Ordered compatibility references tried only when {@link apiKeyEnv} resolves to no value.
+   * Every entry is explicit: the adapter never searches unrelated ambient keys.
+   */
+  apiKeyEnvFallbacks?: string[]
   /** Name shown by configuration surfaces; defaults to the route key. */
   displayName?: string
   /**
@@ -171,19 +176,23 @@ export interface PiAiProviderProfile {
   requestImagePixelBudget?: number
   /** Raw encoded-byte cap for each deterministic inline request version. */
   requestImageMaxBytes?: number
+  /** Force PNG for endpoints that cannot decode WebP, such as llama.cpp. */
+  requestImageOutputFormat?: 'png'
   /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
   retryPolicy?: RetryPolicyConfig
 }
 
 /** Validated profile with its route stamped and every adapter-owned default resolved. */
 export interface ResolvedPiAiProviderProfile
-  extends Omit<PiAiProviderProfile, 'apiKeyEnv' | 'retryPolicy' | 'models' | 'displayName'> {
+  extends Omit<PiAiProviderProfile, 'apiKeyEnv' | 'apiKeyEnvFallbacks' | 'retryPolicy' | 'models' | 'displayName'> {
   /** Harness route key and the `Models` collection key (the configuration dict key). */
   provider: string
   /** Resolved display name for selectors and configuration surfaces. */
   displayName: string
   /** Validated credential reference, when one is configured. */
   apiKeyEnv?: CredentialRef
+  /** Validated compatibility references, in resolution order after {@link apiKeyEnv}. */
+  apiKeyEnvFallbacks: readonly CredentialRef[]
   /** Positive finite provider-idle interval after defaulting. */
   streamIdleTimeoutMs: number
   /** Positive request-level base64 image payload bound after defaulting. */
@@ -306,6 +315,7 @@ const modelOverride: z<PiAiModelOverride> = z.object(modelFields)
 
 const profile = z.object({
   apiKeyEnv: z.string().role('credential-ref'),
+  apiKeyEnvFallbacks: z.array(z.string().role('credential-ref')),
   displayName: z.string(),
   api: z.union(supportedProtocols()),
   baseURL: z.string(),
@@ -326,6 +336,7 @@ const profile = z.object({
   maxRequestImageBytes: z.number().step(1).min(1).default(DEFAULT_MAX_REQUEST_IMAGE_BYTES),
   requestImagePixelBudget: z.number().step(1).min(1).default(DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET),
   requestImageMaxBytes: z.number().step(1).min(1).default(DEFAULT_REQUEST_IMAGE_MAX_BYTES),
+  requestImageOutputFormat: z.const('png'),
   retryPolicy: RetryPolicySchema,
 })
 
@@ -437,12 +448,29 @@ export function resolveProfiles(
       defaultContextWindow: source.defaultContextWindow ?? DEFAULT_CONTEXT_WINDOW,
       defaultMaxTokens: source.defaultMaxTokens ?? DEFAULT_MAX_TOKENS,
     })
-    const { apiKeyEnv, retryPolicy, models: _models, displayName: _displayName, ...rest } = source
+    const { apiKeyEnv, apiKeyEnvFallbacks, retryPolicy, models: _models, displayName: _displayName, ...rest } = source
+    const primaryCredentialRef = apiKeyEnv === undefined ? undefined : credentialRef(apiKeyEnv)
+    const fallbackCredentialRefs = (apiKeyEnvFallbacks ?? []).map(credentialRef)
+    if (primaryCredentialRef === undefined && fallbackCredentialRefs.length > 0) {
+      throw new Error(
+        `llm-pi-ai: provider "${provider}" sets apiKeyEnvFallbacks without apiKeyEnv;`
+        + ' configure a primary credential reference first',
+      )
+    }
+    const uniqueCredentialRefs = new Set<CredentialRef>()
+    for (const ref of [primaryCredentialRef, ...fallbackCredentialRefs]) {
+      if (ref === undefined) continue
+      if (uniqueCredentialRefs.has(ref)) {
+        throw new Error(`llm-pi-ai: provider "${provider}" repeats credential reference "${ref}"`)
+      }
+      uniqueCredentialRefs.add(ref)
+    }
     resolved.set(provider, {
       ...rest,
       provider,
       displayName,
-      ...apiKeyEnv === undefined ? {} : { apiKeyEnv: credentialRef(apiKeyEnv) },
+      ...primaryCredentialRef === undefined ? {} : { apiKeyEnv: primaryCredentialRef },
+      apiKeyEnvFallbacks: fallbackCredentialRefs,
       streamIdleTimeoutMs,
       maxRequestImageBytes,
       requestImagePixelBudget,
@@ -457,7 +485,7 @@ export function resolveProfiles(
         ...source.api === undefined ? {} : { api: source.api },
         ...source.baseURL === undefined ? {} : { baseURL: source.baseURL },
         models: catalog.models,
-        namesCredential: apiKeyEnv !== undefined,
+        namesCredential: primaryCredentialRef !== undefined,
       }),
     })
   }

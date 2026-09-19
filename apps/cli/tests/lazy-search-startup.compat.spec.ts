@@ -21,8 +21,8 @@ import { describe, expect, it } from 'vitest'
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
 const builtBin = join(repoRoot, 'apps/cli/lib/bin.js')
 const webDist = join(repoRoot, 'apps/web/dist/index.html')
-// Full-text session search ships off (`openAt: never` on both layers): the
-// base patch carries the default, and the web restatement must not re-enable it.
+// The base keeps full-text search off. Leon Web opts into a durable first-search
+// index without importing SQLite during ordinary startup.
 const baseConfigPath = join(repoRoot, 'packages/bundle/base/cordis.patch.yml')
 const webConfigPath = join(repoRoot, 'packages/bundle/web-app/cordis.patch.yml')
 const requireBuiltArtifacts = process.env.DSH_REQUIRE_BUILT_CLI_SMOKE === '1'
@@ -30,7 +30,7 @@ const requireBuiltArtifacts = process.env.DSH_REQUIRE_BUILT_CLI_SMOKE === '1'
 interface ConfigRow {
   id?: string
   disabled?: unknown
-  config?: { openAt?: unknown }
+  config?: { openAt?: unknown; path?: unknown }
 }
 
 interface PatchEntry extends ConfigRow {
@@ -100,7 +100,7 @@ function runBuiltWeb(cwd: string): Promise<{ stdout: string; stderr: string; cod
 }
 
 describe.skipIf(!requireBuiltArtifacts)('built CLI lazy-search startup', () => {
-  it('boots and disposes the shipped composition with full-text search off by default', async () => {
+  it('boots and disposes Leon Web before its durable history index is opened', async () => {
     expect(existsSync(builtBin), `missing built CLI ${resolve(builtBin)}; run pnpm build`).toBe(true)
     expect(existsSync(webDist), `missing Web dist ${resolve(webDist)}; run pnpm run build:web`).toBe(true)
     const baseRows = (yaml.load(await readFile(baseConfigPath, 'utf8'), { schema: configSchema }) as PatchEntry[])
@@ -111,8 +111,8 @@ describe.skipIf(!requireBuiltArtifacts)('built CLI lazy-search startup', () => {
     const webRow = webRows.find(row => row.id === 'session-query-sqlite')
     expect(baseRow?.config?.openAt).toBe('never')
     expect(baseRow?.disabled).toBeUndefined()
-    // The web restatement keeps the shipped default; opting in is a later layer's override.
-    expect(webRow?.config?.openAt).toBe('never')
+    expect(webRow?.config?.openAt).toBe('first-search')
+    expect(webRow?.config?.path).toBe("dshHomePath('storages/session-query.sqlite')")
     expect(webRow?.disabled).toBeUndefined()
 
     const cwd = await mkdtemp(join(tmpdir(), 'dsh-cli-lazy-search-'))

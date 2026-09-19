@@ -117,6 +117,74 @@ async function waitRunning(ctx: Context, id: SessionId): Promise<Agent> {
   }, { timeout: 5_000 })
 }
 
+describe('Host completion review', () => {
+  it('rejects direct completion without a reviewer and leaves revision and dependents unchanged', async () => {
+    const { ctx, lead } = await setup([], { completionRequiresReview: true })
+    try {
+      const task = await ctx.agentTeams.createTask(lead, { subject: 'Investigate', description: 'Evidence required' })
+      await ctx.agentTeams.createTask(lead, { subject: 'Dependent', description: 'Wait for review', blockedBy: [task.id] })
+      await ctx.agentTeams.updateTask(lead, { taskId: task.id, expectedRevision: 1, action: 'claim' })
+      await expect(ctx.agentTeams.updateTask(lead, { taskId: task.id, expectedRevision: 2, action: 'complete' }))
+        .rejects.toMatchObject({ code: 'TEAM_TASK_REVIEW_REQUIRED' })
+      expect(ctx.agentTeams.getTask(lead, task.id)).toMatchObject({ revision: 2, status: 'in_progress' })
+      expect(ctx.agentTeams.listTasks(lead)[1]?.ready).toBe(false)
+    } finally { await ctx.fiber.dispose() }
+  })
+
+  it('checks the exact revision, rejects concurrent stale completion, and disposes the reviewer', async () => {
+    const { ctx, lead } = await setup([], { completionRequiresReview: true })
+    try {
+      const task = await ctx.agentTeams.createTask(lead, { subject: 'Verify', description: 'Exact revision' })
+      await ctx.agentTeams.updateTask(lead, { taskId: task.id, expectedRevision: 1, action: 'claim' })
+      const reviewer = vi.fn(async (caller: Agent, root: Agent, current: TeamTaskSnapshot) => {
+        expect(caller).toBe(lead)
+        expect(root).toBe(lead)
+        return current.id === task.id && current.revision === 2
+      })
+      const dispose = ctx.agentTeams.registerCompletionReviewer(reviewer)
+      expect(() => ctx.agentTeams.registerCompletionReviewer(reviewer)).toThrow('already registered')
+      const results = await Promise.allSettled([0, 1].map(() => ctx.agentTeams.updateTask(lead, {
+        taskId: task.id, expectedRevision: 2, action: 'complete',
+      })))
+      expect(results.map(result => result.status)).toEqual(['fulfilled', 'rejected'])
+      expect(reviewer).toHaveBeenCalledTimes(1)
+      dispose()
+      dispose()
+      await ctx.agentTeams.updateTask(lead, { taskId: task.id, expectedRevision: 3, action: 'reopen' })
+      await ctx.agentTeams.updateTask(lead, { taskId: task.id, expectedRevision: 4, action: 'claim' })
+      await expect(ctx.agentTeams.updateTask(lead, { taskId: task.id, expectedRevision: 5, action: 'complete' }))
+        .rejects.toMatchObject({ code: 'TEAM_TASK_REVIEW_REQUIRED' })
+    } finally { await ctx.fiber.dispose() }
+  })
+
+  it('fails closed on rejection, verifier failure and revocation during verification', async () => {
+    const { ctx, lead } = await setup([], { completionRequiresReview: true })
+    try {
+      const task = await ctx.agentTeams.createTask(lead, { subject: 'Verify', description: 'Fail closed' })
+      await ctx.agentTeams.updateTask(lead, { taskId: task.id, expectedRevision: 1, action: 'claim' })
+      const complete = () => ctx.agentTeams.updateTask(lead, { taskId: task.id, expectedRevision: 2, action: 'complete' })
+      let dispose = ctx.agentTeams.registerCompletionReviewer(async () => false)
+      await expect(complete()).rejects.toMatchObject({ code: 'TEAM_TASK_REVIEW_REQUIRED' })
+      dispose()
+      dispose = ctx.agentTeams.registerCompletionReviewer(async () => { throw new Error('Evidence unavailable') })
+      await expect(complete()).rejects.toThrow('Evidence unavailable')
+      dispose()
+      const entered = Promise.withResolvers<undefined>()
+      const release = Promise.withResolvers<boolean>()
+      dispose = ctx.agentTeams.registerCompletionReviewer(async () => {
+        entered.resolve(undefined)
+        return release.promise
+      })
+      const pending = complete()
+      await entered.promise
+      dispose()
+      release.resolve(true)
+      await expect(pending).rejects.toMatchObject({ code: 'TEAM_TASK_REVIEW_REQUIRED' })
+      expect(ctx.agentTeams.getTask(lead, task.id)).toMatchObject({ revision: 2, status: 'in_progress' })
+    } finally { await ctx.fiber.dispose() }
+  })
+})
+
 describe('Team identity and provisioning', () => {
   it('rejects deployment limits that are not positive safe integers', async () => {
     const fields = [
@@ -284,14 +352,23 @@ describe('Team identity and provisioning', () => {
     if (member !== undefined) await waitNoAgent(ctx, member.id)
   })
 
+  it('rejects an unavailable provider without reserving its name or member slot', async () => {
+    const { ctx, lead } = await setup([textResponse('done')], { maxMembers: 1 })
+    await expect(spawn(ctx, lead, 'worker', { provider: 'missing' }))
+      .rejects.toMatchObject({ code: 'TEAM_PROVIDER_UNAVAILABLE' })
+    expect(durable(lead).members).toHaveLength(0)
+    await expect(spawn(ctx, lead, 'worker')).resolves.toMatchObject({ member: { name: 'worker' } })
+  })
+
   it('records failed provisioning durably, reserves its name, and counts it against the limit', async () => {
     const { ctx, lead } = await setup([], { maxMembers: 1 })
-    await expect(spawn(ctx, lead, 'failed-worker', { provider: 'missing' })).rejects.toThrow()
+    vi.spyOn(ctx.subagents, 'startContinuable').mockRejectedValueOnce(new Error('provider failed after admission'))
+    await expect(spawn(ctx, lead, 'failed-worker')).rejects.toThrow()
 
     expect(ctx.agentTeams.listMembers(lead)[1]).toMatchObject({
       name: 'failed-worker',
       status: 'failed',
-      provider: 'missing',
+      provider: 'spawn',
     })
     await expect(spawn(ctx, lead, 'failed-worker')).rejects.toMatchObject({ code: 'TEAM_MEMBER_NAME_TAKEN' })
     await expect(spawn(ctx, lead, 'other-worker')).rejects.toMatchObject({ code: 'TEAM_MEMBER_LIMIT' })

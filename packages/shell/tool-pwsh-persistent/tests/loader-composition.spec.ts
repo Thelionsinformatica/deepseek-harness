@@ -22,10 +22,11 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRegistry from '@deepseek-ai/dsh-tools'
 import * as ToolPwshPersistent from '@deepseek-ai/dsh-tool-pwsh-persistent'
 
-const hasPwsh = spawnSync(
-  resolvePwshPath(), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$true'],
-  { encoding: 'utf8' },
-).status === 0
+const hasPwsh = process.env.DSH_SKIP_REAL_PWSH !== '1'
+  && spawnSync(
+    resolvePwshPath(), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$true'],
+    { encoding: 'utf8' },
+  ).status === 0
 
 let root: string | undefined
 let context: Context | undefined

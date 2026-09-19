@@ -12,6 +12,8 @@ import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-inva
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { TOOL_NOT_STARTED } from './repair.ts'
 
+export { installSessionEventValidation } from './event-validation.ts'
+
 const PACKAGE_NAME = '@deepseek-ai/dsh-session'
 
 /** Cordis companion plugin name. */

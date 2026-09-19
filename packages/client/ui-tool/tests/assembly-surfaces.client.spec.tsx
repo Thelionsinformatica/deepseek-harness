@@ -86,7 +86,10 @@ async function bench(nodes: ToolResultNode[]) {
     snapshot: { nodes, chat: toolChatSnapshot(nodes) },
     session: {
       loadOlder: vi.fn<ISession['loadOlder']>(),
-      prompt: vi.fn<ISession['prompt']>(async () => ({ ok: true, value: { accepted: true } })),
+      prompt: vi.fn<ISession['prompt']>(async () => ({
+        ok: true,
+        value: { accepted: true, messageId: 'message-1' as never },
+      })),
     },
   })
   await runtime.root.declare(LAYOUT_CHILDREN, AppRoot)

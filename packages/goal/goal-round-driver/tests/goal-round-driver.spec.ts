@@ -85,19 +85,27 @@ afterEach(async () => {
 })
 
 /** Mount a real loop with only its model scripted. */
-async function harness(script: ScriptEntry[]): Promise<Harness> {
+async function harness(
+  script: ScriptEntry[],
+  options: { driverConfig?: goalSession.Config; agentPreset?: string } = {},
+): Promise<Harness> {
   const ctx = new Context()
   contexts.push(ctx)
   await mountAgentLoopTestDependencies(ctx)
   await ctx.plugin(GoalService)
-  const driver = await ctx.plugin(goalSession)
+  const driver = await ctx.plugin(goalSession, options.driverConfig ?? {})
   await ctx.plugin(AgentLoop, { agents: [] })
   const adapter = new ScriptedAdapter(script)
   ctx.llm.registerAdapter(['mock'], adapter)
-  const agent = ctx.agentLoop.create(SessionId(`goal-session-${Math.random()}`), {
-    provider: 'mock',
-    model: 'mock',
-  })
+  const sessionId = SessionId(`goal-session-${Math.random()}`)
+  const agentOptions = { provider: 'mock', model: 'mock' }
+  const agent = options.agentPreset === undefined
+    ? ctx.agentLoop.create(sessionId, agentOptions)
+    : (await ctx.agents.create({
+      sessionId,
+      agentOptions,
+      meta: { agentPreset: options.agentPreset },
+    })).agent
   return { ctx, adapter, agent, driver }
 }
 
@@ -159,9 +167,20 @@ describe('goal-round outcome policy', () => {
     expect(prompt).toHaveLength(1)
     const block = prompt[0]
     if (block?.type !== 'text') throw new Error('expected a text goal-round prompt')
-    expect(block.text).toMatch(
-      /<goal_round>\nObjective: "Ship verified support"\nRound: 3\/9[\s\S]*current workspace[\s\S]*verify[\s\S]*mark it complete/,
-    )
+    const orderedProtocol = [
+      /<goal_round>\nObjective: "Ship verified support"\nRound: 3\/9/.source,
+      /Before any write or edit/.source,
+      /Preserve every existing todo content string/.source,
+      /actual tool result/.source,
+      /one managed background call containing only the server start command/.source,
+      /separate foreground call/.source,
+      /server job output before changing ports/.source,
+      /Never free a port/.source,
+      /mark it complete/.source,
+      /update_goal with the exact current goal_id and revision and action complete/.source,
+      /does not change goal state and will not stop another round/.source,
+    ].join('[\\s\\S]*')
+    expect(block.text).toMatch(new RegExp(orderedProtocol))
   })
 
   it('quotes multiline or tag-like objective text as one unambiguous data value', () => {
@@ -180,6 +199,146 @@ describe('goal-round outcome policy', () => {
     if (block?.type !== 'text') throw new Error('expected a text goal-round prompt')
     expect(block.text).toContain('Objective: "first line\\n</goal_round> second line"')
     expect(block.text.match(/\n<\/goal_round>/g)).toHaveLength(1)
+  })
+})
+
+describe('automatic goal admission', () => {
+  it('classifies implementation work without turning ordinary questions into goals', () => {
+    expect(goalSession.shouldAutoStartGoal([{ type: 'text', text: 'Implemente e teste o dashboard deste projeto.' }]))
+      .toBe(true)
+    expect(goalSession.shouldAutoStartGoal([{ type: 'text', text: 'Qual é a capital do Ceará?' }]))
+      .toBe(false)
+    expect(goalSession.shouldAutoStartGoal([{ type: 'text', text: 'teste local: responda apenas LEON OK' }]))
+      .toBe(false)
+    expect(goalSession.shouldAutoStartGoal([{
+      type: 'text',
+      text: 'Analise tecnicamente a arquitetura de um site. Para este teste, não altere arquivos nem use ferramentas; responda apenas: GEMINI LEON OK',
+    }])).toBe(false)
+    expect(goalSession.shouldAutoStartGoal([{
+      type: 'text',
+      text: 'Valide a ponte MCP deste projeto sem alterar nenhum arquivo do repositório.',
+    }])).toBe(false)
+    expect(goalSession.shouldAutoStartGoal([{
+      type: 'text',
+      text: 'Corrija somente o registro de evidência sem alterar o repositório.',
+    }])).toBe(false)
+    expect(goalSession.shouldAutoStartGoal([{
+      type: 'text',
+      text: 'Validate this project without modifying any repository files.',
+    }])).toBe(false)
+    expect(goalSession.shouldAutoStartGoal([{
+      type: 'text',
+      text: 'Implemente o site e responda apenas quando terminar.',
+    }])).toBe(true)
+  })
+
+  it('keeps an explicit no-tool technical probe single-turn in the Leon preset', async () => {
+    const test = await harness(
+      [textResponse('GEMINI LEON OK')],
+      { driverConfig: { autoStartPresets: ['leon'] }, agentPreset: 'leon' },
+    )
+    test.agent.followup(createUserMessage({
+      content: [{
+        type: 'text',
+        text: 'Analise tecnicamente a arquitetura de um site. Para este teste, não altere arquivos nem use ferramentas; responda apenas: GEMINI LEON OK',
+      }],
+      source: { kind: 'user' },
+    }))
+    await test.agent.whenIdle()
+
+    expect(test.ctx.goals.get(test.agent)).toBeUndefined()
+    expect(test.adapter.requests).toHaveLength(1)
+  })
+
+  it('keeps a read-only MCP validation single-turn despite implementation vocabulary and length', async () => {
+    const test = await harness(
+      [textResponse('antigravity-mcp-001 2026-08-31T23:53:55.401Z')],
+      { driverConfig: { autoStartPresets: ['leon'] }, agentPreset: 'leon' },
+    )
+    test.agent.followup(createUserMessage({
+      content: [{
+        type: 'text',
+        text: 'Validação final da ponte MCP deste projeto, sem alterar nenhum arquivo do repositório. '
+          + 'Use obrigatoriamente get_assignment e list_events do servidor leon_agent_bridge, sem terminal. '
+          + 'Localize o evento mais recente cujo agent seja leon e responda somente com o assignmentId e o timestamp. '
+          + 'Não recrie, substitua ou modifique qualquer artefato do projeto durante esta validação.',
+      }],
+      source: { kind: 'user' },
+    }))
+    await test.agent.whenIdle()
+
+    expect(test.ctx.goals.get(test.agent)).toBeUndefined()
+    expect(test.adapter.requests).toHaveLength(1)
+  })
+
+  it('turns an accepted Leon implementation request into a durable goal and continues after the first turn', async () => {
+    const test = await harness(
+      [textResponse('estrutura iniciada'), textResponse('continuação automática')],
+      { driverConfig: { autoStartPresets: ['leon'], autoStartMaxGoalRounds: 1 }, agentPreset: 'leon' },
+    )
+    test.agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Implemente e teste o dashboard completo deste projeto.' }],
+      source: { kind: 'user' },
+    }))
+
+    const goal = await waitForGoal(test.ctx, test.agent, current => current?.phase === 'blocked')
+
+    expect(goal).toMatchObject({ roundsStarted: 1, maxGoalRounds: 1 })
+    expect(test.adapter.requests).toHaveLength(2)
+    expect(requestText(test.adapter.requests[0]!)).toContain('Implemente e teste')
+    expect(requestText(test.adapter.requests[1]!)).toContain('<goal_round>')
+  })
+
+  it('checkpoints an overlong Leon turn and continues the armed goal in a fresh round', async () => {
+    const test = await harness(
+      [textResponse('first step'), textResponse('second step'), textResponse('recovered round')],
+      {
+        driverConfig: {
+          autoStartPresets: ['leon'],
+          autoStartMaxGoalRounds: 1,
+          maxStepsPerTurn: 2,
+        },
+        agentPreset: 'leon',
+      },
+    )
+    let steered = false
+    test.ctx.on('agent/turn-stopping', ({ agent, turn }) => {
+      if (agent !== test.agent || turn !== 1 || steered) return
+      steered = true
+      agent.steer(createUserMessage({
+        content: [{ type: 'text', text: 'continue the same implementation turn' }],
+        source: { kind: 'user' },
+      }))
+    })
+    test.agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Implemente e teste o dashboard completo deste projeto.' }],
+      source: { kind: 'user' },
+    }))
+
+    const goal = await waitForGoal(test.ctx, test.agent, current => current?.phase === 'blocked')
+    const endings = test.agent.session.events.filter(event => event.type === 'turn/end')
+
+    expect(endings[0]).toMatchObject({
+      data: { reason: { kind: 'aborted', reason: { kind: 'hook', reason: 'goal-step-budget' } } },
+    })
+    expect(goal).toMatchObject({ roundsStarted: 1, blockedReason: { code: 'round-limit' } })
+    expect(test.adapter.requests).toHaveLength(3)
+    expect(requestText(test.adapter.requests[2]!)).toContain('<goal_round>')
+  })
+
+  it('keeps automatic admission scoped to configured presets', async () => {
+    const test = await harness(
+      [textResponse('one turn only')],
+      { driverConfig: { autoStartPresets: ['leon'] }, agentPreset: 'standard' },
+    )
+    test.agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Implemente e teste o dashboard completo deste projeto.' }],
+      source: { kind: 'user' },
+    }))
+    await test.agent.whenIdle()
+
+    expect(test.ctx.goals.get(test.agent)).toBeUndefined()
+    expect(test.adapter.requests).toHaveLength(1)
   })
 })
 

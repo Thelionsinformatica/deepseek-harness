@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 The model-facing **`lsp` tool** over `ctx.lsp`: one read-only tool with four operations for precise code navigation. It owns the model schema, prompt guidance, coordinate conversion, result limits and formatting, and UI presentation; it imports no provider.
 
-Namespace plugin (`name` / `inject` / `Config` / `apply`, no default export). Injects `tools`, `lsp`, and `systemPrompt`.
+Namespace plugin (`name` / `inject` / `Config` / `apply`, no default export). Injects `tools` and `systemPrompt`; its tool and guidance activate only while an `lsp` service is available.
 
 ## The tool
 

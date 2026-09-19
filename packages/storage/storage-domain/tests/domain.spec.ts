@@ -226,6 +226,22 @@ describe('KvTable writes', () => {
     await expect(table.delete('a')).resolves.toBe(false)
   })
 
+  it('atomically creates or updates one record without lost concurrent writes', async () => {
+    const { facility, changes } = await harness()
+    const table = (await facility.open(spec)).table('items')
+    const counts = await Promise.all(Array.from({ length: 50 }, () =>
+      table.mutate('counter', (current) => {
+        const count = (current?.count ?? 0) + 1
+        return { kind: 'put', value: { label: 'c', count }, result: count }
+      })))
+    const kept = await table.mutate('counter', current => ({ kind: 'keep', result: current!.count }))
+
+    expect(counts.sort((left, right) => left - right)).toEqual(Array.from({ length: 50 }, (_, index) => index + 1))
+    expect(kept).toBe(50)
+    expect(table.get('counter')).toEqual({ label: 'c', count: 50 })
+    expect(changes).toHaveLength(50)
+  })
+
   it('emits domain/changed per durable write, in order, with tombstones and global marker', async () => {
     const { facility, changes } = await harness()
     const domain = await facility.open(spec)

@@ -9,6 +9,8 @@ import z from '@deepseek-ai/schemastery'
 import type { ModelSelection } from '@deepseek-ai/dsh-agent'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
+import { auxiliaryPolicySchema, auxiliarySettingsSchema } from './auxiliary.ts'
+import type { AuxiliaryModelPolicy, AuxiliaryModelRole, AuxiliaryModelSettings } from './auxiliary.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -43,6 +45,8 @@ export interface Config {
   provider: string
   /** Provider-owned model id. */
   model: string
+  /** Explicit normal-profile auxiliary routing policy; omitted in frozen laboratories. */
+  auxiliaryModels?: AuxiliaryModelPolicy
 }
 
 /** Project stored settings onto the Agent-facing selection type. */
@@ -65,12 +69,16 @@ export class AgentDefaultModelConfig extends Service {
   static Config: z<Config> = z.object({
     provider: z.string().required(),
     model: z.string().required(),
+    auxiliaryModels: auxiliaryPolicySchema,
   })
 
   private source: () => AgentDefaultModelSettings
+  private auxiliarySource: (() => AuxiliaryModelSettings) | undefined
+  private readonly localProviders: ReadonlySet<string>
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'agentDefaultModel')
+    this.localProviders = new Set(config.auxiliaryModels?.localProviders)
     const entry: AgentDefaultModelSettings = { provider: config.provider, model: config.model }
     this.source = () => entry
     installSettingsSection(ctx, AGENT_DEFAULT_MODEL_SETTINGS_NAMESPACE, AGENT_DEFAULT_MODEL_SETTINGS_SCHEMA, entry, {
@@ -79,6 +87,30 @@ export class AgentDefaultModelConfig extends Service {
       // needs rebuilding when the settings document changes.
       onChange: () => {},
     })
+    if (config.auxiliaryModels !== undefined) {
+      const roles = config.auxiliaryModels.roles ?? {}
+      this.auxiliarySource = () => roles
+      installSettingsSection(ctx, settingsNamespace('agent-model-roles'), auxiliarySettingsSchema, roles, {
+        setSource: (current) => { this.auxiliarySource = current },
+        onChange: () => {},
+      })
+    }
+  }
+
+  /**
+   * Resolve a configured auxiliary route before the consumer logs and dispatches it.
+   * @param role - fixed host-assigned function, never a participant display name.
+   * @returns a detached selection, or undefined to preserve existing inheritance.
+   * @throws when an external route lacks explicit consent or a route is incomplete.
+   */
+  auxiliarySelection(role: AuxiliaryModelRole): ModelSelection | undefined {
+    const route = this.auxiliarySource?.()[role]
+    if (route === undefined) return undefined
+    if (!route.provider.trim() || !route.model.trim()) throw new Error(`Incomplete auxiliary route: ${role}`)
+    if (!this.localProviders.has(route.provider) && route.allowExternal !== true) {
+      throw new Error(`External auxiliary route requires explicit consent: ${role}`)
+    }
+    return selection(route)
   }
 
   /**

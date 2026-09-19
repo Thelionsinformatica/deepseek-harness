@@ -376,6 +376,7 @@ export class ReactLoopAgent implements Agent {
             turn,
             step,
             provider: request.provider,
+            model: request.model,
             failure: finish.failure,
             retryPolicy: preparedCall?.retryPolicy,
             signal,

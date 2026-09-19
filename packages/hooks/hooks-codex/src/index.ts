@@ -169,7 +169,8 @@ export function apply(ctx: Context, config: Config): void {
     return mergeHookOutputs(outputs)
   }
 
-  // TODO(hook-continue-false): `merged.stop` is logged but needs a run-level halt mechanism.
+  // PreToolUse enforces `merged.stop` as a per-call veto. An agent-wide halt
+  // primitive remains deferred for the other hook points.
 
   function contextFrom(merged: MergedHookOutcome): UserMessage | undefined {
     if (merged.additionalContext.length === 0) return undefined
@@ -226,6 +227,7 @@ export function apply(ctx: Context, config: Config): void {
     const turn = lastTurn(exec.agent)
     const merged = await runPoint('PreToolUse', exec.name, preToolPayload(ctx, exec, model), { ...exec.agent ? { agent: exec.agent } : {}, turn, signal: exec.signal })
     /* jscpd:ignore-end */
+    if (merged.stop) return { kind: 'deny', reason: merged.stopReason ?? 'stopped by PreToolUse hook' }
     if (merged.decision === 'deny') return { kind: 'deny', reason: merged.reason ?? 'blocked by PreToolUse hook' }
     return next()
   })

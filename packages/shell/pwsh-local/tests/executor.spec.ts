@@ -127,7 +127,7 @@ describe('resolvePwshPath and candidatePwshPaths (pure, every platform)', () => 
       .toBe('pwsh')
   })
 
-  it('accepts a link-shaped PATH candidate whose target cannot be stat-ed', () => {
+  it.skipIf(process.platform === 'win32')('accepts a link-shaped PATH candidate whose target cannot be stat-ed', () => {
     // Store app execution aliases stat as EACCES but lstat as a link; a
     // dangling symlink reproduces that split on every platform.
     const dir = mkdtempSync(join(tmpdir(), 'dsh-pwsh-resolve-link-'))

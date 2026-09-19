@@ -31,7 +31,10 @@ const PHASE_LABELS = {
   blocked: 'phase.blocked',
 } as const satisfies Record<string, GoalKey>
 
-export function GoalBar({ goal, onEdit, onPause, onResume, onClear, t }: GoalBarProps & PropsLocale<'goal'>) {
+/** Manual recovery allowance offered after an automatic goal exhausts its cap. */
+export const ROUND_LIMIT_EXTENSION = 20
+
+export function GoalBar({ goal, onEdit, onPause, onResume, onExtendAndResume, onClear, t }: GoalBarProps & PropsLocale<'goal'>) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const [pending, setPending] = useState(false)
@@ -123,13 +126,18 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear, t }: GoalBar
     )
   }
 
-  const title = goal.phase === 'blocked' ? goal.blockedReason?.message : undefined
+  const roundLimit = goal.phase === 'blocked' && goal.blockedReason?.code === 'round-limit'
+    ? t('blocked.roundLimit', { rounds: goal.maxGoalRounds })
+    : undefined
+  const title = roundLimit ?? (goal.phase === 'blocked' ? goal.blockedReason?.message : undefined)
   return (
     <div className={css.dock} data-goal-bar>
       <div className={css.bar} title={title}>
         <span className={css.goalGlyph}><IconGoalOutline16 size={14} /></span>
         <span className={css.label}>{t(PHASE_LABELS[goal.phase])}</span>
-        <span className={css.objective}>{goal.objective}</span>
+        <span className={css.objective}>
+          {roundLimit === undefined ? goal.objective : `${roundLimit} · ${goal.objective}`}
+        </span>
         {actionError !== null && <span className={css.error} role="alert">{actionError}</span>}
         <div className={css.actions}>
           {goal.phase === 'active' && (
@@ -145,6 +153,18 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear, t }: GoalBar
                 <IconPlayOutline16 size={14} />
               </button>
             </Tooltip>
+          )}
+          {roundLimit !== undefined && (
+            <button
+              type="button"
+              className={css.continueBtn}
+              disabled={pending}
+              onClick={() => { void runAction(onExtendAndResume) }}
+              aria-label={t('action.continueRounds', { rounds: ROUND_LIMIT_EXTENSION })}
+            >
+              <IconPlayOutline16 size={14} />
+              <span>{t('action.continueShort', { rounds: ROUND_LIMIT_EXTENSION })}</span>
+            </button>
           )}
           <Tooltip label={t('action.edit')} side="bottom" delayMs={500}>
             <button
@@ -172,7 +192,7 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear, t }: GoalBar
 export type GoalDockProps = import('@deepseek-ai/dsh-client-ui-slots').PropsRuntime<'conversation.input.dock'> & GoalBarActions & PropsLocale<'goal'>
 
 /** Dock adapter: reads the host-computed 'goal' projection (whole value; absent or null renders nothing). */
-export function GoalDock({ useProjection, onEdit, onPause, onResume, onClear, t }: GoalDockProps) {
+export function GoalDock({ useProjection, onEdit, onPause, onResume, onExtendAndResume, onClear, t }: GoalDockProps) {
   const projection = useProjection('goal')
   return (
     <GoalBar
@@ -180,6 +200,7 @@ export function GoalDock({ useProjection, onEdit, onPause, onResume, onClear, t 
       onEdit={onEdit}
       onPause={onPause}
       onResume={onResume}
+      onExtendAndResume={onExtendAndResume}
       onClear={onClear}
       t={t}
     />

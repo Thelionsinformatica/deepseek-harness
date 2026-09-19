@@ -3,7 +3,7 @@ import { Readable, Writable } from 'node:stream'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   ClientSideConnection,
@@ -67,10 +67,17 @@ let workdir: string | undefined
 
 afterEach(async () => {
   if (spawned !== undefined) {
-    spawned.child.kill('SIGKILL')
+    const child = spawned.child
+    if (child.exitCode === null && child.signalCode === null) {
+      const closed = new Promise<void>((resolve) => { child.once('close', () => { resolve() }) })
+      child.kill('SIGKILL')
+      await closed
+    }
     spawned = undefined
   }
-  if (workdir !== undefined) await rm(workdir, { recursive: true, force: true })
+  if (workdir !== undefined) {
+    await rm(workdir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
+  }
   workdir = undefined
 })
 
@@ -81,7 +88,7 @@ async function boot(): Promise<Spawned & { cwd: string }> {
   await writeFile(configPath, CORDIS_YML)
   const child = spawn(
     process.execPath,
-    ['--import', tsxLoader, binScript, '--config', configPath],
+    ['--import', pathToFileURL(tsxLoader).href, binScript, '--config', configPath],
     {
       cwd,
       env: {
@@ -123,6 +130,8 @@ describe('dsh-acp-demo real-load-path smoke (bin + Loader, keyless)', () => {
     const init = await client.initialize({
       protocolVersion: PROTOCOL_VERSION,
       clientCapabilities: {},
+    }).catch((error: unknown) => {
+      throw new Error(`ACP initialize failed. stderr:\n${stderr.join('')}`, { cause: error })
     })
     expect(init.agentCapabilities).toEqual({
       promptCapabilities: { image: false, audio: false, embeddedContext: false },

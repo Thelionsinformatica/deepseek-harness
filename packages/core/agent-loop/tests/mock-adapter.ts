@@ -71,13 +71,21 @@ export interface HangAfter {
  */
 export class MockAdapter extends LlmAdapter {
   requests: GenerateOptions[] = []
+  // Plain fields, not parameter properties: snapshot subprocesses load this file
+  // through Node's strip-only TypeScript mode, which rejects parameter properties.
+  private readonly script: (StreamChunk[] | ((options: GenerateOptions) => StreamChunk[]) | 'hang' | 'hang-slow' | HangAfter)[]
+  private readonly reasoning: LlmModelReasoningInfo | undefined
+  private readonly defaultMaxTokens: number | undefined
 
   constructor(
-    private script: (StreamChunk[] | ((options: GenerateOptions) => StreamChunk[]) | 'hang' | 'hang-slow' | HangAfter)[],
-    private readonly reasoning?: LlmModelReasoningInfo,
-    private readonly defaultMaxTokens?: number,
+    script: (StreamChunk[] | ((options: GenerateOptions) => StreamChunk[]) | 'hang' | 'hang-slow' | HangAfter)[],
+    reasoning?: LlmModelReasoningInfo,
+    defaultMaxTokens?: number,
   ) {
     super()
+    this.script = script
+    this.reasoning = reasoning
+    this.defaultMaxTokens = defaultMaxTokens
   }
 
   override resolveModel(

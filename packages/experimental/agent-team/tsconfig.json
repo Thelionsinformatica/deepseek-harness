@@ -6,6 +6,11 @@
   },
   "include": ["src"],
   "references": [
+    { "path": "../../core/system-prompt" },
+    { "path": "../../boot/app-boot" },
+    { "path": "../../core/agent-loop" },
+    { "path": "../../core/tools" },
+    { "path": "../../storage/storage-domain" },
     { "path": "../../../vendor/cosmokit" },
     { "path": "../../../vendor/schemastery" },
     { "path": "../../../vendor/cordis" },

@@ -40,15 +40,16 @@ describe('coverage partition count', () => {
   it.each([
     [undefined, undefined],
     ['', undefined],
+    ['1', 1],
     ['2', 2],
     ['3', 3],
   ])('parses %j as %j', (raw, expected) => {
     expect(parseCoveragePartitionCount(raw)).toBe(expected)
   })
 
-  it.each(['0', '1', '2.5', '02', 'many'])('rejects %j', (raw) => {
+  it.each(['0', '2.5', '02', 'many'])('rejects %j', (raw) => {
     expect(() => parseCoveragePartitionCount(raw))
-      .toThrow(`${COVERAGE_PARTITIONS_ENV} must be an integer greater than 1`)
+      .toThrow(`${COVERAGE_PARTITIONS_ENV} must be a positive integer`)
   })
 })
 
@@ -129,19 +130,20 @@ describe('coverage partition coordinator', () => {
     })
   })
 
-  it('runs a native pnpm entrypoint directly', async () => {
+  it('runs one sequential partition through a native pnpm entrypoint', async () => {
     const root = await temporaryRoot()
     const commands: CoverageCommand[] = []
     const runCommand = successfulCommandRecorder(commands)
     const coordinator = new CoveragePartitionCoordinator({
       root,
-      partitions: 2,
+      partitions: 1,
       pnpmEntrypoint: '/tools/pnpm',
       runCommand,
     })
 
     await expect(coordinator.run()).resolves.toBe(0)
-    expect(commands).toHaveLength(3)
+    expect(commands).toHaveLength(2)
+    expect(commands[0]?.args).toContain('--shard=1/1')
     for (const command of commands) {
       expect(command.command).toBe('/tools/pnpm')
       expect(command.args[0]).toBe('exec')

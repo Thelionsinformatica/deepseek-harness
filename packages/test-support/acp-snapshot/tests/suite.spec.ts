@@ -483,6 +483,7 @@ describe('scenarioSkipped', () => {
   const authored: Scenario = { name: 'authored', hasModelTurn: true, recorded: false }
   const posix: Scenario = { name: 'posix-cancel', hasModelTurn: true, recorded: false, posixOnly: true }
   const pwsh: Scenario = { name: 'pwsh-tool', hasModelTurn: true, recorded: false, pwshOnly: true }
+  const bash: Scenario = { name: 'bash-tool', hasModelTurn: true, recorded: false, bashOnly: true }
 
   it('skips authored scenarios only while recording', () => {
     expect(scenarioSkipped(authored, true, 'linux')).toBe(true)
@@ -501,6 +502,12 @@ describe('scenarioSkipped', () => {
     expect(scenarioSkipped(pwsh, false, 'win32', true)).toBe(false)
     expect(scenarioSkipped(pwsh, false, 'linux', true)).toBe(false)
     expect(scenarioSkipped(authored, false, 'linux', false)).toBe(false)
+  })
+
+  it('skips bashOnly scenarios when the host lacks bash, and runs them otherwise', () => {
+    expect(scenarioSkipped(bash, false, 'win32', true, false)).toBe(true)
+    expect(scenarioSkipped(bash, false, 'linux', true, true)).toBe(false)
+    expect(scenarioSkipped(authored, false, 'win32', true, false)).toBe(false)
   })
 })
 

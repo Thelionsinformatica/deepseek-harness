@@ -8,7 +8,7 @@ import type {
 import type {
   CommandNode, CompactionSummaryNode, ConversationSnapshot, ConversationTurnDataMap,
   ObservableSnapshot, PendingInteraction, PendingWait, SessionId, ToolCallBlock,
-  TurnLocation, WorkspaceId,
+  SnapshotStore, TurnLocation, WorkspaceId,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MessageId } from '@deepseek-ai/dsh-client-connection/client'
@@ -22,9 +22,13 @@ import type { ComposerSubmitGesture, InputSubmitMode } from './composer-submissi
 import type { ChatNode, ChatNodeKind } from './chat-nodes.ts'
 import type { CallId, SelectionTarget, ViewTab } from './views.ts'
 
-/** Browser-owned image that has not crossed the durable host boundary. */
+/**
+ * Browser-owned attachment that has not crossed the durable host boundary.
+ * `kind: 'image'` travels the durable image path; `kind: 'file'` travels the
+ * file path and carries an inline SVG badge as its rail thumbnail.
+ */
 export interface ComposerAttachment {
-  kind: 'image'
+  kind: 'image' | 'file'
   id: DraftAttachmentId
   file: File
   previewUrl: string
@@ -182,6 +186,13 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'conversation.hero.brand.mark': { kind: 'single'; scope: 'root'; owner: HeroBrandMarkOwnerProps }
     /**
+     * Optional product dashboard rendered in the blank-session Hero between
+     * the headline and Workspace controls. Root scope gives the occupant the
+     * global Session and Workspace hooks without tying its cards to the
+     * provisional blank Session.
+     */
+    'conversation.hero.dashboard': { kind: 'single'; scope: 'root'; owner: HeroDashboardOwnerProps }
+    /**
      * The agent-preset chip beside the workspace picker on the new-session
      * screen. Root scope: no session exists yet, so the choice is staged for
      * the next one rather than applied to a current one.
@@ -293,6 +304,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** Owner share of the hero agent-preset chip: the shell supplies nothing. */
 export interface HeroAgentPresetOwnerProps {
   /** Marker field: the chip owns its own roster, staging, and menu state. */
+  children?: never
+}
+
+/** Owner share of the optional Hero dashboard: the shell supplies nothing. */
+export interface HeroDashboardOwnerProps {
+  /** Marker field: the occupant derives its content from global runtime hooks. */
   children?: never
 }
 
@@ -565,8 +582,16 @@ export interface ComposerBarInjected {
     gesture: ComposerSubmitGesture,
     steeringAvailable: boolean,
   ) => InputSubmitMode
-  /** Toggle the shared slash menu with only its command source; absent without ui-input-trigger or a session. */
+  /** Toggle the advanced-command catalog; absent without ui-input-trigger or a session. */
   toggleCommandMenu: ((selection: EditSelection) => void) | undefined
+  /** Toggle the current Workspace's file-and-folder reference catalog. */
+  toggleReferenceMenu: ((selection: EditSelection) => void) | undefined
+  /** Toggle the installed user-invocable skill catalog. */
+  toggleSkillMenu: ((selection: EditSelection) => void) | undefined
+  /** Connect a Workspace, carry the current draft when needed, and open its session. */
+  selectWorkspace: ((workspaceId: WorkspaceId) => Promise<void>) | undefined
+  /** Pick a local directory, register it as a Workspace, and open its session. */
+  createWorkspace: (() => Promise<void>) | undefined
   /** Cancel the in-flight turn; absent with the session. */
   stop: (() => void) | undefined
   /**
@@ -644,6 +669,7 @@ export type ConversationSlotProps =
     | 'conversation.input.dock' | 'conversation.composer.dock'
     | 'conversation.input.left' | 'conversation.input.right'
     | 'conversation.hero.brand.mark'
+    | 'conversation.hero.dashboard'
     | 'conversation.hero.workspace'
     | 'conversation.hero.agentPreset'
   >
@@ -748,6 +774,10 @@ export interface ChatScrollPosition {
  * outside the view (layout orchestration; the session object layer).
  */
 export interface ChatViewInjected {
+  hooks: {
+    /** Whether diagnostic prompt-assembly messages appear in the transcript. */
+    technicalContextVisible: SnapshotStore<boolean>
+  }
   /** Selection write + details panel opening in one gesture (store action + layout orchestration). */
   openDetails: (target: SelectionTarget) => void
   /**
@@ -788,7 +818,7 @@ export interface ChatViewInjected {
 export type ChatViewSlotProps =
   PropsRuntime<'conversation.view'>
   & PropsRenderSlots<'conversation.chat.node' | 'conversation.message.images'>
-  & PropsStore<ChatStore> & ChatViewInjected & PropsLocale<'conversation'>
+  & PropsStore<ChatStore> & InjectFace<ChatViewInjected> & PropsLocale<'conversation'>
 
 /** Full props of the attachment plugin's composer entry. */
 export type ComposerAttachmentsProps =

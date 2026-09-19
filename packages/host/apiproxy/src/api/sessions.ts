@@ -87,10 +87,15 @@ export interface SessionProjectionsBlock {
   values: Partial<SessionProjectionMap>
 }
 
-/** Browser-submitted prompt content; the host promotes image bytes to durable references. */
+/**
+ * Browser-submitted prompt content. The host promotes image bytes to durable
+ * attachment references and persists `file` bytes below `<DSH_HOME>/uploads`,
+ * replacing each file part with a text block that names the stored path.
+ */
 export type PromptContentPart =
   | { type: 'text'; text: string }
   | { type: 'image'; mediaType: ImageMediaType; data: string; name?: string }
+  | { type: 'file'; name: string; data: string }
 
 /** Complete model selection for one session. */
 export interface ModelSelection {
@@ -165,6 +170,19 @@ export interface SessionModels {
    * blocks input must read this rather than the groups.
    */
   routable: boolean
+  /** Whether Leon currently chooses between the configured tiers. */
+  automatic: boolean
+  /** Whether this deployment exposes a local adaptive policy. */
+  automaticAvailable: boolean
+  /** Whether the automatic policy declares at least one external failover route. */
+  externalFailoverAvailable?: boolean
+  /**
+   * Whether this process may send this session's automatic retry content to a
+   * failover route declared external. A protected local retrieval after the
+   * latest grant makes this false until the user grants consent again.
+   * Omission from an older Host means false.
+   */
+  externalFailoverConsent?: boolean
   /** Successfully loaded provider groups. */
   groups: ModelProviderGroup[]
   /** Provider-local failures; successful groups remain usable. */
@@ -302,8 +320,22 @@ export interface SessionsApi {
     provider: string
     model: string
     reasoningEffort?: string
+    /** Enable local adaptive routing; omission selects this model manually. */
+    automatic?: boolean
+    /**
+     * Explicitly permit this session's automatic retries to use configured
+     * external failovers for the local results already present when this
+     * request commits. A later protected local retrieval requires a new grant.
+     * Omission and false deny external transmission.
+     */
+    externalFailoverConsent?: boolean
   }>):
-  Promise<RpcResponse<{ selected: ModelSelection }>>
+  Promise<RpcResponse<{
+    selected: ModelSelection
+    automatic: boolean
+    /** Effective process-local consent covering every protected local result currently present. */
+    externalFailoverConsent?: boolean
+  }>>
 
   /**
    * Renames a session: appends a `session/title` event with the `user`
@@ -343,6 +375,7 @@ export interface SessionsApi {
 
   /**
    * Sends text and temporary image bytes to an ordinary session Agent after durable host admission.
+   * Success returns the identity of the exact durable user message admitted by the Host.
    * Browser callers attach their current IANA zone;
    * the Host validates, canonicalizes, and records it on that exact user message. Omission remains
    * valid for non-browser callers. Session-backed subagents reject with `agent-busy` and use
@@ -353,8 +386,20 @@ export interface SessionsApi {
     mode: 'queue' | 'steer'
     content: PromptContentPart[]
     clientTimeZone?: string
+    /** Optional explicit acceptance; only idle queue submission with a mounted policy. Never use secrets. */
+    acceptance?: {
+      expectedText?: string
+      maxRecoveries: number
+      requiredReadPath?: string
+      readOnly?: boolean
+      arithmeticTests?: { a: number; b: number; expected: number }[]
+    }
   }>):
-  Promise<RpcResponse<{ accepted: true; command?: { kind: 'success'; text?: string } }>>
+  Promise<RpcResponse<{
+    accepted: true
+    messageId: MessageId
+    command?: { kind: 'success'; text?: string }
+  }>>
 
   /** Reads one durable image after proving that this session's log references its id. */
   attachment(request: RpcRequest<{ sessionId: SessionId; attachmentId: AttachmentIdType }>):

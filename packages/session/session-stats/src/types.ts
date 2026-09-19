@@ -36,6 +36,46 @@ export interface SessionStatsProjection {
   decodeMs: number
   /** Summed provider output tokens over the same decode-timed steps. */
   decodeTokens: number
+  /** Legacy accounted total (confirmed provider charges plus token estimates), in nanodollars. */
+  estimatedApiCostUsdNanos: number
+  /** Legacy count of calls with either a confirmed charge or a configured token estimate. */
+  pricedModelCalls: number
+  /** Legacy alias for {@link unaccountedModelCalls}. */
+  unpricedModelCalls: number
+  /** Provider- or gateway-confirmed charge in integer billionths of one US dollar. */
+  confirmedApiCostUsdNanos?: number
+  /** Token-price estimate in integer billionths of one US dollar. */
+  tokenEstimatedApiCostUsdNanos?: number
+  /** Calls whose provider or gateway supplied a confirmed charge, including an explicit zero. */
+  confirmedModelCalls?: number
+  /** Calls estimated from token usage and an exact configured provider/model price. */
+  estimatedModelCalls?: number
+  /** Completed calls that cannot be priced because usage or an exact route price is unavailable. */
+  unaccountedModelCalls?: number
+  /** Failed request attempts observed through durable retry/failover records without cost evidence. */
+  unaccountedModelAttempts?: number
+}
+
+/** One exact provider/model price used for durable cost estimation. */
+export interface ModelTokenPrice {
+  /** Registered provider route. */
+  provider: string
+  /** Provider-owned model id. */
+  model: string
+  /** Standard input price in USD per one million uncached tokens. */
+  inputUsdPerMillion: number
+  /** Standard output price in USD per one million tokens. */
+  outputUsdPerMillion: number
+  /** Cached-input price; omission uses the ordinary input price. */
+  cacheReadUsdPerMillion?: number
+  /** Cache-write price; omission uses the ordinary input price. */
+  cacheWriteUsdPerMillion?: number
+}
+
+/** Deployment-owned model pricing table. An absent table disables cost accounting. */
+export interface SessionStatsConfig {
+  /** Exact provider/model token prices used to estimate the API cost of durable usage events. */
+  prices?: ModelTokenPrice[]
 }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {

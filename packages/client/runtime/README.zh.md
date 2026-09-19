@@ -8,6 +8,10 @@
 
 设置所有者共用本包定义的不依赖 React 的 `SettingsScopeSpec`、`SettingsScope` 与快照类型。ui-settings 拥有 `ctx.settingsScope.bind(spec)`、对应的 Host 传输、schema 校验与生命周期；详见[该包的约定](../ui-settings/README.zh.md)。
 
+## 显式任务验收
+
+`Session.prompt(content, mode, signal?, acceptance?)` 仅随该次根会话请求转发显式条件；后续提示词不会继承条件。条件与模型内容分离，不得包含秘密数据。宿主负责检查策略是否可用、输入界限及空闲队列接纳。子会话目标在本地以 `bad-request` 拒绝条件，而不会静默发送未经验证的提示词。失败仍通过 `promptError` 提供。此运行时入口本身不添加输入栏编辑器。
+
 <a id="slot-declaration-injection"></a>
 
 ## Slot 声明注入
@@ -24,7 +28,7 @@ Workspace 和 Session 列表各自具有单调的 `pending` → `ready` 基线�
 
 `WorkspaceRuntime.delete(workspaceId)` 在一元响应成功后从客户端投影中移除注册记录；对应的 `host/workspace-removed` 帧具有幂等性，并负责同步其他标签页。Session 状态与当前 Session selection 相互独立，因此 Workspace 消失后，其已纳入客户端投影的 Session 会立即投影到 Ungrouped 下。
 
-`WorkspaceListState.archivedSessionIds` 镜像 Host 的注册表级全局归档集合（一个按 Host 顺序的 `readonly SessionId[]`，仅在成员变化时才替换；需要 O(1) 查询的消费方自建临时 Set）。它是全快照状态：`workspace.list` 基线、`archiveSession` 一元回声和 `host/archived-sessions-changed` 帧各自安装完整集合。`WorkspaceRuntime.archiveSession(sessionId)` 通过 wire 归档；投影层在当前 selection 落入归档集合时统一清空为 New Session 视图状态——一条规则同时覆盖本地回声、其他标签页的帧、以及重连基线恢复出一个离线期间被归档的 selection。在 `workspace.list` 请求进行中安装的集合还会取代该过期基线携带的集合。各分组视图在所有位置隐藏集合成员，而会话行本身仍留在列表 store 中。
+`WorkspaceListState.archivedSessionIds` 镜像 Host 的注册表级全局归档集合（一个按 Host 顺序的 `readonly SessionId[]`，仅在成员变化时才替换；需要 O(1) 查询的消费方自建临时 Set）。它是全快照状态：`workspace.list` 基线、归档／取消归档／删除的一元回声和 `host/archived-sessions-changed` 帧各自安装完整集合。`WorkspaceRuntime.archiveSession(sessionId)` 通过 wire 归档；投影层在当前 selection 落入归档集合时统一清空为 New Session 视图状态——一条规则同时覆盖本地回声、其他标签页的帧、以及重连基线恢复出一个离线期间被归档的 selection。`unarchiveSession` 恢复普通可见性，但不移动 workspace 席位。`deleteSession` 只应用已由 Host 完整提交的删除，立即移除 Session 投影，并与跨标签页 `host/session-deleted` 帧幂等收敛；与普通 detach 使用的 `host/session-removed` 帧不同，永久删除也会移除持久子智能体行。在 `workspace.list` 请求进行中安装的集合会取代该过期基线携带的集合。
 
 SlotRegistry 分别为 renderer 提供 `useSessions` 与 `useWorkspaces` 的裸 observable；ui-renderer 创建钩子。Workspace 业务状态不会进入 `SessionListState` 或条目 store。
 

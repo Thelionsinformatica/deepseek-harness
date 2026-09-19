@@ -424,6 +424,14 @@ export class SessionRuntime implements ISessions {
   }
 
   /**
+   * Apply one Host-committed permanent deletion to the local mirror.
+   * @param sessionId - deleted session to remove from the client runtime.
+   */
+  remove(sessionId: SessionId): void {
+    this.manager.deleteSession(sessionId)
+  }
+
+  /**
    * Refresh the real Session baseline, reusing an in-flight pull.
    * @returns completion of the current or newly started baseline pull.
    */

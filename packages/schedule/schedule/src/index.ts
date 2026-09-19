@@ -43,7 +43,14 @@ export function apply(ctx: Context): void {
 
   ctx.effect(() => {
     const stopCreated = ctx.on('agent/created', ({ agent }) => {
-      if (stopping || runtimes.has(agent) || !ctx.agents.roots().includes(agent)) return
+      if (
+        stopping
+        || runtimes.has(agent)
+        || !ctx.agents.roots().includes(agent)
+        // `minimal` owns a deliberately closed two-tool RL surface. Host-wide
+        // model-facing consumers must not widen that preset after it mounts.
+        || agent.session.header.agentPreset === 'minimal'
+      ) return
       const runtime = new ScheduleRuntime(ctx, agent)
       const cleanup: OwnerCleanup = agent.ctx.effect(() => {
         const disposeTools = registerScheduleTools(ctx, agent.ctx, agent, () => { runtime.requestDrive() })

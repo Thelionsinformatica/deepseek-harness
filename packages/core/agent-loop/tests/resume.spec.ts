@@ -13,7 +13,8 @@ import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
-import { MockAdapter, textResponse } from './mock-adapter.ts'
+import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
+import { MockAdapter, textResponse, toolCallResponse } from './mock-adapter.ts'
 
 const dirs: string[] = []
 afterEach(async () => { for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true }) })
@@ -32,6 +33,7 @@ async function mountPersistentHarness(root: string, adapter: MockAdapter): Promi
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(AgentLoop, { agents: [] })
+  await ctx.plugin(ToolTodo, { allowParallelInProgress: true, preserveExistingItems: false })
   await ctx.plugin(JsonlSessionPersistence, { root })
   ctx.llm.registerAdapter(['mock'], adapter)
   return ctx
@@ -89,6 +91,87 @@ function throwUnknown(value: unknown): never {
 }
 
 describe('the session-persistence Agent Note: AgentLoop factory create/resume', () => {
+  it('resumes one pending task after a runtime restart while switching the selected model', async () => {
+    const sessionId = SessionId('acceptance-restart-model-switch')
+    const firstAdapter = new MockAdapter([
+      toolCallResponse('acceptance-call-1', 'todo_write', {
+        todos: [
+          { content: 'registrar o estado duravel', status: 'completed' },
+          { content: 'retomar depois da troca de modelo', status: 'pending' },
+        ],
+      }),
+      textResponse('Estado salvo; a segunda etapa continua pendente.'),
+    ])
+    const first = await persistentHarness(firstAdapter)
+    const original = (await first.ctx.agents.create({
+      sessionId,
+      agentOptions: { provider: 'mock', model: 'qwen3.5:9b' },
+    })).agent
+
+    original.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Execute a tarefa de aceitação e preserve a etapa pendente para a retomada.' }],
+      source: { kind: 'user' },
+    }))
+    await waitForIdle(first.ctx, original)
+    expect(firstAdapter.requests.map(request => request.model)).toEqual(['qwen3.5:9b', 'qwen3.5:9b'])
+    expect(original.session.events.findLast(event => event.type === 'todo/write')).toMatchObject({
+      data: {
+        todos: [
+          { content: 'registrar o estado duravel', status: 'completed' },
+          { content: 'retomar depois da troca de modelo', status: 'pending' },
+        ],
+      },
+    })
+    const lastSequenceBeforeRestart = original.session.events.at(-1)?.seq
+    await first.ctx.fiber.dispose()
+
+    const resumedAdapter = new MockAdapter([
+      toolCallResponse('acceptance-call-2', 'todo_write', {
+        todos: [
+          { content: 'registrar o estado duravel', status: 'completed' },
+          { content: 'retomar depois da troca de modelo', status: 'completed' },
+        ],
+      }),
+      textResponse('Retomada concluida com o novo modelo.'),
+    ])
+    const restarted = await mountPersistentHarness(first.root, resumedAdapter)
+    const resumed = (await restarted.agents.resume({
+      resumeSessionId: sessionId,
+      agentOptions: { provider: 'mock', model: 'ornith-1.5:9b' },
+    })).agent
+
+    expect(resumed.session.id).toBe(sessionId)
+    expect(resumedAdapter.requests).toHaveLength(0)
+    expect(JSON.stringify(resumed.session.deriveMessages())).toContain('preserve a etapa pendente')
+    expect(resumed.session.events.findLast(event => event.type === 'todo/write')).toMatchObject({
+      data: { todos: [expect.any(Object), expect.objectContaining({ status: 'pending' })] },
+    })
+
+    resumed.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Continue exatamente de onde parou e conclua a etapa pendente.' }],
+      source: { kind: 'user' },
+    }))
+    await waitForIdle(restarted, resumed)
+
+    expect(resumedAdapter.requests.map(request => request.model)).toEqual(['ornith-1.5:9b', 'ornith-1.5:9b'])
+    expect(JSON.stringify(resumedAdapter.requests[0]?.messages)).toContain('preserve a etapa pendente')
+    expect(resumed.session.events.findLast(event => event.type === 'todo/write')).toMatchObject({
+      data: {
+        todos: [
+          { content: 'registrar o estado duravel', status: 'completed' },
+          { content: 'retomar depois da troca de modelo', status: 'completed' },
+        ],
+      },
+    })
+    expect(resumed.session.events.at(-1)?.seq).toBeGreaterThan(lastSequenceBeforeRestart ?? -1)
+    expect(resumed.session.events.filter(event => event.type === 'tool/call').map(event => event.data.callId))
+      .toEqual([expect.any(String), expect.any(String)])
+    expect(new Set(
+      resumed.session.events.filter(event => event.type === 'tool/call').map(event => event.data.callId),
+    ).size).toBe(2)
+    await restarted.fiber.dispose()
+  })
+
   it('resumes a pre-react-loop session including pre-identity message events', async () => {
     const sessionId = SessionId('pre-identity-resume')
     const first = await persistentHarness(new MockAdapter([]))

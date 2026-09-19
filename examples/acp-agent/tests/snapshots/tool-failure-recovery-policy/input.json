@@ -1,0 +1,7 @@
+{
+  "steps": [
+    { "op": "initialize" },
+    { "op": "newSession" },
+    { "op": "prompt", "text": "Read missing.txt. If it cannot be read, use the evidence already available and finish." }
+  ]
+}

@@ -1,4 +1,4 @@
-# Agent Note: Todo plan strip clears on the next turn
+# Agent Note: Todo plan strip clears on the next direct-human task
 
 Status: implemented
 
@@ -6,26 +6,27 @@ English | [中文](2026-07-28-todo-plan-clears-on-next-turn.zh.md)
 
 ## Problem
 
-`todo_write` stores whole-list snapshots on the session log, and interactive hosts render the latest list as a plan strip (web TodoPanel via the `todos` projection, TUI Plan panel). After a turn finished, that strip stayed on screen into the next user turn — a completed or abandoned checklist from the previous task. Readers treat the strip as "what this turn is doing," so a stale list across the turn boundary is the wrong product lifetime. The [web todo display](2026-07-23-web-todo-display.md) and [`todo_write` tool](2026-06-29-todo-write-tool.md) notes still own event-sourcing and the two render surfaces; they described the standing plan as lasting for the whole session until the next write.
+`todo_write` stores whole-list snapshots on the session log, and interactive hosts render the latest list as a plan strip. A completed or abandoned checklist must not leak into the next task the user requests. However, a long-running goal deliberately spans several automatic turns; clearing its checklist at every `turn/start` makes the same task appear to vanish between continuation rounds and removes the evidence needed to reject premature completion.
 
 ## Decision
 
-The standing plan is the latest `todo/write` that is not followed by a later `turn/start`. `turn/end` keeps the list visible so the finished checklist remains while the user reads the answer; the next `turn/start` clears it until the model writes again.
+The standing plan is the latest `todo/write` that is not followed by a later direct-human `user/message` (`source.kind === 'user'`). `turn/start`, `turn/end`, and goal- or plugin-sourced messages retain the list. A new human request clears the previous task before the model writes its replacement, while every automatic Goal Round sees and updates one continuous plan for the same objective.
 
 ### Host projection (web)
 
-`dsh-tool-todo`'s `todos` projection unit folds the rule: `apply` takes the whole list from each `todo/write` and returns `null` on each `turn/start` (`stateVersion` 2). Carriers (`dsh-host-apiproxy`) serve that value on the history tail `projections` block and push `session/projection` frames; the web dock reads it through `useProjection('todos')`. The keyless fixture mirrors the same fold for assembled snapshots.
+`dsh-tool-todo`'s `todos` projection unit folds the rule: `apply` takes the whole list from each `todo/write` and returns `null` only on a later direct-human `user/message` (`stateVersion` 3). Carriers (`dsh-host-apiproxy`) serve that value on the history tail `projections` block and push `session/projection` frames; the web dock reads it through `useProjection('todos')`.
 
 ### TUI live path
 
-The former TUI's `renderEvent` switch cleared its local plan panel on `turn/start` and replaced it on `todo/write`, with its rebuild path resetting the panel before replay so cold resume converged on the same rule; that package has since been removed ([remove TUI package](../simplification/2026-08-04-remove-tui-package.md)).
+The former TUI used the earlier turn-boundary rule and has since been removed ([remove TUI package](../simplification/2026-08-04-remove-tui-package.md)). The authoritative remaining product path is the host projection consumed by the Web dock.
 
 ## Alternatives considered
 
+- **Clear on every `turn/start`** — rejected because an automatic Goal Round is a new turn for the same task; the plan would disappear exactly while Leon continues working.
 - **Clear on `turn/end`** — hides the checklist while the user is still reading the just-finished answer; the strip's job at that moment is the completed plan, not an empty dock.
 - **Clear only when every item is `completed`** — leaves abandoned or partial plans across turns; the strip would still show another task's work.
-- **Append an empty `todo/write` on turn start** — mutates the log for a UI lifetime rule and invents a write the model never authored.
+- **Append an empty `todo/write` on human input** — mutates the log for a UI lifetime rule and invents a write the model never authored.
 
 ## Consequences
 
-The host projection and the TUI panel share one lifetime rule; reopening a session restores a plan only when no later turn has started. Partial supersession of the session-long standing-plan wording in [web todo display](2026-07-23-web-todo-display.md) and [`todo_write` tool](2026-06-29-todo-write-tool.md): event-sourcing, last-write-wins replacement, and the two render surfaces stay there; this note owns turn-boundary clearance. Coverage: tool-todo projection specs for turn/start clear + turn/end keep, fixture push-frame clearance for the assembled web snapshot, plus the TUI snapshot that starts the next turn and pins the strip gone.
+Reopening a session restores one plan across all automatic rounds of its task. The next direct-human request retires that plan before new work begins. Event sourcing and last-write-wins replacement remain owned by [web todo display](2026-07-23-web-todo-display.md) and [`todo_write` tool](2026-06-29-todo-write-tool.md); this note owns the direct-human boundary. Projection tests pin automatic-turn retention, plugin-message retention, direct-human clearance, and the version bump that invalidates cached state folded under the old rule.

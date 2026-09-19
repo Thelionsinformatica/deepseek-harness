@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  Button, IconCloseFill14, IconPersonalizationOutline16,
+  Button, IconArchiveOutline20, IconCloseFill14, IconPersonalizationOutline16,
   IconProjectAddOutline16, IconSearchOutline16, Menu, Modal, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
@@ -24,6 +24,8 @@ import { deriveFlat, deriveGroups, deriveSearchResults, UNGROUPED_KEY } from './
 import { ProjectRowItem, SearchResultItem, SessionNodeItem } from './rows/Rows.tsx'
 import { FLAT_SESSION_ORDER_KEY } from './stores.ts'
 import { WorkspacePickFlow } from './WorkspacePicker.tsx'
+import { ArchivedSessionsDialog } from './ArchivedSessionsDialog.tsx'
+import { DeleteConfirmationFooter } from './DeleteConfirmationFooter.tsx'
 import css from './WorkspaceBrowser.module.css'
 
 /**
@@ -243,6 +245,8 @@ type SessionTreeProps = Pick<
   onSessionRename: (sessionId: SessionNode['id'], currentTitle: string) => void
   /** Archive a session (row menu action; the row disappears on the state echo). */
   onSessionArchive: (sessionId: SessionNode['id']) => void
+  /** Open the browser-owned confirmed permanent-delete dialog. */
+  onSessionDelete: (sessionId: SessionNode['id'], currentTitle: string) => void
   /** Session order behavior: fixed after edits, or additionally promoted by user activity. */
   orderBy: SessionOrderBy
 }
@@ -250,7 +254,7 @@ type SessionTreeProps = Pick<
 /** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
 function SessionTree({
   useSessions, startSession, open, forkSession, workspaces, archivedSessionIds,
-  onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive,
+  onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, onSessionDelete,
   insertWorkspaceBefore, insertSessionBefore, orderBy,
   groupExpansion, setGroupExpanded,
   sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, home, t,
@@ -519,6 +523,7 @@ function SessionTree({
                     onRename={onSessionRename}
                     onFork={forkSession}
                     onArchive={onSessionArchive}
+                    onDelete={onSessionDelete}
                     drag={dragProps}
                     t={t}
                   />
@@ -547,7 +552,7 @@ function SessionTree({
 
 /** The flat "In one list" body: every session is one draggable top-level row. */
 function FlatList({
-  useSessions, open, forkSession, onSessionRename, onSessionArchive, archivedSessionIds,
+  useSessions, open, forkSession, onSessionRename, onSessionArchive, onSessionDelete, archivedSessionIds,
   orderBy, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t,
 }: Pick<
   SessionTreeProps,
@@ -556,6 +561,7 @@ function FlatList({
   | 'forkSession'
   | 'onSessionRename'
   | 'onSessionArchive'
+  | 'onSessionDelete'
   | 'archivedSessionIds'
   | 'orderBy'
   | 'sessionOrderByAccount'
@@ -635,6 +641,7 @@ function FlatList({
               onRename={onSessionRename}
               onFork={forkSession}
               onArchive={onSessionArchive}
+              onDelete={onSessionDelete}
               flat
               drag={{
                 start: () => {
@@ -756,6 +763,8 @@ export function WorkspaceBrowser({
   deleteWorkspace,
   insertWorkspaceBefore,
   archiveSession,
+  unarchiveSession,
+  deleteSession,
   insertSessionBefore,
   createWorkspace,
   searchSessions,
@@ -828,6 +837,7 @@ export function WorkspaceBrowser({
   const [wsPickerOpen, setWsPickerOpen] = useState(false)
   const wsPlusRef = useRef<HTMLButtonElement>(null)
   const composingRef = useRef(false)
+  const [archivedOpen, setArchivedOpen] = useState(false)
 
   // Rail search = expand + land in the search box: the flag arms before the
   // expand request; once the shell flips wide the input mounts and takes focus.
@@ -972,6 +982,34 @@ export function WorkspaceBrowser({
     })
   }
 
+  // Permanent Session deletion stays browser-owned so every ordinary row
+  // follows one confirmation and failure-retention path.
+  const [sessionDeleteTarget, setSessionDeleteTarget] = useState<{ sessionId: SessionNode['id']; title: string } | null>(null)
+  const [sessionDeleting, setSessionDeleting] = useState(false)
+  const [sessionDeleteError, setSessionDeleteError] = useState<string | null>(null)
+  const closeSessionDelete = (): void => {
+    if (sessionDeleting) return
+    setSessionDeleteTarget(null)
+    setSessionDeleteError(null)
+  }
+  const confirmSessionDelete = (): void => {
+    /* v8 ignore next -- the confirmation button is absent without a target and disabled while deleting. */
+    if (sessionDeleting || sessionDeleteTarget === null) return
+    setSessionDeleting(true)
+    setSessionDeleteError(null)
+    deleteSession(sessionDeleteTarget.sessionId).then(() => {
+      setSessionDeleting(false)
+      setSessionDeleteTarget(null)
+    }).catch((reason: unknown) => {
+      setSessionDeleting(false)
+      setSessionDeleteError(reason instanceof Error ? reason.message : String(reason))
+    })
+  }
+  const onSessionDelete = (sessionId: SessionNode['id'], title: string): void => {
+    setSessionDeleteTarget({ sessionId, title })
+    setSessionDeleteError(null)
+  }
+
   // Delete dialog is separate from the row so a successful removal can
   // unmount that row without tearing down the in-flight confirmation state.
   const [deleteTarget, setDeleteTarget] = useState<{ workspaceId: WorkspaceId; title: string } | null>(null)
@@ -1082,6 +1120,30 @@ export function WorkspaceBrowser({
               t={t}
             />
           )}
+          {wide && (
+            <Tooltip
+              label={t('archived.open.aria', { n: archivedSessionIds.length })}
+              side="bottom"
+              delayMs={500}
+            >
+              <button
+                type="button"
+                className={clsx(css.iconButton, css.archiveButton)}
+                aria-label={t('archived.open.aria', { n: archivedSessionIds.length })}
+                onClick={() => {
+                  setWsPickerOpen(false)
+                  setArchivedOpen(true)
+                }}
+              >
+                <IconArchiveOutline20 size={16} />
+                {archivedSessionIds.length > 0 && (
+                  <span className={css.archiveCount} aria-hidden="true">
+                    {archivedSessionIds.length}
+                  </span>
+                )}
+              </button>
+            </Tooltip>
+          )}
           {/* Adding is the button's one action, so a composition with no
               picking affordance has nothing to offer here: the region hides the
               button rather than leaving a dead one in the header. */}
@@ -1159,6 +1221,7 @@ export function WorkspaceBrowser({
               <FlatList
                 useSessions={useSessions} open={open} forkSession={forkSession}
                 onSessionRename={onSessionRename} onSessionArchive={onSessionArchive}
+                onSessionDelete={onSessionDelete}
                 archivedSessionIds={archivedSessionIds}
                 orderBy={orderBy}
                 sessionOrderByAccount={sessionOrderByAccount}
@@ -1173,6 +1236,7 @@ export function WorkspaceBrowser({
                 useSessions={useSessions}
                 onSessionRename={onSessionRename}
                 onSessionArchive={onSessionArchive}
+                onSessionDelete={onSessionDelete}
                 forkSession={forkSession}
                 workspaces={workspaces}
                 groupExpansion={groupExpansion}
@@ -1201,6 +1265,18 @@ export function WorkspaceBrowser({
               />
             ))}
       </div>
+
+      {archivedOpen && (
+        <ArchivedSessionsDialog
+          useSessions={useSessions}
+          workspaces={workspaces}
+          archivedSessionIds={archivedSessionIds}
+          unarchiveSession={unarchiveSession}
+          deleteSession={deleteSession}
+          onClose={() => { setArchivedOpen(false) }}
+          t={t}
+        />
+      )}
 
       <Modal
         open={renameTarget !== null}
@@ -1269,6 +1345,26 @@ export function WorkspaceBrowser({
         {sessionRenameError !== null && <div className={css.renameError} role="alert">{sessionRenameError}</div>}
       </Modal>
       <Modal
+        open={sessionDeleteTarget !== null}
+        onClose={closeSessionDelete}
+        closeLabel={t('close')}
+        title={t('delete.session.title')}
+        {...sessionDeleteTarget === null
+          ? {}
+          : { description: t('delete.session.description', { name: sessionDeleteTarget.title }) }}
+        footer={<DeleteConfirmationFooter
+          busy={sessionDeleting}
+          cancelLabel={t('cancel')}
+          confirmLabel={t('menu.deleteSession')}
+          actionClassName={css.deleteAction}
+          onCancel={closeSessionDelete}
+          onConfirm={confirmSessionDelete}
+        />}
+      >
+        {sessionDeleting && <div className={css.deleteStatus} role="status">{t('delete.session.pending')}</div>}
+        {sessionDeleteError !== null && <div className={css.renameError} role="alert">{sessionDeleteError}</div>}
+      </Modal>
+      <Modal
         open={deleteTarget !== null}
         onClose={closeDelete}
         closeLabel={t('close')}
@@ -1276,19 +1372,14 @@ export function WorkspaceBrowser({
         {...deleteTarget === null
           ? {}
           : { description: t('delete.desc', { name: deleteTarget.title }) }}
-        footer={(
-          <>
-            <Button variant="outline" disabled={deleting} onClick={closeDelete}>{t('cancel')}</Button>
-            <Button
-              variant="outline"
-              className={css.deleteAction}
-              disabled={deleting}
-              onClick={confirmDelete}
-            >
-              {t('delete.workspace')}
-            </Button>
-          </>
-        )}
+        footer={<DeleteConfirmationFooter
+          busy={deleting}
+          cancelLabel={t('cancel')}
+          confirmLabel={t('delete.workspace')}
+          actionClassName={css.deleteAction}
+          onCancel={closeDelete}
+          onConfirm={confirmDelete}
+        />}
       >
         {deleting && <div className={css.deleteStatus} role="status">{t('delete.pending')}</div>}
         {deleteError !== null && <div className={css.renameError} role="alert">{deleteError}</div>}

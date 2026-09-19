@@ -1,0 +1,52 @@
+[
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "tool-call" },
+      { "type": "tool-call-delta", "index": 0, "id": "call_todo_initial", "name": "todo_write", "argumentsDelta": "{\"todos\":[{\"content\":\"Implement project\",\"status\":\"in_progress\"},{\"content\":\"Validate result\",\"status\":\"pending\"}]}" },
+      { "type": "block-end", "index": 0, "block": { "type": "tool-call", "id": "call_todo_initial", "name": "todo_write", "arguments": "{\"todos\":[{\"content\":\"Implement project\",\"status\":\"in_progress\"},{\"content\":\"Validate result\",\"status\":\"pending\"}]}" } },
+      { "type": "usage", "usage": { "inputTokens": 20, "outputTokens": 8 } },
+      { "type": "finish", "reason": { "kind": "tool-calls" } }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "text" },
+      { "type": "text-delta", "index": 0, "text": "INITIAL TASK STOP" },
+      { "type": "block-end", "index": 0, "block": { "type": "text", "text": "INITIAL TASK STOP" } },
+      { "type": "usage", "usage": { "inputTokens": 28, "outputTokens": 3 } },
+      { "type": "finish", "reason": { "kind": "stop" } }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "tool-call" },
+      { "type": "tool-call-delta", "index": 0, "id": "call_todo_complete", "name": "todo_write", "argumentsDelta": "{\"todos\":[{\"content\":\"Implement project\",\"status\":\"completed\"},{\"content\":\"Validate result\",\"status\":\"completed\"}]}" },
+      { "type": "block-end", "index": 0, "block": { "type": "tool-call", "id": "call_todo_complete", "name": "todo_write", "arguments": "{\"todos\":[{\"content\":\"Implement project\",\"status\":\"completed\"},{\"content\":\"Validate result\",\"status\":\"completed\"}]}" } },
+      { "type": "usage", "usage": { "inputTokens": 35, "outputTokens": 8 } },
+      { "type": "finish", "reason": { "kind": "tool-calls" } }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "tool-call" },
+      { "type": "tool-call-delta", "index": 0, "id": "call_goal_complete", "name": "update_goal", "argumentsDelta": "{\"goal_id\":\"{{fromRequest:goal-[0-9a-f-]+}}\",\"revision\":1,\"action\":\"complete\"}" },
+      { "type": "block-end", "index": 0, "block": { "type": "tool-call", "id": "call_goal_complete", "name": "update_goal", "arguments": "{\"goal_id\":\"{{fromRequest:goal-[0-9a-f-]+}}\",\"revision\":1,\"action\":\"complete\"}" } },
+      { "type": "usage", "usage": { "inputTokens": 42, "outputTokens": 9 } },
+      { "type": "finish", "reason": { "kind": "tool-calls" } }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "text" },
+      { "type": "text-delta", "index": 0, "text": "AUTOMATIC GOAL COMPLETE" },
+      { "type": "block-end", "index": 0, "block": { "type": "text", "text": "AUTOMATIC GOAL COMPLETE" } },
+      { "type": "usage", "usage": { "inputTokens": 50, "outputTokens": 4 } },
+      { "type": "finish", "reason": { "kind": "stop" } }
+    ]
+  }
+]

@@ -42,6 +42,7 @@ _CORDIS_YML = """\
   name: '@deepseek-ai/dsh-tool-todo'
   config:
     allowParallelInProgress: true
+    preserveExistingItems: false
 """
 
 

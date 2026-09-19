@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, join, parse } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import Storage from '@deepseek-ai/dsh-storage'
 import type { StorageBackend } from '@deepseek-ai/dsh-storage'
@@ -16,6 +16,7 @@ import WorkspaceRegistry, {
   WorkspaceOrderInvalidError,
 } from '../src/index.ts'
 import type { WorkspaceDomainState, WorkspaceRecord } from '../src/index.ts'
+import { defaultWorkspaceTitle, fullyQualifiedWorkspacePath } from '../src/paths.ts'
 
 const DOMAIN_VERSION = 2
 
@@ -204,7 +205,7 @@ describe('WorkspaceRegistry lifecycle and bootstrap', () => {
     const newer = await makeDir('newer')
     const alias = join(base, 'older-link')
     const plain = join(base, 'plain.txt')
-    await symlink(older, alias)
+    await symlink(older, alias, process.platform === 'win32' ? 'junction' : 'dir')
     await writeFile(plain, 'not a directory')
     const missing = join(base, 'missing')
     const result = await harness({
@@ -352,11 +353,29 @@ describe('WorkspaceRegistry lifecycle and bootstrap', () => {
 })
 
 describe('WorkspaceRegistry create and lookup', () => {
+  it('accepts fully qualified roots and directories without accepting drive-relative paths', () => {
+    expect(fullyQualifiedWorkspacePath('C:\\', 'win32')).toBe(true)
+    expect(fullyQualifiedWorkspacePath('C:\\work', 'win32')).toBe(true)
+    expect(defaultWorkspaceTitle('C:\\', 'win32')).toBe('C:\\')
+    expect(defaultWorkspaceTitle('C:\\work', 'win32')).toBe('work')
+    expect(fullyQualifiedWorkspacePath('C:', 'win32')).toBe(false)
+    expect(fullyQualifiedWorkspacePath('C:work', 'win32')).toBe(false)
+    expect(fullyQualifiedWorkspacePath('\\\\server\\share\\', 'win32')).toBe(true)
+    expect(defaultWorkspaceTitle('\\\\server\\share\\', 'win32')).toBe('share')
+    expect(fullyQualifiedWorkspacePath('\\\\server', 'win32')).toBe(false)
+    expect(fullyQualifiedWorkspacePath('\\work', 'win32')).toBe(false)
+    expect(fullyQualifiedWorkspacePath('/', 'linux')).toBe(true)
+    expect(fullyQualifiedWorkspacePath('/work', 'darwin')).toBe(true)
+    expect(defaultWorkspaceTitle('/', 'linux')).toBe('/')
+    expect(defaultWorkspaceTitle('/work', 'darwin')).toBe('work')
+    expect(fullyQualifiedWorkspacePath('work', 'linux')).toBe(false)
+  })
+
   it('creates newest-first and idempotently reuses a canonical path without retitling', async () => {
     const firstDir = await makeDir('first')
     const secondDir = await makeDir('second')
     const alias = join(base, 'first-link')
-    await symlink(firstDir, alias)
+    await symlink(firstDir, alias, process.platform === 'win32' ? 'junction' : 'dir')
     const { registry, pool } = await harness()
     const first = await registry.create(firstDir, 'Original')
     const second = await registry.create(secondDir)
@@ -401,6 +420,24 @@ describe('WorkspaceRegistry create and lookup', () => {
     await expect(registry.create(file)).rejects.toThrow(/not a directory/)
     await expect(registry.resolveByPath(join(parent, 'missing'))).rejects.toMatchObject({ code: 'ENOENT' })
     expect(registry.list()).toEqual([])
+  })
+
+  it('rejects a resolvable relative path instead of adopting it from the Host cwd', async () => {
+    const { registry } = await harness()
+    // A temp directory can be on another Windows drive, where relative() returns an absolute path.
+    const fromHostCwd = '.'
+    await expect(registry.create(fromHostCwd)).rejects.toThrow(/fully qualified/)
+    await expect(registry.resolveByPath(fromHostCwd)).rejects.toThrow(/fully qualified/)
+    expect(registry.list()).toEqual([])
+  })
+
+  it('registers the real host drive root with a non-empty title without writing to that root', async () => {
+    const { registry } = await harness()
+    const root = parse(process.cwd()).root
+    const workspace = await registry.create(root)
+    expect(workspace.path).toBe(await realpath(root))
+    expect(workspace.title).toBe(root)
+    expect(await registry.resolveByPath(root)).toBe(workspace)
   })
 
   it('rolls back the provisional cache when the record write fails', async () => {
@@ -873,6 +910,58 @@ describe('workspace mutation and status', () => {
 })
 
 describe('registry-global session archive', () => {
+  it('unarchives durably and restores the session at its existing workspace position', async () => {
+    const dir = await makeDir('unarchive-home')
+    const result = await harness({ sessions: [header('first', dir, 200), header('second', dir, 100)] })
+    const before = [...result.registry.list()[0]!.sessionIds]
+    await result.registry.archiveSession(SessionId('first'))
+    await result.registry.unarchiveSession(SessionId('first'))
+
+    expect(result.registry.archivedSessionIds).toEqual([])
+    expect(result.registry.list()[0]!.sessionIds).toEqual(before)
+    expect(storedState(result.pool).archivedSessionIds).toEqual([])
+    const changes = result.changes.filter(change => change.table === '').length
+    await result.registry.unarchiveSession(SessionId('first'))
+    expect(result.changes.filter(change => change.table === '').length).toBe(changes)
+  })
+
+  it('removes only the target session from accounting, archive state, and registry indexes', async () => {
+    const dir = await makeDir('delete-session-home')
+    const result = await harness({ sessions: [header('target', dir, 200), header('survivor', dir, 100)] })
+    await result.registry.archiveSession(SessionId('target'))
+    expect(result.registry.hasSessionReference(SessionId('target'))).toBe(true)
+
+    await result.registry.deleteSession(SessionId('target'))
+    expect(result.registry.archivedSessionIds).toEqual([])
+    expect(result.registry.list()[0]!.sessionIds).toEqual(['survivor'])
+    expect(storedRecord(result.pool, result.registry.list()[0]!.id).sessionIds).toEqual(['survivor'])
+    expect(result.registry.hasSessionReference(SessionId('target'))).toBe(false)
+    expect(result.registry.hasSessionReference(SessionId('survivor'))).toBe(true)
+    await expect(result.registry.deleteSession(SessionId('target'))).resolves.toBeUndefined()
+  })
+
+  it('finishes an interrupted delete-session marker at startup', async () => {
+    const dir = await makeDir('delete-session-recovery')
+    const workspaceId = WorkspaceId('00000000-0000-4000-8000-00000000000b')
+    const pool = storedPool(
+      [[workspaceId, record(dir, ['target', 'survivor'])]],
+      {
+        initialized: true,
+        workspaceIds: [workspaceId],
+        archivedSessionIds: [SessionId('target')],
+        pendingMutation: { operation: 'delete-session', sessionId: SessionId('target') },
+      },
+    )
+    const result = await harness({
+      pool,
+      sessions: [header('survivor', dir, 100)],
+    })
+
+    expect(result.registry.archivedSessionIds).toEqual([])
+    expect(result.registry.list()[0]!.sessionIds).toEqual(['survivor'])
+    expect(storedState(pool).pendingMutation).toBeUndefined()
+  })
+
   it('archives durably in order, idempotently skips repeats, and leaves accounting untouched', async () => {
     const dir = await makeDir('archive-home')
     const result = await harness({ sessions: [header('kept', dir, 100), header('gone', dir, 200)] })

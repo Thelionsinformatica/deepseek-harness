@@ -15,6 +15,8 @@ Local Service Provider for the [`@deepseek-ai/dsh-subprocess`](../subprocess/REA
 - **Terminate-and-join disposal** — the service retains live handles so its own disposal can escalate every running tree and await its exit; quiescent and spawn-failed handles leave the live set after whole-tree or terminal-session cleanup finishes.
 - **Synchronous host-exit finalization** — while the service effect is active, a Node `exit` listener force-terminates every ordinary tree and observable terminal session still in the same live sets. The local-only operations send POSIX SIGKILL to the managed group, run Windows `taskkill /T /F`, and synchronously signal captured/current terminal identities around the PTY root kill; they create no promise or timer, preserve the host's exit code and diagnostic, contain each target's failure, and do not claim quiescence. Normal disposal keeps the awaited graceful path above. See the [host-exit cleanup decision](../../../.agents/notes/implemented/bug-fix/2026-08-11-synchronous-subprocess-exit-cleanup.md).
 
+On Windows, ordinary non-terminal children and `taskkill` helpers use `windowsHide: true`. This hides windows that honor the startup visibility setting; it does not replace terminal-process handling or change termination ownership.
+
 ## Model Experience
 
 Indirectly, through Consumers (today the bash executor family behind `dsh-tool-bash`), which own all model-facing rendering of process output and lifecycle.
@@ -32,4 +34,6 @@ No direct invalidation; the named consumers own any request-prefix changes.
 - **The credential scrub is a name heuristic** — `*KEY*`/`*PASSWORD*`/`*SECRET*`/`*TOKEN*` only; differently-named secrets (e.g. `*PASSPHRASE*`) pass through, and a whitelist for over-scrubbed vars is noted future work.
 - **Completed spill files are not deleted** — bounded full-output recovery files (and the private per-process spill dir) accumulate under the OS tmpdir until something external cleans them; oversize incomplete spills are discarded and deletion is attempted immediately, but a cleanup failure can leave a bounded file behind.
 
-The raw process handling lives in `src/spawn.ts`; `src/index.ts` is the service wiring.
+The raw process handling lives in `src/spawn.ts`; `src/index.ts` is the service wiring. PTY allocation runs synchronously, but `spawnTerminal` reports validation and native allocation failures through rejected promises. The post-observation termination check remains necessary even before awaiting: an already-absent tree can settle its observer synchronously.
+
+For the portable termination/PTY regressions from suites excluded by the broad Windows test configuration, run `node node_modules/vitest/vitest.mjs run --config packages/subprocess/subprocess-local/tests/vitest.contract.config.mjs` from the repository root. This selects named cases only; skipped POSIX cases are not Windows validation.

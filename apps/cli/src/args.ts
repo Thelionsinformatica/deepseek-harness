@@ -12,10 +12,13 @@
  *
  * `web` is a hardcoded alias for `--profile web`; `plugin` manages a profile's
  * plugin dependencies by forwarding to pnpm.
+ * The default/profile launchers, plugin management, read-only doctor, and
+ * offline recovery commands share this single parsing contract.
+ *
  * @module @deepseek-ai/dsh/args
  */
 
-import { Command, CommanderError } from 'commander'
+import { Command, CommanderError, InvalidArgumentError } from 'commander'
 
 /** Boot a named profile and hand it the invocation's inner arguments. */
 interface ProfileInvocation {
@@ -44,8 +47,62 @@ interface PluginInvocation {
   args: string[]
 }
 
+/** Run the read-only Leon installation and runtime diagnosis. */
+interface DoctorInvocation {
+  mode: 'doctor'
+  /** Profile whose installed files are inspected without initializing it. */
+  profile: string
+  /** Expected local Web port. */
+  port: number
+  /** Emit one machine-readable JSON document instead of the human report. */
+  json: boolean
+}
+
+/** Create an encrypted, offline Leon state package. */
+interface BackupInvocation {
+  mode: 'backup'
+  /** Destination package; omission selects the workspace Backups/Leon folder. */
+  output?: string
+  /** Inventory and hash state without asking for a passphrase or writing a package. */
+  dryRun: boolean
+  json: boolean
+  /** Explicit operator assertion required before a real snapshot. */
+  confirmStopped: boolean
+  /** Read one passphrase line from redirected stdin instead of a hidden TTY prompt. */
+  passphraseStdin: boolean
+}
+
+/** Verify or restore one encrypted Leon state package. */
+interface RestoreInvocation {
+  mode: 'restore'
+  archive: string
+  /** Destination Harness home; omission uses the configured DSH_HOME. */
+  target?: string
+  /** Publish into a destination that must not exist; omission only verifies. */
+  apply: boolean
+  json: boolean
+  /** Explicit operator assertion required before publication. */
+  confirmStopped: boolean
+  /** Read one passphrase line from redirected stdin instead of a hidden TTY prompt. */
+  passphraseStdin: boolean
+}
+
+/** Preview a mission or explicitly delegate the bounded local laboratory scenario. */
+export interface CollectiveInvocation {
+  mode: 'collective'
+  mission?: string
+  dryRun: boolean
+  json: boolean
+  runtime?: string
+  config?: string
+  workspace?: string
+  action?: string
+  scenario?: string
+}
+
 /** The resolved `dsh` invocation. Help, version, and errors exit inside {@link parseDshArgs}. */
 export type DshInvocation = ProfileInvocation | DumpConfigInvocation | PluginInvocation
+  | DoctorInvocation | BackupInvocation | RestoreInvocation | CollectiveInvocation
 
 /** Launcher flags shared by the default command and the `web` alias. */
 interface BootOptions {
@@ -65,11 +122,25 @@ const HELP_EXAMPLES = `
 Examples:
   dsh --profile web                          boot the web profile (same as: dsh web)
   dsh --profile headless "run the tests"     answer one task, print the result, and exit
+  dsh doctor                                 inspect Leon's local runtime without changing it
+  dsh backup --dry-run                       inventory the state that an encrypted backup would carry
+  dsh backup --confirm-stopped               create an encrypted state package after Leon is stopped
+  dsh restore <file>                         decrypt and verify a package without changing DSH_HOME
+  dsh restore <file> --apply --confirm-stopped  restore only into a destination that does not exist
   dsh --profile tui --patch ./extra.yml      boot a custom profile with one extra overlay
   dsh --profile tui --resume <session>       arguments after the launcher flags reach the app
   dsh --profile web --help                   the web app's own flags and help
   dsh plugin --profile tui add <package>     install a plugin into the tui profile
 `
+
+/** Parse one TCP port for the doctor command. */
+function parsePort(value: string): number {
+  const port = Number(value)
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new InvalidArgumentError('expected an integer from 1 to 65535')
+  }
+  return port
+}
 
 /**
  * Resolve a boot or dump invocation from the launcher flags and the leftover
@@ -117,7 +188,7 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
   program
     .name('dsh')
     .version(version, '-V, --version', 'output the version number')
-    .description('dsh: boot a DeepSeek Harness profile — an ordered stack of plugin-bundle patch layers under your own overrides.')
+    .description('Leon: boot a provider-neutral profile — an ordered stack of plugin-bundle patch layers under your own overrides.')
     .addHelpText('after', HELP_EXAMPLES)
     .exitOverride()
     // The launcher's flags come first and end at the first token it does not
@@ -178,6 +249,112 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
       if (options.profile === '') program.error('error: --profile needs a name')
       if (args.length === 0) program.error('error: plugin needs pnpm arguments to forward (e.g. add <package>)')
       resolved = { mode: 'plugin', profile: options.profile, args }
+    })
+
+  const doctor = program.command('doctor').description('inspect Leon runtime readiness without changing files, services, credentials, or network configuration')
+  doctor
+    .option('--profile <name>', 'installed profile to inspect', 'web')
+    .option('--port <port>', 'expected local Leon Web port', parsePort, 3080)
+    .option('--json', 'emit a machine-readable JSON report')
+    .action((options: { profile: string; port: number; json?: boolean }) => {
+      rejectParentOptions('doctor')
+      if (options.profile === '') program.error('error: --profile needs a name')
+      resolved = {
+        mode: 'doctor',
+        profile: options.profile,
+        port: options.port,
+        json: options.json === true,
+      }
+    })
+
+  const backup = program.command('backup').description('create an encrypted offline package of Leon state (managed credential store, workspaces, and model weights excluded)')
+  backup
+    .argument('[output]', 'destination .leon-backup file; defaults below the Leon workspace')
+    .option('--dry-run', 'inventory and hash state without writing a package')
+    .option('--json', 'emit a machine-readable JSON report')
+    .option('--confirm-stopped', 'assert that every Leon Web/headless process has been stopped')
+    .option('--passphrase-stdin', 'read one passphrase line from redirected stdin (automation only)')
+    .action((output: string | undefined, options: {
+      dryRun?: boolean
+      json?: boolean
+      confirmStopped?: boolean
+      passphraseStdin?: boolean
+    }) => {
+      rejectParentOptions('backup')
+      if (output === '') program.error('error: backup output cannot be empty')
+      if (options.dryRun === true && options.passphraseStdin === true) {
+        program.error('error: backup --dry-run does not read a passphrase')
+      }
+      resolved = {
+        mode: 'backup',
+        ...output === undefined ? {} : { output },
+        dryRun: options.dryRun === true,
+        json: options.json === true,
+        confirmStopped: options.confirmStopped === true,
+        passphraseStdin: options.passphraseStdin === true,
+      }
+    })
+
+  const restore = program.command('restore').description('verify an encrypted Leon package, or restore it into a destination that does not exist')
+  restore
+    .argument('<archive>', 'encrypted .leon-backup file')
+    .option('--target <path>', 'new Harness home that receives a verified restore')
+    .option('--apply', 'publish the restore; without this flag the command is read-only')
+    .option('--json', 'emit a machine-readable JSON report')
+    .option('--confirm-stopped', 'assert that every Leon Web/headless process has been stopped')
+    .option('--passphrase-stdin', 'read one passphrase line from redirected stdin (automation only)')
+    .action((archive: string, options: {
+      target?: string
+      apply?: boolean
+      json?: boolean
+      confirmStopped?: boolean
+      passphraseStdin?: boolean
+    }) => {
+      rejectParentOptions('restore')
+      if (archive === '') program.error('error: restore archive cannot be empty')
+      if (options.target === '') program.error('error: restore --target cannot be empty')
+      resolved = {
+        mode: 'restore',
+        archive,
+        ...options.target === undefined ? {} : { target: options.target },
+        apply: options.apply === true,
+        json: options.json === true,
+        confirmStopped: options.confirmStopped === true,
+        passphraseStdin: options.passphraseStdin === true,
+      }
+    })
+
+  const collective = program.command('collective').description('preview a mission or explicitly launch an isolated collective laboratory')
+  collective
+    .argument('[mission...]', 'the mission statement or objective for the collective team')
+    .option('--dry-run', 'print an illustrative plan without executing any runtime')
+    .option('--json', 'emit JSON for the preview or launcher errors; runtime output is forwarded unchanged')
+    .option('--runtime <file>', 'absolute path to a trusted, compiled laboratory .js or .mjs entry')
+    .option('--config <file>', 'absolute path to the explicit laboratory .yml or .yaml composition')
+    .option('--workspace <directory>', 'absolute path to an existing isolated laboratory workspace')
+    .option('--action <action>', 'laboratory operation: run, resume, status or stop')
+    .option('--scenario <scenario>', 'bounded scenario: import-idempotency')
+    .action((missionParts: string[], options: {
+      dryRun?: boolean
+      json?: boolean
+      runtime?: string
+      config?: string
+      workspace?: string
+      action?: string
+      scenario?: string
+    }) => {
+      rejectParentOptions('collective')
+      resolved = {
+        mode: 'collective',
+        ...missionParts.length > 0 ? { mission: missionParts.join(' ') } : {},
+        dryRun: options.dryRun === true,
+        json: options.json === true,
+        ...options.runtime === undefined ? {} : { runtime: options.runtime },
+        ...options.config === undefined ? {} : { config: options.config },
+        ...options.workspace === undefined ? {} : { workspace: options.workspace },
+        ...options.action === undefined ? {} : { action: options.action },
+        ...options.scenario === undefined ? {} : { scenario: options.scenario },
+      }
     })
 
   try {

@@ -1,6 +1,7 @@
 // TodoPanel: plan strip above the composer (the web counterpart of the TUI
-// plan panel). Renders the standing todo/write whole-list snapshot (cleared on
-// the next turn/start) — no data of its own, hidden while the list is empty.
+// plan panel). Renders the standing todo/write whole-list snapshot (cleared by
+// the next direct-human message, retained across automatic rounds) — no data
+// of its own, hidden while the list is empty.
 // Mounted through the 'conversation.input.dock' slot (QueueDock posture): the
 // dock adapter does the selecting, so the panel takes the plain list and stays
 // framework-free. Visual: figma 772:51905 / 772:52972 / 772:53419.
@@ -20,6 +21,8 @@ import css from './TodoPanel.module.css'
 export interface TodoPanelProps {
   /** The session's current plan (empty renders nothing) — selected by the dock adapter. */
   todos: readonly TodoItem[]
+  /** Whether the owning agent is actively executing a turn. */
+  running: boolean
   /** The dock entry's locale seat, passed down as a plain prop. */
   t: TodoDockProps['t']
 }
@@ -79,20 +82,25 @@ function StatusGlyph({ status }: { status: TodoItem['status'] }) {
 }
 
 /** Header summary: "·"-joined per-status counts; zero-count segments are omitted as noise (a non-empty list keeps at least one). */
-function progressLabel(todos: readonly TodoItem[], t: TodoPanelProps['t']): string {
+function progressLabel(todos: readonly TodoItem[], running: boolean, t: TodoPanelProps['t']): string {
   const done = todos.filter(item => item.status === 'completed').length
   const active = todos.filter(item => item.status === 'in_progress').length
   const pending = todos.length - done - active
+  const activity = done === todos.length
+    ? t('todo.state.done')
+    : running
+      ? t('todo.state.working')
+      : t('todo.state.stopped')
   // En spaces (U+2002): HTML collapses runs of ASCII spaces, so widening the
   // separator breathing room needs a literal wide space.
-  return [
+  return [activity,
     ...done > 0 ? [t('todo.progress.done', { done })] : [],
     ...active > 0 ? [t('todo.progress.active', { active })] : [],
     ...pending > 0 ? [t('todo.progress.pending', { pending })] : [],
   ].join('\u2002·\u2002')
 }
 
-export function TodoPanel({ todos, t }: TodoPanelProps) {
+export function TodoPanel({ todos, running, t }: TodoPanelProps) {
   const [collapsed, setCollapsed] = useState(true)
   if (todos.length === 0) return null
 
@@ -107,7 +115,7 @@ export function TodoPanel({ todos, t }: TodoPanelProps) {
         >
           <span className={css.lead} aria-hidden><IconChecklistOutline14 /></span>
           <span className={css.title}>{t('todo.title')}</span>
-          <span className={css.progress}>{progressLabel(todos, t)}</span>
+          <span className={css.progress} aria-live="polite">{progressLabel(todos, running, t)}</span>
           <span className={css.chevron} aria-hidden>
             {collapsed ? <IconChevronUpOutline14 /> : <IconChevronDownOutline14 />}
           </span>
@@ -131,9 +139,10 @@ export function TodoPanel({ todos, t }: TodoPanelProps) {
 export type TodoDockProps = PropsRuntime<'conversation.input.dock'> & PropsLocale<'conversation'>
 
 /** Dock adapter: reads the host-computed 'todos' projection (whole list; absent or null renders nothing). */
-export function TodoDock({ useProjection, t }: TodoDockProps) {
+export function TodoDock({ useProjection, useSession, t }: TodoDockProps) {
   const todos = useProjection('todos')
-  return <TodoPanel todos={todos ?? []} t={t} />
+  const running = useSession(snapshot => snapshot.running)
+  return <TodoPanel todos={todos ?? []} running={running} t={t} />
 }
 
 /**

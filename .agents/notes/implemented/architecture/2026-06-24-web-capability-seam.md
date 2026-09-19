@@ -199,7 +199,7 @@ Full page retrieval remains the job of `web_fetch(url)`. Search snippets are dis
 
 ## Fetch request and result schema
 
-The `web_fetch` implementation is an anonymous public HTTP(S) fetch provider, `http`. It fetches bytes from a concrete URL, applies the basic transport hygiene below (http/https-only, credential rejection, byte/time caps, cross-origin redirect blocking), decodes textual content, and returns only the minimal model-useful result: final URL, status code, body, and truncation. It carries no browser cookies, editor credentials, git credentials, internal auth tokens, or implicit access to private services. (Full SSRF / private-network blocking is deferred — see [Deferred work](#deferred-work).)
+The `web_fetch` implementation is an anonymous public HTTP(S) fetch provider, `http`. It fetches bytes from a concrete URL, restricts destinations to public networks, applies the transport controls below, decodes textual content, and returns only the minimal model-useful result: final URL, status code, body, and truncation. It carries no browser cookies, editor credentials, git credentials, internal auth tokens, or implicit access to private services. [Public-network address validation and connection pinning](../bug-fix/2026-08-28-web-fetch-public-network-pinning.md) are part of this provider rather than a prompt or deployment assumption.
 
 The seam request stays smaller than OpenCode's model-facing tool:
 
@@ -235,12 +235,12 @@ The provider owns safe resource retrieval: URL validation, HTTP transport, redir
 The fetch provider's resource controls:
 
 - Only `http:` and `https:` URLs are accepted; credentials in URLs are rejected.
+- Localhost aliases and non-public IPv4/IPv6 literals are rejected, including canonicalized alternative IPv4 forms, IPv4-mapped IPv6, transition prefixes, and private, loopback, link-local, shared, documentation, benchmark, multicast, or reserved ranges.
+- Every hostname is resolved before connection; a mixed public/private answer is rejected, and a request-scoped Undici dispatcher can connect only to the validated answer set.
 - Maximum URL length, response byte cap, decoded body character cap, timeout, and redirect hop cap are enforced.
 - Abort signals propagate through network fetches and expensive decoding.
-- Only same-origin redirects are followed automatically; a cross-origin redirect fails with `WEB_REDIRECT_BLOCKED`, requiring a fresh tool call and therefore a fresh provider/permission decision. (Claude Code's WebFetch uses this same model — it does not auto-follow a cross-host redirect; it returns the redirect target to the model for a fresh call.)
+- Only same-origin redirects are followed automatically; a cross-origin redirect fails with `WEB_REDIRECT_BLOCKED`, requiring a fresh tool call and therefore a fresh provider/permission decision. Each allowed same-origin hop receives fresh DNS validation and a fresh dispatcher. (Claude Code's WebFetch uses this same cross-origin model — it returns the redirect target to the model for a fresh call.)
 - Requests carry an explicit product user agent rather than silently impersonating a browser.
-
-SSRF / private-network protection (blocking private, loopback, link-local, multicast, and otherwise non-public destinations, with DNS-resolve-then-validate to defeat rebinding and per-hop re-validation on redirects) is **deferred** — see [Deferred work](#deferred-work). Until it lands, `web_fetch` is an SSRF primitive and must not be enabled in a deployment that can reach sensitive internal network targets.
 
 ## Tool consumer behavior
 
@@ -318,19 +318,18 @@ Rejected for the seam. `prompt` turns fetch into LLM summarization and couples p
 
 **Provider state can change after startup.** A tool can be visible in the request assembled at step start and lose its provider before execution. The execution path resolves again and fails with a structured error.
 
-**Fetch is a network boundary, not just a read-only tool.** `web_fetch` can reach sensitive network targets or exfiltrate data through URLs. Only the basic transport hygiene ships (http/https-only, credential rejection, byte/time caps, cross-origin redirect blocking); SSRF / private-network blocking is deferred (see [Deferred work](#deferred-work)), so until it lands `web_fetch` must not be enabled where it can reach internal targets.
+**Fetch is a network boundary, not just a read-only tool.** `web_fetch` can exfiltrate data through user-supplied public URLs, so URL arguments remain subject to normal tool-permission policy. The provider denies internal destinations without a bypass; an explicitly permissioned intranet connector is a separate capability rather than an exception in this anonymous provider.
 
 **Large web content can damage context quality.** Providers enforce byte/character caps and report `truncated`; `tool-web` formats bounded model output with clear continuation or follow-up guidance.
 
 ## Deferred work
 
-- SSRF / private-network protection for `web_fetch`: block private, loopback, link-local, multicast, and otherwise non-public destinations so `web_fetch` is not an SSRF primitive. Doing it correctly is more than a URL-string check — it needs DNS-resolve-then-connect-to-the-validated-IP (to defeat DNS rebinding / TOCTOU), per-hop re-validation across redirects, and IPv6 edge handling (private ranges, IPv4-mapped addresses). Neither reference implementation surveyed does IP-level blocking (OpenCode does a prefix check then fetches; Claude Code relies on a centralized hostname blocklist plus a "private URLs will fail" prompt), so there is no implementation to copy and this is the harness's only SSRF defense — it warrants its own focused design/spike. Until it lands, `web_fetch` must only be enabled in deployments that cannot reach sensitive internal targets.
 - A `pdf` `WebFetchBody` kind: the `http` provider decodes text-extractable PDFs (best-effort, capped, `truncated`) into a `{ kind: 'pdf'; content; pageCount? }` arm, and `tool-web` renders it. This is fetch, not `web_extract` — PDF retrieval is a concrete HTTP 200 plus deterministic local decoding, not provider-side extraction of a non-HTTP resource. Adding it is a coordinated change across `dsh-web` (declare the arm), the provider (decode + narrow "binary rejection" to "reject binary except text-extractable PDF"; scanned/image PDFs needing OCR stay out of scope), and `tool-web` (render). The closed `WebFetchBody` union makes the consumer side fail to compile until the new arm is handled.
 - Provider-backed extraction as a separate `web_extract` capability, rather than widening `web_fetch` silently.
-- Permission policy integration: the permission system now exists ([sandbox and approval](../feature/2026-07-06-sandbox.md), [web permission presets](../feature/2026-07-23-web-permission-and-approval.md)) but bundles only sandbox mode and approval policy; web permission policy remains unintegrated.
+- [One-shot outbound consent](../feature/2026-09-04-web-tool-outbound-consent.md) is enforced by the native tools when configured. Network-wide enforcement and persistent destination grants remain deferred.
 - Provider-neutral search controls beyond `query` and `maxResults`, once Exa and Perplexity can both honor them honestly.
 
 ## Open questions
 
 - Should product app packages probe web configuration at startup (treating `WEB_PROVIDER_CONFIGURED_MISSING`, `WEB_PROVIDER_CONFIGURED_UNAVAILABLE`, and `WEB_PROVIDER_AMBIGUOUS` as fatal when web is explicitly configured), or leave misconfiguration to surface at the first execution?
-- Where should permission policy for public web access live in the shipped permission system ([sandbox and approval](../feature/2026-07-06-sandbox.md), [web permission presets](../feature/2026-07-23-web-permission-and-approval.md)): a dedicated web permission plugin on `tools/execute`, provider config, or both?
+- How should network-wide policy extend the [native tool consent](../feature/2026-09-04-web-tool-outbound-consent.md) to direct service callers and subprocesses?

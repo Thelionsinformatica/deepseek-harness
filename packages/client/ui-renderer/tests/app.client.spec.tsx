@@ -33,6 +33,12 @@ describe('buildRenderApp', () => {
     expect(view.getByTestId('frame')).toBeTruthy()
   })
 
+  it('still rejects an initial application render before any root registration', async () => {
+    runtime = await SlotTestRuntime.create()
+    const renderApp = buildRenderApp({ ctx: runtime.ctx })
+    expect(() => renderApp()).toThrow("'root' has no registration")
+  })
+
   it('projects the selected durable session title', async () => {
     vi.stubEnv('DSH_CLIENT_TITLE', 'Product')
     document.title = 'stale title'

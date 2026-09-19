@@ -17,6 +17,9 @@ const EMPTY = { entries: [] }
 type ListResult =
   | { readonly ok: true; readonly value: typeof EMPTY }
   | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
+type SetResult =
+  | { readonly ok: true; readonly value: never }
+  | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
 
 async function bench() {
   const ctx = new Context()
@@ -31,8 +34,10 @@ async function bench() {
   new RemoteService(ctx)
   const list = vi.fn<() => Promise<ListResult>>()
     .mockResolvedValue({ ok: true, value: EMPTY })
-  ctx.provide('remote.pluginInventory', { list })
-  return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, list }
+  const setEnabled = vi.fn<() => Promise<SetResult>>()
+    .mockResolvedValue({ ok: true, value: undefined as never })
+  ctx.provide('remote.pluginInventory', { list, setEnabled })
+  return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, list, setEnabled }
 }
 
 function declare(slots: SlotRegistry): () => void {
@@ -56,7 +61,7 @@ describe('ui-settings-plugin-inventory browser plugin', () => {
     expect(entry.component).toBe(PluginInventorySettingsTab)
     expect(entry.options).toMatchObject({ id: 'all', order: 10 })
     expect(entry.locale).toBe(NS)
-    expect(resolveSlotLabel(entry.options.label)).toBe('插件列表')
+    expect(resolveSlotLabel(entry.options.label)).toBe('插件中心')
     expect(b.list).not.toHaveBeenCalled()
 
     const injected = (entry.inject as unknown as () => PluginInventorySettingsTabInjected)()
@@ -64,6 +69,8 @@ describe('ui-settings-plugin-inventory browser plugin', () => {
     expect(b.list).toHaveBeenCalledOnce()
     b.list.mockResolvedValueOnce({ ok: false, error: { code: 'REMOTE_ERROR', message: 'unavailable' } })
     await expect(injected.list()).rejects.toThrow('pluginInventory.list failed: REMOTE_ERROR: unavailable')
+    await expect(injected.setEnabled('entry' as never, true)).resolves.toBeUndefined()
+    expect(b.setEnabled).toHaveBeenCalledWith('entry', true)
     await b.ctx.fiber.dispose()
   })
 
@@ -76,7 +83,7 @@ describe('ui-settings-plugin-inventory browser plugin', () => {
     const stop = declare(b.slots)
     await vi.waitFor(() => { expect(b.slots.entries('settings.plugins.tab')).toHaveLength(1) })
     b.locale.setLocale('en')
-    expect(resolveSlotLabel(b.slots.entries('settings.plugins.tab')[0]!.options.label)).toBe('Plugin list')
+    expect(resolveSlotLabel(b.slots.entries('settings.plugins.tab')[0]!.options.label)).toBe('Plugin Center')
 
     stop()
     expect(b.slots.entries('settings.plugins.tab')).toHaveLength(0)

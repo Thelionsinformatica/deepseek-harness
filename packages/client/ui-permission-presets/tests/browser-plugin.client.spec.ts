@@ -20,7 +20,7 @@ import {
   PermissionRow, type PermissionRowInjected,
 } from '../src/client/PermissionRow.tsx'
 import { apply, inject } from '../src/client/index.ts'
-import { accessEn } from '../src/client/locales.ts'
+import { accessEn, accessPt } from '../src/client/locales.ts'
 
 const sid = (k: string): SessionId => k as SessionId
 
@@ -33,11 +33,11 @@ const SELECT: PermissionSelect = {
   currentValue: 'workspace-write',
 }
 
-async function bench() {
+async function bench(localeId = 'en') {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry)
   const locale = new LocaleRuntime(ctx)
-  locale.setLocale('en')
+  locale.setLocale(localeId)
   ctx.provide('locale', locale)
   // The plugin injects `remote`; forwarded events reach it through the same
   // `$dispatch` handoff the connection sink makes.
@@ -159,6 +159,24 @@ describe('ui-permission browser plugin', () => {
     // An unmaterialized session throws before any submit.
     await expect(c.ui.onSelect({ id: 'read-only', label: 'read-only' }, { sessionId: sid('ghost') }))
       .rejects.toThrow(/not materialized/)
+  })
+
+  it('localizes preset labels and the risk gate in Brazilian Portuguese', async () => {
+    const b = await bench('pt')
+    const c = b.decoration()!
+    const proj = { sessionId: sid('s1') }
+    b.values.set(sid('s1'), SELECT)
+
+    const options = await c.ui.options(proj, new AbortController().signal)
+    expect(options.map(option => option.label))
+      .toEqual(['Somente leitura', 'Gravar no espaço de trabalho', 'Acesso total'])
+    expect(options.find(option => option.id === 'danger-full-access')?.confirmation).toEqual({
+      title: accessPt['confirm.title'],
+      description: accessPt['confirm.description'],
+      acknowledgeLabel: accessPt['confirm.acknowledge'],
+      cancelLabel: accessPt['confirm.cancel'],
+      confirmLabel: accessPt['confirm.enable'],
+    })
   })
 
   it('disposal removes the decoration (HMR safety)', async () => {

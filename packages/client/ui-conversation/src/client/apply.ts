@@ -2,7 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { resolveSlotLabel, type BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
 import {
-  resolveWorkspacePath, type ISessions, type SessionId,
+  resolveWorkspacePath, type ISessions, type SessionId, type WorkspaceId,
 } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: the ctx.settingsScope Context merge. Cross-plugin collaboration
 // goes through the service, never a value import (client bundle purity gate).
@@ -27,6 +27,9 @@ import { ComposerSubmissionPolicy } from './input/submission-policy.ts'
 import { InputBar } from './skeleton/InputBar.tsx'
 import { EnterBehaviorRow } from './settings/EnterBehaviorRow.tsx'
 import type { EnterBehaviorRowInjected } from './settings/EnterBehaviorRow.tsx'
+import { TechnicalContextRow } from './settings/TechnicalContextRow.tsx'
+import type { TechnicalContextRowInjected } from './settings/TechnicalContextRow.tsx'
+import { TechnicalContextPolicy } from './settings/technical-context-policy.ts'
 import { ChatView } from './chat/ChatView.tsx'
 import { StatsLine } from './chat/StatsLine.tsx'
 import { ApprovalPanel } from './skeleton/ApprovalPanel.tsx'
@@ -35,6 +38,7 @@ import { queueDockEntry } from './queue/QueueDock.tsx'
 import { ConversationRoot } from './skeleton/ConversationRoot.tsx'
 import { ConversationSession, ConversationSessionHeader } from './skeleton/ConversationSession.tsx'
 import { DetailsPanel } from './skeleton/DetailsPanel.tsx'
+import { ActivityControls } from './skeleton/ActivityControls.tsx'
 import { en, NS, zh, type ConversationKey } from './locales.ts'
 import { registerConversationNodes } from './conversation-nodes/register.ts'
 import { registerChatNodeRenderers } from './chat/register-node-renderers.ts'
@@ -130,9 +134,11 @@ export function apply(ctx: Context): void {
 
   // Apply-time construction keeps store identity bound to this fiber.
   const chatStore = createChatStore()
-  const submissionPolicy = new ComposerSubmissionPolicy(
-    ctx.settingsScope.bind<ConversationSettings>({ namespace: CONVERSATION_SETTINGS_NAMESPACE }),
-  )
+  const conversationSettings = ctx.settingsScope.bind<ConversationSettings>({
+    namespace: CONVERSATION_SETTINGS_NAMESPACE,
+  })
+  const submissionPolicy = new ComposerSubmissionPolicy(conversationSettings)
+  const technicalContextPolicy = new TechnicalContextPolicy(conversationSettings)
 
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({
     name: 'settings.general.item',
@@ -144,6 +150,17 @@ export function apply(ctx: Context): void {
       setBusyEnter: (behavior) => { submissionPolicy.setBusyEnter(behavior) },
     }),
   }, EnterBehaviorRow))
+
+  ctx.slots.inject('settings.general.item', () => ctx.slots.register({
+    name: 'settings.general.item',
+    id: 'technical-context',
+    order: 30,
+    locale: NS,
+    inject: (): TechnicalContextRowInjected => ({
+      hooks: { technicalContextVisible: technicalContextPolicy.visible },
+      setTechnicalContextVisible: (visible) => { technicalContextPolicy.setVisible(visible) },
+    }),
+  }, TechnicalContextRow))
 
   // Chat semantic reader positions by session, surviving view switches and
   // width reflow when the tab ring remounts the view. Deliberately not
@@ -168,6 +185,30 @@ export function apply(ctx: Context): void {
   // The per-session input machine registry (SessionInputResolver face; published as
   // ctx.conversation.input by the service below sharing this one instance).
   const inputHub = new InputHub(ctx, t)
+
+  /** Connect one Workspace while preserving the current composer's unsent work. */
+  const selectWorkspace = async (
+    sessionId: SessionId | undefined,
+    workspaceId: WorkspaceId,
+  ): Promise<void> => {
+    const nextId = await workspaces.connectWorkspace(workspaceId)
+    if (sessionId !== undefined && nextId !== sessionId) {
+      const from = inputHub.shell(sessionId)
+      const draft = from.snapshot.draft
+      const imageIds = from.snapshot.imageIds
+      const next = inputHub.shell(nextId)
+      if (imageIds.length === 0 || next.addImages(imageIds)) {
+        if (draft !== '') {
+          next.setDraft(draft)
+          from.setDraft('')
+        }
+        if (imageIds.length > 0) {
+          for (const id of imageIds) from.removeImage(id)
+        }
+      }
+    }
+    sessions.open(nextId)
+  }
 
   // The composer-block registry: a plugin that knows a session cannot send —
   // ui-model-selection, when no adapter serves the session's route — raises a block
@@ -207,30 +248,13 @@ export function apply(ctx: Context): void {
       'conversation.input.left': { kind: 'list', scope: 'session' },
       'conversation.input.right': { kind: 'list', scope: 'session' },
       'conversation.hero.brand.mark': { kind: 'single', scope: 'root' },
+      'conversation.hero.dashboard': { kind: 'single', scope: 'root' },
       'conversation.hero.workspace': { kind: 'single', scope: 'root' },
       'conversation.hero.agentPreset': { kind: 'single', scope: 'root' },
     },
     inject: (sessionId: SessionId | undefined): ConversationInjected => ({
       hooks: { composerBlock: sessionId === undefined ? ABSENT_BLOCK : composerBlocks.storeFor(sessionId) },
-      selectWorkspace: async (workspaceId) => {
-        const nextId = await workspaces.connectWorkspace(workspaceId)
-        if (sessionId !== undefined && nextId !== sessionId) {
-          const from = inputHub.shell(sessionId)
-          const draft = from.snapshot.draft
-          const imageIds = from.snapshot.imageIds
-          const next = inputHub.shell(nextId)
-          if (imageIds.length === 0 || next.addImages(imageIds)) {
-            if (draft !== '') {
-              next.setDraft(draft)
-              from.setDraft('')
-            }
-            if (imageIds.length > 0) {
-              for (const id of imageIds) from.removeImage(id)
-            }
-          }
-        }
-        sessions.open(nextId)
-      },
+      selectWorkspace: workspaceId => selectWorkspace(sessionId, workspaceId),
     }),
   }, ConversationRoot)
 
@@ -270,6 +294,11 @@ export function apply(ctx: Context): void {
     }),
   }, ConversationSessionHeader)
 
+  slots.register({
+    name: 'conversation.session.header.utilities', id: 'activity', order: -10, locale: NS,
+    inject: () => ({ openActivity: () => { layout.openDetails() } }),
+  }, ActivityControls)
+
   // The default composer body: its own single slot inside the composer
   // chain's fallback. Public machine surface arrives via the
   // provide channel above; the keyboard command face and the stop/retry
@@ -298,6 +327,10 @@ export function apply(ctx: Context): void {
           resolveSubmitMode: (running, gesture, steeringAvailable) =>
             submissionPolicy.resolve(running, gesture, steeringAvailable),
           toggleCommandMenu: undefined,
+          toggleReferenceMenu: undefined,
+          toggleSkillMenu: undefined,
+          selectWorkspace: undefined,
+          createWorkspace: undefined,
           stop: undefined,
           command: undefined,
           hooks: { notices: ABSENT_NOTICES, lexicon: ABSENT_LEXICON, menuLauncher: ABSENT_MENU_LAUNCHER },
@@ -306,6 +339,23 @@ export function apply(ctx: Context): void {
       const conversation = concreteConversation(ctx)
       const shell = inputHub.shell(sessionId)
       const inputTriggers = inputHub.inputTriggers(sessionId)
+      const toggleSourceMenu = (
+        source: 'command' | 'reference' | 'skill',
+        trigger: '/' | '@',
+        selection: { start: number; end: number },
+        quoted = false,
+      ): void => {
+        if (inputTriggers === undefined) return
+        shell.dismissPopup()
+        const snapshot = shell.snapshot
+        inputTriggers.toggleSource(source, {
+          trigger,
+          query: '',
+          quoted,
+          position: snapshot.draft.slice(0, selection.start).trim() === '' ? 'leading' : 'inline',
+          span: { ...selection, draftRev: snapshot.draftRev },
+        })
+      }
       return {
         keyboard: shell,
         addImages: (files) => {
@@ -333,17 +383,20 @@ export function apply(ctx: Context): void {
           submissionPolicy.resolve(running, gesture, steeringAvailable),
         toggleCommandMenu: inputTriggers === undefined
           ? undefined
-          : (selection) => {
-            shell.dismissPopup()
-            const snapshot = shell.snapshot
-            inputTriggers.toggleSource('command', {
-              trigger: '/',
-              query: '',
-              quoted: false,
-              position: snapshot.draft.slice(0, selection.start).trim() === '' ? 'leading' : 'inline',
-              span: { ...selection, draftRev: snapshot.draftRev },
-            })
-          },
+          : (selection) => { toggleSourceMenu('command', '/', selection) },
+        toggleReferenceMenu: inputTriggers === undefined
+          ? undefined
+          : (selection) => { toggleSourceMenu('reference', '@', selection, true) },
+        toggleSkillMenu: inputTriggers === undefined
+          ? undefined
+          : (selection) => { toggleSourceMenu('skill', '/', selection) },
+        selectWorkspace: workspaceId => selectWorkspace(sessionId, workspaceId),
+        createWorkspace: async () => {
+          const path = await workspaces.pickDirectory()
+          if (path === null) return
+          const workspace = await workspaces.create({ path })
+          await selectWorkspace(sessionId, workspace.workspaceId)
+        },
         stop: () => {
           scopedConversation(sessions, sessionId).cancel().catch(() => {
             // Stop failure surfaces via snapshot.promptError; nothing to restore.
@@ -392,6 +445,7 @@ export function apply(ctx: Context): void {
       const conversation = concreteConversation(ctx)
       const scoped = scopedConversation(sessions, sessionId)
       return {
+        hooks: { technicalContextVisible: technicalContextPolicy.visible },
         openDetails: (target) => {
           actions.select(target)
           layout.openDetails()

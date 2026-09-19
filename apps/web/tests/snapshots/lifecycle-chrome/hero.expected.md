@@ -20,6 +20,7 @@
 - button "Settings":
   - img
   - text: Settings
+- img "The Lions Informática — Leon"
 - text: Into the Unknown Preview
 - button "Choose workspace":
   - img

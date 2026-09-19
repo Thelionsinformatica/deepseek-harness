@@ -30,7 +30,31 @@
       - insert:
           - id: agent-team
             name: '@deepseek-ai/dsh-experimental-agent-team'
+            config:
+              completionRequiresReview: !!js process.env.DSH_TEAM_COMPLETION_REVIEW === '1'
           - id: tool-agent-team
             name: '@deepseek-ai/dsh-experimental-tool-agent-team'
           - id: team-fixture-llm
             name: './tests/fixtures/team-llm.mjs'
+          - id: mission-storage
+            name: '@deepseek-ai/dsh-storage'
+            disabled: !!js process.env.DSH_TEAM_MISSION_CONTROL !== '1'
+          - id: mission-storage-json
+            name: '@deepseek-ai/dsh-storage-json'
+            disabled: !!js process.env.DSH_TEAM_MISSION_CONTROL !== '1'
+            config:
+              root: ./.mission-control
+          - id: mission-storage-domain
+            name: '@deepseek-ai/dsh-storage-domain'
+            disabled: !!js process.env.DSH_TEAM_MISSION_CONTROL !== '1'
+            config:
+              backend: json
+          - id: mission-control
+            name: '@deepseek-ai/dsh-experimental-agent-team/mission-control'
+            disabled: !!js process.env.DSH_TEAM_MISSION_CONTROL !== '1'
+            config:
+              domainName: leon_collective
+              owner: snapshot-owner
+              workspace: !!js process.cwd()
+              maxCalls: 2
+              durationMs: 60000

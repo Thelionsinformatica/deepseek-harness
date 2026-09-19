@@ -721,6 +721,8 @@ class ToolLayer implements ScopeLayer {
    * "which form does the model see" is a contradiction, not a merge.
    */
   mode: ToolPresentationMode | undefined
+  /** Maximum normalized description length in this scope's model-facing schemas. */
+  descriptionMaxLength: number | undefined
 
   constructor(scope: ScopeKey | undefined) {
     this.tools = new NamedEntries(name => new Error(scope === undefined
@@ -731,7 +733,7 @@ class ToolLayer implements ScopeLayer {
   /** Whether every contribution table in this aggregate layer is empty. */
   isEmpty(): boolean {
     return this.tools.isEmpty() && this.restrictions.isEmpty() && this.guards.isEmpty()
-      && this.mode === undefined
+      && this.mode === undefined && this.descriptionMaxLength === undefined
   }
 
   /** Whether every compiled restriction in this layer admits a global tool name. */
@@ -778,6 +780,43 @@ function resolveMaxParallelSubCalls(value: number | undefined): number {
     throw new Error('maxParallelSubCalls must be a positive integer')
   }
   return maxParallelSubCalls
+}
+
+/** Normalize one model-facing description and cap it with a visible ellipsis. */
+function compactDescription(value: string, maxLength: number): string {
+  const normalized = value.replaceAll(/\s+/g, ' ').trim()
+  return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 3)}...`
+}
+
+/** Compact description fields in a detached JSON schema without recursive traversal. */
+function compactToolSchema(schema: ToolSchema, maxLength: number): ToolSchema {
+  const parameters = snapshotJsonValue(schema.parameters)
+  /* v8 ignore next -- schemaOf already rejects a non-lossless parameter schema. */
+  if (parameters === undefined) {
+    throw new Error(`tool "${schema.name}" parameters must be lossless JSON before description compaction`)
+  }
+  const pending: unknown[] = [parameters]
+  while (pending.length > 0) {
+    const value = pending.pop()
+    if (Array.isArray(value)) {
+      for (const child of value as unknown[]) pending.push(child)
+      continue
+    }
+    if (value === null || typeof value !== 'object') continue
+    const object = value as Record<string, unknown>
+    for (const [key, child] of Object.entries(object)) {
+      if (key === 'description' && typeof child === 'string') {
+        object[key] = compactDescription(child, maxLength)
+      } else if (child !== null && typeof child === 'object') {
+        pending.push(child)
+      }
+    }
+  }
+  return {
+    ...schema,
+    description: compactDescription(schema.description, maxLength),
+    parameters,
+  }
 }
 
 /**
@@ -910,6 +949,16 @@ export class ToolRuntime extends Service {
     return this.defaultMode
   }
 
+  /** Resolve the nearest model-facing description cap on the scope chain. */
+  private descriptionMaxLengthFor(scope?: ScopeKey): number | undefined {
+    const layers = this.layers.chainLayers(scope)
+    for (let index = layers.length - 1; index >= 0; index -= 1) {
+      const maxLength = layers[index]?.descriptionMaxLength
+      if (maxLength !== undefined) return maxLength
+    }
+    return undefined
+  }
+
   /**
    * The reserved `run_code` transport, built on first need.
    *
@@ -974,14 +1023,50 @@ export class ToolRuntime extends Service {
   }
 
   /**
+   * Cap normalized tool and parameter descriptions in this scope's
+   * model-facing schemas. The registry and executable definitions retain their
+   * complete descriptions. Nearest scope wins, and disposal restores an
+   * inherited declaration.
+   * @param maxLength - integer character limit, including the ellipsis; minimum 3.
+   * @returns the exact disposer that removes this scope's declaration.
+   */
+  compactDescriptions(maxLength: number): () => void {
+    const ctx = this.ctx
+    if (scopeOf(ctx) === undefined) {
+      throw new Error('tools.compactDescriptions() requires a scoped context (agent.ctx)')
+    }
+    if (!Number.isInteger(maxLength) || maxLength < 3) {
+      throw new TypeError('tools.compactDescriptions() maxLength must be an integer of at least 3')
+    }
+    return this.layers.effect(
+      ctx,
+      (layer) => {
+        if (layer.descriptionMaxLength !== undefined) {
+          throw new Error(`tools.compactDescriptions(${maxLength}) conflicts with ${layer.descriptionMaxLength} already declared for this scope; one composition selects one limit`)
+        }
+        layer.descriptionMaxLength = maxLength
+        return () => { layer.descriptionMaxLength = undefined }
+      },
+      { label: 'tools.compactDescriptions()' },
+    )
+  }
+
+  /**
    * Build one scope's wire schemas and names for prompt-order validation.
    * Restrictions do not make known tools invalid, but a mode collapse does.
    */
   private wireSchemas(scope?: ScopeKey): ToolProviderResult {
     const view = this.view(scope)
     const mode = this.modeFor(scope)
+    const descriptionMaxLength = this.descriptionMaxLengthFor(scope)
+    const schemaOf = (definition: ToolDefinition): ToolSchema => {
+      const schema = this.schemaOf(definition, descriptionMaxLength !== undefined)
+      return descriptionMaxLength === undefined
+        ? schema
+        : compactToolSchema(schema, descriptionMaxLength)
+    }
     if (mode === 'native') {
-      const schemas = [...view.visible.values()].map(definition => this.schemaOf(definition, false))
+      const schemas = [...view.visible.values()].map(schemaOf)
       return { schemas, knownNames: [...view.knownNames] }
     }
     // Validate the runtime language BEFORE projecting schemas: schemaOf reads
@@ -990,7 +1075,7 @@ export class ToolRuntime extends Service {
     // renderer-table rejection the canonical assembly-time error for a
     // language with no SDK renderer.
     this.requireCodeRuntime(mode)
-    const schemas = [...view.visible.values()].map(definition => this.schemaOf(definition, false))
+    const schemas = [...view.visible.values()].map(schemaOf)
     if (mode === 'code') {
       return {
         schemas: schemas.filter(schema => schema.name === RUN_CODE_NAME),
@@ -1237,6 +1322,7 @@ export class ToolRuntime extends Service {
 
   /** Project visible callable tools onto the generated Code Mode SDK contract. */
   private sdkSchemas(scope?: ScopeKey): ToolSdkSchema[] {
+    const descriptionMaxLength = this.descriptionMaxLengthFor(scope)
     return [...this.view(scope).visible.values()]
       .filter(definition => definition.name !== RUN_CODE_NAME)
       .map((definition): ToolSdkSchema => {
@@ -1245,8 +1331,11 @@ export class ToolRuntime extends Service {
         if (output === undefined) {
           throw new Error(`tool "${definition.name}" output schema must be lossless JSON before SDK projection`)
         }
+        const schema = this.schemaOf(definition, true)
         return {
-          ...this.schemaOf(definition, true),
+          ...(descriptionMaxLength === undefined
+            ? schema
+            : compactToolSchema(schema, descriptionMaxLength)),
           output,
         }
       })

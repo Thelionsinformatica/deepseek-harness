@@ -86,6 +86,7 @@ function descriptor(attachment: ImageAttachmentRef, policy: ImageRequestPolicy):
     attachmentId: attachment.attachmentId,
     routePixelBudget: policy.maxPixels,
     encodedByteBudget: policy.maxBytes,
+    outputFormat: policy.outputFormat,
     encoding: {
       png: { compressionLevel: 9, palette: 'opaque-only' },
       webpQualities: REQUEST_IMAGE_QUALITIES,
@@ -139,8 +140,10 @@ function encodingAttempts(
   height: number,
   hasAlpha: boolean,
   lowColour: boolean,
+  outputFormat?: 'png',
 ): Array<() => Promise<EncodedRequestImage>> {
   const prepared = pipeline(attachment, width, height)
+  if (outputFormat === 'png') return [() => encoded(prepared.clone(), 'image/png', undefined, false)]
   const webp = REQUEST_IMAGE_QUALITIES.map(quality => (
     () => encoded(prepared.clone(), 'image/webp', quality)
   ))
@@ -159,6 +162,7 @@ async function createRequestImage(
   let dimensions = requestImageDimensions(attachment.ref.width, attachment.ref.height, policy.maxPixels)
   if (dimensions.width === attachment.ref.width
     && dimensions.height === attachment.ref.height
+    && (policy.outputFormat === undefined || attachment.ref.mediaType === 'image/png')
     && attachment.data.byteLength <= policy.maxBytes) {
     return {
       data: attachment.data,
@@ -170,7 +174,7 @@ async function createRequestImage(
   const lowColour = await hasLowColourCount(sourcePipeline(attachment))
   for (;;) {
     const encodedVersion = await encodeFirstWithinLimit(
-      encodingAttempts(attachment, dimensions.width, dimensions.height, hasAlpha, lowColour),
+      encodingAttempts(attachment, dimensions.width, dimensions.height, hasAlpha, lowColour, policy.outputFormat),
       policy.maxBytes,
     )
     if (!isExhaustedEncoding(encodedVersion)) return encodedVersion
@@ -200,6 +204,7 @@ async function readCached(
     const detected = await probeImage(data)
     const maximum = requestImageDimensions(attachment.ref.width, attachment.ref.height, policy.maxPixels)
     if (data.byteLength > policy.maxBytes || detected.depth !== 'uchar' || detected.space !== 'srgb'
+      || (policy.outputFormat === 'png' && detected.mediaType !== 'image/png')
       || detected.width > maximum.width || detected.height > maximum.height
       || !encodedAlphaIsCompatible(expectedAlpha, detected)) return undefined
     return { data, mediaType: detected.mediaType, width: detected.width, height: detected.height, hasAlpha: detected.hasAlpha }

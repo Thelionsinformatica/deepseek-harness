@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  checkAllGates,
   defaultConcurrency,
   formatGateResultReason,
   gatesForMode,
@@ -127,6 +128,17 @@ describe('gate graph validation', () => {
     },
   )
 
+  it('isolates the native Windows unit inventory without hiding later diagnostics', () => {
+    const windows = withPnpmEntrypoint(() => checkAllGates('win32'))
+    const linux = withPnpmEntrypoint(() => checkAllGates('linux'))
+
+    expect(windows[0]?.id).toBe('test')
+    expect(windows.slice(1)).not.toHaveLength(0)
+    for (const gate of windows.slice(1)) expect(gate.after).toContain('test')
+    for (const gate of linux.slice(1)) expect(gate.after ?? []).not.toContain('test')
+    expect(windows.find(gate => gate.id === 'snapshot')?.needs).toEqual(['build'])
+  })
+
   it.each(['ci-primary', 'ci-static', 'check-all'] as const)(
     'keeps the client dependency policy in %s',
     (mode) => {
@@ -198,9 +210,9 @@ describe('gate graph validation', () => {
   })
 
   it('rejects an invalid coverage partition count before starting a gate', () => {
-    expect(() => withEnv('DSH_COVERAGE_PARTITIONS', '1', () =>
+    expect(() => withEnv('DSH_COVERAGE_PARTITIONS', '0', () =>
       withPnpmEntrypoint(() => gatesForMode('ci-windows-complete'))))
-      .toThrow('DSH_COVERAGE_PARTITIONS must be an integer greater than 1')
+      .toThrow('DSH_COVERAGE_PARTITIONS must be a positive integer')
   })
 
   it.each([
@@ -408,6 +420,16 @@ describe('Node 24 lane ownership', () => {
     )
     expect(subject.find(item => item.id === 'web-snapshot')).toMatchObject({
       displayCommand: 'DSH_SNAPSHOT=replay pnpm run test:web:built',
+      env: { DSH_SNAPSHOT: 'replay' },
+    })
+  })
+
+  it('accepts one web snapshot worker for constrained hosted runners', () => {
+    const web = withEnv('DSH_WEB_SNAPSHOT_WORKERS', '1', () =>
+      withPnpmEntrypoint(() => gatesForMode('ci-consumers').find(item => item.id === 'web-snapshot')))
+
+    expect(web).toMatchObject({
+      displayCommand: 'DSH_SNAPSHOT=replay DSH_WEB_SNAPSHOT_WORKERS=1 pnpm run test:web:ci',
       env: { DSH_SNAPSHOT: 'replay' },
     })
   })

@@ -1,4 +1,5 @@
-import { copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { spawnSync } from 'node:child_process'
+import { copyFile, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { delimiter, dirname, join } from 'node:path'
@@ -32,6 +33,8 @@ const ptyStreamExpected = join(ptyScenarioDir, 'stream-json.expected.jsonl')
 const ptyConfigPath = fileURLToPath(new URL('../pty.cordis.snapshot.yml', import.meta.url))
 const goalScenarioDir = join(snapshotsDir, 'goal-tools')
 const goalConfigPath = fileURLToPath(new URL('../goal.cordis.snapshot.yml', import.meta.url))
+const procedureScenarioDir = join(snapshotsDir, 'procedure-candidates')
+const procedureConfigPath = fileURLToPath(new URL('../procedure.cordis.snapshot.yml', import.meta.url))
 const retryScenarioDir = join(snapshotsDir, 'provider-retry')
 const retryConfigPath = fileURLToPath(new URL('../retry.cordis.snapshot.yml', import.meta.url))
 const compactionScenarioDir = join(snapshotsDir, 'compaction-recovery')
@@ -61,6 +64,7 @@ const headlessSessionExpected = join(snapshotsDir, 'headless-profile', 'session.
 const headlessFailureExpected = join(snapshotsDir, 'headless-profile', 'stderr.expected.txt')
 const cliMockLlmPluginPath = fileURLToPath(new URL('./fixtures/cli-mock-llm.ts', import.meta.url))
 const refreshing = process.env.DSH_SNAPSHOT === 'refresh'
+const bashAvailable = spawnSync('bash', ['--version'], { stdio: 'ignore' }).status === 0
 
 interface JsonObject {
   [key: string]: unknown
@@ -178,6 +182,16 @@ function normalizeHeadlessStream(rawStdout: string, cwd: string): string {
   return normalizeStdout(`${normalizedRecords.map(record => JSON.stringify(record)).join('\n')}\n`, context)
 }
 
+/** Keep the cross-platform golden canonical while exercising PowerShell on Windows. */
+function normalizeCliShellSnapshot(snapshot: string): string {
+  if (process.platform !== 'win32') return snapshot
+  const powershellArguments = '{\\"command\\":\\"[Console]::Write(\'CLI_TOOL_ROUND_TRIP\')\\",\\"description\\":\\"Prove the CLI tool round trip.\\"}'
+  const bashArguments = '{\\"command\\":\\"printf CLI_TOOL_ROUND_TRIP\\",\\"description\\":\\"Prove the CLI tool round trip.\\"}'
+  return snapshot
+    .replaceAll('"name":"pwsh"', '"name":"bash"')
+    .replaceAll(powershellArguments, bashArguments)
+}
+
 /** Zero durable goal timestamps inside both metadata records and rendered XML JSON. */
 function normalizeGoalTimestamps(value: unknown): unknown {
   if (typeof value === 'string') {
@@ -200,6 +214,80 @@ function normalizeGoalStream(rawStdout: string, cwd: string): string {
   return parseJsonl(normalizeHeadlessStream(rawStdout, cwd))
     .map(record => JSON.stringify(normalizeGoalTimestamps(record)))
     .join('\n') + '\n'
+}
+
+/** Seed one durable workspace and pending procedure before the assembled app boots. */
+async function seedProcedureWorkspace(cwd: string): Promise<void> {
+  const canonical = await realpath(cwd)
+  const storageRoot = join(cwd, '.storages')
+  await mkdir(storageRoot, { recursive: true })
+  const workspaceId = 'workspace-procedure-candidate'
+  const workspace = {
+    unit: { name: 'workspace', version: 2 },
+    global: {
+      initialized: true,
+      workspaceIds: [workspaceId],
+      archivedSessionIds: [],
+    },
+    tables: {
+      workspaces: {
+        [workspaceId]: {
+          path: canonical,
+          title: 'Procedure candidates',
+          sessionIds: [],
+          createdAt: '2026-09-18T00:00:00.000Z',
+          updatedAt: '2026-09-18T00:00:00.000Z',
+        },
+      },
+    },
+  }
+  const procedures = {
+    unit: { name: 'procedure_learning', version: 1 },
+    global: null,
+    tables: {
+      procedures: {
+        'procedure-candidate-1': {
+          id: 'procedure-candidate-1',
+          workspaceId,
+          revision: 1,
+          title: 'Prepare validated workspace',
+          trigger: 'prepare a workspace with independent verification',
+          preconditions: [
+            { key: 'platform', expected: process.platform },
+            { key: 'cwd', expected: canonical },
+          ],
+          steps: [
+            { tool: 'fixture_workspace_step', arguments: { action: 'prepare', target: 'workspace' } },
+          ],
+          verifier: {
+            tool: 'fixture_workspace_verify',
+            arguments: { check: 'workspace-ready' },
+          },
+          validity: {
+            revalidateAfter: '2026-10-18T00:00:00.000Z',
+            validUntil: '2026-12-17T00:00:00.000Z',
+          },
+          status: 'candidate',
+          evidence: [{
+            kind: 'initial-validation',
+            sessionId: 'procedure-seed-session',
+            executionCallIds: ['procedure-seed-execution'],
+            verificationCallId: 'procedure-seed-verification',
+            resultDigests: ['procedure-seed-digest'],
+            succeeded: true,
+            recordedAt: '2026-09-18T00:00:00.000Z',
+          }],
+          proposedAt: '2026-09-18T00:00:00.000Z',
+          updatedAt: '2026-09-18T00:00:00.000Z',
+          schemaVersion: 1,
+        },
+      },
+    },
+  }
+  await Promise.all([
+    writeFile(join(storageRoot, 'workspace.json'), `${JSON.stringify(workspace, null, 2)}\n`),
+    writeFile(join(storageRoot, 'procedure_learning.json'), `${JSON.stringify(procedures, null, 2)}\n`),
+  ])
 }
 
 async function scenarioPrompt(dir: string, label: string): Promise<string> {
@@ -264,7 +352,7 @@ describe('headless stream-json snapshots', () => {
         const actual = logs[0]
         if (actual === undefined) throw new Error('the headless profile did not persist its session')
         const context = contextFromLogs([actual.content])
-        const session = normalizeSessionSnapshot(actual.content, context)
+        const session = normalizeCliShellSnapshot(normalizeSessionSnapshot(actual.content, context))
         if (refreshing) await writeFile(headlessSessionExpected, session)
         await expect(session).toMatchFileSnapshot(headlessSessionExpected)
         expect(session).toContain(task)
@@ -285,6 +373,7 @@ describe('headless stream-json snapshots', () => {
       binArgs: ['--profile', 'headless', '--patch', headlessOverlayPath, 'Trigger the keyless model failure.'],
       tsconfigPath,
       expectedExitCode: 1,
+      processTimeoutMs: 120_000,
       env: {
         DSH_CLI_MOCK_FAILURE: '1',
         DSH_TELEMETRY_DISABLED: '1',
@@ -353,7 +442,7 @@ describe('headless stream-json snapshots', () => {
     expect(normalized).toBe(await readFile(streamExpected, 'utf8'))
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
-  it('recovers from context overflow through an assembled compaction', async () => {
+  it.skipIf(!bashAvailable)('recovers from context overflow through an assembled compaction', async () => {
     const prompt = await scenarioPrompt(compactionScenarioDir, 'compaction-recovery')
     let expectedSession = await readFile(compactionSessionFixture, 'utf8')
     let runCwd = ''
@@ -592,7 +681,7 @@ describe('headless stream-json snapshots', () => {
     }
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
-  it('replays the advanced toolchain through the one-shot app', async () => {
+  it.skipIf(!bashAvailable)('replays the advanced toolchain through the one-shot app', async () => {
     const prompt = await scenarioPrompt(advancedScenarioDir, 'advanced-toolchain')
     const fixtureFiles = [
       advancedSessionFixture,
@@ -667,6 +756,59 @@ describe('headless stream-json snapshots', () => {
     const normalized = normalizeHeadlessStream(result.stdout, runCwd)
     if (refreshing) await writeFile(advancedStreamExpected, normalized)
     expect(normalized).toBe(await readFile(advancedStreamExpected, 'utf8'))
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
+  it('persists mission STOP through the optional real Loader entry', async () => {
+    let record: JsonObject | undefined
+    const result = await runLoaderSmoke({
+      label: 'Mission control snapshot', tempDirPrefix: 'headless-mission-control-',
+      binScript, libBinScript: binScript, configPath: teamConfigPath,
+      binArgs: [teamConfigPath, 'Exercise the host mission controls.'], tsconfigPath,
+      processTimeoutMs: 60_000, env: { DSH_SNAPSHOT: 'team', DSH_TEAM_MISSION_CONTROL: '1' },
+      inspect: async (cwd) => {
+        const raw = await readFile(join(cwd, '.mission-control', 'leon_collective.json'), 'utf8').catch(() => undefined)
+        if (raw === undefined) return
+        const data = JSON.parse(raw) as JsonObject
+        const tables = data.tables as JsonObject
+        record = Object.values(tables.missions as JsonObject)[0] as JsonObject
+      },
+    })
+    expect(result.stderr).toBe('')
+    expect(result.stdout).toContain('MISSION_STOP_PERSISTED')
+    expect(record).toMatchObject({ state: 'cancelled', calls: 1, maxCalls: 2, revision: 3,
+      criteria: 'Persistent STOP and bounded calls' })
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
+  it('rejects model completion without host review in the real Team composition', async () => {
+    let projection: unknown
+    const result = await runLoaderSmoke({
+      label: 'Team completion review snapshot',
+      tempDirPrefix: 'headless-team-review-',
+      binScript,
+      libBinScript: binScript,
+      configPath: teamConfigPath,
+      binArgs: [teamConfigPath, 'Use Agent Teams to investigate; completion requires evidence review.'],
+      tsconfigPath,
+      processTimeoutMs: 60_000,
+      env: { DSH_SNAPSHOT: 'team', DSH_TEAM_COMPLETION_REVIEW: '1' },
+      inspect: async (cwd) => {
+        const logs = await persistedLogs(cwd)
+        const parent = logs.find(log => typeof log.header.parentSession !== 'string')
+        if (parent === undefined) throw new Error('Missing Team root')
+        const rows = parseJsonl(parent.content)
+        const tasks = rows.filter(row => row.type === 'team/task')
+          .map(row => (row.data as JsonObject).task as JsonObject)
+        projection = {
+          states: tasks.map(task => ({ revision: task.revision, status: task.status })),
+          rejected: rows.some(row => row.type === 'tool/result' && JSON.stringify(row).includes('TEAM_TASK_REVIEW_REQUIRED')),
+        }
+      },
+    })
+    expect(result.stderr).toBe('')
+    expect(projection).toEqual({
+      states: [{ revision: 1, status: 'pending' }, { revision: 2, status: 'in_progress' }],
+      rejected: true,
+    })
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
   it('runs a keyless Agent Team with peer mail, dependent tasks, waiting, and Lead aggregation', async () => {
@@ -803,6 +945,61 @@ describe('headless stream-json snapshots', () => {
     const normalized = normalizeGoalStream(result.stdout, runCwd)
     if (refreshing) await writeFile(streamExpected, normalized)
     expect(normalized).toBe(await readFile(streamExpected, 'utf8'))
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
+  it('lists durable procedure candidates through the one-shot app', async () => {
+    const prompt = await scenarioPrompt(procedureScenarioDir, 'procedure-candidates')
+    const streamExpected = join(procedureScenarioDir, 'stream-json.expected.jsonl')
+    let runCwd = ''
+    const result = await runLoaderSmoke({
+      label: 'procedure candidates headless stream-json snapshot',
+      tempDirPrefix: 'headless-snapshot-procedure-candidates-',
+      binScript,
+      libBinScript: binScript,
+      configPath: procedureConfigPath,
+      binArgs: [procedureConfigPath, prompt],
+      tsconfigPath,
+      env: {
+        DSH_SNAPSHOT: 'replay',
+        DSH_SNAPSHOT_FILE: join(procedureScenarioDir, 'session.jsonl'),
+        DSH_SNAPSHOT_OVERRIDE: join(procedureScenarioDir, 'replay.override.json'),
+        NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
+      },
+      prepare: async (cwd) => {
+        runCwd = cwd
+        await seedProcedureWorkspace(cwd)
+      },
+      inspect: async (cwd) => {
+        const logs = await persistedLogs(cwd)
+        expect(logs).toHaveLength(1)
+        const records = parseJsonl(logs[0]?.content ?? '')
+        const calls = records.filter(record => record.type === 'tool/call')
+          .map(record => (record.data as JsonObject | undefined)?.name)
+        expect(calls).toEqual(['procedure_candidates'])
+        const toolResult = records.find((record) => {
+          if (record.type !== 'tool/result') return false
+          const data = record.data as JsonObject | undefined
+          const message = data?.message as JsonObject | undefined
+          const source = message?.source as JsonObject | undefined
+          return source?.callId === 'call_procedure_candidates'
+        })
+        const message = (toolResult?.data as JsonObject | undefined)?.message as JsonObject | undefined
+        const content = message?.content as JsonObject[] | undefined
+        const text = content?.[0]?.content as JsonObject[] | undefined
+        expect(text?.find(block => block.type === 'text')?.text).toBe(
+          '{"candidates":[{"id":"procedure-candidate-1","revision":1,"title":"Prepare validated workspace","status":"candidate"}]}',
+        )
+      },
+    })
+
+    expect(result.stderr).toBe('')
+    const normalized = normalizeHeadlessStream(result.stdout, runCwd)
+    if (refreshing) await writeFile(streamExpected, normalized)
+    expect(normalized).toBe(await readFile(streamExpected, 'utf8'))
+    expect(parseJsonl(result.stdout).at(-1)).toMatchObject({
+      type: 'result',
+      output: 'PROCEDURE_CANDIDATES_LISTED',
+    })
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
   it('replays two fresh Ralph rounds through the one-shot app', async () => {
@@ -954,7 +1151,7 @@ describe('headless stream-json snapshots', () => {
     expect(normalized).toBe(await readFile(streamExpected, 'utf8'))
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
-  it('replays persistent PTY tools through the one-shot app', async () => {
+  it.skipIf(!bashAvailable)('replays persistent PTY tools through the one-shot app', async () => {
     const input = JSON.parse(await readFile(join(ptyScenarioDir, 'input.json'), 'utf8')) as {
       steps?: { op?: unknown; text?: unknown }[]
     }

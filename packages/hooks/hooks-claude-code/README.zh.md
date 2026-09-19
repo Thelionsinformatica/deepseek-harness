@@ -38,7 +38,7 @@ hook **本身**会在 agent 的会话工作区中运行：对 agent scope 点，
 |---|---|---|
 | `SessionStart` | `agent/session-start`（emit） | additionalContext → `agent.inject()` 到新会话（无法阻塞） |
 | `UserPromptSubmit` | `agent/pre-step`（waterfall（瀑布式事件）） | `deny` → `PreStepDecision.reject`；仅 additionalContext → 通过 `next()` 委托，再向下游 `enter` 决策追加一条单独标记来源的消息（后续外层 listener 仍可 reject／改写） |
-| `PreToolUse` | `tools/pre-execute`（waterfall） | `deny` → `PreToolDecision.deny`；`ask` → `PreToolDecision.ask` |
+| `PreToolUse` | `tools/pre-execute`（waterfall） | `continue:false` 或 `deny` → `PreToolDecision.deny`；`ask` → `PreToolDecision.ask`；停止请求优先，并跳过工具主体 |
 | `PostToolUse` | `tools/post-execute`（waterfall） | `deny` → 带反馈的 `block`；仅 additionalContext → 通过 `next()` 委托，再将一个单独标记源的上下文前置到下游决策；Code Mode 将子调用上下文延迟到外层 `run_code` 结果 |
 | `Stop` | `agent/turn-stopping`（serial） | 阻塞 Stop hook 通过 `steer()` 送入其原因，强制再执行一步 |
 | `SubagentStart` | `subagent/start`（emit） | additionalContext → `agent.inject()` 到仍在运行的同进程 child；远程 child 没有本地注入目标 |
@@ -74,7 +74,7 @@ hook 不返回上下文时没有成本。Hook 文本取决于数据，会被记�
 
 #### 模型看到的内容
 
-提供方提供的原因逐字传递。缺失原因时，已阻塞提示词精确使用 `blocked by UserPromptSubmit hook`，已拒绝工具变为 `Error: blocked by PreToolUse hook`，已阻塞工具后反馈精确为 `blocked by PostToolUse hook`，阻塞 stop 则精确添加 steering `continue: blocked by Stop hook`。`systemMessage` 与 `updatedInput` 会被记录或警告，但在此实现中对模型不可见。
+提供方提供的原因逐字传递。缺失原因时，已阻塞提示词精确使用 `blocked by UserPromptSubmit hook`，已拒绝工具变为 `Error: blocked by PreToolUse hook`，`continue:false` 的工具前否决变为 `Error: stopped by PreToolUse hook`，已阻塞工具后反馈精确为 `blocked by PostToolUse hook`，阻塞 stop 则精确添加 steering `continue: blocked by Stop hook`。`systemMessage` 与 `updatedInput` 会被记录或警告，但在此实现中对模型不可见。
 
 #### Token 影响
 
@@ -89,9 +89,9 @@ hook 不返回上下文时没有成本。Hook 文本取决于数据，会被记�
 - **不支持的 hook 事件（Claude Code 当前 30 项中的 23 项）：** `Setup`、`InstructionsLoaded`、`UserPromptExpansion`、`MessageDisplay`、`PermissionRequest`、`PostToolUseFailure`、`PostToolBatch`、`PermissionDenied`、`Notification`、`TaskCreated`、`TaskCompleted`、`StopFailure`、`TeammateIdle`、`ConfigChange`、`CwdChanged`、`FileChanged`、`WorktreeCreate`、`WorktreeRemove`、`PreCompact`、`PostCompact`、`SessionEnd`、`Elicitation` 和 `ElicitationResult`。这些事件的配置会在配置组解析前被忽略，因此不支持的事件既不会使配置失效，也不会注册 hook。比较基线是 Claude Code [官方 hook 事件参考](https://code.claude.com/docs/en/hooks#hook-events)。
 - **`SessionStart` 只支持部分功能：** 会消费 JSON `additionalContext`，但不支持纯 stdout 上下文、`initialUserMessage`、`sessionTitle`、`watchPaths`、`reloadSkills` 与 `CLAUDE_ENV_FILE`。hook 脱离运行，因此上下文可能错过第一个请求（`TODO(session-start-gating)`），payload 会省略 `model`、`agent_type` 和 `session_title` 等当前可选字段。
 - **`UserPromptSubmit` 只支持部分功能：** 支持阻塞与 JSON `additionalContext`，但不支持纯 stdout 上下文、`sessionTitle` 和 `suppressOriginalPrompt`。除非被覆盖，否则桥接还会使用自身 600 秒默认值，而非 Claude Code 的事件特定 30 秒 command 超时。
-- **`PreToolUse` 只支持部分功能：** `deny` 与 `ask` 决策可用；`allow` 不会预审批，不支持 `defer`，`additionalContext` 会被忽略，`updatedInput` 会被记录 + 警告但不应用（见 [pre-tool-input-rewrite Agent Note](../../../.agents/notes/proposed/feature/2026-06-30-pre-tool-input-rewrite.zh.md)）。
+- **`PreToolUse` 只支持部分功能：** `continue:false` 会否决当前工具调用，并在提供时使用 `stopReason`；`deny` 与 `ask` 决策可用。`allow` 不会预审批，不支持 `defer`，`additionalContext` 会被忽略，`updatedInput` 会被记录 + 警告但不应用（见 [pre-tool-input-rewrite Agent Note](../../../.agents/notes/proposed/feature/2026-06-30-pre-tool-input-rewrite.zh.md)）。
 - **`PostToolUse` 只支持部分功能：** 支持阻塞反馈与 JSON `additionalContext`，但不支持 `updatedToolOutput` 和 `updatedMCPToolOutput`，`tool_response` 会展平为文本。
 - **`SubagentStart` 与 `SubagentStop` 只支持部分功能：** 两者均报告常量 `agent_type`，其值为 `general-purpose`，并在 Claude Code 报告父会话的位置使用 child 会话 id。Start 上下文是尽力而为，且只能到达仍在运行的同进程 child；stop 只观测，无法阻塞 subagent 或向其提供上下文。Start 省略 `transcript_path`；stop 还省略 `agent_transcript_path`、`last_assistant_message`、`background_tasks` 和 `session_crons`，并始终报告 `stop_hook_active: false`。
 - **`Stop` 只支持部分功能：** 阻塞会强制另一个模型轮次，但 `stop_hook_active` 始终为 `false`，会省略 `last_assistant_message`、`background_tasks` 和 `session_crons`，且未实现连续阻塞上限（`TODO(stop-loop-guard)`）。因此，无条件阻塞 hook 会在每个步骤中强制 continuation，除非它自我限制。
-- **通用 payload 与输出字段只支持部分功能：** 已映射事件会省略 Claude Code 原本会提供的 `prompt_id`、`transcript_path`、`permission_mode` 和 `effort`。`systemMessage` 会被记录 + 警告但不呈现；`{"continue": false}` 会被记录但不会停止运行；不会应用 `suppressOutput`、`stopReason` 和 `terminalSequence`（`TODO(hook-continue-false)`）。
+- **通用 payload 与输出字段只支持部分功能：** 已映射事件会省略 Claude Code 原本会提供的 `prompt_id`、`transcript_path`、`permission_mode` 和 `effort`。`systemMessage` 会被记录 + 警告但不呈现。`{"continue": false}` 会在 `PreToolUse` 否决当前调用，并在该点应用 `stopReason`；其他已映射点仍只记录停止请求，因为尚无 agent 级硬停止原语。不会应用 `suppressOutput` 和 `terminalSequence`（`TODO(hook-continue-false)`）。
 - **Handler 与配置只支持部分功能：** 只运行 shell 形式 command handler。会跳过 `http`、`mcp_tool`、`prompt` 和 `agent` handler；不遵循 `args`、`async`、`asyncRewake`、`shell`、`if`、`once` 和 `statusMessage` 等 command handler 选项。匹配 handler 串行运行且不去重，而 Claude Code 会并行运行并对相同 handler 去重。一个进程级 `configPath` 会在加载时解析一次；尚未实现 Claude Code 的分层项目、用户、插件与策略发现和实时重新加载（`TODO(per-session-hook-config)`）。

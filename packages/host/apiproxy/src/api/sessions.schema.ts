@@ -251,6 +251,10 @@ export const sessionModelsRequestSchema = z.object({
 export const sessionModelsValueSchema = z.object({
   current: modelSelectionSchema,
   routable: z.boolean(),
+  automatic: z.boolean(),
+  automaticAvailable: z.boolean(),
+  externalFailoverAvailable: z.boolean().optional(),
+  externalFailoverConsent: z.boolean().optional(),
   groups: z.array(modelProviderGroupSchema),
   failures: z.array(modelCatalogFailureSchema),
 }) satisfies z.ZodType<Wire<ResponseValue<'session.models'>>>
@@ -261,11 +265,15 @@ export const sessionSelectModelRequestSchema = z.object({
   provider: z.string().min(1),
   model: z.string().min(1),
   reasoningEffort: z.string().min(1).optional(),
+  automatic: z.boolean().optional(),
+  externalFailoverConsent: z.boolean().optional(),
 }) satisfies z.ZodType<Wire<RequestPayload<'session.selectModel'>>>
 
 /** session.selectModel response value. */
 export const sessionSelectModelValueSchema = z.object({
   selected: modelSelectionSchema,
+  automatic: z.boolean(),
+  externalFailoverConsent: z.boolean().optional(),
 }) satisfies z.ZodType<Wire<ResponseValue<'session.selectModel'>>>
 
 /** ContentBlock passthrough: core is merge-extensible — the type discriminant envelope is strict, the rest stays wide. */
@@ -283,19 +291,43 @@ export const imageMediaTypeSchema = z.union([
 export const promptContentPartSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('text'), text: z.string() }),
   z.object({ type: z.literal('image'), mediaType: imageMediaTypeSchema, data: z.string(), name: z.string().optional() }),
+  // Non-image attachment: canonical base64 bytes plus a display name. The Host
+  // stores the decoded bytes below <DSH_HOME>/uploads and injects a text block
+  // naming the stored path, so the browser wire stays image-free here.
+  z.object({
+    type: z.literal('file'),
+    name: z.string().min(1).max(255),
+    data: z.string().min(1),
+  }),
 ])
 
 /** session.prompt request payload, including optional browser-local request provenance. */
+export const taskAcceptanceRequestSchema = z.object({
+  expectedText: z.string().min(1).max(4096).optional(),
+  arithmeticTests: z.array(z.object({
+    a: z.number().min(-1_000_000).max(1_000_000),
+    b: z.number().min(-1_000_000).max(1_000_000),
+    expected: z.number().min(-1_000_000).max(1_000_000),
+  }).strict()).min(1).max(8).optional(),
+  maxRecoveries: z.number().int().min(0).max(3),
+  requiredReadPath: z.string().min(1).max(4096).optional(),
+  readOnly: z.boolean().optional(),
+}).strict().refine(value => (value.expectedText !== undefined) !== (value.arithmeticTests !== undefined))
+  .refine(value => value.arithmeticTests === undefined || value.readOnly === true)
+
+/** Prompt acceptance is optional and validated independently for direct callers too. */
 export const sessionPromptRequestSchema = z.object({
   sessionId: sessionIdSchema,
   mode: z.union([z.literal('queue'), z.literal('steer')]),
   content: z.array(promptContentPartSchema),
   clientTimeZone: z.string().optional(),
+  acceptance: taskAcceptanceRequestSchema.optional(),
 }) as unknown as z.ZodType<RequestPayload<'session.prompt'>>
 
-/** session.prompt response value (the command slot appears only when the prompt dispatched a slash command). */
+/** session.prompt response value, carrying the exact durable user-message identity admitted by the Host. */
 export const sessionPromptValueSchema = z.object({
   accepted: z.literal(true),
+  messageId: messageIdSchema,
   command: z.object({
     kind: z.literal('success'),
     text: z.string().optional(),

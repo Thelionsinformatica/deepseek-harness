@@ -9,8 +9,8 @@
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { readdirSync } from 'node:fs'
-import { open, mkdir, readFile, readdir, realpath, link, rm, stat, truncate } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { open, mkdir, readFile, readdir, realpath, link, lstat, rm, stat, truncate, unlink } from 'node:fs/promises'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { scheduler } from 'node:timers/promises'
 import { randomBytes } from 'node:crypto'
@@ -179,6 +179,10 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
 
   append(id: SessionId, events: readonly SessionEvent[]): Promise<void> {
     return this.coordinator.append(id, events)
+  }
+
+  override delete(id: SessionId): Promise<void> {
+    return this.coordinator.delete(id)
   }
 
   override prepare(id: SessionId, signal?: AbortSignal): Promise<SessionPreparation> {
@@ -441,6 +445,110 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     if (tornMarker !== undefined) await this.repair(meta, tornMarker.truncateTo)
     const repairedEvents = [...(tornMarker?.recoveredEvents ?? []), ...closers]
     if (repairedEvents.length > 0) await this.appendLines(meta, repairedEvents)
+  }
+
+  /**
+   * Delete only the exact session artifact. The parsed header and canonical
+   * backend path are validated before unlink, so an encoded directory holding
+   * another identity is refused rather than removed. Containing directories
+   * (including the session cwd) are deliberately left untouched.
+   */
+  async deleteStored(id: SessionId): Promise<void> {
+    await this.ensureRootEncoding()
+    const path = await this.findLog(id)
+    if (path === undefined) return
+
+    // Destructive path resolution is stricter than reads: aliases are allowed
+    // only when their physical target remains inside this backend's root. A
+    // final-component symlink is refused because unlinking it would remove the
+    // link while leaving the transcript it advertised as permanently deleted.
+    const rootReal = await realpath(this.root)
+    const parent = dirname(path)
+    const parentReal = await realpath(parent)
+    const pathReal = await realpath(path)
+    this.assertDeletePathContained(rootReal, parentReal, path)
+    this.assertDeletePathContained(rootReal, pathReal, path)
+    const before = await lstat(path, { bigint: true })
+    if (!before.isFile() || before.isSymbolicLink()) {
+      throw new Error(`refusing to delete non-regular session artifact "${path}"`)
+    }
+
+    // Identity needs only the bounded header, not a parse of the conversation
+    // body. A malformed historical event must not make an otherwise exactly
+    // identified transcript impossible to delete. Physical containment is
+    // proven first so even the header reader never follows an external link.
+    const first = this.compression === 'zstd'
+      ? await this.readFirstZstdLine(path)
+      : await this.readFirstLine(path)
+    const meta = first === undefined ? undefined : parseHeaderMeta(first)
+    if (meta === undefined) {
+      throw new Error(`corrupt session log: invalid header line in "${path}"`)
+    }
+    await this.assertStoredIdentity(path, meta, id)
+
+    // POSIX publication uses link()+unlink(). A crash or a failed best-effort
+    // cleanup can leave the staging hard link behind. Remove only aliases with
+    // the canonical file's exact device/inode, never a merely similar name.
+    if (process.platform !== 'win32') {
+      const prefix = `${basename(path)}.`
+      for (const entry of await readdir(parent, { withFileTypes: true })) {
+        if (!entry.isFile() || !entry.name.startsWith(prefix) || !entry.name.endsWith('.tmp')) continue
+        const candidate = join(parent, entry.name)
+        let identity
+        try {
+          identity = await lstat(candidate, { bigint: true })
+        } catch (error: unknown) {
+          if (isENOENT(error)) continue
+          throw error
+        }
+        if (identity.dev !== before.dev || identity.ino !== before.ino) continue
+        try {
+          await unlink(candidate)
+        } catch (error: unknown) {
+          if (!isENOENT(error)) throw error
+        }
+      }
+    }
+
+    // Recheck immediately before unlink so a replaced parent or artifact is
+    // refused instead of deleting the newly resolved pathname.
+    const [parentAfter, pathAfter, identityAfter] = await Promise.all([
+      realpath(parent),
+      realpath(path),
+      lstat(path, { bigint: true }),
+    ])
+    if (
+      parentAfter !== parentReal
+      || pathAfter !== pathReal
+      || !identityAfter.isFile()
+      || identityAfter.isSymbolicLink()
+      || identityAfter.dev !== before.dev
+      || identityAfter.ino !== before.ino
+    ) {
+      throw new Error(`refusing to delete session artifact "${path}": its filesystem identity changed`)
+    }
+    try {
+      await unlink(path)
+    } catch (error: unknown) {
+      if (!isENOENT(error)) throw error
+    }
+    // unlink is not a durable namespace commit on POSIX until the parent
+    // directory is synced. Windows publishes namespace changes through its
+    // native filesystem journal and does not expose directory fsync via Node.
+    if (process.platform !== 'win32') await this.syncDirPosix(parent)
+  }
+
+  /** Refuse a destructive target whose physical spelling escapes the configured root. */
+  private assertDeletePathContained(rootReal: string, candidateReal: string, path: string): void {
+    const descendant = relative(rootReal, candidateReal)
+    if (
+      descendant === ''
+      || descendant === '..'
+      || descendant.startsWith(`..${sep}`)
+      || isAbsolute(descendant)
+    ) {
+      throw new Error(`refusing to delete session artifact outside persistence root: "${path}"`)
+    }
   }
 
   /** List valid unique stored sessions' metadata (header line only — no full-log parse). */

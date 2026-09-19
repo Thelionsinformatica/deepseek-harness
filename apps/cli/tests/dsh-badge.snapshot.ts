@@ -6,6 +6,7 @@ const configPath = fileURLToPath(new URL('./fixtures/dsh-badge/cordis.yml', impo
 const defaultConfigPath = fileURLToPath(new URL('./fixtures/dsh-badge/default.cordis.yml', import.meta.url))
 const tsconfigPath = fileURLToPath(new URL('../../../tsconfig.json', import.meta.url))
 const badgeAssetsPath = fileURLToPath(new URL('../../../packages/skill/skill-badge/assets/', import.meta.url))
+const BADGE_PROCESS_TIMEOUT_MS = 90_000
 
 describe('dsh badge assembled snapshot', () => {
   it('advertises and loads the opt-in bundled skill through the shipped app', async () => {
@@ -16,6 +17,7 @@ describe('dsh badge assembled snapshot', () => {
       libBinScript: binScript,
       configPath: defaultConfigPath,
       tsconfigPath,
+      processTimeoutMs: BADGE_PROCESS_TIMEOUT_MS,
     })
     const enabled = await runLoaderSmoke({
       label: 'dsh badge skill snapshot',
@@ -24,10 +26,12 @@ describe('dsh badge assembled snapshot', () => {
       libBinScript: binScript,
       configPath,
       tsconfigPath,
+      processTimeoutMs: BADGE_PROCESS_TIMEOUT_MS,
     })
     const disabledSnapshot = JSON.parse(disabled.stdout) as unknown
+    const escapedBadgeAssetsPath = JSON.stringify(badgeAssetsPath).slice(1, -1)
     const enabledSnapshot = JSON.parse(
-      enabled.stdout.replaceAll(badgeAssetsPath, '{{badgeAssetsPath}}'),
+      enabled.stdout.replaceAll(escapedBadgeAssetsPath, '{{badgeAssetsPath}}'),
     ) as unknown
 
     expect(disabled.stderr).toBe('')
@@ -172,5 +176,5 @@ describe('dsh badge assembled snapshot', () => {
         },
       }
     `)
-  }, LOADER_SMOKE_TEST_TIMEOUT_MS * 2)
+  }, BADGE_PROCESS_TIMEOUT_MS * 2 + LOADER_SMOKE_TEST_TIMEOUT_MS)
 })

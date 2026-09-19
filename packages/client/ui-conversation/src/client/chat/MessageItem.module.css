@@ -255,6 +255,12 @@
   font-weight: 600;
 }
 
+.failoverTitle {
+  margin-right: 6px;
+  color: var(--dsw-alias-state-warn-primary);
+  font-weight: 600;
+}
+
 @keyframes retry-shimmer {
   from {
     background-position: 100% 50%;

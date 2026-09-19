@@ -57,6 +57,48 @@ describe('parseDshArgs', () => {
       .toEqual({ mode: 'plugin', profile: 'tui', args: ['add', '--save-dev', 'x'] })
   })
 
+  it('routes read-only doctor invocations', () => {
+    expect(parse(['doctor']))
+      .toEqual({ mode: 'doctor', profile: 'web', port: 3080, json: false })
+    expect(parse(['doctor', '--profile', 'headless', '--port', '4175', '--json']))
+      .toEqual({ mode: 'doctor', profile: 'headless', port: 4175, json: true })
+  })
+
+  it('routes offline backup and restore invocations', () => {
+    expect(parse(['backup', '--dry-run', '--json'])).toEqual({
+      mode: 'backup',
+      dryRun: true,
+      json: true,
+      confirmStopped: false,
+      passphraseStdin: false,
+    })
+    expect(parse(['backup', 'E:/backup/leon.leon-backup', '--confirm-stopped', '--passphrase-stdin'])).toEqual({
+      mode: 'backup',
+      output: 'E:/backup/leon.leon-backup',
+      dryRun: false,
+      json: false,
+      confirmStopped: true,
+      passphraseStdin: true,
+    })
+    expect(parse(['restore', 'leon.leon-backup'])).toEqual({
+      mode: 'restore',
+      archive: 'leon.leon-backup',
+      apply: false,
+      json: false,
+      confirmStopped: false,
+      passphraseStdin: false,
+    })
+    expect(parse(['restore', 'leon.leon-backup', '--target', 'E:/restored', '--apply', '--confirm-stopped', '--passphrase-stdin', '--json'])).toEqual({
+      mode: 'restore',
+      archive: 'leon.leon-backup',
+      target: 'E:/restored',
+      apply: true,
+      json: true,
+      confirmStopped: true,
+      passphraseStdin: true,
+    })
+  })
+
   it('routes profile and web config dumps', () => {
     expect(parse(['--profile', 'web', '--dump-config']))
       .toEqual({ mode: 'dump-config', profile: 'web', defaultOnly: false, patches: [] })
@@ -96,6 +138,36 @@ describe('parseDshArgs', () => {
     expect(exitCode(['plugin', '--profile', 'tui'])).toBe(1) // nothing to forward
     expect(exitCode(['plugin', '--profile', ''])).toBe(1)
     expect(exitCode(['--profile', 'x', 'plugin', 'add', 'y'])).toBe(1)
+    expect(exitCode(['doctor', '--profile', ''])).toBe(1)
+    expect(exitCode(['doctor', '--port', '0'])).toBe(1)
+    expect(exitCode(['doctor', '--port', '65536'])).toBe(1)
+    expect(exitCode(['doctor', '--port', 'not-a-port'])).toBe(1)
+    expect(exitCode(['--profile', 'web', 'doctor'])).toBe(1)
+    expect(exitCode(['backup', '--dry-run', '--passphrase-stdin'])).toBe(1)
+    expect(exitCode(['--profile', 'web', 'backup'])).toBe(1)
+    expect(exitCode(['restore'])).toBe(1)
+    expect(exitCode(['restore', 'archive', '--target', ''])).toBe(1)
+    expect(exitCode(['--profile', 'web', 'restore', 'archive'])).toBe(1)
+    expect(exitCode(['--profile', 'web', 'collective'])).toBe(1)
+  })
+
+  it('routes collective multi-agent invocations', () => {
+    expect(parse(['collective'])).toEqual({
+      mode: 'collective',
+      dryRun: false,
+      json: false,
+    })
+    expect(parse(['collective', 'auditar', 'integridade', 'do', 'projeto'])).toEqual({
+      mode: 'collective',
+      mission: 'auditar integridade do projeto',
+      dryRun: false,
+      json: false,
+    })
+    expect(parse(['collective', '--dry-run', '--json'])).toEqual({
+      mode: 'collective',
+      dryRun: true,
+      json: true,
+    })
   })
 
   it('keeps its own help for an invocation with no app to hand it to', () => {

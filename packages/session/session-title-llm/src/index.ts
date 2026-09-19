@@ -242,7 +242,8 @@ export async function generateSessionTitleWithLlm(
   if (inputBytes > config.maxInputBytes) {
     throw new Error(`session-title-llm: input is ${inputBytes} bytes, exceeding maxInputBytes ${config.maxInputBytes}`)
   }
-  const route = resolveRoute(config, request)
+  const auxiliary = ctx.get('agentDefaultModel')?.auxiliarySelection('title')
+  const route = auxiliary ?? resolveRoute(config, request)
   const messages: Message[] = [createUserMessage({
     content: [{ type: 'text', text: framedInput }],
     source: { kind: 'plugin', plugin: 'dsh-session-title-llm' },
@@ -257,6 +258,7 @@ export async function generateSessionTitleWithLlm(
     maxTokens: config.maxOutputTokens,
     sessionId: request.session.id,
     purpose: 'session-title',
+    ...auxiliary?.reasoningEffort === undefined ? {} : { reasoningEffort: auxiliary.reasoningEffort },
     signal: callDeadline.signal,
   })
   request.session.append('session/title-llm-request', {
@@ -292,3 +294,4 @@ export async function generateSessionTitleWithLlm(
     model: route,
   }
 }
+import type {} from '@deepseek-ai/dsh-agent-default-model'

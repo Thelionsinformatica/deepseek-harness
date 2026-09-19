@@ -3,7 +3,7 @@ import tsconfigPaths from 'vite-tsconfig-paths'
 import { defineConfig } from 'vitest/config'
 import { standardDecoratorPlugin, vitestExecArgv } from './vitest.shared.ts'
 
-const DEFAULT_SNAPSHOT_MAX_CONCURRENCY = 5
+const DEFAULT_SNAPSHOT_MAX_CONCURRENCY = process.platform === 'win32' ? 2 : 5
 
 function positiveIntFromEnv(name: string, fallback: number): number {
   const raw = process.env[name]
@@ -20,6 +20,7 @@ const snapshotMaxConcurrency = positiveIntFromEnv(
   'DSH_SNAPSHOT_MAX_CONCURRENCY',
   Math.min(DEFAULT_SNAPSHOT_MAX_CONCURRENCY, availableParallelism()),
 )
+const snapshotInFileMaxConcurrency = process.platform === 'win32' ? 1 : snapshotMaxConcurrency
 
 // Replay is the keyless default: boot real subprocess paths from recorded model responses and diff
 // assembled requests, normalized protocol or transcript output, and persisted-log expected outputs.
@@ -63,6 +64,10 @@ export default defineConfig({
     testTimeout: 120_000,
     hookTimeout: 30_000,
     fileParallelism: (process.env.DSH_SNAPSHOT || 'replay') === 'replay' && snapshotMaxConcurrency > 1,
-    maxConcurrency: snapshotMaxConcurrency,
+    maxWorkers: snapshotMaxConcurrency,
+    // Concurrent ACP child shutdown can trip libuv's UV_HANDLE_CLOSING
+    // assertion on Windows. File-level parallelism remains bounded above,
+    // while scenarios within one file settle one at a time on that host.
+    maxConcurrency: snapshotInFileMaxConcurrency,
   },
 })

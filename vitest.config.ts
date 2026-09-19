@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process'
+import { availableParallelism } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import tsconfigPaths from 'vite-tsconfig-paths'
 import { resolvePwshPath } from './packages/shell/pwsh-local/src/resolve.ts'
@@ -94,6 +95,20 @@ const testIncludes = [
   'scripts/**/*.spec.ts',
 ]
 
+// Windows process creation and ConPTY teardown are materially slower under a
+// fully parallel repository run than in focused suites. Four workers still
+// use the machine while leaving enough native-process and file-handle headroom
+// for the real Codex, ConPTY, Git, and SQLite fixtures. Eight workers could
+// finish every assertion yet still lose a Vitest fork during native teardown.
+// Linux/macOS retain Vitest's existing defaults and timing contracts.
+const windowsUnitRuntime = process.platform === 'win32'
+  ? {
+      maxWorkers: Math.min(4, availableParallelism()),
+      testTimeout: 20_000,
+      hookTimeout: 30_000,
+    }
+  : {}
+
 // The instrumented coverage gate sets this env; the exempt heavy suites then
 // run beside it uninstrumented (membership contract in scripts/coverage-exempt.ts).
 // A set-but-not-'1' value is a misconfiguration, not a silent no-op.
@@ -128,6 +143,7 @@ const processBoundTests = [
 export default defineConfig({
   plugins: [pathsPlugin(), standardDecoratorPlugin()],
   test: {
+    ...windowsUnitRuntime,
     setupFiles: ['./scripts/test-invariants.ts'],
     // .tsx: client component specs (jsdom via per-file @vitest-environment pragma).
     include: testIncludes,
@@ -138,6 +154,7 @@ export default defineConfig({
       {
         plugins: [pathsPlugin(), standardDecoratorPlugin()],
         test: {
+          ...windowsUnitRuntime,
           name: 'thread-safe',
           execArgv: vitestExecArgv,
           // Node 24 has aborted in its CJS lexer (v8::ToLocalChecked Empty
@@ -156,6 +173,7 @@ export default defineConfig({
       {
         plugins: [pathsPlugin(), standardDecoratorPlugin()],
         test: {
+          ...windowsUnitRuntime,
           name: 'process-bound',
           execArgv: vitestExecArgv,
           pool: 'forks',

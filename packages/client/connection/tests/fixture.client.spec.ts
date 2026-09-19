@@ -309,13 +309,19 @@ describe('createFixtureApi', () => {
     expect(missing.result).toMatchObject({ ok: false, error: { code: 'session-not-found', details: { sessionId: 'ghost' } } })
     // Real prompt: replay starts (running flips true), cancel freezes it.
     const accepted = await api.sessions.prompt(req({ sessionId: id, mode: 'queue' as const, content: [{ type: 'text' as const, text: 'render markdown' }] }))
-    expect(accepted.result).toMatchObject({ ok: true, value: { accepted: true } })
+    expect(accepted.result.ok).toBe(true)
+    if (!accepted.result.ok) throw new Error('prompt failed')
+    expect(accepted.result.value.accepted).toBe(true)
+    expect(accepted.result.value.messageId.length).toBeGreaterThan(0)
     await new Promise(resolve => setTimeout(resolve, 120)) // a couple of typewriter ticks
     await api.sessions.cancel(req({ sessionId: id }))
     await consuming
     const types = frames.filter((f): f is Extract<MuxFrame, { type: 'session/event' }> => f.type === 'session/event').map(f => f.event.type)
     expect(types).toContain('turn/start')
     expect(types).toContain('user/message')
+    const admitted = frames.find((frame): frame is Extract<MuxFrame, { type: 'session/event' }> =>
+      frame.type === 'session/event' && frame.event.type === 'user/message')
+    expect((admitted?.event.data as { id?: string }).id).toBe(accepted.result.value.messageId)
     expect(types).toContain('assistant/chunk')
     expect(types).toContain('assistant/message')
     expect(types.at(-1)).toBe('turn/end')

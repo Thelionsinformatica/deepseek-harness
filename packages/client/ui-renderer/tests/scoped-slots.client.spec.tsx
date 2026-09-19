@@ -249,7 +249,7 @@ function mountChainRoot(h: Fake, children: Record<string, DeclaredSpec>, body: (
 }
 
 describe('root outlet', () => {
-  it('renders the root registration and fails loud when root is unregistered (boot order)', () => {
+  it('renders the root registration and waits through an empty live-ledger transition', () => {
     const h = makeHost()
     h.add('root', { component: () => <b>shell</b> })
     const renderer = createSlotRenderer()
@@ -257,10 +257,8 @@ describe('root outlet', () => {
     expect(view.container.textContent).toBe('shell')
 
     const empty = makeHost()
-    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    expect(() => render(<>{createSlotRenderer().renderRoot(empty.host, {})}</>))
-      .toThrow(/boot order/)
-    spy.mockRestore()
+    const pending = render(<>{createSlotRenderer().renderRoot(empty.host, {})}</>)
+    expect(pending.container.querySelector('[data-slot-pending="root"]')).toBeTruthy()
   })
 
   it('passes renderRoot owner props into the root component', () => {

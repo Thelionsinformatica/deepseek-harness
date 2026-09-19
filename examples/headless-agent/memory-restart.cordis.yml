@@ -1,0 +1,12 @@
+- id: storage
+  name: '@deepseek-ai/dsh-storage'
+- id: storage-json
+  name: '@deepseek-ai/dsh-storage-json'
+  config:
+    root: !!js process.env.LEON_MEMORY_TEST_ROOT || process.cwd() + '/store'
+- id: storage-domain
+  name: '@deepseek-ai/dsh-storage-domain'
+  config:
+    backend: json
+- id: continuity
+  name: '@deepseek-ai/dsh-memory-continuity'

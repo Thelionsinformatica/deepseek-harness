@@ -167,7 +167,32 @@ function lead(messages) {
 }
 
 class TeamFixtureAdapter extends LlmAdapter {
+  constructor(ctx) { super(); this.ctx = ctx }
   async * stream(options) {
+    if (process.env.DSH_TEAM_MISSION_CONTROL === '1') {
+      const control = this.ctx.get('teamMissions')
+      const leadAgent = this.ctx.agents.requireInitiator()
+      await control.start(leadAgent, 'Control snapshot', 'Persistent STOP and bounded calls')
+      await control.reserveCall(leadAgent)
+      await control.transition(leadAgent, 2, 'stop')
+      let denied = false
+      try { await control.reserveCall(leadAgent) } catch (error) { denied = error.code === 'MISSION_NOT_RUNNING' }
+      if (!denied) throw new Error('Cancelled mission admitted a call')
+      yield* textChunks('MISSION_STOP_PERSISTED')
+      return
+    }
+    if (process.env.DSH_TEAM_COMPLETION_REVIEW === '1') {
+      const names = calls(options.messages)
+      const chunks = !names.includes('team_task_create')
+        ? toolChunks([{ name: 'team_task_create', args: { subject: 'Unverified', description: 'No evidence exists.' } }])
+        : !hasTaskAction(options.messages, 'claim')
+          ? toolChunks([{ name: 'team_task_update', args: { task_id: 'task-1', expected_revision: 1, action: 'claim' } }])
+          : !hasTaskAction(options.messages, 'complete')
+            ? toolChunks([{ name: 'team_task_update', args: { task_id: 'task-1', expected_revision: 2, action: 'complete' } }])
+            : textChunks('REVIEW_ATTEMPT_FINISHED')
+      for (const chunk of chunks) yield chunk
+      return
+    }
     const userText = options.messages.flatMap(message => message.role === 'user'
       ? message.content.filter(block => block.type === 'text').map(block => block.text)
       : []).join('\n')
@@ -186,9 +211,9 @@ class TeamFixtureAdapter extends LlmAdapter {
 /** Cordis plugin name. */
 export const name = 'team-fixture-llm'
 /** LLM registry dependency. */
-export const inject = ['llm']
+export const inject = process.env.DSH_TEAM_MISSION_CONTROL === '1' ? ['llm', 'agents', 'teamMissions'] : ['llm']
 
 /** Register the keyless adapter on the shipped default provider route. */
 export function apply(ctx) {
-  ctx.llm.registerAdapter(['deepseek-official'], new TeamFixtureAdapter())
+  ctx.llm.registerAdapter(['deepseek-official'], new TeamFixtureAdapter(ctx))
 }

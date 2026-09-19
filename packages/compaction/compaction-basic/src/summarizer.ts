@@ -9,7 +9,7 @@ import { contentHasImage, createUserMessage, BlockAssembler, LlmError } from '@d
 import type {
   ContentBlock, FinishReason, GenerateOptions, Message, TokenUsage, ToolSchema,
 } from '@deepseek-ai/dsh-llm'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Agent, ModelSelection } from '@deepseek-ai/dsh-agent'
 
 interface SummaryConfig {
   readonly summarizationProvider: string
@@ -17,9 +17,63 @@ interface SummaryConfig {
   readonly maxTokens: number
 }
 
+/**
+ * Bound a region for an explicitly assigned auxiliary summarizer, reserving the replay header and summary output.
+ * @param ctx - supplies the assigned route, model metadata and token meter.
+ * @param config - summary output policy.
+ * @param agent - owns the replay header.
+ * @param signal - cancellation for metadata resolution.
+ * @returns heuristic region budget, or undefined when no auxiliary route is assigned.
+ */
+export async function auxiliarySummaryRegionBudget(
+  ctx: Context, config: SummaryConfig, agent: Agent, signal?: AbortSignal,
+): Promise<number | undefined> {
+  const route = ctx.get('agentDefaultModel')?.auxiliarySelection('compression')
+  if (route === undefined) return undefined
+  const capacity = (await ctx.llm.resolveModelInfo(route.provider, route.model, signal)).context?.contextWindow
+  if (capacity === undefined) throw new Error('Auxiliary summarizer must declare its context capacity')
+  const visualRoute = await compatibleSummaryRoute(ctx, route, agent.session.deriveMessages(), signal)
+  const visualCapacity = (await ctx.llm.resolveModelInfo(visualRoute.provider, visualRoute.model, signal)).context?.contextWindow
+  if (visualCapacity === undefined) throw new Error('Auxiliary summarizer must declare its context capacity')
+  const header = agent.session.requestHeader()
+  const instruction = createUserMessage({
+    content: [{ type: 'text', text: COMPACTION_INSTRUCTION }],
+    source: { kind: 'plugin', plugin: 'dsh-compaction-basic' },
+  })
+  const overhead = ctx.tokenMeter.estimateMessage(instruction)
+    + Math.ceil((header?.system?.length ?? 0) / 4)
+    + Math.ceil(JSON.stringify(header?.tools ?? []).length / 4)
+  return Math.max(0, Math.min(capacity, visualCapacity) - config.maxTokens - overhead)
+}
+
+/** Resolve image-bearing summaries only through an explicitly authorized vision assignment. */
+async function compatibleSummaryRoute(
+  ctx: Context, target: ModelSelection, messages: readonly Message[], signal?: AbortSignal,
+): Promise<ModelSelection> {
+  if (!messages.some(message => contentHasImage(message.content))) return target
+  const info = await ctx.llm.resolveModelInfo(target.provider, target.model, signal)
+  if (info.inputModalities?.includes('image')) return target
+  const vision = ctx.get('agentDefaultModel')?.auxiliarySelection('vision')
+  if (vision !== undefined) {
+    const visualInfo = await ctx.llm.resolveModelInfo(vision.provider, vision.model, signal)
+    if (visualInfo.inputModalities?.includes('image')) return vision
+  }
+  throw new LlmError('Image-bearing history requires an authorized image-capable summarizer; original history preserved.', 'UNSUPPORTED_CONTENT')
+}
+
 /** Tags wrapping the structured summary inside the landed checkpoint node. */
 const SUMMARY_OPEN_TAG = '<compacted-summary>'
 const SUMMARY_CLOSE_TAG = '</compacted-summary>'
+const CONTINUITY_HEADING = '## Operational Continuity (deterministic)'
+const MAX_CONTINUITY_REFERENCES = 16
+const MAX_CONTINUITY_EVIDENCE = 6
+const MAX_CONTINUITY_LINE_CHARS = 320
+
+interface ContinuityFragment {
+  readonly text: string
+  readonly source: string
+  readonly toolEvidence: boolean
+}
 
 /**
  * The summarization directive, delivered as the FINAL user message after the
@@ -84,6 +138,204 @@ export interface SummarizationInput {
   readonly messages: readonly Message[]
 }
 
+/**
+ * Preserve exact operational references independently of the summarizer model.
+ * The bounded appendix carries only references and concise tool-result evidence;
+ * it never promotes assistant prose to verified state. Credentials are redacted
+ * and URL query strings or fragments are removed before retention.
+ *
+ * @param summary - text-only summary returned by the configured model.
+ * @param messages - exact compacted messages from which references are recovered.
+ * @returns summary blocks followed by a bounded deterministic appendix when facts exist.
+ */
+export function preserveOperationalContinuity(
+  summary: readonly ContentBlock[],
+  messages: readonly Message[],
+): ContentBlock[] {
+  const fragments = continuityFragments(messages)
+  const references = latestReferences(fragments, MAX_CONTINUITY_REFERENCES)
+  const evidence = latestUnique(fragments
+    .filter(fragment => fragment.toolEvidence)
+    .flatMap(fragment => evidenceLines(fragment)), MAX_CONTINUITY_EVIDENCE)
+  if (references.length === 0 && evidence.length === 0) return [...summary]
+
+  const lines = [
+    CONTINUITY_HEADING,
+    '- Machine-extracted recovery data. References are exact; live status is valid only when a tool-evidence line says so and must be revalidated after time or restart.',
+    ...references.map(reference => `- Reference: ${reference}`),
+    ...evidence.map(line => `- Tool evidence: ${line}`),
+  ]
+  return [...summary, { type: 'text', text: `\n\n${lines.join('\n')}` }]
+}
+
+/** Deduplicate references by exact value while retaining their latest source. */
+function latestReferences(fragments: readonly ContinuityFragment[], limit: number): string[] {
+  const latest = new Map<string, string>()
+  for (const fragment of fragments) {
+    for (const value of extractReferences(fragment)) {
+      latest.delete(value)
+      latest.set(value, `${value} (source: ${fragment.source})`)
+    }
+  }
+  return [...latest.values()].slice(-limit)
+}
+
+/** Flatten model-visible text while retaining whether it came from a tool result. */
+function continuityFragments(messages: readonly Message[]): ContinuityFragment[] {
+  const toolNames = new Map<string, string>()
+  for (const message of messages) {
+    collectToolNames(message.content, toolNames)
+  }
+  return messages.flatMap(message => collectContinuityFragments(
+    message.content,
+    sourceLabel(message),
+    message.source.kind === 'tool',
+    toolNames,
+  ))
+}
+
+/** Associate a durable tool call id with its model-visible name. */
+function collectToolNames(blocks: readonly ContentBlock[], names: Map<string, string>): void {
+  for (const block of blocks) {
+    if (block.type === 'tool-call') names.set(block.id, block.name)
+    if (block.type === 'tool-result') collectToolNames(block.content, names)
+  }
+}
+
+/** Convert a message producer into a terse appendix label. */
+function sourceLabel(message: Message): string {
+  switch (message.source.kind) {
+    case 'user': return 'user'
+    case 'model': return 'assistant'
+    case 'tool': return 'tool result'
+    case 'plugin': return message.source.plugin === 'dsh-compaction-basic'
+      ? 'prior checkpoint'
+      : `context ${message.source.plugin}`
+    default: return 'context'
+  }
+}
+
+/** Recursively collect text, tool arguments, and tool-result text without reasoning. */
+function collectContinuityFragments(
+  blocks: readonly ContentBlock[],
+  source: string,
+  toolEvidence: boolean,
+  toolNames: ReadonlyMap<string, string>,
+): ContinuityFragment[] {
+  const fragments: ContinuityFragment[] = []
+  for (const block of blocks) {
+    if (block.type === 'text') {
+      fragments.push({ text: redactSecrets(block.text), source, toolEvidence })
+    } else if (block.type === 'tool-call') {
+      fragments.push({
+        text: redactSecrets(block.arguments),
+        source: `tool call ${block.name}`,
+        toolEvidence: false,
+      })
+    } else if (block.type === 'tool-result') {
+      const name = toolNames.get(block.toolCallId)
+      fragments.push(...collectContinuityFragments(
+        block.content,
+        name === undefined ? 'tool result' : `tool result ${name}`,
+        true,
+        toolNames,
+      ))
+    }
+  }
+  return fragments
+}
+
+/** Remove common credential assignments and standalone provider-key forms. */
+function redactSecrets(text: string): string {
+  return text
+    .replace(/\b(api[_-]?key|authorization|password|secret|token)\s*[:=]\s*[^\s,;]+/giu, '$1=[REDACTED]')
+    .replace(/\b(?:Bearer\s+)?(?:AIza[\w-]{20,}|sk-[\w-]{16,}|nvapi-[\w-]{16,}|gh[opusr]_[\w-]{16,})\b/gu, '[REDACTED]')
+    .replace(/https?:\/\/[^\s<>{}\[\]"']+/giu, raw => safeUrl(raw) ?? '[REDACTED_URL]')
+}
+
+/** Extract safe URL and Windows-path references from one fragment. */
+function extractReferences(fragment: ContinuityFragment): string[] {
+  const values: string[] = []
+  const urlPattern = /https?:\/\/[^\s<>{}\[\]"']+/giu
+  const quotedWindowsPathPattern = /[`"']([a-z]:\\[^`"'\r\n]+)[`"']/giu
+  const bareWindowsPathPattern = /\b[a-z]:\\[^\s`"'<>|?*,;\])}]+/giu
+
+  for (const match of fragment.text.matchAll(urlPattern)) {
+    const safe = safeUrl(match[0])
+    if (safe !== undefined) values.push(safe)
+  }
+  for (const match of fragment.text.matchAll(quotedWindowsPathPattern)) {
+    const path = normalizeWindowsPath(match[1] ?? '')
+    if (path.length > 3) values.push(path)
+  }
+  for (const match of fragment.text.matchAll(bareWindowsPathPattern)) {
+    const path = normalizeWindowsPath(match[0])
+    if (path.length > 3) values.push(path)
+  }
+  return latestUnique(values, MAX_CONTINUITY_REFERENCES)
+}
+
+/** Strip credentials, query, and fragment from a parseable HTTP(S) reference. */
+function safeUrl(raw: string): string | undefined {
+  try {
+    const url = new URL(trimReference(raw))
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined
+    url.username = ''
+    url.password = ''
+    url.search = ''
+    url.hash = ''
+    return trimReference(url.toString())
+  } catch {
+    return undefined
+  }
+}
+
+/** Remove punctuation that belongs to surrounding prose instead of a reference. */
+function trimReference(value: string): string {
+  return value.replace(/[.,:;!?)\]}]+$/gu, '')
+}
+
+/** Decode JSON-escaped separators so a retained path is directly reusable. */
+function normalizeWindowsPath(value: string): string {
+  return trimReference(value).replace(/\\\\/gu, '\\')
+}
+
+/** Keep concise tool-result lines that carry observable process or endpoint state. */
+function evidenceLines(fragment: ContinuityFragment): string[] {
+  const statePattern = new RegExp([
+    'https?://',
+    '\\b[a-z]:\\\\',
+    '\\bHTTP\\s+\\d{3}\\b',
+    '\\bPID\\s*[:=]?\\s*\\d+\\b',
+    '\\bport(?:a)?\\s*[:=]?\\s*\\d+\\b',
+    '\\b(?:running|listening|started|active|executando|ouvindo|iniciado|aberto|ativo)\\b',
+  ].join('|'), 'iu')
+  return fragment.text.split(/\r?\n/u)
+    .map(line => line.replace(/\s+/gu, ' ').trim())
+    .filter(line => line.length > 0 && statePattern.test(line))
+    .map(line => `${fragment.source}: ${boundLine(line)}`)
+}
+
+/** Bound one retained evidence line without splitting its provenance label. */
+function boundLine(value: string): string {
+  return value.length <= MAX_CONTINUITY_LINE_CHARS
+    ? value
+    : `${value.slice(0, MAX_CONTINUITY_LINE_CHARS - 1)}…`
+}
+
+/** Deduplicate by value while preferring the latest occurrence. */
+function latestUnique(values: readonly string[], limit: number): string[] {
+  const seen = new Set<string>()
+  const reversed: string[] = []
+  for (let index = values.length - 1; index >= 0 && reversed.length < limit; index -= 1) {
+    const value = values[index]
+    if (value === undefined || seen.has(value)) continue
+    seen.add(value)
+    reversed.push(value)
+  }
+  return reversed.reverse()
+}
+
 /** Safe summary content plus the exact auxiliary call envelope recorded with it. */
 export type SummaryResult = {
   summary: ContentBlock[]
@@ -135,12 +387,14 @@ export async function summarizeWithLlm(
     && agent.options.model.length > 0
     ? { provider: agent.options.provider, model: agent.options.model }
     : undefined
-  const target = configured ?? latest ?? agentTarget
-  if (target === undefined) {
+  const auxiliary = ctx.get('agentDefaultModel')?.auxiliarySelection('compression')
+  const proposed = auxiliary ?? configured ?? latest ?? agentTarget
+  if (proposed === undefined) {
     throw new Error(
       'no provider/model available for summarization: set both BasicCompactionConfig summarization fields, route one request, or set both AgentOptions fields',
     )
   }
+  const target = await compatibleSummaryRoute(ctx, proposed, input.messages, signal)
 
   const assembler = new BlockAssembler()
   const messages: Message[] = [
@@ -159,7 +413,21 @@ export async function summarizeWithLlm(
     maxTokens: config.maxTokens,
     sessionId: agent.session.id,
     purpose: 'compaction',
+    ...target.reasoningEffort === undefined ? {} : { reasoningEffort: target.reasoningEffort },
     ...signal === undefined ? {} : { signal },
+  }
+  const capacity = (await ctx.llm.resolveModelInfo(target.provider, target.model, signal)).context?.contextWindow
+  const meter = ctx.get('tokenMeter')
+  if (capacity !== undefined && meter !== undefined) {
+    const estimatedInput = messages.reduce((total, message) => total + meter.estimateMessage(message), 0)
+      + Math.ceil((input.system?.length ?? 0) / 4)
+      + Math.ceil(JSON.stringify(input.tools ?? []).length / 4)
+    if (estimatedInput + config.maxTokens > capacity) {
+      throw new LlmError(
+        `Compactação bloqueada antes do envio: histórico estimado em ${estimatedInput} tokens, reserva de saída ${config.maxTokens}, capacidade ${capacity} de ${target.provider}/${target.model}. O histórico foi preservado; é necessário resumir em partes ou escolher um compactador com capacidade suficiente.`,
+        'CONTEXT_WINDOW_EXCEEDED',
+      )
+    }
   }
   for await (const chunk of ctx.llm.stream(options)) assembler.push(chunk)
   const error = finishError(assembler.finish)
@@ -222,3 +490,4 @@ function summaryText(
   }
   return blocks.filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text')
 }
+import type {} from '@deepseek-ai/dsh-agent-default-model'

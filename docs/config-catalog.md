@@ -1819,6 +1819,8 @@ export interface Config {
   readonly historyMode?: 'v1' | 'temporal-v2'
   /** Optional semantic layer over the durable lexical provider. */
   readonly semanticSearch?: SemanticSearchConfig
+  /** Derived similarity-graph computation; requires `semanticSearch.enabled`. */
+  readonly linking?: MemoryGraphLinkingConfig
 }
 
 /** Optional local semantic retrieval policy; lexical ranking always remains available. */
@@ -1839,6 +1841,8 @@ export interface SemanticSearchConfig {
   readonly maxCacheEntries?: number
   /** Maximum accepted Ollama response body size in bytes. */
   readonly maxResponseBytes?: number
+  /** Embedding endpoint dialect; `openai-compatible` targets `/v1/embeddings`. */
+  readonly api?: 'ollama' | 'openai-compatible'
   /** Minimum cosine score for a semantic-only result. */
   readonly minimumScore?: number
   /** Semantic contribution to the final hybrid score. */
@@ -1846,9 +1850,25 @@ export interface SemanticSearchConfig {
   /** Lexical contribution to the final hybrid score. */
   readonly lexicalWeight?: number
 }
+
+/** Deployment-owned derived similarity-graph policy; lexical and semantic retrieval stay independent. */
+export interface MemoryGraphLinkingConfig {
+  /** Enable scheduled edge computation after memory commits. */
+  readonly enabled?: boolean
+  /** Inclusive cosine threshold for one derived edge. */
+  readonly minScore?: number
+  /** Maximum edges retained per node. */
+  readonly maxEdgesPerNode?: number
+  /** Maximum active records per workspace eligible for edge computation. */
+  readonly maxGraphNodes?: number
+  /** Maximum edge-neighbors appended to one search result inside its remaining limit. */
+  readonly maxExpandedHits?: number
+  /** Debounce between a commit burst and one graph rebuild. */
+  readonly debounceMs?: number
+}
 ```
 
-Source: [`packages/memory/memory-local/src/index.ts:72`](../packages/memory/memory-local/src/index.ts)
+Source: [`packages/memory/memory-local/src/index.ts:86`](../packages/memory/memory-local/src/index.ts)
 
 <a id="deepseek-aidsh-message-feedback"></a>
 
@@ -1958,10 +1978,50 @@ Requires: `personalMemory` · `storageDomain`
 export interface Config {
   /** Revision policy; `v1` is the emergency in-place overwrite rollback. */
   readonly historyMode?: 'v1' | 'temporal-v2'
+  /** Loopback embedding endpoint used only for derived graph edges. */
+  readonly embeddings?: PersonalEmbeddingsConfig
+  /** Derived similarity-graph policy for owner partitions. */
+  readonly linking?: PersonalLinkingConfig
+}
+
+/** Loopback embedding transport for the personal graph; memory text never leaves the machine. */
+export interface PersonalEmbeddingsConfig {
+  /** Absolute credential-free loopback HTTP origin of the embedding server. */
+  readonly baseUrl?: string
+  /** Embedding model name sent to the endpoint. */
+  readonly model?: string
+  /** Expected vector width; mismatched responses are rejected. */
+  readonly dimensions?: number
+  /** Per-request timeout in milliseconds. */
+  readonly timeoutMs?: number
+  /** Maximum cached revision embeddings retained in memory. */
+  readonly maxCacheEntries?: number
+  /** Maximum embedding response body bytes accepted. */
+  readonly maxResponseBytes?: number
+  /** Wire dialect: Ollama `/api/embed` or OpenAI-compatible `/v1/embeddings`. */
+  readonly api?: SemanticEmbeddingApi
+}
+
+/** Bounded edge-derivation policy; owner partitions are computed independently. */
+export interface PersonalLinkingConfig {
+  /** Master switch; derived edges exist only while enabled. */
+  readonly enabled?: boolean
+  /** Minimum cosine similarity an edge must reach to be published. */
+  readonly minScore?: number
+  /** Maximum edges retained per node, highest score first. */
+  readonly maxEdgesPerNode?: number
+  /** Maximum active memories embedded per rebuild; excess is skipped. */
+  readonly maxGraphNodes?: number
+  /** Maximum edge-expansion hits appended to lexical search results. */
+  readonly maxExpandedHits?: number
+  /** Quiet period after a committed mutation before a rebuild starts. */
+  readonly debounceMs?: number
 }
 ```
 
-Source: [`packages/memory/personal-memory-local/src/index.ts:36`](../packages/memory/personal-memory-local/src/index.ts)
+Depends on: [`SemanticEmbeddingApi`](../packages/memory/memory-local/src/index.ts)
+
+Source: [`packages/memory/personal-memory-local/src/index.ts:50`](../packages/memory/personal-memory-local/src/index.ts)
 
 <a id="deepseek-aidsh-plan-mode"></a>
 

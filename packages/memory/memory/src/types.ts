@@ -192,6 +192,55 @@ export interface MemoryForgetRequest {
   readonly ref: MemoryRef
 }
 
+/** Lifecycle states of one derived workspace similarity graph. */
+export type MemoryGraphStatus =
+  /** No snapshot was ever computed for this workspace. */
+  | 'pending'
+  /** Snapshot exists and matches the current record revisions. */
+  | 'computed'
+  /** Snapshot exists, matched revisions, and produced no edges above the threshold. */
+  | 'empty'
+  /** Snapshot exists but at least one record changed since computation; edges are returned as-is. */
+  | 'stale'
+  /** The last computation failed; no automatic retry occurs until the next commit. */
+  | 'failed'
+  /** The selected provider does not compute similarity graphs. */
+  | 'unavailable'
+
+/** One derived similarity edge between two exact memory revisions. */
+export interface MemoryGraphEdge {
+  readonly a: MemoryRef
+  readonly b: MemoryRef
+  /** Cosine similarity in the provider's embedding space, from -1 through 1. */
+  readonly score: number
+  /** Edge provenance; `semantic` marks embedding similarity, not a factual relation. */
+  readonly kind: 'semantic'
+}
+
+/** Bounded, atomically published view of one workspace similarity graph. */
+export interface MemoryGraphSnapshot {
+  readonly workspaceId: WorkspaceId
+  readonly status: MemoryGraphStatus
+  /** Monotonic computation counter; stale computations are discarded before publish. */
+  readonly generation: number
+  /** Edge-algorithm version; bumps when edge semantics change. */
+  readonly algorithmVersion: number
+  /** Embedding model that produced the vectors, when computation ran. */
+  readonly model?: string
+  /** Instant the published edges were computed. */
+  readonly computedAt?: string
+  /** Revisions the published edges were computed against. */
+  readonly recordRevisions: Readonly<Record<string, number>>
+  readonly edges: readonly MemoryGraphEdge[]
+  /** Sanitized failure class when `status` is `failed`. */
+  readonly failureCode?: string
+}
+
+/** Request the derived similarity graph of one workspace. */
+export interface MemoryGraphRequest {
+  readonly scope: MemoryScope
+}
+
 /** Constant schema version for event payloads emitted by memory observability. */
 export const MEMORY_EVENT_SCHEMA_VERSION = 3 as const
 /** Constant schema version for durable memory records. */
@@ -288,6 +337,11 @@ export interface MemoryProvider {
   list(request: MemoryListRequest, signal?: AbortSignal): Promise<MemoryListPage>
   update(request: MemoryUpdateRequest, signal?: AbortSignal): Promise<MemoryRecord>
   forget(request: MemoryForgetRequest, signal?: AbortSignal): Promise<void>
+  /**
+   * Read the derived similarity graph for one workspace, when the provider computes one.
+   * Absent means the provider does not implement graph derivation.
+   */
+  graph?(request: MemoryGraphRequest, signal?: AbortSignal): Promise<MemoryGraphSnapshot>
 }
 
 /** Typed memory failure with a machine-routable open-string code. */

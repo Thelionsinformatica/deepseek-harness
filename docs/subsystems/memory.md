@@ -30,7 +30,11 @@ Every operation carries a `MemoryScope` containing a stable `WorkspaceId`. Raw d
 | `MemorySearchRequest` / `MemorySearchHit` | bounded query and provider-ranked result |
 | `MemoryUpdateRequest` | replacement content for one exact revision |
 | `MemoryForgetRequest` | deletion of one exact revision |
-| `MemoryProvider` | create/search/update/forget backend contract |
+| `MemoryProvider` | create/search/update/forget backend contract plus an optional derived-graph read |
+| `MemoryGraphRequest` | workspace scope whose derived similarity graph is requested |
+| `MemoryGraphSnapshot` | bounded, atomically published edge set with status, generation, algorithm version, model, and input revisions |
+| `MemoryGraphStatus` | `pending`, `computed`, `empty`, `stale`, `failed`, or `unavailable` lifecycle of the derived graph |
+| `MemoryGraphEdge` | derived cosine-similarity link between two exact memory revisions; `semantic` kind is not a factual relation |
 
 Source: [`packages/memory/memory/src/types.ts`](../../packages/memory/memory/src/types.ts)
 
@@ -119,6 +123,14 @@ async update(request: MemoryUpdateRequest, signal?: AbortSignal): Promise<Memory
  * @returns resolution after durable deletion.
  */
 async forget(request: MemoryForgetRequest, signal?: AbortSignal): Promise<void>
+
+/**
+ * Read the derived similarity graph for one workspace through the selected provider.
+ * @param request - Workspace scope whose graph is requested.
+ * @param signal - Optional cancellation forwarded to the selected provider.
+ * @returns the provider-published snapshot, or `unavailable` when the provider computes no graph.
+ */
+async graph(request: MemoryGraphRequest, signal?: AbortSignal): Promise<MemoryGraphSnapshot>
 ```
 
 Source: [`packages/memory/memory/src/index.ts`](../../packages/memory/memory/src/index.ts)
@@ -171,6 +183,20 @@ async recordCandidate(record: MemoryCandidateRecord): Promise<void>
  * @returns Browser-safe personal rows plus the current enablement state, or an explicit failure.
  */
 @Remote('listPersonalMemories') async listPersonalMemories(request: MemoryAdminListRequest): Promise<PersonalMemoryAdminListResult>
+
+/**
+ * Read the derived workspace similarity graph without triggering computation or mutation.
+ * @param request - Session authorization anchor resolving the workspace partition.
+ * @returns The provider-published edge projection or an explicit failure.
+ */
+@Remote('memoryGraph') async memoryGraph(request: MemoryAdminGraphRequest): Promise<MemoryAdminGraphResult>
+
+/**
+ * Read the derived personal-memory similarity graph without exposing the owner id.
+ * @param request - Session authorization anchor.
+ * @returns The provider-published edge projection or an explicit failure.
+ */
+@Remote('personalMemoryGraph') async personalMemoryGraph(request: MemoryAdminGraphRequest): Promise<PersonalMemoryAdminGraphResult>
 
 /**
  * Add one explicit personal fact after a visible confirmation.
@@ -303,6 +329,14 @@ async update( request: PersonalMemoryUpdateRequest, signal?: AbortSignal, ): Pro
  * @returns resolution after durable deletion.
  */
 async forget(request: PersonalMemoryForgetRequest, signal?: AbortSignal): Promise<void>
+
+/**
+ * Read the derived similarity graph for one owner partition through the selected provider.
+ * @param request - Owner scope whose graph is requested.
+ * @param signal - Optional cancellation forwarded to the selected provider.
+ * @returns the provider-published snapshot, or `unavailable` when the provider computes no graph.
+ */
+async graph( request: PersonalMemoryGraphRequest, signal?: AbortSignal, ): Promise<PersonalMemoryGraphSnapshot>
 ```
 
 Source: [`packages/memory/personal-memory/src/index.ts`](../../packages/memory/personal-memory/src/index.ts)
@@ -413,6 +447,25 @@ Candidate retrieval was screened and assigned a deterministic policy outcome. Ob
 ```
 
 Source: [`packages/memory/memory/src/index.ts`](../../packages/memory/memory/src/index.ts)
+
+<a id="memorygraph--emit"></a>
+
+#### `memory/graph` — emit
+
+Derived similarity-graph computation completed or failed without memory text.
+
+```ts cordis-catalog
+/**
+ * Derived similarity-graph computation completed or failed without memory text.
+ * @param event - Snapshot status, bounded counters, and sanitized failure class.
+ * @mode emit
+ */
+'memory/graph'(event: MemoryGraphEvent): void
+```
+
+Types: [MemoryGraphEvent](memory-v2-retrieval.md)
+
+Source: [`packages/memory/memory-local/src/index.ts`](../../packages/memory/memory-local/src/index.ts)
 
 <a id="memoryoperation--emit"></a>
 

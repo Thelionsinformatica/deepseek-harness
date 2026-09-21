@@ -36,6 +36,35 @@ export interface LocalMemoryRecord extends LocalMemoryVersion {
   readonly history?: readonly LocalMemoryVersion[]
 }
 
+/** Durable edge row inside one atomically published workspace graph snapshot. */
+export interface LocalMemoryGraphEdge {
+  readonly a: MemoryRef
+  readonly b: MemoryRef
+  readonly score: number
+  readonly kind: 'semantic'
+}
+
+/**
+ * One bounded similarity-graph snapshot published atomically per workspace.
+ * The table key carries the workspace id; absent rows mean not yet computed.
+ */
+export interface LocalMemoryGraph {
+  readonly workspaceId: WorkspaceIdentity
+  readonly status: 'computed' | 'empty' | 'failed'
+  /** Monotonic computation counter; a newer commit invalidates an in-flight computation. */
+  readonly generation: number
+  readonly algorithmVersion: number
+  readonly model: string
+  readonly api: 'ollama' | 'openai-compatible'
+  readonly minScore: number
+  readonly maxEdgesPerNode: number
+  readonly computedAt: string
+  /** Exact record revisions the edges were computed against. */
+  readonly recordRevisions: Record<string, number>
+  readonly edges: readonly LocalMemoryGraphEdge[]
+  readonly failureCode?: string
+}
+
 const memoryRef = z.object({
   id: z.string().transform(MemoryId),
   revision: z.number().int().positive(),
@@ -71,9 +100,35 @@ export const localMemoryRecord = z.object({
   history: z.array(localMemoryVersion).optional(),
 }) as unknown as z.ZodType<LocalMemoryRecord>
 
+const localMemoryGraphEdge = z.object({
+  a: memoryRef,
+  b: memoryRef,
+  score: z.number().min(-1).max(1),
+  kind: z.literal('semantic'),
+})
+
+/** Boundary validator for one persisted workspace graph snapshot. */
+export const localMemoryGraph = z.object({
+  workspaceId: z.string().transform(WorkspaceId),
+  status: z.enum(['computed', 'empty', 'failed']),
+  generation: z.number().int().nonnegative(),
+  algorithmVersion: z.number().int().positive(),
+  model: z.string(),
+  api: z.enum(['ollama', 'openai-compatible']),
+  minScore: z.number().min(-1).max(1),
+  maxEdgesPerNode: z.number().int().positive(),
+  computedAt: z.string(),
+  recordRevisions: z.record(z.string(), z.number().int().positive()),
+  edges: z.array(localMemoryGraphEdge),
+  failureCode: z.string().optional(),
+}) as unknown as z.ZodType<LocalMemoryGraph>
+
 /** One versioned table routed through the host's configured storage backend. */
 export const localMemoryDomainSpec = defineDomain({
   name: 'memory_local',
   version: 1,
-  tables: { memories: domainTable<ReturnType<typeof MemoryId>, LocalMemoryRecord>(localMemoryRecord) },
+  tables: {
+    memories: domainTable<ReturnType<typeof MemoryId>, LocalMemoryRecord>(localMemoryRecord),
+    graph: domainTable<WorkspaceIdentity, LocalMemoryGraph>(localMemoryGraph),
+  },
 })

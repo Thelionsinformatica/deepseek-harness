@@ -60,6 +60,7 @@ async function harness(
   reviewConfig: MemoryCandidateReviewConfig | ((workspaceId: string) => MemoryCandidateReviewConfig) = {
     reviewedBy: 'test-local-reviewer',
   },
+  providers: { memoryLocal?: MemoryLocal.Config; personalMemoryLocal?: PersonalMemoryLocal.Config } = {},
 ) {
   const cwd = await realpath(await mkdtemp(join(tmpdir(), 'dsh-tool-memory-')))
   tempDirs.push(cwd)
@@ -79,9 +80,9 @@ async function harness(
   await ctx.plugin(WorkspaceRegistry)
   const workspace = await ctx.workspaceRegistry.create(cwd)
   await ctx.plugin(MemoryRuntime, { provider: 'local' })
-  await ctx.plugin(MemoryLocal)
+  await ctx.plugin(MemoryLocal, providers.memoryLocal)
   await ctx.plugin(PersonalMemoryRuntime, { provider: 'local' })
-  await ctx.plugin(PersonalMemoryLocal)
+  await ctx.plugin(PersonalMemoryLocal, providers.personalMemoryLocal)
   await ctx.plugin(TestSettings)
   await ctx.plugin(ToolMemory, config)
   await ctx.plugin(
@@ -1774,6 +1775,155 @@ describe('memory tools through the real agent loop', () => {
       query: 'chave privada',
       limit: 8,
     })).resolves.toEqual([])
+    await ctx.fiber.dispose()
+  })
+
+  it('exposes the derived workspace graph through the read-only admin remote', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as { input: string[] }
+      const unit = Array.from({ length: 64 }, (_v, i) => i === 0 ? 1 : 0)
+      return new Response(JSON.stringify({ embeddings: body.input.map(() => [...unit]) }), { status: 200 })
+    }))
+    const adapter = new MockAdapter([])
+    const { ctx, cwd, workspace } = await harness(
+      adapter,
+      {},
+      { reviewedBy: 'test-local-reviewer', administrationMode: 'full' },
+      {
+        memoryLocal: {
+          semanticSearch: {
+            enabled: true,
+            baseUrl: 'http://127.0.0.1:8099',
+            model: 'nomic-embed-text',
+            dimensions: 64,
+          },
+          linking: { enabled: true, debounceMs: 0, minScore: 0.9 },
+        },
+      },
+    )
+    const agent = ctx.agentLoop.create(
+      SessionId('leon-memory-graph-admin'),
+      { provider: 'mock', model: 'mock' },
+      { cwd },
+    )
+    const first = await ctx.memory.create({
+      scope: { workspaceId: workspace.id },
+      content: 'O Leon usa a porta 3080.',
+      source: { kind: 'session', sessionId: agent.session.header.id },
+    })
+    const second = await ctx.memory.create({
+      scope: { workspaceId: workspace.id },
+      content: 'O painel Leon escuta na porta 3080.',
+      source: { kind: 'session', sessionId: agent.session.header.id },
+    })
+
+    await expect(ctx.memoryCandidateReview.memoryGraph({
+      sessionId: agent.session.header.id,
+    })).resolves.toMatchObject({ ok: true })
+    await vi.waitFor(async () => {
+      await expect(ctx.memoryCandidateReview.memoryGraph({
+        sessionId: agent.session.header.id,
+      })).resolves.toMatchObject({
+        ok: true,
+        value: {
+          status: 'computed',
+          edges: [{
+            a: [String(first.id), String(second.id)].sort()[0],
+            b: [String(first.id), String(second.id)].sort()[1],
+          }],
+        },
+      })
+    }, { timeout: 4_000, interval: 25 })
+    const result = await ctx.memoryCandidateReview.memoryGraph({ sessionId: agent.session.header.id })
+    expect(result).toMatchObject({ ok: true, value: { edges: [{ score: 1 }] } })
+    if (result.ok) {
+      expect(JSON.stringify(result.value)).not.toContain(String(workspace.id))
+    }
+    await ctx.fiber.dispose()
+  })
+
+  it('reports the workspace graph as unavailable when linking is not configured', async () => {
+    const adapter = new MockAdapter([])
+    const { ctx, cwd } = await harness(
+      adapter,
+      {},
+      { reviewedBy: 'test-local-reviewer', administrationMode: 'full' },
+    )
+    const agent = ctx.agentLoop.create(
+      SessionId('leon-memory-graph-unavailable'),
+      { provider: 'mock', model: 'mock' },
+      { cwd },
+    )
+    await expect(ctx.memoryCandidateReview.memoryGraph({
+      sessionId: agent.session.header.id,
+    })).resolves.toMatchObject({ ok: true, value: { status: 'unavailable', edges: [] } })
+    await ctx.fiber.dispose()
+  })
+
+  it('exposes the personal graph only inside the authorized owner partition', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as { input: string[] }
+      const unit = Array.from({ length: 64 }, (_v, i) => i === 0 ? 1 : 0)
+      return new Response(JSON.stringify({ embeddings: body.input.map(() => [...unit]) }), { status: 200 })
+    }))
+    const adapter = new MockAdapter([])
+    const { ctx, cwd } = await harness(
+      adapter,
+      {},
+      {
+        reviewedBy: 'test-local-reviewer',
+        administrationMode: 'full',
+        personalOwnerId: 'test-local-owner',
+      },
+      {
+        personalMemoryLocal: {
+          embeddings: {
+            baseUrl: 'http://127.0.0.1:8099',
+            model: 'nomic-embed-text',
+            dimensions: 64,
+          },
+          linking: { enabled: true, debounceMs: 0, minScore: 0.9 },
+        },
+      },
+    )
+    const agent = ctx.agentLoop.create(
+      SessionId('leon-personal-graph-admin'),
+      { provider: 'mock', model: 'mock' },
+      { cwd },
+    )
+    const first = await ctx.personalMemory.create({
+      scope: { ownerId: PersonalMemoryOwnerId('test-local-owner') },
+      content: 'Prefiro respostas diretas em português brasileiro.',
+      source: { kind: 'session', sessionId: agent.session.header.id },
+    })
+    const second = await ctx.personalMemory.create({
+      scope: { ownerId: PersonalMemoryOwnerId('test-local-owner') },
+      content: 'Prefiro respostas curtas em pt-BR.',
+      source: { kind: 'session', sessionId: agent.session.header.id },
+    })
+    const foreign = await ctx.personalMemory.create({
+      scope: { ownerId: PersonalMemoryOwnerId('another-owner') },
+      content: 'Prefiro respostas diretas em português brasileiro.',
+      source: { kind: 'session', sessionId: agent.session.header.id },
+    })
+
+    await vi.waitFor(async () => {
+      await expect(ctx.memoryCandidateReview.personalMemoryGraph({
+        sessionId: agent.session.header.id,
+      })).resolves.toMatchObject({
+        ok: true,
+        value: {
+          status: 'computed',
+          edges: [{
+            a: [String(first.id), String(second.id)].sort()[0],
+            b: [String(first.id), String(second.id)].sort()[1],
+          }],
+        },
+      })
+    }, { timeout: 4_000, interval: 25 })
+    const result = await ctx.memoryCandidateReview.personalMemoryGraph({ sessionId: agent.session.header.id })
+    expect(JSON.stringify(result)).not.toContain(String(foreign.id))
+    expect(JSON.stringify(result)).not.toContain('another-owner')
     await ctx.fiber.dispose()
   })
 })

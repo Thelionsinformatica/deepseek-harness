@@ -6,15 +6,29 @@ import {
   MemoryError,
   type MemoryCreateRequest,
   type MemoryForgetRequest,
+  type MemoryGraphRequest,
+  type MemoryIdType,
   type MemoryListRequest,
   type MemoryRecord,
   type MemorySearchRequest,
   type MemoryUpdateRequest,
 } from '@deepseek-ai/dsh-memory'
-import { LocalMemoryProvider } from '@deepseek-ai/dsh-memory-local'
+import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
+import {
+  LocalMemoryProvider,
+  MemoryGraphScheduler,
+  OllamaSemanticIndex,
+  validateLoopbackBaseUrl,
+  type LocalMemoryGraph,
+  type LocalMemoryRecord,
+  type MemoryGraphConfig,
+  type SemanticEmbeddingApi,
+} from '@deepseek-ai/dsh-memory-local'
 import {
   type PersonalMemoryCreateRequest,
   type PersonalMemoryForgetRequest,
+  type PersonalMemoryGraphRequest,
+  type PersonalMemoryGraphSnapshot,
   type PersonalMemoryListPage,
   type PersonalMemoryListRequest,
   type PersonalMemoryOwnerIdentity,
@@ -36,10 +50,65 @@ export const inject = ['personalMemory', 'storageDomain']
 export interface Config {
   /** Revision policy; `v1` is the emergency in-place overwrite rollback. */
   readonly historyMode?: 'v1' | 'temporal-v2'
+  /** Loopback embedding endpoint used only for derived graph edges. */
+  readonly embeddings?: PersonalEmbeddingsConfig
+  /** Derived similarity-graph policy for owner partitions. */
+  readonly linking?: PersonalLinkingConfig
+}
+
+/** Loopback embedding transport for the personal graph; memory text never leaves the machine. */
+export interface PersonalEmbeddingsConfig {
+  /** Absolute credential-free loopback HTTP origin of the embedding server. */
+  readonly baseUrl?: string
+  /** Embedding model name sent to the endpoint. */
+  readonly model?: string
+  /** Expected vector width; mismatched responses are rejected. */
+  readonly dimensions?: number
+  /** Per-request timeout in milliseconds. */
+  readonly timeoutMs?: number
+  /** Maximum cached revision embeddings retained in memory. */
+  readonly maxCacheEntries?: number
+  /** Maximum embedding response body bytes accepted. */
+  readonly maxResponseBytes?: number
+  /** Wire dialect: Ollama `/api/embed` or OpenAI-compatible `/v1/embeddings`. */
+  readonly api?: SemanticEmbeddingApi
+}
+
+/** Bounded edge-derivation policy; owner partitions are computed independently. */
+export interface PersonalLinkingConfig {
+  /** Master switch; derived edges exist only while enabled. */
+  readonly enabled?: boolean
+  /** Minimum cosine similarity an edge must reach to be published. */
+  readonly minScore?: number
+  /** Maximum edges retained per memory node, highest score first. */
+  readonly maxEdgesPerNode?: number
+  /** Maximum active memories embedded per rebuild; excess is skipped. */
+  readonly maxGraphNodes?: number
+  /** Maximum edge-expansion hits appended to lexical search results. */
+  readonly maxExpandedHits?: number
+  /** Quiet period after a committed mutation before a rebuild starts. */
+  readonly debounceMs?: number
 }
 
 export const Config: z<Config> = z.object({
   historyMode: z.union(['v1', 'temporal-v2'] as const).default('temporal-v2'),
+  embeddings: z.object({
+    baseUrl: z.string().default('http://127.0.0.1:11434'),
+    model: z.string().default('nomic-embed-text:latest'),
+    dimensions: z.number().default(768),
+    timeoutMs: z.number().default(10_000),
+    maxCacheEntries: z.number().default(2_000),
+    maxResponseBytes: z.number().default(8_000_000),
+    api: z.union(['ollama', 'openai-compatible'] as const).default('ollama'),
+  }),
+  linking: z.object({
+    enabled: z.boolean().default(false),
+    minScore: z.number().default(0.72),
+    maxEdgesPerNode: z.number().default(5),
+    maxGraphNodes: z.number().default(200),
+    maxExpandedHits: z.number().default(4),
+    debounceMs: z.number().default(2_000),
+  }),
 })
 
 /** Adapter that reuses the proven local CAS engine without exposing a synthetic workspace scope. */
@@ -104,20 +173,87 @@ export class LocalPersonalMemoryProvider implements PersonalMemoryProvider {
       throw translateError(error)
     }
   }
+
+  /**
+   * Read the derived similarity graph of one owner partition, projecting away the synthetic workspace.
+   * @param request - Owner scope whose graph is requested.
+   * @param signal - Optional caller cancellation.
+   * @returns the owner-scoped snapshot projection.
+   */
+  async graph(
+    request: PersonalMemoryGraphRequest,
+    signal?: AbortSignal,
+  ): Promise<PersonalMemoryGraphSnapshot> {
+    const snapshot = await this.delegate.graph(toWorkspaceGraph(request), signal)
+    return {
+      ownerId: request.scope.ownerId,
+      status: snapshot.status,
+      generation: snapshot.generation,
+      algorithmVersion: snapshot.algorithmVersion,
+      recordRevisions: snapshot.recordRevisions,
+      edges: snapshot.edges,
+      ...(snapshot.model === undefined ? {} : { model: snapshot.model }),
+      ...(snapshot.computedAt === undefined ? {} : { computedAt: snapshot.computedAt }),
+      ...(snapshot.failureCode === undefined ? {} : { failureCode: snapshot.failureCode }),
+    }
+  }
 }
 
 /** Open the isolated domain and register the provider for this fiber lifetime. */
 export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const domain = await ctx.storageDomain.open(localPersonalMemoryDomainSpec)
   ctx.effect(() => () => domain.close(), 'personal-memory-local.domainClose')
+  const graph = resolveGraph(ctx, config, domain.table('graph'), domain.table('memories'))
   const delegate = new LocalMemoryProvider(
     domain.table('memories'),
     undefined,
     undefined,
     config.historyMode ?? 'temporal-v2',
+    graph,
+    config.linking?.maxExpandedHits ?? 4,
   )
   const provider = new LocalPersonalMemoryProvider(delegate)
   ctx.effect(() => ctx.personalMemory.registerProvider(provider), 'personal-memory-local.registerProvider')
+}
+
+function resolveGraph(
+  ctx: Context,
+  config: Config,
+  graphTable: KvTable<WorkspaceId, LocalMemoryGraph>,
+  memories: KvTable<MemoryIdType, LocalMemoryRecord>,
+): MemoryGraphScheduler | undefined {
+  if (config.linking?.enabled !== true) return undefined
+  const embeddings = config.embeddings
+  const index = new OllamaSemanticIndex({
+    baseUrl: validateLoopbackBaseUrl(embeddings?.baseUrl ?? 'http://127.0.0.1:11434'),
+    model: embeddings?.model ?? 'nomic-embed-text:latest',
+    dimensions: embeddings?.dimensions ?? 768,
+    timeoutMs: embeddings?.timeoutMs ?? 10_000,
+    maxCacheEntries: embeddings?.maxCacheEntries ?? 2_000,
+    maxResponseBytes: embeddings?.maxResponseBytes ?? 8_000_000,
+    api: embeddings?.api ?? 'ollama',
+  })
+  const graphConfig: MemoryGraphConfig = {
+    enabled: true,
+    minScore: config.linking.minScore ?? 0.72,
+    maxEdgesPerNode: config.linking.maxEdgesPerNode ?? 5,
+    maxGraphNodes: config.linking.maxGraphNodes ?? 200,
+    debounceMs: config.linking.debounceMs ?? 2_000,
+    model: embeddings?.model ?? 'nomic-embed-text:latest',
+    api: embeddings?.api ?? 'ollama',
+  }
+  const scheduler = new MemoryGraphScheduler(
+    graphTable,
+    memories,
+    index,
+    graphConfig,
+    (event) => {
+      ctx.emit('memory/graph', { ...event, schemaVersion: 1 })
+    },
+  )
+  ctx.effect(() => () => { scheduler.dispose() }, 'personal-memory-local.graphDispose')
+  scheduler.seedExisting()
+  return scheduler
 }
 
 function workspaceId(ownerId: PersonalMemoryOwnerIdentity): WorkspaceId {
@@ -142,6 +278,10 @@ function toWorkspaceUpdate(request: PersonalMemoryUpdateRequest): MemoryUpdateRe
 
 function toWorkspaceForget(request: PersonalMemoryForgetRequest): MemoryForgetRequest {
   return { ...request, scope: { workspaceId: workspaceId(request.scope.ownerId) } }
+}
+
+function toWorkspaceGraph(request: PersonalMemoryGraphRequest): MemoryGraphRequest {
+  return { scope: { workspaceId: workspaceId(request.scope.ownerId) } }
 }
 
 function toPersonalRecord(

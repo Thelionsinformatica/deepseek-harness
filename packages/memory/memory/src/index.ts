@@ -11,6 +11,8 @@ import type {
   MemoryCreateRequest,
   MemoryCandidateEvent,
   MemoryForgetRequest,
+  MemoryGraphRequest,
+  MemoryGraphSnapshot,
   MemoryListPage,
   MemoryListRequest,
   MemoryProvider,
@@ -41,6 +43,10 @@ export type {
   MemoryPolicyReason,
   MemoryPolicyVersion,
   MemoryForgetRequest,
+  MemoryGraphEdge,
+  MemoryGraphRequest,
+  MemoryGraphSnapshot,
+  MemoryGraphStatus,
   MemoryListItem,
   MemoryListPage,
   MemoryListRequest,
@@ -351,6 +357,27 @@ export class MemoryRuntime extends Service {
     } catch (error: unknown) {
       this.rethrowWriteError(provider, request, error)
     }
+  }
+
+  /**
+   * Read the derived similarity graph for one workspace through the selected provider.
+   * @param request - Workspace scope whose graph is requested.
+   * @param signal - Optional cancellation forwarded to the selected provider.
+   * @returns the provider-published snapshot, or `unavailable` when the provider computes no graph.
+   */
+  async graph(request: MemoryGraphRequest, signal?: AbortSignal): Promise<MemoryGraphSnapshot> {
+    const provider = this.resolveProvider()
+    if (provider.graph === undefined) {
+      return {
+        workspaceId: request.scope.workspaceId,
+        status: 'unavailable',
+        generation: 0,
+        algorithmVersion: 0,
+        recordRevisions: {},
+        edges: [],
+      }
+    }
+    return provider.graph(request, signal)
   }
 
   private rethrowWriteError(

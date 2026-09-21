@@ -1,6 +1,6 @@
 /** Registers the Leon Work dashboard into the blank-session Hero. */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
-import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
 import { remoteValue } from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -22,13 +22,14 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 /** Services required by the dashboard plugin. */
-export const inject = ['slots', 'sessions', 'workspaces', 'locale', 'remote', 'remote.memoryCandidateReview']
+export const inject = ['slots', 'sessions', 'workspaces', 'locale', 'remote', 'remote.memoryCandidateReview', 'connection']
 
 /**
  * Register the dashboard for every lifetime of the optional Hero seat.
  * @param ctx - Client root context.
  */
 export function apply(ctx: ClientContext): void {
+  const connection = ctx.get('connection') as ConnectionHandle
   ctx.effect(() => ctx.locale.register(NS, { pt, zh, en }), 'ui-work-dashboard: dictionaries')
   ctx.slots.inject('conversation.hero.dashboard', () => ctx.slots.register({
     name: 'conversation.hero.dashboard',
@@ -40,6 +41,11 @@ export function apply(ctx: ClientContext): void {
   }, WorkDashboard))
 
   const memoryReview: MemoryReviewInjected = {
+    listCapabilities: async (sessionId) => {
+      const { result } = await connection.api.skills.inspect({ sessionId })
+      if (!result.ok) throw new Error(result.error.message)
+      return result.value
+    },
     list: async (sessionId) => {
       const carried = await ctx.remote.memoryCandidateReview.list({ sessionId, reviewed: false, limit: 50 })
       return remoteValue(carried)
@@ -119,6 +125,14 @@ export function apply(ctx: ClientContext): void {
         confirmed: true,
       })
       return remoteValue(carried).enabled
+    },
+    memoryGraph: async (sessionId) => {
+      const carried = await ctx.remote.memoryCandidateReview.memoryGraph({ sessionId })
+      return remoteValue(carried)
+    },
+    personalMemoryGraph: async (sessionId) => {
+      const carried = await ctx.remote.memoryCandidateReview.personalMemoryGraph({ sessionId })
+      return remoteValue(carried)
     },
   }
   ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({

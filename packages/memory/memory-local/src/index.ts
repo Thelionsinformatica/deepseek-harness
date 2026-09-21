@@ -19,6 +19,8 @@ import {
   type MemoryForgetRequest,
   type MemoryListItem,
   type MemoryListPage,
+  type MemoryGraphRequest,
+  type MemoryGraphSnapshot,
   type MemoryListRequest,
   type MemoryProvider,
   type MemoryRecord,
@@ -27,7 +29,8 @@ import {
   type MemoryUpdateRequest,
 } from '@deepseek-ai/dsh-memory'
 import { localMemoryDomainSpec } from './spec.ts'
-import type { LocalMemoryRecord, LocalMemoryVersion } from './spec.ts'
+import type { LocalMemoryGraph, LocalMemoryRecord, LocalMemoryVersion } from './spec.ts'
+import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import {
   OllamaSemanticIndex,
   SemanticSearchError,
@@ -35,9 +38,18 @@ import {
   type SemanticCandidate,
   type SemanticFallbackCode,
 } from './semantic.ts'
+import {
+  MemoryGraphScheduler,
+  type MemoryGraphConfig,
+  type MemoryGraphEvent,
+} from './graph.ts'
 
-export { localMemoryDomainSpec, localMemoryRecord, localMemoryVersion } from './spec.ts'
-export type { LocalMemoryRecord, LocalMemoryVersion } from './spec.ts'
+export { localMemoryDomainSpec, localMemoryGraph, localMemoryRecord, localMemoryVersion } from './spec.ts'
+export type { LocalMemoryGraph, LocalMemoryGraphEdge, LocalMemoryRecord, LocalMemoryVersion } from './spec.ts'
+export { MemoryGraphScheduler, MEMORY_GRAPH_ALGORITHM_VERSION } from './graph.ts'
+export type { MemoryGraphConfig, MemoryGraphEvent } from './graph.ts'
+export { OllamaSemanticIndex } from './semantic.ts'
+export type { OllamaSemanticIndexConfig, SemanticEmbeddingApi } from './semantic.ts'
 
 export const name = 'memory-local'
 export const inject = ['memory', 'storageDomain']
@@ -60,6 +72,8 @@ export interface SemanticSearchConfig {
   readonly maxCacheEntries?: number
   /** Maximum accepted Ollama response body size in bytes. */
   readonly maxResponseBytes?: number
+  /** Embedding endpoint dialect; `openai-compatible` targets `/v1/embeddings`. */
+  readonly api?: 'ollama' | 'openai-compatible'
   /** Minimum cosine score for a semantic-only result. */
   readonly minimumScore?: number
   /** Semantic contribution to the final hybrid score. */
@@ -74,6 +88,8 @@ export interface Config {
   readonly historyMode?: 'v1' | 'temporal-v2'
   /** Optional semantic layer over the durable lexical provider. */
   readonly semanticSearch?: SemanticSearchConfig
+  /** Derived similarity-graph computation; requires `semanticSearch.enabled`. */
+  readonly linking?: MemoryGraphLinkingConfig
 }
 
 export const Config: z<Config> = z.object({
@@ -90,6 +106,15 @@ export const Config: z<Config> = z.object({
     minimumScore: z.number().default(0.55),
     semanticWeight: z.number().default(0.8),
     lexicalWeight: z.number().default(0.2),
+    api: z.union(['ollama', 'openai-compatible'] as const).default('ollama'),
+  }),
+  linking: z.object({
+    enabled: z.boolean().default(false),
+    minScore: z.number().default(0.72),
+    maxEdgesPerNode: z.number().default(5),
+    maxGraphNodes: z.number().default(200),
+    maxExpandedHits: z.number().default(4),
+    debounceMs: z.number().default(2_000),
   }),
 })
 
@@ -115,6 +140,12 @@ declare module '@deepseek-ai/cordis' {
      * @mode emit
      */
     'memory/semantic-search'(event: LocalSemanticSearchEvent): void
+    /**
+     * Derived similarity-graph computation completed or failed without memory text.
+     * @param event - Snapshot status, bounded counters, and sanitized failure class.
+     * @mode emit
+     */
+    'memory/graph'(event: MemoryGraphEvent): void
   }
 }
 
@@ -132,6 +163,22 @@ interface SemanticRuntime {
   readonly emit: (event: Omit<LocalSemanticSearchEvent, 'schemaVersion'>) => void
 }
 
+/** Deployment-owned derived similarity-graph policy; lexical and semantic retrieval stay independent. */
+export interface MemoryGraphLinkingConfig {
+  /** Enable scheduled edge computation after memory commits. */
+  readonly enabled?: boolean
+  /** Inclusive cosine threshold for one derived edge. */
+  readonly minScore?: number
+  /** Maximum edges retained per node. */
+  readonly maxEdgesPerNode?: number
+  /** Maximum active records per workspace eligible for edge computation. */
+  readonly maxGraphNodes?: number
+  /** Maximum edge-neighbors appended to one search result inside its remaining limit. */
+  readonly maxExpandedHits?: number
+  /** Debounce between a commit burst and one graph rebuild. */
+  readonly debounceMs?: number
+}
+
 /** Durable lexical provider with optional loopback semantic reranking. */
 export class LocalMemoryProvider implements MemoryProvider {
   readonly id = 'local'
@@ -141,6 +188,8 @@ export class LocalMemoryProvider implements MemoryProvider {
     private readonly emitBlocked?: (event: Omit<MemoryBlockedEvent, 'schemaVersion'>) => void,
     private readonly semantic?: SemanticRuntime,
     private readonly historyMode: NonNullable<Config['historyMode']> = 'temporal-v2',
+    private readonly graphScheduler?: MemoryGraphScheduler,
+    private readonly maxExpandedHits = 4,
   ) {}
 
   available(): boolean {
@@ -171,6 +220,7 @@ export class LocalMemoryProvider implements MemoryProvider {
         updatedAt: now,
       }
       await this.table.put(id, stored)
+      this.graphScheduler?.dirty(request.scope.workspaceId)
       return project(id, stored)
     })
   }
@@ -178,7 +228,9 @@ export class LocalMemoryProvider implements MemoryProvider {
   async search(request: MemorySearchRequest, signal?: AbortSignal): Promise<readonly MemorySearchHit[]> {
     assertNotAborted(signal)
     const lexical = lexicalSearch(this.table, request, this.historyMode)
-    if (this.semantic === undefined || request.includeHistory === true) return lexical
+    if (this.semantic === undefined || request.includeHistory === true) {
+      return this.expandWithGraph(lexical, request)
+    }
     const candidates = workspaceCandidates(
       this.table,
       request,
@@ -206,7 +258,7 @@ export class LocalMemoryProvider implements MemoryProvider {
         resultCount: hits.length,
         durationMs: ranking.durationMs,
       })
-      return hits
+      return this.expandWithGraph(hits, request)
     } catch (error: unknown) {
       assertNotAborted(signal)
       this.semantic.emit({
@@ -220,8 +272,51 @@ export class LocalMemoryProvider implements MemoryProvider {
         durationMs: Date.now() - startedAt,
         fallbackCode: semanticFallbackCode(error),
       })
-      return lexical
+      return this.expandWithGraph(lexical, request)
     }
+  }
+
+  /**
+   * Append edge-neighbors of direct hits within the request's remaining limit capacity.
+   * Derived edges never displace direct hits and only expand on a `computed` snapshot,
+   * which guarantees the stored revisions still match the table.
+   */
+  private expandWithGraph(
+    hits: readonly MemorySearchHit[],
+    request: MemorySearchRequest,
+  ): readonly MemorySearchHit[] {
+    const scheduler = this.graphScheduler
+    if (scheduler === undefined || hits.length === 0 || hits.length >= request.limit) return hits
+    const { row, status } = scheduler.snapshot(request.scope.workspaceId)
+    if (row === undefined || status !== 'computed' || row.edges.length === 0) return hits
+    const adjacency = new Map<string, { id: ReturnType<typeof MemoryId>; score: number }[]>()
+    for (const edge of row.edges) {
+      const forward = adjacency.get(String(edge.a.id)) ?? []
+      forward.push({ id: edge.b.id, score: edge.score })
+      adjacency.set(String(edge.a.id), forward)
+      const backward = adjacency.get(String(edge.b.id)) ?? []
+      backward.push({ id: edge.a.id, score: edge.score })
+      adjacency.set(String(edge.b.id), backward)
+    }
+    const seen = new Set(hits.map(hit => String(hit.record.id)))
+    const expanded = [...hits]
+    const capacity = Math.min(request.limit - hits.length, this.maxExpandedHits)
+    const now = Date.now()
+    for (const hit of hits) {
+      if (expanded.length - hits.length >= capacity) break
+      for (const neighbor of adjacency.get(String(hit.record.id)) ?? []) {
+        if (expanded.length - hits.length >= capacity) break
+        const key = String(neighbor.id)
+        if (seen.has(key)) continue
+        seen.add(key)
+        const stored = this.table.get(neighbor.id)
+        if (stored === undefined) continue
+        if (stored.workspaceId !== request.scope.workspaceId) continue
+        if (memoryStatusAt(stored, now) !== 'active') continue
+        expanded.push({ record: project(neighbor.id, stored), score: neighbor.score })
+      }
+    }
+    return expanded
   }
 
   list(request: MemoryListRequest, signal?: AbortSignal): Promise<MemoryListPage> {
@@ -279,6 +374,7 @@ export class LocalMemoryProvider implements MemoryProvider {
           return supersede(current, request.ref.id, request)
         })
         this.semantic?.index.invalidate(request.ref.id)
+        this.graphScheduler?.dirty(request.scope.workspaceId)
         return project(request.ref.id, updated)
       } catch (error) {
         throw translateMissing(error, request.ref.id)
@@ -300,6 +396,50 @@ export class LocalMemoryProvider implements MemoryProvider {
       )
       await this.table.delete(request.ref.id)
       this.semantic?.index.invalidate(request.ref.id)
+      this.graphScheduler?.dirty(request.scope.workspaceId)
+    })
+  }
+
+  /**
+   * Read the derived similarity graph for one workspace without triggering computation.
+   * Absent snapshots return `pending`; failed snapshots return `failed` and wait for the next commit.
+   * @param request - Workspace scope whose derived edges are requested.
+   * @param signal - Optional caller cancellation for the table read.
+   * @returns the provider-neutral snapshot projection.
+   */
+  graph(request: MemoryGraphRequest, signal?: AbortSignal): Promise<MemoryGraphSnapshot> {
+    assertNotAborted(signal)
+    if (this.graphScheduler === undefined) {
+      return Promise.resolve({
+        workspaceId: request.scope.workspaceId,
+        status: 'unavailable',
+        generation: 0,
+        algorithmVersion: 0,
+        recordRevisions: {},
+        edges: [],
+      })
+    }
+    const { row, status } = this.graphScheduler.snapshot(request.scope.workspaceId)
+    if (row === undefined) {
+      return Promise.resolve({
+        workspaceId: request.scope.workspaceId,
+        status,
+        generation: 0,
+        algorithmVersion: 0,
+        recordRevisions: {},
+        edges: [],
+      })
+    }
+    return Promise.resolve({
+      workspaceId: request.scope.workspaceId,
+      status,
+      generation: row.generation,
+      algorithmVersion: row.algorithmVersion,
+      model: row.model,
+      computedAt: row.computedAt,
+      recordRevisions: row.recordRevisions,
+      edges: row.edges,
+      ...(row.failureCode === undefined ? {} : { failureCode: row.failureCode }),
     })
   }
 
@@ -325,14 +465,56 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       },
     }
     : undefined
+  const graph = resolveGraphScheduler(
+    ctx,
+    config,
+    domain.table('graph'),
+    domain.table('memories'),
+    semantic,
+  )
   const provider = new LocalMemoryProvider(domain.table('memories'), (event) => {
     ctx.emit('memory/blocked', {
       ...event,
       schemaVersion: MEMORY_EVENT_SCHEMA_VERSION,
       source: 'memory-local',
     })
-  }, semantic, config.historyMode ?? 'temporal-v2')
+  }, semantic, config.historyMode ?? 'temporal-v2', graph, config.linking?.maxExpandedHits ?? 4)
   ctx.effect(() => ctx.memory.registerProvider(provider), 'memory-local.registerProvider')
+}
+
+function resolveGraphScheduler(
+  ctx: Context,
+  config: Config,
+  graphTable: KvTable<WorkspaceId, LocalMemoryGraph>,
+  memories: KvTable<ReturnType<typeof MemoryId>, LocalMemoryRecord>,
+  semantic: SemanticRuntime | undefined,
+): MemoryGraphScheduler | undefined {
+  const linking = config.linking
+  if (linking?.enabled !== true) return undefined
+  if (semantic === undefined) {
+    throw new TypeError('memory-local: linking.enabled requires semanticSearch.enabled with a configured embedding endpoint')
+  }
+  const graphConfig: MemoryGraphConfig = {
+    enabled: true,
+    minScore: linking.minScore ?? 0.72,
+    maxEdgesPerNode: linking.maxEdgesPerNode ?? 5,
+    maxGraphNodes: linking.maxGraphNodes ?? 200,
+    debounceMs: linking.debounceMs ?? 2_000,
+    model: semantic.config.model,
+    api: semantic.config.api ?? 'ollama',
+  }
+  const scheduler = new MemoryGraphScheduler(
+    graphTable,
+    memories,
+    semantic.index,
+    graphConfig,
+    (event) => {
+      ctx.emit('memory/graph', { ...event, schemaVersion: 1 })
+    },
+  )
+  ctx.effect(() => () => { scheduler.dispose() }, 'memory-local.graphDispose')
+  scheduler.seedExisting()
+  return scheduler
 }
 
 function lexicalSearch(
@@ -417,6 +599,7 @@ function resolveSemanticConfig(input: SemanticSearchConfig = {}): ResolvedSemant
     minimumScore: input.minimumScore ?? 0.55,
     semanticWeight: input.semanticWeight ?? 0.8,
     lexicalWeight: input.lexicalWeight ?? 0.2,
+    api: input.api ?? 'ollama',
   }
   if (resolved.model.length === 0 || resolved.model.length > 256) {
     throw new TypeError('memory-local: semantic model must contain 1-256 characters')
@@ -435,7 +618,12 @@ function resolveSemanticConfig(input: SemanticSearchConfig = {}): ResolvedSemant
   return resolved
 }
 
-function validateLoopbackBaseUrl(value: string): string {
+/**
+ * Validate that an embedding endpoint is a credential-free loopback HTTP origin.
+ * @param value Raw `baseUrl` config text.
+ * @returns The normalized origin (`http://host:port`) without path, query, or fragment.
+ */
+export function validateLoopbackBaseUrl(value: string): string {
   let url: URL
   try {
     url = new URL(value)

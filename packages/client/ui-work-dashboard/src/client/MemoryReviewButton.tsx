@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SkillInspection } from '@deepseek-ai/dsh-api-remotes/client'
 import { IconArchiveOutline20, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
+  MemoryAdminGraphValue,
   MemoryAdminItem,
   MemoryAdminListValue,
   MemoryAdminStatus,
@@ -15,9 +17,11 @@ import type {
 import type { WorkDashboardKey } from './locales.ts'
 import css from './MemoryReviewButton.module.css'
 import { PersonalMemoryPanel, type PersonalMemoryInjected } from './PersonalMemoryPanel.tsx'
+import { MemoryOverviewPanel } from './MemoryOverviewPanel.tsx'
 
 /** Registration-side Host Remote face for the memory control. */
 export interface MemoryReviewInjected extends PersonalMemoryInjected {
+  listCapabilities: (sessionId: SessionId) => Promise<SkillInspection>
   list: (sessionId: SessionId) => Promise<MemoryCandidateReviewListValue>
   review: (
     sessionId: SessionId,
@@ -31,6 +35,8 @@ export interface MemoryReviewInjected extends PersonalMemoryInjected {
   ) => Promise<MemoryAdminListValue>
   correctMemory: (sessionId: SessionId, item: MemoryAdminItem, content: string) => Promise<MemoryAdminItem>
   forgetMemory: (sessionId: SessionId, item: MemoryAdminItem) => Promise<void>
+  memoryGraph: (sessionId: SessionId) => Promise<MemoryAdminGraphValue>
+  personalMemoryGraph: (sessionId: SessionId) => Promise<MemoryAdminGraphValue>
 }
 
 /** Full props composed by the session-header slot renderer. */
@@ -51,7 +57,7 @@ type MemoryViewState =
 
 type DecisionFeedback = 'reviewed' | 'stored' | null
 type MemoryFeedback = 'corrected' | 'forgotten' | null
-type Tab = 'suggestions' | 'saved' | 'personal'
+type Tab = 'overview' | 'suggestions' | 'saved' | 'personal'
 type StatusFilter = MemoryAdminStatus | 'all'
 const allMemoryStatuses = ['active', 'scheduled', 'expired', 'superseded'] as const satisfies readonly MemoryAdminStatus[]
 type Confirmation =
@@ -77,7 +83,8 @@ function memoryKey(item: MemoryAdminItem): string {
 export function MemoryReviewButton({
   sessionId, list, review, listMemories, correctMemory, forgetMemory,
   listPersonalMemories, rememberPersonalMemory, correctPersonalMemory,
-  forgetPersonalMemory, setPersonalMemoryEnabled, t,
+  forgetPersonalMemory, setPersonalMemoryEnabled, listCapabilities, memoryGraph,
+  personalMemoryGraph, useSessions, t,
 }: MemoryReviewButtonProps): ReactNode {
   const [open, setOpen] = useState(false)
   const [showTechnical, setShowTechnical] = useState(false)
@@ -219,7 +226,7 @@ export function MemoryReviewButton({
         <span>{t('memory.open')}</span>
       </button>
       <Modal
-        className={css.memoryDialog as string}
+        className={tab === 'overview' ? `${css.memoryDialog} ${css.overviewDialog}` : css.memoryDialog as string}
         open={open}
         onClose={() => { setOpen(false) }}
         title={t('memory.title')}
@@ -229,6 +236,9 @@ export function MemoryReviewButton({
       >
         <div className={css.body}>
           <div className={css.tabs} role="tablist" aria-label={t('memory.tabs.label')}>
+            <button type="button" role="tab" aria-selected={tab === 'overview'} onClick={() => { selectTab('overview') }}>
+              {t('memory.tabs.overview')}
+            </button>
             <button type="button" role="tab" aria-selected={tab === 'suggestions'} onClick={() => { selectTab('suggestions') }}>
               {t('memory.tabs.suggestions')}
             </button>
@@ -240,7 +250,19 @@ export function MemoryReviewButton({
             </button>
           </div>
 
-          {tab === 'suggestions' ? (
+          {tab === 'overview' ? (
+            <MemoryOverviewPanel
+              key={sessionId}
+              sessionId={sessionId}
+              useSessions={useSessions}
+              listMemories={listMemories}
+              listPersonalMemories={listPersonalMemories}
+              listCapabilities={listCapabilities}
+              memoryGraph={memoryGraph}
+              personalMemoryGraph={personalMemoryGraph}
+              t={t}
+            />
+          ) : tab === 'suggestions' ? (
             <section aria-busy={candidateState.status === 'loading'}>
               <label className={css.technicalToggle}>
                 <input type="checkbox" checked={showTechnical} onChange={(event) => { setShowTechnical(event.currentTarget.checked) }} />

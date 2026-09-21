@@ -33,6 +33,8 @@ import {
   type PersonalMemoryAdminActionRecord,
 } from './spec.ts'
 import { looksSensitive } from './sensitivity.ts'
+import type { MemoryGraphSnapshot } from '@deepseek-ai/dsh-memory'
+import type { PersonalMemoryGraphSnapshot } from '@deepseek-ai/dsh-personal-memory'
 import {
   MemoryAdminActionId,
   type MemoryAdminCorrectRequest,
@@ -40,6 +42,9 @@ import {
   type MemoryAdminFailure,
   type MemoryAdminForgetRequest,
   type MemoryAdminForgetResult,
+  type MemoryAdminGraphRequest,
+  type MemoryAdminGraphResult,
+  type MemoryAdminGraphValue,
   type MemoryAdminItem,
   type MemoryAdminListRequest,
   type MemoryAdminListResult,
@@ -53,6 +58,7 @@ import {
   type MemoryCandidateReviewListResult,
   type MemoryCandidateReviewMarkRequest,
   type MemoryCandidateReviewMarkResult,
+  type PersonalMemoryAdminGraphResult,
   type PersonalMemoryAdminListResult,
   type PersonalMemoryAdminRememberRequest,
   type PersonalMemoryAdminRememberResult,
@@ -368,6 +374,46 @@ export class MemoryCandidateReviewService extends TypertRemoteService {
       })
     } catch (error: unknown) {
       this.ctx.logger.warn('memory-candidate-review: personal-memory list failed: %o', error)
+      return rejected({ code: 'memory-admin-operation-failed', action: 'list' })
+    }
+  }
+
+  /**
+   * Read the derived workspace similarity graph without triggering computation or mutation.
+   * @param request - Session authorization anchor resolving the workspace partition.
+   * @returns The provider-published edge projection or an explicit failure.
+   */
+  @Remote('memoryGraph')
+  async memoryGraph(request: MemoryAdminGraphRequest): Promise<MemoryAdminGraphResult> {
+    const workspace = await this.resolveWorkspace(request.sessionId)
+    if (!workspace.ok) return workspace
+    try {
+      const snapshot = await this.ctx.memory.graph({ scope: { workspaceId: workspace.value } })
+      return success(projectGraph(snapshot))
+    } catch (error: unknown) {
+      this.ctx.logger.warn('memory-candidate-review: workspace graph read failed: %o', error)
+      return rejected({ code: 'memory-admin-operation-failed', action: 'list' })
+    }
+  }
+
+  /**
+   * Read the derived personal-memory similarity graph without exposing the owner id.
+   * @param request - Session authorization anchor.
+   * @returns The provider-published edge projection or an explicit failure.
+   */
+  @Remote('personalMemoryGraph')
+  async personalMemoryGraph(request: MemoryAdminGraphRequest): Promise<PersonalMemoryAdminGraphResult> {
+    const session = await this.resolveSession(request.sessionId)
+    if (!session.ok) return session
+    const personal = this.personalCapability()
+    if (!personal.ok) return personal
+    try {
+      const snapshot = await personal.value.runtime.graph({
+        scope: personal.value.scope,
+      })
+      return success(projectGraph(snapshot))
+    } catch (error: unknown) {
+      this.ctx.logger.warn('memory-candidate-review: personal-memory graph read failed: %o', error)
       return rejected({ code: 'memory-admin-operation-failed', action: 'list' })
     }
   }
@@ -901,6 +947,17 @@ function projectCandidate(row: MemoryCandidateRecord): MemoryCandidateReviewItem
     ...(row.reviewedBy === undefined ? {} : { reviewedBy: row.reviewedBy }),
     ...(row.autoWrite === undefined ? {} : { autoWrite: row.autoWrite }),
     createdAt: row.createdAt,
+  })
+}
+
+/** Copy one provider graph snapshot into a browser-safe projection without workspace or owner ids. */
+function projectGraph(snapshot: MemoryGraphSnapshot | PersonalMemoryGraphSnapshot): MemoryAdminGraphValue {
+  return Object.freeze({
+    status: snapshot.status,
+    generation: snapshot.generation,
+    ...(snapshot.computedAt === undefined ? {} : { computedAt: snapshot.computedAt }),
+    edges: Object.freeze(snapshot.edges.map(edge => Object.freeze({ a: edge.a.id, b: edge.b.id, score: edge.score }))),
+    ...(snapshot.failureCode === undefined ? {} : { failureCode: snapshot.failureCode }),
   })
 }
 

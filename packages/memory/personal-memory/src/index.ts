@@ -12,6 +12,8 @@ import type {
   PersonalMemoryBlockedEvent,
   PersonalMemoryCreateRequest,
   PersonalMemoryForgetRequest,
+  PersonalMemoryGraphRequest,
+  PersonalMemoryGraphSnapshot,
   PersonalMemoryListPage,
   PersonalMemoryListRequest,
   PersonalMemoryOperationEvent,
@@ -28,6 +30,8 @@ export type {
   PersonalMemoryBlockedEvent,
   PersonalMemoryCreateRequest,
   PersonalMemoryForgetRequest,
+  PersonalMemoryGraphRequest,
+  PersonalMemoryGraphSnapshot,
   PersonalMemoryListItem,
   PersonalMemoryListPage,
   PersonalMemoryListRequest,
@@ -244,6 +248,31 @@ export class PersonalMemoryRuntime extends Service {
       return { ...request, scope: checkedScope(request.scope) }
     })
     await this.execute('forget', normalized.scope, provider => provider.forget(normalized, signal))
+  }
+
+  /**
+   * Read the derived similarity graph for one owner partition through the selected provider.
+   * @param request - Owner scope whose graph is requested.
+   * @param signal - Optional cancellation forwarded to the selected provider.
+   * @returns the provider-published snapshot, or `unavailable` when the provider computes no graph.
+   */
+  async graph(
+    request: PersonalMemoryGraphRequest,
+    signal?: AbortSignal,
+  ): Promise<PersonalMemoryGraphSnapshot> {
+    const normalized = this.validate('list', request.scope, () => ({ ...request, scope: checkedScope(request.scope) }))
+    const provider = this.resolveProvider()
+    if (provider.graph === undefined) {
+      return {
+        ownerId: normalized.scope.ownerId,
+        status: 'unavailable',
+        generation: 0,
+        algorithmVersion: 0,
+        recordRevisions: {},
+        edges: [],
+      }
+    }
+    return provider.graph(normalized, signal)
   }
 
   private validate<T>(

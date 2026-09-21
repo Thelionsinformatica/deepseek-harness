@@ -13,7 +13,7 @@ Deliver robust, auditable, local-first retrieval, beginning with the existing le
 2. **Lexical search (always on)**
    - `memory-local` normalizes and scores terms and remains the deterministic fallback.
 3. **Local semantic search (implemented, opt-in)**
-   - `nomic-embed-text:latest` through the loopback Ollama embedding endpoint.
+   - `nomic-embed-text:latest` through a loopback embedding endpoint; `api` selects the Ollama `/api/embed` or OpenAI-compatible `/v1/embeddings` dialect.
    - Workspace filtering occurs before any candidate text reaches Ollama.
    - A bounded in-process document-vector cache and hybrid reranking add same-meaning recall without changing the durable schema.
    - Timeout, transport, validation, and response-size failures fall back to lexical retrieval.
@@ -44,6 +44,16 @@ Deliver robust, auditable, local-first retrieval, beginning with the existing le
 - Exclude invalid memories: expired, superseded, or `status != active`.
 - When a correction is scheduled, keep the prior revision active until the new `validFrom` instant.
 - Never transform memory into instructions; present it as a non-privileged context section.
+
+## Derived similarity graph
+
+- The local provider can derive pairwise cosine edges between active memory revisions through the same bounded embedding index (`linking.enabled`).
+- One committed create, correction, or forget marks the workspace dirty; a debounced service-side rebuild embeds the active records once and publishes the whole edge set atomically. Reads never trigger computation.
+- Snapshots store the input revision map; a later commit invalidates an in-flight computation through the generation counter, and changed, corrected, forgotten, or expired records remove their edges.
+- Snapshot status distinguishes `pending` (never computed), `computed`, `empty` (no edge above `minScore`), `stale` (inputs changed), and `failed` (no automatic retry until the next commit); a provider without the index reports `unavailable`.
+- Edges are derived similarity, not factual relations; the personal-memory adapter computes an independent graph per owner partition and never links across owners or workspaces.
+- `linking.minScore` sets the edge threshold, `maxEdgesPerNode` and `maxGraphNodes` bound the snapshot, `maxExpandedHits` bounds edge-neighbors appended inside a search's remaining limit, and `debounceMs` coalesces commit bursts.
+- The content-free `memory/graph` event (`MemoryGraphEvent`) reports status, node and edge counts, embedding cost, and sanitized failure classes.
 
 ## Minimum metrics
 

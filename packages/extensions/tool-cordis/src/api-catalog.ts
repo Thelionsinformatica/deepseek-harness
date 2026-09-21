@@ -1106,6 +1106,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'request', description: 'Workspace scope and compare-and-set reference to delete.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
         returns: 'resolution after durable deletion.',
       },
+      {
+        signature: 'async graph(request: MemoryGraphRequest, signal?: AbortSignal): Promise<MemoryGraphSnapshot>',
+        description: 'Read the derived similarity graph for one workspace through the selected provider.',
+        parameters: [{ name: 'request', description: 'Workspace scope whose graph is requested.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'the provider-published snapshot, or `unavailable` when the provider computes no graph.',
+      },
     ],
   },
   {
@@ -1147,6 +1153,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'List the configured local owner\'s personal memories without exposing the owner id.',
         parameters: [{ name: 'request', description: 'Session authorization anchor and bounded list filters.' }],
         returns: 'Browser-safe personal rows plus the current enablement state, or an explicit failure.',
+      },
+      {
+        signature: '@Remote(\'memoryGraph\') async memoryGraph(request: MemoryAdminGraphRequest): Promise<MemoryAdminGraphResult>',
+        description: 'Read the derived workspace similarity graph without triggering computation or mutation.',
+        parameters: [{ name: 'request', description: 'Session authorization anchor resolving the workspace partition.' }],
+        returns: 'The provider-published edge projection or an explicit failure.',
+      },
+      {
+        signature: '@Remote(\'personalMemoryGraph\') async personalMemoryGraph(request: MemoryAdminGraphRequest): Promise<PersonalMemoryAdminGraphResult>',
+        description: 'Read the derived personal-memory similarity graph without exposing the owner id.',
+        parameters: [{ name: 'request', description: 'Session authorization anchor.' }],
+        returns: 'The provider-published edge projection or an explicit failure.',
       },
       {
         signature: '@Remote(\'rememberPersonalMemory\') rememberPersonalMemory(request: PersonalMemoryAdminRememberRequest): Promise<PersonalMemoryAdminRememberResult>',
@@ -1324,6 +1342,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Forget one exact personal-memory revision.',
         parameters: [{ name: 'request', description: 'Owner scope and compare-and-set reference to delete.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
         returns: 'resolution after durable deletion.',
+      },
+      {
+        signature: 'async graph( request: PersonalMemoryGraphRequest, signal?: AbortSignal, ): Promise<PersonalMemoryGraphSnapshot>',
+        description: 'Read the derived similarity graph for one owner partition through the selected provider.',
+        parameters: [{ name: 'request', description: 'Owner scope whose graph is requested.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'the provider-published snapshot, or `unavailable` when the provider computes no graph.',
       },
     ],
   },
@@ -3031,6 +3055,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'event', description: 'Candidate counts, operation source, and policy decision metadata.' }],
   },
   {
+    name: 'memory/graph',
+    mode: 'emit',
+    signature: '\'memory/graph\'(event: MemoryGraphEvent): void',
+    summary: 'Derived similarity-graph computation completed or failed without memory text.',
+    description: 'Derived similarity-graph computation completed or failed without memory text.',
+    parameters: [{ name: 'event', description: 'Snapshot status, bounded counters, and sanitized failure class.' }],
+  },
+  {
     name: 'memory/operation',
     mode: 'emit',
     signature: '\'memory/operation\'(event: MemoryOperationEvent): void',
@@ -4203,6 +4235,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface MemoryAdminForgetValue {\n    readonly id: MemoryAdminId;\n    readonly revision: number;\n    readonly auditId: MemoryAdminActionId;\n}',
   },
   {
+    name: 'MemoryAdminGraphEdge',
+    declaration: 'export interface MemoryAdminGraphEdge {\n    readonly a: MemoryAdminId;\n    readonly b: MemoryAdminId;\n    readonly score: number;\n}',
+  },
+  {
+    name: 'MemoryAdminGraphRequest',
+    declaration: 'export interface MemoryAdminGraphRequest {\n    readonly sessionId: SessionId;\n}',
+  },
+  {
+    name: 'MemoryAdminGraphResult',
+    declaration: 'export type MemoryAdminGraphResult = {\n    readonly ok: true;\n    readonly value: MemoryAdminGraphValue;\n} | {\n    readonly ok: false;\n    readonly error: MemoryAdminFailure;\n};',
+  },
+  {
+    name: 'MemoryAdminGraphStatus',
+    declaration: 'export type MemoryAdminGraphStatus = \'pending\' | \'computed\' | \'empty\' | \'stale\' | \'failed\' | \'unavailable\';',
+  },
+  {
+    name: 'MemoryAdminGraphValue',
+    declaration: 'export interface MemoryAdminGraphValue {\n    readonly status: MemoryAdminGraphStatus;\n    readonly generation: number;\n    readonly computedAt?: string;\n    readonly edges: readonly MemoryAdminGraphEdge[];\n    readonly failureCode?: string;\n}',
+  },
+  {
     name: 'MemoryAdminId',
     declaration: 'export type MemoryAdminId = Branded<\'MemoryId\'>;',
   },
@@ -4387,6 +4439,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface MemoryForgetRequest {\n    readonly scope: MemoryScope;\n    readonly ref: MemoryRef;\n}',
   },
   {
+    name: 'MemoryGraphEdge',
+    declaration: 'export interface MemoryGraphEdge {\n    readonly a: MemoryRef;\n    readonly b: MemoryRef;\n    readonly score: number;\n    readonly kind: \'semantic\';\n}',
+  },
+  {
+    name: 'MemoryGraphEvent',
+    declaration: 'export interface MemoryGraphEvent {\n    readonly schemaVersion: 1;\n    readonly workspaceId: WorkspaceId;\n    readonly status: \'computed\' | \'empty\' | \'failed\';\n    readonly generation: number;\n    readonly nodeCount: number;\n    readonly edgeCount: number;\n    readonly embeddedCount: number;\n    readonly cacheHitCount: number;\n    readonly durationMs: number;\n    readonly failureCode?: string;\n}',
+  },
+  {
+    name: 'MemoryGraphRequest',
+    declaration: 'export interface MemoryGraphRequest {\n    readonly scope: MemoryScope;\n}',
+  },
+  {
+    name: 'MemoryGraphSnapshot',
+    declaration: 'export interface MemoryGraphSnapshot {\n    readonly workspaceId: WorkspaceId;\n    readonly status: MemoryGraphStatus;\n    readonly generation: number;\n    readonly algorithmVersion: number;\n    readonly model?: string;\n    readonly computedAt?: string;\n    readonly recordRevisions: Readonly<Record<string, number>>;\n    readonly edges: readonly MemoryGraphEdge[];\n    readonly failureCode?: string;\n}',
+  },
+  {
+    name: 'MemoryGraphStatus',
+    declaration: 'export type MemoryGraphStatus = \'pending\' | \'computed\' | \'empty\' | \'stale\' | \'failed\' | \'unavailable\';',
+  },
+  {
     name: 'MemoryId',
     declaration: 'export type MemoryId = Branded<\'MemoryId\'>;',
   },
@@ -4408,7 +4480,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MemoryProvider',
-    declaration: 'export interface MemoryProvider {\n    readonly id: string;\n    available(): boolean;\n    create(request: MemoryCreateRequest, signal?: AbortSignal): Promise<MemoryRecord>;\n    search(request: MemorySearchRequest, signal?: AbortSignal): Promise<readonly MemorySearchHit[]>;\n    list(request: MemoryListRequest, signal?: AbortSignal): Promise<MemoryListPage>;\n    update(request: MemoryUpdateRequest, signal?: AbortSignal): Promise<MemoryRecord>;\n    forget(request: MemoryForgetRequest, signal?: AbortSignal): Promise<void>;\n}',
+    declaration: 'export interface MemoryProvider {\n    readonly id: string;\n    available(): boolean;\n    create(request: MemoryCreateRequest, signal?: AbortSignal): Promise<MemoryRecord>;\n    search(request: MemorySearchRequest, signal?: AbortSignal): Promise<readonly MemorySearchHit[]>;\n    list(request: MemoryListRequest, signal?: AbortSignal): Promise<MemoryListPage>;\n    update(request: MemoryUpdateRequest, signal?: AbortSignal): Promise<MemoryRecord>;\n    forget(request: MemoryForgetRequest, signal?: AbortSignal): Promise<void>;\n    graph?(request: MemoryGraphRequest, signal?: AbortSignal): Promise<MemoryGraphSnapshot>;\n}',
   },
   {
     name: 'MemoryRecord',
@@ -4567,6 +4639,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PermissionSelect {\n    options: PresetOption[];\n    currentValue: string;\n}',
   },
   {
+    name: 'PersonalMemoryAdminGraphResult',
+    declaration: 'export type PersonalMemoryAdminGraphResult = {\n    readonly ok: true;\n    readonly value: MemoryAdminGraphValue;\n} | {\n    readonly ok: false;\n    readonly error: MemoryAdminFailure;\n};',
+  },
+  {
     name: 'PersonalMemoryAdminListResult',
     declaration: 'export type PersonalMemoryAdminListResult = {\n    readonly ok: true;\n    readonly value: PersonalMemoryAdminListValue;\n} | {\n    readonly ok: false;\n    readonly error: MemoryAdminFailure;\n};',
   },
@@ -4615,6 +4691,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type PersonalMemoryForgetRequest = Omit<MemoryForgetRequest, \'scope\'> & {\n    readonly scope: PersonalMemoryScope;\n};',
   },
   {
+    name: 'PersonalMemoryGraphRequest',
+    declaration: 'export type PersonalMemoryGraphRequest = Omit<MemoryGraphRequest, \'scope\'> & {\n    readonly scope: PersonalMemoryScope;\n};',
+  },
+  {
+    name: 'PersonalMemoryGraphSnapshot',
+    declaration: 'export type PersonalMemoryGraphSnapshot = Omit<MemoryGraphSnapshot, \'workspaceId\'> & {\n    readonly ownerId: PersonalMemoryOwnerId;\n};',
+  },
+  {
     name: 'PersonalMemoryListItem',
     declaration: 'export interface PersonalMemoryListItem extends Omit<MemoryListItem, \'record\'> {\n    readonly record: PersonalMemoryRecord;\n}',
   },
@@ -4636,7 +4720,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PersonalMemoryProvider',
-    declaration: 'export interface PersonalMemoryProvider {\n    readonly id: string;\n    available(): boolean;\n    create(request: PersonalMemoryCreateRequest, signal?: AbortSignal): Promise<PersonalMemoryRecord>;\n    search(request: PersonalMemorySearchRequest, signal?: AbortSignal): Promise<readonly PersonalMemorySearchHit[]>;\n    list(request: PersonalMemoryListRequest, signal?: AbortSignal): Promise<PersonalMemoryListPage>;\n    update(request: PersonalMemoryUpdateRequest, signal?: AbortSignal): Promise<PersonalMemoryRecord>;\n    forget(request: PersonalMemoryForgetRequest, signal?: AbortSignal): Promise<void>;\n}',
+    declaration: 'export interface PersonalMemoryProvider {\n    readonly id: string;\n    available(): boolean;\n    create(request: PersonalMemoryCreateRequest, signal?: AbortSignal): Promise<PersonalMemoryRecord>;\n    search(request: PersonalMemorySearchRequest, signal?: AbortSignal): Promise<readonly PersonalMemorySearchHit[]>;\n    list(request: PersonalMemoryListRequest, signal?: AbortSignal): Promise<PersonalMemoryListPage>;\n    update(request: PersonalMemoryUpdateRequest, signal?: AbortSignal): Promise<PersonalMemoryRecord>;\n    forget(request: PersonalMemoryForgetRequest, signal?: AbortSignal): Promise<void>;\n    graph?(request: PersonalMemoryGraphRequest, signal?: AbortSignal): Promise<PersonalMemoryGraphSnapshot>;\n}',
   },
   {
     name: 'PersonalMemoryRecord',

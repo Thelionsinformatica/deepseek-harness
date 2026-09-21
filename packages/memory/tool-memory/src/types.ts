@@ -342,6 +342,46 @@ export type PersonalMemoryAdminListResult =
   | { readonly ok: true; readonly value: PersonalMemoryAdminListValue }
   | { readonly ok: false; readonly error: MemoryAdminFailure }
 
+/** Derived-graph lifecycle projected to the browser. */
+export type MemoryAdminGraphStatus =
+  | 'pending'
+  | 'computed'
+  | 'empty'
+  | 'stale'
+  | 'failed'
+  | 'unavailable'
+
+/** One derived similarity edge between two memory ids. */
+export interface MemoryAdminGraphEdge {
+  readonly a: MemoryAdminId
+  readonly b: MemoryAdminId
+  readonly score: number
+}
+
+/** Browser-safe derived similarity graph of one authorized partition. */
+export interface MemoryAdminGraphValue {
+  readonly status: MemoryAdminGraphStatus
+  readonly generation: number
+  readonly computedAt?: string
+  readonly edges: readonly MemoryAdminGraphEdge[]
+  readonly failureCode?: string
+}
+
+/** Read the derived workspace similarity graph for the addressed Session. */
+export interface MemoryAdminGraphRequest {
+  readonly sessionId: SessionId
+}
+
+/** Workspace similarity-graph result. */
+export type MemoryAdminGraphResult =
+  | { readonly ok: true; readonly value: MemoryAdminGraphValue }
+  | { readonly ok: false; readonly error: MemoryAdminFailure }
+
+/** Personal-owner similarity-graph result. */
+export type PersonalMemoryAdminGraphResult =
+  | { readonly ok: true; readonly value: MemoryAdminGraphValue }
+  | { readonly ok: false; readonly error: MemoryAdminFailure }
+
 /** Request to add one explicit personal fact. */
 export interface PersonalMemoryAdminRememberRequest {
   readonly sessionId: SessionId

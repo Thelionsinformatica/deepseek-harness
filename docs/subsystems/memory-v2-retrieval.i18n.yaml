@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/memory-v2-retrieval.md
-memory-v2-retrieval.md: 6ba2cc6d69d7e52a296d794359bb0d4d81939254
-memory-v2-retrieval.zh.md: f3c3b5ea560e1e468246f53b1702e4433edd3353
+memory-v2-retrieval.md: 92f0a68d0e03dabd07213b69ff4526fb5425004f
+memory-v2-retrieval.zh.md: 6142c0a8b882f0dc6ba50ca8a80ecc634b99178e

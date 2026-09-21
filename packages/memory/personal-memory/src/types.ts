@@ -4,6 +4,8 @@ import type { Branded } from '@deepseek-ai/dsh-brand'
 import type {
   MemoryCreateRequest,
   MemoryForgetRequest,
+  MemoryGraphRequest,
+  MemoryGraphSnapshot,
   MemoryListItem,
   MemoryListPage,
   MemoryListRequest,
@@ -75,6 +77,16 @@ export type PersonalMemoryForgetRequest = Omit<MemoryForgetRequest, 'scope'> & {
   readonly scope: PersonalMemoryScope
 }
 
+/** Request the derived similarity graph of one personal-memory owner partition. */
+export type PersonalMemoryGraphRequest = Omit<MemoryGraphRequest, 'scope'> & {
+  readonly scope: PersonalMemoryScope
+}
+
+/** Derived similarity graph of one owner partition; the synthetic workspace id never crosses the boundary. */
+export type PersonalMemoryGraphSnapshot = Omit<MemoryGraphSnapshot, 'workspaceId'> & {
+  readonly ownerId: PersonalMemoryOwnerId
+}
+
 /** Provider contract registered with `ctx.personalMemory`. */
 export interface PersonalMemoryProvider {
   readonly id: string
@@ -84,6 +96,11 @@ export interface PersonalMemoryProvider {
   list(request: PersonalMemoryListRequest, signal?: AbortSignal): Promise<PersonalMemoryListPage>
   update(request: PersonalMemoryUpdateRequest, signal?: AbortSignal): Promise<PersonalMemoryRecord>
   forget(request: PersonalMemoryForgetRequest, signal?: AbortSignal): Promise<void>
+  /**
+   * Read the derived similarity graph for one owner partition, when the provider computes one.
+   * Absent means the provider does not implement graph derivation.
+   */
+  graph?(request: PersonalMemoryGraphRequest, signal?: AbortSignal): Promise<PersonalMemoryGraphSnapshot>
 }
 
 /** Content-free operation event for local audit and health reporting. */

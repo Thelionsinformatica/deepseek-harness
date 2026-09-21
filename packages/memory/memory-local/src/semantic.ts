@@ -13,6 +13,9 @@ export type SemanticFallbackCode =
   | 'INVALID_RESPONSE'
   | 'RESPONSE_TOO_LARGE'
 
+/** Embedding endpoint dialect; `ollama` uses `/api/embed`, `openai-compatible` uses `/v1/embeddings`. */
+export type SemanticEmbeddingApi = 'ollama' | 'openai-compatible'
+
 /** Fully validated transport and cache policy for the local semantic index. */
 export interface OllamaSemanticIndexConfig {
   readonly baseUrl: string
@@ -21,11 +24,34 @@ export interface OllamaSemanticIndexConfig {
   readonly timeoutMs: number
   readonly maxCacheEntries: number
   readonly maxResponseBytes: number
+  readonly api?: SemanticEmbeddingApi
 }
 
 /** Ranked candidate input whose public record retains workspace provenance. */
 export interface SemanticCandidate {
   readonly record: MemoryRecord
+}
+
+/** Minimal pairwise-link input; the table key supplies the stable id. */
+export interface SemanticLinkCandidate {
+  readonly id: MemoryIdType
+  readonly revision: number
+  readonly content: string
+}
+
+/** One derived similarity edge between two exact candidate revisions. */
+export interface SemanticEdge {
+  readonly a: MemoryIdType
+  readonly b: MemoryIdType
+  readonly score: number
+}
+
+/** Derived edges and cost counters for one bounded pairwise pass. */
+export interface SemanticLinking {
+  readonly edges: readonly SemanticEdge[]
+  readonly embeddedCount: number
+  readonly cacheHitCount: number
+  readonly durationMs: number
 }
 
 /** Semantic scores and cost counters for one bounded query. */
@@ -62,7 +88,9 @@ export class OllamaSemanticIndex {
    * @param config - Validated local endpoint, model, dimensions, and resource limits.
    */
   constructor(private readonly config: OllamaSemanticIndexConfig) {
-    this.endpoint = new URL('/api/embed', config.baseUrl)
+    this.endpoint = config.api === 'openai-compatible'
+      ? new URL('/v1/embeddings', config.baseUrl)
+      : new URL('/api/embed', config.baseUrl)
   }
 
   /**
@@ -113,6 +141,70 @@ export class OllamaSemanticIndex {
   }
 
   /**
+   * Derive pairwise similarity edges over one bounded candidate set.
+   * @param candidates - Records already filtered to one scope and bounded by policy.
+   * @param minScore - Inclusive cosine threshold for an edge.
+   * @param maxPerNode - Maximum edges retained per candidate; strongest survive.
+   * @param signal - Optional caller cancellation.
+   * @returns edges ordered by descending score plus cache/latency counters.
+   */
+  async link(
+    candidates: readonly SemanticLinkCandidate[],
+    minScore: number,
+    maxPerNode: number,
+    signal?: AbortSignal,
+  ): Promise<SemanticLinking> {
+    const startedAt = Date.now()
+    if (candidates.length < 2) {
+      return { edges: [], embeddedCount: 0, cacheHitCount: 0, durationMs: 0 }
+    }
+    const missing: SemanticLinkCandidate[] = []
+    const vectors = new Map<MemoryIdType, readonly number[]>()
+    for (const candidate of candidates) {
+      const cached = this.takeCached(candidate.id, candidate.revision)
+      if (cached === undefined) missing.push(candidate)
+      else vectors.set(candidate.id, cached)
+    }
+    if (missing.length > 0) {
+      const embedded = await this.embed(
+        missing.map(candidate => `search_document: ${candidate.content}`),
+        signal,
+      )
+      for (const [index, candidate] of missing.entries()) {
+        const vector = requiredVector(embedded[index])
+        vectors.set(candidate.id, vector)
+        this.cacheEmbedding(candidate.id, candidate.revision, vector)
+      }
+    }
+    const scored: SemanticEdge[] = []
+    for (const [leftIndex, a] of candidates.entries()) {
+      for (const b of candidates.slice(leftIndex + 1)) {
+        const score = cosine(requiredVector(vectors.get(a.id)), requiredVector(vectors.get(b.id)))
+        if (score >= minScore) {
+          scored.push(String(a.id) < String(b.id) ? { a: a.id, b: b.id, score } : { a: b.id, b: a.id, score })
+        }
+      }
+    }
+    scored.sort((left, right) => right.score - left.score)
+    const degree = new Map<MemoryIdType, number>()
+    const edges: SemanticEdge[] = []
+    for (const edge of scored) {
+      const degreeA = degree.get(edge.a) ?? 0
+      const degreeB = degree.get(edge.b) ?? 0
+      if (degreeA >= maxPerNode || degreeB >= maxPerNode) continue
+      degree.set(edge.a, degreeA + 1)
+      degree.set(edge.b, degreeB + 1)
+      edges.push(edge)
+    }
+    return {
+      edges,
+      embeddedCount: missing.length,
+      cacheHitCount: candidates.length - missing.length,
+      durationMs: Date.now() - startedAt,
+    }
+  }
+
+  /**
    * Remove one corrected or forgotten record from the process-local index.
    * @param id - Durable memory identity whose cached revision is stale.
    */
@@ -146,12 +238,14 @@ export class OllamaSemanticIndex {
       const response = await fetch(this.endpoint, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          model: this.config.model,
-          input: inputs,
-          truncate: false,
-          dimensions: this.config.dimensions,
-        }),
+        body: this.config.api === 'openai-compatible'
+          ? JSON.stringify({ model: this.config.model, input: inputs })
+          : JSON.stringify({
+            model: this.config.model,
+            input: inputs,
+            truncate: false,
+            dimensions: this.config.dimensions,
+          }),
         signal: requestDeadline.signal,
       })
       if (!response.ok) throw new SemanticSearchError('HTTP_ERROR')
@@ -162,7 +256,9 @@ export class OllamaSemanticIndex {
       } catch {
         throw new SemanticSearchError('INVALID_RESPONSE')
       }
-      return validateEmbeddingResponse(parsed, inputs.length, this.config.dimensions)
+      return this.config.api === 'openai-compatible'
+        ? validateOpenAIEmbeddingResponse(parsed, inputs.length, this.config.dimensions)
+        : validateEmbeddingResponse(parsed, inputs.length, this.config.dimensions)
     } catch (error: unknown) {
       if (error instanceof SemanticSearchError) throw error
       if (timeoutOf(requestDeadline.signal, SEMANTIC_TIMEOUT_CODE) !== undefined) {
@@ -221,6 +317,30 @@ function validateEmbeddingResponse(
       throw new SemanticSearchError('INVALID_RESPONSE')
     }
     validated.push(vector as number[])
+  }
+  return validated
+}
+
+function validateOpenAIEmbeddingResponse(
+  value: unknown,
+  expectedCount: number,
+  expectedDimensions: number,
+): readonly (readonly number[])[] {
+  if (value === null || typeof value !== 'object') throw new SemanticSearchError('INVALID_RESPONSE')
+  const data: unknown = (value as { data?: unknown }).data
+  if (!Array.isArray(data) || data.length !== expectedCount) {
+    throw new SemanticSearchError('INVALID_RESPONSE')
+  }
+  const rows = data as readonly { index?: unknown; embedding?: unknown }[]
+  const ordered = rows.slice().sort(
+    (left, right) => typeof left.index === 'number' && typeof right.index === 'number'
+      ? left.index - right.index
+      : 0,
+  )
+  const validated: (readonly number[])[] = []
+  for (const row of ordered) {
+    const vector: unknown = row.embedding
+    validated.push(...validateEmbeddingResponse({ embeddings: [vector] }, 1, expectedDimensions))
   }
   return validated
 }

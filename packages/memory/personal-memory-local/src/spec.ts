@@ -2,7 +2,13 @@
 
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 import { MemoryId } from '@deepseek-ai/dsh-memory'
-import { localMemoryRecord, type LocalMemoryRecord } from '@deepseek-ai/dsh-memory-local'
+import {
+  localMemoryGraph,
+  localMemoryRecord,
+  type LocalMemoryGraph,
+  type LocalMemoryRecord,
+} from '@deepseek-ai/dsh-memory-local'
+import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 
 /** Physically separate storage domain; workspace memory never opens this table. */
 export const localPersonalMemoryDomainSpec = defineDomain({
@@ -10,5 +16,6 @@ export const localPersonalMemoryDomainSpec = defineDomain({
   version: 1,
   tables: {
     memories: domainTable<ReturnType<typeof MemoryId>, LocalMemoryRecord>(localMemoryRecord),
+    graph: domainTable<WorkspaceId, LocalMemoryGraph>(localMemoryGraph),
   },
 })

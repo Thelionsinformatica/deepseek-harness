@@ -435,7 +435,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'goal/completion-audit': GoalCompletionAuditMeta
 ```
 
-来源：[`packages/goal/tool-goal/src/completion-evidence.ts:45`](../packages/goal/tool-goal/src/completion-evidence.ts)
+来源：[`packages/goal/tool-goal/src/completion-evidence.ts:48`](../packages/goal/tool-goal/src/completion-evidence.ts)
 
 ### `hook/*`
 
@@ -743,7 +743,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'subagent/descriptor': SubagentDescriptorData
 ```
 
-来源：[`packages/subagent/subagent/src/descriptor.ts:37`](../packages/subagent/subagent/src/descriptor.ts)
+来源：[`packages/subagent/subagent/src/descriptor.ts:38`](../packages/subagent/subagent/src/descriptor.ts)
 
 ### `task/*`
 

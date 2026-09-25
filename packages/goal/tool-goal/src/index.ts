@@ -24,8 +24,11 @@ import {
   requireCompletionAudit,
   type CompletionAuditorConfig,
 } from './quality-audit.ts'
-import type {} from './completion-evidence.ts'
+import type { GoalCompletionAuditMeta } from './completion-evidence.ts'
 import { renderWrapupContext } from './wrapup.ts'
+import { AuditPageReader } from './audit-pages.ts'
+import { reusableReview } from './review-reuse.ts'
+import { verifyAuditArtifacts } from './audit-artifacts.ts'
 
 export const name = 'tool-goal'
 export const inject = ['agents', 'goals', 'tools', 'systemPrompt']
@@ -48,6 +51,16 @@ export interface Config {
   completionAuditorMaxAttemptsPerTurn?: number
   /** Maximum correction-report characters returned to the executor. */
   completionAuditorReportMaxCharacters?: number
+  /** Maximum serialized execution evidence characters per auditor delivery or page. */
+  completionAuditorEvidenceMaxCharacters?: number
+  /** Extra host-approved read-only verifier tool names; no generic execution tools by default. */
+  completionAuditorTools?: string[]
+  /** Maximum distinct artifact paths in one review. */
+  completionAuditorArtifactMaxFiles?: number
+  /** Maximum bytes per complete UTF-8 artifact. */
+  completionAuditorArtifactMaxBytes?: number
+  /** Require at least one complete artifact read before accepting PASS. */
+  completionAuditorRequireArtifacts?: boolean
 }
 
 /** Schemastery config for the goal-tool policy. */
@@ -60,6 +73,11 @@ export const Config: z<Config> = z.object({
   completionAuditorMaxTokens: z.number().step(1).min(1).default(4096),
   completionAuditorMaxAttemptsPerTurn: z.number().step(1).min(1).default(2),
   completionAuditorReportMaxCharacters: z.number().step(1).min(1).default(6000),
+  completionAuditorEvidenceMaxCharacters: z.number().step(1).min(1).default(24000),
+  completionAuditorTools: z.array(z.string()).default([]),
+  completionAuditorArtifactMaxFiles: z.number().step(1).min(1).default(64),
+  completionAuditorArtifactMaxBytes: z.number().step(1).min(1).default(1048576),
+  completionAuditorRequireArtifacts: z.boolean().default(false),
 })
 
 /** Fully materialized tool policy. */
@@ -69,9 +87,9 @@ interface ResolvedConfig {
   readonly completionAuditor?: CompletionAuditorConfig
 }
 
-type UpdateAction = 'edit' | 'pause' | 'resume' | 'complete' | 'blocked'
+type UpdateAction = 'edit' | 'pause' | 'resume' | 'review' | 'complete' | 'blocked'
 
-const UPDATE_ACTIONS: UpdateAction[] = ['edit', 'pause', 'resume', 'complete', 'blocked']
+const UPDATE_ACTIONS: UpdateAction[] = ['edit', 'pause', 'resume', 'review', 'complete', 'blocked']
 
 const CREATE_DESCRIPTION =
   'Create one persisted same-session completion goal when the current direct human request '
@@ -98,6 +116,7 @@ type GoalToolValue =
       blockedReason?: { code: string; message: string }
     }
     activation: GoalView['activation']
+    review?: { status: 'pass'; sessionId: string; summary: string }
   }
 
 const GOAL_VALUE_SCHEMA = {
@@ -135,6 +154,14 @@ const GOAL_VALUE_SCHEMA = {
           },
         },
         activation: { type: 'string', required: true, enum: ['armed', 'disarmed'] },
+        review: {
+          type: 'object', additionalProperties: false,
+          properties: {
+            status: { type: 'string', required: true, enum: ['pass'] },
+            sessionId: { type: 'string', required: true },
+            summary: { type: 'string', required: true },
+          },
+        },
       },
     },
   ],
@@ -157,7 +184,10 @@ function guidance(
         + 'complete canonical list; preserve content/order, update statuses, retain legitimate new items, then retry.'
       : '')
     + (completionAuditorEnabled
-      ? ' Complete starts an independent audit. If rejected, fix findings and revalidate before retrying.'
+      ? ' Use action review to request independent review before marking review bookkeeping completed. '
+        + 'A successful review leaves the goal active and never completes todos. Then finish bookkeeping and call complete '
+        + 'in the same turn without other work. Complete reuses that current PASS; otherwise it starts a fresh audit. '
+        + 'Never mark a review todo completed before PASS. If rejected, fix findings and revalidate before retrying.'
       : '')
 }
 
@@ -190,6 +220,10 @@ function resolveConfig(config: Config): ResolvedConfig {
   if ((modelProvider === undefined) !== (model === undefined)) {
     throw new TypeError('completionAuditorModelProvider and completionAuditorModel must be configured together')
   }
+  const tools = config.completionAuditorTools ?? []
+  if (tools.some(tool => tool.trim().length === 0 || tool !== tool.trim()) || new Set(tools).size !== tools.length) {
+    throw new TypeError('completionAuditorTools must contain unique normalized non-empty names')
+  }
   return {
     blockedAfterConsecutiveRounds: blockedAfter,
     completionRequiresCompletedTodos: config.completionRequiresCompletedTodos ?? false,
@@ -210,6 +244,16 @@ function resolveConfig(config: Config): ResolvedConfig {
           'completionAuditorReportMaxCharacters',
           config.completionAuditorReportMaxCharacters ?? 6000,
         ),
+        evidenceMaxCharacters: positiveSafeInteger(
+          'completionAuditorEvidenceMaxCharacters',
+          config.completionAuditorEvidenceMaxCharacters ?? 24000,
+        ),
+        tools: [...tools],
+        artifactLimits: {
+          maxFiles: positiveSafeInteger('completionAuditorArtifactMaxFiles', config.completionAuditorArtifactMaxFiles ?? 64),
+          maxBytes: positiveSafeInteger('completionAuditorArtifactMaxBytes', config.completionAuditorArtifactMaxBytes ?? 1048576),
+        },
+        requireArtifacts: config.completionAuditorRequireArtifacts ?? false,
       },
     },
   }
@@ -301,6 +345,7 @@ function present(title: string, kind: 'read' | 'other', rawInput?: unknown): Gen
 export function apply(ctx: Context, config: Config): void {
   const resolved = resolveConfig(config)
   const auditAttempts = new CompletionAuditAttempts()
+  const pageReader = new AuditPageReader(ctx)
   ctx.systemPrompt.section({
     name: 'tool:goal',
     order: 114,
@@ -363,7 +408,7 @@ export function apply(ctx: Context, config: Config): void {
         type: 'string',
         required: true,
         enum: UPDATE_ACTIONS,
-        description: 'edit | pause | resume | complete | blocked',
+        description: 'edit | pause | resume | review (audit without completing tasks) | complete | blocked',
       },
       objective: { type: 'string', description: 'Replacement objective; valid only with action edit.' },
       max_goal_rounds: { type: 'number', description: 'Replacement cap; valid only with action edit.' },
@@ -408,7 +453,7 @@ export function apply(ctx: Context, config: Config): void {
           'GOAL_TOOL_INVALID_UPDATE',
         )
       }
-      if (args.action === 'complete' && hasText(args.blocked_reason)) {
+      if ((args.action === 'complete' || args.action === 'review') && hasText(args.blocked_reason)) {
         throw new HarnessError('blocked_reason is valid only with action blocked', 'GOAL_TOOL_INVALID_UPDATE')
       }
       if (args.action === 'blocked'
@@ -429,29 +474,53 @@ export function apply(ctx: Context, config: Config): void {
         requireCompletedTodos(execution, current)
       }
       let completionAudit: Awaited<ReturnType<typeof requireCompletionAudit>> | undefined
-      if (args.action === 'complete' && resolved.completionAuditor !== undefined) {
+      let acceptedReview: GoalCompletionAuditMeta | undefined
+      if (args.action === 'review' && resolved.completionAuditor === undefined) {
+        throw new HarnessError('independent review is not configured', 'GOAL_QUALITY_AUDIT_UNAVAILABLE')
+      }
+      if ((args.action === 'complete' || args.action === 'review') && resolved.completionAuditor !== undefined) {
         const current = authority.kind === 'goal-round' ? authority.goal : ctx.goals.get(execution.agent)
         if (current === undefined) throw new HarnessError('no current goal exists', 'GOAL_NOT_FOUND')
         if (current.id !== ref.id || current.revision !== ref.revision) {
           throw new HarnessError('goal revision is stale; call get_goal and retry', 'GOAL_STALE_REVISION')
         }
-        auditAttempts.reserve(
-          execution.agent,
-          execution.start.data.turn,
-          resolved.completionAuditor.maxAttemptsPerTurn,
-        )
-        completionAudit = await requireCompletionAudit(
-          ctx,
-          execution.agent,
-          current,
-          currentGoalTodos(execution.agent, current),
-          resolved.completionAuditor,
-          exec.signal,
-        )
+        const priorReview = args.action === 'complete' ? reusableReview(execution.agent.session, current) : undefined
+        acceptedReview = priorReview
+        if (priorReview?.artifacts !== undefined) {
+          const seq = execution.agent.session.seq
+          if (resolved.completionAuditor.requireArtifacts && priorReview.artifacts.coverage === 'no-files-reviewed') {
+            throw new HarnessError('current review does not cover any artifact', 'GOAL_QUALITY_AUDIT_EVIDENCE_INCOMPLETE')
+          }
+          await verifyAuditArtifacts(ctx, priorReview.artifacts, resolved.completionAuditor.artifactLimits, exec.signal)
+          if (execution.agent.session.seq !== seq) {
+            throw new HarnessError('parent changed during artifact verification; request a new review', 'GOAL_QUALITY_AUDIT_STALE')
+          }
+        }
+        if (priorReview === undefined) {
+          auditAttempts.reserve(
+            execution.agent,
+            execution.start.data.turn,
+            resolved.completionAuditor.maxAttemptsPerTurn,
+          )
+          completionAudit = await requireCompletionAudit(
+            ctx,
+            execution.agent,
+            current,
+            currentGoalTodos(execution.agent, current),
+            resolved.completionAuditor,
+            exec.signal,
+            pageReader,
+          )
+        }
       }
       if (completionAudit !== undefined) {
-        execution.agent.session.append('goal/completion-audit', completionAudit)
+        execution.agent.session.append('goal/completion-audit', completionAudit.receipt)
+        acceptedReview = completionAudit.receipt
       }
+      const withReview = (value: GoalToolValue): GoalToolValue => value.goal === null || acceptedReview === undefined
+        ? value : { ...value, review: { status: 'pass', sessionId: acceptedReview.auditor.sessionId,
+          summary: completionAudit?.summary ?? 'Previously recorded PASS reused; no new audit was started.' } }
+      if (args.action === 'review') return withReview(goalValue(ctx.goals.get(execution.agent)))
       const goal = args.action === 'complete'
         ? ctx.goals.complete(execution.agent, ref)
         : ctx.goals.block(execution.agent, ref, {
@@ -471,10 +540,10 @@ export function apply(ctx: Context, config: Config): void {
           },
         }))
       }
-      return Promise.resolve(goalValue(goal))
+      return Promise.resolve(withReview(goalValue(goal)))
     },
     presentCall: args => present(
-      args.action === 'complete' && resolved.completionAuditor !== undefined
+      (args.action === 'complete' || args.action === 'review') && resolved.completionAuditor !== undefined
         ? 'Verify delivery'
         : `${args.action === 'blocked' ? 'Mark' : args.action.charAt(0).toUpperCase() + args.action.slice(1)} goal`,
       'other',

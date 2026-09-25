@@ -480,7 +480,10 @@ export function apply(ctx: Context, config: Config = {}): void {
             return
           }
           if (event.data.reason.kind === 'max-tokens') {
-            disarm(state)
+            // A truncated response settles this turn, not the goal. The idle
+            // driver checkpoints it and admits a fresh numbered round under
+            // the existing phase, activation and persisted round-cap checks.
+            state.needsCheckpoint = true
             return
           }
           if (event.data.reason.kind !== 'aborted') return

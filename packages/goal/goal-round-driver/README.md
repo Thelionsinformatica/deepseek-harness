@@ -36,6 +36,8 @@ At whole-agent idle, durable goal phase and revision are authoritative. An activ
 
 ## Lifecycle and durability
 
+An output-token limit (`max-tokens`) checkpoints the truncated turn and permits the next numbered round only while the goal remains active, armed, and below its persisted round cap. It does not reset the budget or mark work complete. Provider errors still disarm continuation; cancellation, pause, restart, and durability checks remain authoritative.
+
 `goal/changed` creates a durability obligation. Before queuing work, the driver awaits `ctx.sessions.flush()` and rechecks both the goal revision and competing input after the await. A flush failure arriving through `agent/error` disarms continuation before another round can start.
 
 Activation is never inherited when this plugin loads over an existing agent. `GoalService.disarm()` removes process-local authority without changing durable phase, revision, or history; explicit human-authorized resume records the later reactivation. The same rule applies after session resume and fork through the goal domain's `agent/session-start` handling.

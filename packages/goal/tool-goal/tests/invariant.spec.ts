@@ -39,6 +39,7 @@ function currentGoal(session: ReturnType<Context['sessions']['create']>) {
 }
 
 const auditor = {
+  evidenceMaxCharacters: 24000,
   provider: 'audit',
   modelProvider: 'ollama',
   model: 'ornith-1.5-9b',
@@ -48,6 +49,7 @@ const auditor = {
 }
 
 const inheritedAuditor = {
+  evidenceMaxCharacters: 24000,
   provider: 'audit',
   maxTokens: 2048,
   maxAttemptsPerTurn: 2,
@@ -55,6 +57,22 @@ const inheritedAuditor = {
 }
 
 describe('tool-goal completion evidence invariant', () => {
+  it('accepts explicit empty coverage but refuses forged artifact coverage before publication', async () => {
+    const ctx = await setup()
+    const session = ctx.sessions.create(SessionId('artifact-manifest-audit'))
+    session.append('turn/start', { turn: 1 })
+    const goal = currentGoal(session)
+    const receipt = completionAuditReceipt(captureCompletionEvidence(session, goal), auditor,
+      0, 'auditor-manifest', 'a'.repeat(64), { version: 1, coverage: 'no-files-reviewed', files: [] })
+    const before = session.seq
+    expect(() => session.append('goal/completion-audit', {
+      ...receipt, artifacts: { version: 1, coverage: 'files-reviewed', files: [] },
+    })).toThrow(/artifact manifest is invalid/)
+    expect(session.seq).toBe(before)
+    expect(() => session.append('goal/completion-audit', receipt)).not.toThrow()
+    await ctx.fiber.dispose()
+  })
+
   it('accepts a content-free receipt bound to the exact current goal history', async () => {
     const ctx = await setup()
     const session = ctx.sessions.create(SessionId('valid-goal-audit'))

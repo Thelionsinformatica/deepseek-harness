@@ -20,6 +20,8 @@
 
 ## 权限
 
+隔离审核器接收宿主捕获的父会话及直接子会话执行 JSON。`completionAuditorEvidenceMaxCharacters`（默认 24000）限制每次交付；超限时采用下文审查生命周期中的分页，不会静默截断。流式片段和模型推理不在记录中。返回文本是不可信证据，不能证明子 agent 的声明属实。这会增加审核输入 token，不改变普通轮次提示。
+
 执行要求完全相同的活跃 `exec.agent`、其继承的 `AgentRegistry` initiator、running 状态与开放轮次。create、edit、pause 和 resume 还要求运行时根 agent（智能体）的当前轮次中存在已接受的 `{ kind: 'user' }` 消息或 steering 事件。持久 fork 谱系不会降低已恢复根 agent 的等级；活跃 subagent 所有权会降低。
 
 `{ kind: 'user' }` 是宿主证明。`Agent.followup()` 与 `steer()` 会在调用方省略 source 时分配该值，因此插件、调度器与其他非人类生产方必须传入自己的 source，不能继承用户权限。
@@ -40,11 +42,27 @@ complete 与 blocked 还接受完全一致的当前 Goal Round：来源为 goal 
     completionAuditorMaxTokens: 4096
     completionAuditorMaxAttemptsPerTurn: 2
     completionAuditorReportMaxCharacters: 6000
+    completionAuditorTools: []
+    completionAuditorArtifactMaxFiles: 64
+    completionAuditorArtifactMaxBytes: 1048576
+    completionAuditorRequireArtifacts: true
 ```
 
 `blockedAfterConsecutiveRounds` 必须是正的安全整数。它既提供模型自行报告阻塞的硬下限，也决定模型指引中指明的数值。当 `completionRequiresCompletedTodos` 为 true 时，只有当前 goal 已存在非空的 `todo_write` 列表且所有条目均为 `completed`，`complete` 才会被接受；列表未完成时，拒绝结果会返回完整规范列表，包括已完成条目，使重试能够保留每个内容字符串与相对顺序、更新状态并保留真正新发现的条目。为兼容既有组合，默认值为 false。
 
-空的 `completionAuditorProvider` 会禁用独立审核。非空值指定 `ctx.subagents` 上的一次性 provider；执行时缺失会以失败关闭。`completionAuditorModelProvider` 与 `completionAuditorModel` 必须同时配置，或者同时省略以继承执行器路由。其余正安全整数分别限制输出 token、同一父轮次中的启动次数和反馈字符数。审核器继承会话工作区与委派后的 sandbox／approval 策略；固定 persona 禁止修改源文件，工具过滤器移除第一方变更与递归编排工具。
+空的 `completionAuditorProvider` 会禁用独立审核。非空值要求一次性提供方声明支持宿主 `setup`；缺失时在推理前拒绝。`completionAuditorModelProvider` 与 `completionAuditorModel` 必须同时配置，或者同时省略以继承执行器路由；已组合的辅助 `review` 选择优先。正安全整数限制输出 token、每轮启动次数、反馈及产物证据。委派后的 sandbox／approval 策略仍然继承。
+
+`completionAuditorTools` 默认为空允许列表。宿主在发布或推理前安装子级执行守卫：只允许 `completion_evidence_read`、`completion_artifact_read`、`structured_output` 及明确配置的验证工具。守卫也检查继承工具过滤器无法约束的子级自有工具及嵌套调用。额外名称必须存在于父级工具中；应使用功能受限的只读验证器，而不是通用 shell。宿主仍对其实现负责。
+
+`completion_artifact_read({ file_path })` 通过当前 `ctx.fs` 提供方返回完整 UTF-8 文件、字节数及 SHA-256。它将读取限制在指定工作区内，拒绝常见凭据路径、Windows 流语法、二进制或超限内容，并仅记录成功且未改变的最终交付。冒号仅用于路径开头的 Windows 盘符，包括扩展路径；所有提供方都拒绝其他含冒号的名称。普通盘符路径和 UNC 路径仍受工作区包含检查约束。默认最多 64 个路径，每个文件 1048576 字节。为兼容非文件目标，`completionAuditorRequireArtifacts` 默认为 false；设为 true 时必须至少交付一个文件，仅有文字 PASS 不够。
+
+## 审查生命周期
+
+`update_goal action: review` 调用已配置的独立审查员，但不完成目标，也不修改待办事项。审查通过后，结果返回 `review.status`、审查会话 ID 和有长度限制的摘要。更新审查待办状态后，`complete` 仅在同一开放轮次、相同目标修订、任务内容不变且没有执行其他工作工具时复用该 PASS。新工作、新轮次或需求变更要求重新审查；未完成的待办仍会阻止目标完成。
+
+审查证据包含宿主捕获的父会话工具调用与结果，以及直接子会话的执行记录和实际模型来源。覆盖范围明确标记为 `live-only` 或 `live-and-persisted`。超出 `completionAuditorEvidenceMaxCharacters` 的证据由 `completion_evidence_read` 分页提供，每页均受大小限制。只有指定的审查员可读取，运行结束后权限失效。宿主在所有页面交付前拒绝 PASS；交付不等于理解。原始会话记录不会被截断或覆盖。
+
+新回执包含 `artifacts` manifest（元数据清单），覆盖标记为 `files-reviewed` 或 `no-files-reviewed`。审查结束后以及同轮复用前，都会重新检查完整字节及提供方目标身份。文件变化或缺失会以 `GOAL_QUALITY_AUDIT_ARTIFACT_STALE` 拒绝完成；执行器必须明确请求新审查。旧回执仍可读取，但不能授权复用。回执不存文件内容；子级工具结果仍作为普通证据记录。参见[审查边界决策](../../../.agents/notes/implemented/bug-fix/2026-09-21-completion-audit-boundaries.zh.md)。
 
 ## 模型体验
 
@@ -57,7 +75,7 @@ complete 与 blocked 还接受完全一致的当前 Goal Round：来源为 goal 
 ##### Goal 策略
 
 ```markdown
-Use goal tools only for one long-running objective; skip routine single-turn work. create_goal may infer goal intent from a direct human request in any language. A deployment may create it automatically: call get_goal first, then use exact goal_id/revision. Resuming a session or forking it disarms an active goal; any human continue or resume request in any wording or language requires update_goal action resume. Complete only when achieved. Block only after the same condition lasts at least 3 consecutive goal rounds; set blocked_reason. Difficulty, uncertainty, or remaining work are not blockers. Completion needs a non-empty todo_write list with all items done. An incomplete-list rejection returns the complete canonical list; preserve content/order, update statuses, retain legitimate new items, then retry. Complete starts an independent audit. If rejected, fix findings and revalidate before retrying.
+Use goal tools only for one long-running objective; skip routine single-turn work. create_goal may infer goal intent from a direct human request in any language. A deployment may create it automatically: call get_goal first, then use exact goal_id/revision. Resuming a session or forking it disarms an active goal; any human continue or resume request in any wording or language requires update_goal action resume. Complete only when achieved. Block only after the same condition lasts at least 3 consecutive goal rounds; set blocked_reason. Difficulty, uncertainty, or remaining work are not blockers. Completion needs a non-empty todo_write list with all items done. An incomplete-list rejection returns the complete canonical list; preserve content/order, update statuses, retain legitimate new items, then retry. Use action review to request independent review before marking review bookkeeping completed. A successful review leaves the goal active and never completes todos. Then finish bookkeeping and call complete in the same turn without other work. Complete reuses that current PASS; otherwise it starts a fresh audit. Never mark a review todo completed before PASS. If rejected, fix findings and revalidate before retrying.
 ```
 
 #### Token 影响
@@ -84,9 +102,11 @@ schema 的定义与可见性不变时，前缀保持稳定。调用和结果会�
 
 ## 已知限制与暂缓事项
 
+- **证据范围** — 仅覆盖直接子会话，不递归。没有持久化时无法验证冷会话。哈希覆盖实际读取的文件，而非所有必需产物或语义正确性。它检测已观察到的变化，不检测最后一次检查后的写入；没有工作区锁或全局写入屏障。空覆盖不代表文件验证。
+
 - **语义意图仍由模型判断**：执行只能证明当前轮次包含一条人类直接发送的消息，无法证明请求是否足够重大而值得创建 goal。
 - **阻塞条件是否相同仍由模型判断**：运行时强制统计互不重复的已准入 Goal Round，而不判断障碍在语义上是否等价；完成审核器不评估 blocked 报告。
-- **Shell 验证受指令约束，而非强制只读**：变更工具会被移除，但保留 `bash` 或 `pwsh` 的审核器可以运行会生成缓存或构建产物的测试脚本。persona 禁止更改源文件，委派后的 approval 仍为 `never`。
+- **宿主扩展仍受信任** — 允许列表不是针对恶意宿主插件的操作系统沙箱。明确授予通用 shell 会破坏只读意图。凭据名称过滤并非通用秘密检测。文件内容遵循审核器配置的模型路由，包括已配置的外部提供方。
 - **不负责调度或直接面向人类呈现**：这些工具只变更状态；同会话驱动器与 [`dsh-command-goal`](../command-goal/README.zh.md) 是同一领域的独立消费方。
 - **Goal Round 权限需要驱动器**：除非续行驱动器准入 goal 来源的用户轮次，否则自主 `complete`／`blocked` 路径不会启用；只挂载这个包不会创建这些轮次。
 - **提示词注册与过滤相互独立**：某个范围可能隐藏工具，却保留指引，除非部署将两项注册限定在同一范围。

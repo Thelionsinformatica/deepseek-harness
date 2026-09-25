@@ -12,6 +12,8 @@ Status: implemented
 
 ## 决策
 
+下文记录的 shell 策略选择已被[强制审核器边界](../bug-fix/2026-09-21-completion-audit-boundaries.zh.md)取代：当前审核器在推理前采用宿主安装的执行允许列表，默认不含 shell。本记录的权限及生命周期决策仍然有效。
+
 位于 `packages/goal/tool-goal/` 的 `@deepseek-ai/dsh-tool-goal` 在 `ctx.goals` 之上贡献三个独占工具和一个系统提示词策略段：`get_goal`、`create_goal` 与 `update_goal`。工具名称和读取—创建—更新形态遵循 Codex 的紧凑目标工具表面，而权限规则使用本仓库公共的 agent（智能体）、会话、工具与目标服务。
 
 ### 工具与模型约定

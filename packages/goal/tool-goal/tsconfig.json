@@ -8,6 +8,8 @@
     "src"
   ],
   "references": [
+    { "path": "../../fs/fs" },
+    { "path": "../../session/session-persistence" },
     { "path": "../../core/agent-default-model" },
     {
       "path": "../../../vendor/cosmokit"

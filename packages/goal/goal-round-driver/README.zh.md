@@ -36,6 +36,8 @@
 
 ## 生命周期与持久性
 
+输出 token 上限（`max-tokens`）会为截断的轮次创建检查点，只有目标仍处于 active、已启用续行且未达到持久轮次上限时，才允许下一个编号轮次。它不会重置预算或将工作标记为完成。提供方错误仍会停用续行；取消、暂停、重启和持久性检查仍具有权威性。
+
 `goal/changed` 会产生持久性义务。排队工作前，驱动器会等待 `ctx.sessions.flush()`，并在等待后重新检查 goal revision 与竞争输入。通过 `agent/error` 到达的 flush 失败会停用续行，避免另一 Round 启动。
 
 此插件加载到现有 agent 上时绝不会继承续行启用状态。`GoalService.disarm()` 会移除进程本地权限，而不改变持久 phase、revision 或历史；之后由用户明确授权的 resume 会记录重新启用续行。会话 resume 和 fork 后，goal 领域通过 `agent/session-start` 处理应用相同规则。

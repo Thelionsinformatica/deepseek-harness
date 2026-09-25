@@ -8,6 +8,7 @@ import type { GoalRef } from '@deepseek-ai/dsh-goal'
 import { createUserMessage, CallId } from '@deepseek-ai/dsh-llm'
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-session'
+import { createScope } from '@deepseek-ai/dsh-scope'
 import type { TodoItem } from '@deepseek-ai/dsh-session'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type {
@@ -89,25 +90,44 @@ async function harness(config: toolGoal.Config = {}) {
   return { ctx, fiber, root }
 }
 
+/** Mint the real scoped tool registry used by an otherwise scripted auditor. */
+async function auditorScope(ctx: Context, id: string) {
+  const child = stubAgent(id).agent
+  let childCtx!: Context
+  const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+    childCtx = createScope(inner, child).ctx.extend({ agent: child })
+    Object.defineProperty(child, 'ctx', { value: childCtx })
+  }, { inject: ['tools', 'agents', 'systemPrompt'] }))
+  return { child, childCtx, dispose: () => fiber.dispose() }
+}
+
 /** Register a structured one-shot auditor whose results are supplied by the test. */
-function auditProvider(ctx: Context, results: readonly SubagentResult[]) {
+function auditProvider(
+  ctx: Context,
+  results: readonly SubagentResult[],
+  boundary?: 'missing-capability' | 'omit-setup' | 'mismatched-identity',
+) {
   const requests: ResolvedSubagentStartRequest[] = []
   let disposed = 0
   let index = 0
   ctx.subagents.registerProvider({
     name: 'audit',
-    capabilities: { outputSchema: true, depthLimit: true, toolFilter: true, persona: true },
+    capabilities: { outputSchema: true, depthLimit: true, toolFilter: true, persona: true,
+      ...boundary === 'missing-capability' ? {} : { setup: true as const } },
     inheritsParentContext: false,
-    start(request) {
+    async start(request) {
       requests.push(request)
       const result = results[index++]
       if (result === undefined) throw new Error('audit provider script exhausted')
-      return Promise.resolve({
-        id: SessionId(`quality-auditor-${index}`),
-        localAgent: undefined,
+      const { child, childCtx, dispose } = await auditorScope(ctx, `quality-auditor-${index}`)
+      if (boundary !== 'omit-setup') await request.setup?.(childCtx)
+      const unregister = ctx.agents.register(child)
+      return {
+        id: boundary === 'mismatched-identity' ? SessionId('unrelated-auditor') : child.id,
+        localAgent: child,
         result: Promise.resolve(result),
-        dispose() { disposed += 1; return Promise.resolve() },
-      })
+        async dispose() { disposed += 1; unregister(); await dispose() },
+      }
     },
   })
   return { requests, disposed: () => disposed }
@@ -371,6 +391,47 @@ describe('goal tool execution authority', () => {
 })
 
 describe('goal tool state transitions', () => {
+  it('reviews pending bookkeeping without completing it, then reuses PASS without a second auditor', async () => {
+    const { ctx, root } = await harness(AUDIT_CONFIG)
+    const audit = auditProvider(ctx, [{ stopReason: 'completed', output: [],
+      structured: { status: 'pass', summary: 'verificado', findings: [] } }])
+    openTurn(root, { kind: 'user' })
+    const created = ctx.goals.create(root.agent, { objective: 'review then complete' })
+    root.session.append('todo/write', { todos: [{ content: 'independent review', status: 'in_progress' }] })
+    const args = { goal_id: created.id, revision: created.revision }
+    expect(resultGoal(await execute(ctx, 'update_goal', { ...args, action: 'review' }, root.agent)))
+      .toMatchObject({ phase: 'active', revision: 1 })
+    expect(root.session.events.findLast(event => event.type === 'todo/write')?.data.todos[0]?.status).toBe('in_progress')
+    expect((await execute(ctx, 'update_goal', { ...args, action: 'complete' }, root.agent)).error?.info?.code)
+      .toBe('GOAL_TOOL_TODOS_INCOMPLETE')
+    root.session.append('todo/write', { todos: [{ content: 'independent review', status: 'completed' }] })
+    expect(resultGoal(await execute(ctx, 'update_goal', { ...args, action: 'complete' }, root.agent)))
+      .toMatchObject({ phase: 'complete' })
+    expect(audit.requests).toHaveLength(1)
+    expect(root.session.events.filter(event => event.type === 'goal/completion-audit')).toHaveLength(1)
+  })
+
+  it.each(['write', 'new-task', 'new-turn'])('does not reuse approval after %s', async (change) => {
+    const { ctx, root } = await harness(AUDIT_CONFIG)
+    const pass = { stopReason: 'completed' as const, output: [], structured: { status: 'pass', summary: 'ok', findings: [] } }
+    const audit = auditProvider(ctx, [pass, pass])
+    const turn = openTurn(root, { kind: 'user' })
+    const created = ctx.goals.create(root.agent, { objective: 'freshness' })
+    root.session.append('todo/write', { todos: [{ content: 'work', status: 'completed' }] })
+    const args = { goal_id: created.id, revision: created.revision }
+    await execute(ctx, 'update_goal', { ...args, action: 'review' }, root.agent)
+    if (change === 'write') root.session.append('tool/call', {
+      turn, step: 1, callId: CallId('changed'), name: 'write', arguments: '{}',
+    })
+    if (change === 'new-task') root.session.append('todo/write', { todos: [
+      { content: 'work', status: 'completed' }, { content: 'new requirement', status: 'completed' },
+    ] })
+    if (change === 'new-turn') { closeTurn(root, turn); openTurn(root, { kind: 'user' }) }
+    expect(resultGoal(await execute(ctx, 'update_goal', { ...args, action: 'complete' }, root.agent)))
+      .toMatchObject({ phase: 'complete' })
+    expect(audit.requests).toHaveLength(2)
+  })
+
   it('reads null, then edits, pauses, and resumes by exact revision in one human turn', async () => {
     const { ctx, root } = await harness()
     openTurn(root, { kind: 'user' })
@@ -502,9 +563,8 @@ describe('goal tool state transitions', () => {
       provider: 'google', model: 'gemini-test', maxTokens: 2048,
     })
     expect(audit.requests[0]?.persona).toContain('independent release auditor')
-    expect(audit.requests[0]?.toolFilter?.deny).toEqual(expect.arrayContaining([
-      'create_goal', 'update_goal',
-    ]))
+    expect(audit.requests[0]?.toolFilter?.allow).toEqual(['completion_evidence_read'])
+    expect(audit.requests[0]?.setup).toBeTypeOf('function')
     const prompt = audit.requests[0]?.prompt[0]
     expect(prompt?.type).toBe('text')
     if (prompt?.type !== 'text') throw new Error('expected audit text prompt')
@@ -576,6 +636,25 @@ describe('goal tool state transitions', () => {
       .not.toHaveProperty('modelProvider')
   })
 
+  it.each(['missing-capability', 'omit-setup', 'mismatched-identity'] as const)(
+    'withholds completion when the auditor violates %s', async (boundary) => {
+      const { ctx, root } = await harness(AUDIT_CONFIG)
+      const audit = auditProvider(ctx, [{ stopReason: 'completed', output: [],
+        structured: { status: 'pass', summary: 'unsupported approval', findings: [] } }], boundary)
+      openTurn(root, { kind: 'user' })
+      const created = ctx.goals.create(root.agent, { objective: 'require host-bound review authority' })
+      root.session.append('todo/write', { todos: [{ content: 'validate', status: 'completed' }] })
+      const result = await execute(ctx, 'update_goal', {
+        goal_id: created.id, revision: created.revision, action: 'complete',
+      }, root.agent)
+      expect(result.isError).toBe(true)
+      expect(ctx.goals.get(root.agent)?.phase).toBe('active')
+      expect(root.session.events.some(event => event.type === 'goal/completion-audit')).toBe(false)
+      expect(audit.requests).toHaveLength(boundary === 'missing-capability' ? 0 : 1)
+      expect(audit.disposed()).toBe(boundary === 'missing-capability' ? 0 : 1)
+    },
+  )
+
   it('keeps the goal active, returns findings, and permits a corrected retry', async () => {
     const { ctx, root } = await harness(AUDIT_CONFIG)
     auditProvider(ctx, [
@@ -627,16 +706,19 @@ describe('goal tool state transitions', () => {
     const result = new Promise<SubagentResult>((resolve) => { finishAudit = resolve })
     ctx.subagents.registerProvider({
       name: 'audit',
-      capabilities: { outputSchema: true, depthLimit: true, toolFilter: true, persona: true },
+      capabilities: { outputSchema: true, depthLimit: true, toolFilter: true, persona: true, setup: true },
       inheritsParentContext: false,
-      start() {
+      async start(request) {
+        const { child, childCtx, dispose } = await auditorScope(ctx, 'quality-auditor-stale')
+        await request.setup?.(childCtx)
+        const unregister = ctx.agents.register(child)
         startAudit()
-        return Promise.resolve({
-          id: SessionId('quality-auditor-stale'),
-          localAgent: undefined,
+        return {
+          id: child.id,
+          localAgent: child,
           result,
-          dispose: () => Promise.resolve(),
-        })
+          async dispose() { unregister(); await dispose() },
+        }
       },
     })
     openTurn(root, { kind: 'user' })

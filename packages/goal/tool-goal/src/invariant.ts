@@ -8,6 +8,7 @@ import { foldGoal } from '@deepseek-ai/dsh-goal'
 import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { completionEvidenceDigest } from './completion-evidence.ts'
+import { validateAuditArtifactManifest } from './audit-artifacts.ts'
 import type {} from './completion-evidence.ts'
 
 const PACKAGE_NAME = '@deepseek-ai/dsh-tool-goal'
@@ -48,8 +49,12 @@ function validateAuditEvent(
   if (openTurn(prefix) === undefined) fail('goal/completion-audit appended outside any open turn')
   const data = event.data as unknown
   if (!isRecord(data)) fail('goal/completion-audit data must be a record')
-  exactKeys(data, ['auditedAt', 'auditor', 'completedTodoCount', 'evidence', 'goal', 'version'], 'goal/completion-audit', fail)
+  exactKeys(data, ['auditedAt', 'auditor', 'completedTodoCount', 'evidence', 'goal', 'version',
+    ...data['artifacts'] === undefined ? [] : ['artifacts']], 'goal/completion-audit', fail)
   if (data['version'] !== 1) fail('goal/completion-audit version must be 1')
+  if (data['artifacts'] !== undefined) {
+    try { validateAuditArtifactManifest(data['artifacts']) } catch { fail('goal/completion-audit artifact manifest is invalid') }
+  }
 
   const goal = data['goal']
   if (!isRecord(goal)) fail('goal/completion-audit goal must be a record')

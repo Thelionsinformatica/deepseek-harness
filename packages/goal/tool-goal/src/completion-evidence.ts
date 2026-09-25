@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import type { GoalView } from '@deepseek-ai/dsh-goal'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { CompletionAuditorConfig } from './quality-audit.ts'
+import type { AuditArtifactManifest } from './audit-artifacts.ts'
 
 /** Hash-bound event interval captured before the independent auditor starts. */
 export interface CompletionEvidenceBaseline {
@@ -37,6 +38,8 @@ export interface GoalCompletionAuditMeta {
   }
   readonly completedTodoCount: number
   readonly auditedAt: number
+  /** Optional only for legacy receipts, which cannot authorize review reuse. */
+  readonly artifacts?: AuditArtifactManifest
 }
 
 declare module '@deepseek-ai/dsh-session/types' {
@@ -95,14 +98,16 @@ export function captureCompletionEvidence(
  * @param completedTodoCount - number of completed todos covered by the audit.
  * @param auditorSessionId - session identifier of the independent auditor run.
  * @param verdictDigest - content-free digest of the validated PASS verdict.
+ * @param artifacts - exact delivered-file coverage; empty is not file verification.
  * @returns durable audit metadata bound to the evidence and verdict digests.
  */
 export function completionAuditReceipt(
   baseline: CompletionEvidenceBaseline,
-  config: CompletionAuditorConfig,
+  config: Pick<CompletionAuditorConfig, 'provider' | 'modelProvider' | 'model'>,
   completedTodoCount: number,
   auditorSessionId: string,
   verdictDigest: string,
+  artifacts?: AuditArtifactManifest,
 ): GoalCompletionAuditMeta {
   return {
     version: 1,
@@ -123,5 +128,6 @@ export function completionAuditReceipt(
     },
     completedTodoCount,
     auditedAt: Date.now(),
+    ...artifacts === undefined ? {} : { artifacts },
   }
 }

@@ -12,6 +12,8 @@ The tool API also needs to preserve the separation between durable state and liv
 
 ## Decision
 
+The shell-policy choice recorded below is superseded by [enforced auditor boundaries](../bug-fix/2026-09-21-completion-audit-boundaries.md): current auditors use a host-installed execution allowlist before inference, with no shell by default. The authority and lifecycle decisions in this note remain active.
+
 `@deepseek-ai/dsh-tool-goal` in `packages/goal/tool-goal/` contributes three exclusive tools and one system-prompt policy section over `ctx.goals`: `get_goal`, `create_goal`, and `update_goal`. The names and read-create-update shape follow Codex's compact goal tool surface while the authority rules use this repository's public agent, session, tool, and goal services.
 
 ### Tools and model contract

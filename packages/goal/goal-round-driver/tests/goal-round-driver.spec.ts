@@ -392,7 +392,6 @@ describe('same-session goal driving', () => {
   it.each([
     ['rate limit', new LlmError('slow down', 'RATE_LIMIT')],
     ['request error', new Error('provider broke')],
-    ['max tokens', maxTokensResponse('unfinished')],
   ] as const)('disarms automatic continuation after a %s', async (_label, response) => {
     const test = await harness([response])
     test.ctx.goals.create(test.agent, { objective: 'stop safely', maxGoalRounds: 8 })
@@ -401,6 +400,29 @@ describe('same-session goal driving', () => {
       current?.phase === 'active' && current.activation === 'disarmed')
 
     expect(goal).toMatchObject({ roundsStarted: 1, activation: 'disarmed' })
+    expect(test.adapter.requests).toHaveLength(1)
+  })
+
+  it('continues truncated output in the same session and stops at the persisted round cap', async () => {
+    const test = await harness([maxTokensResponse('unfinished'), maxTokensResponse('still unfinished')])
+    test.ctx.goals.create(test.agent, { objective: 'finish existing work', maxGoalRounds: 2 })
+    const goal = await waitForGoal(test.ctx, test.agent, current => current?.phase === 'blocked')
+    expect(goal).toMatchObject({ roundsStarted: 2, activation: 'disarmed', blockedReason: { code: 'round-limit' } })
+    expect(test.adapter.requests).toHaveLength(2)
+    expect(requestText(test.adapter.requests[1]!)).toContain('unfinished')
+    expect(requestText(test.adapter.requests[1]!)).toContain('Round: 2/2')
+    expect(requestText(test.adapter.requests[1]!)).toContain('inspect the relevant workspace artifacts')
+  })
+
+  it('does not resume a goal paused at the truncated-turn boundary', async () => {
+    const test = await harness([() => {
+      const goal = test.ctx.goals.get(test.agent)!
+      test.ctx.goals.pause(test.agent, { id: goal.id, revision: goal.revision })
+      return maxTokensResponse('unfinished')
+    }])
+    test.ctx.goals.create(test.agent, { objective: 'respect pause', maxGoalRounds: 2 })
+    await waitForGoal(test.ctx, test.agent, current => current?.phase === 'paused')
+    await test.agent.whenIdle()
     expect(test.adapter.requests).toHaveLength(1)
   })
 

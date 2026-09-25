@@ -42,7 +42,7 @@ import {
   workspaceRenameValueSchema,
   workspaceUnarchiveSessionValueSchema,
 } from '../api/workspace.schema.ts'
-import { skillListValueSchema } from '../api/skills.schema.ts'
+import { skillInspectValueSchema, skillListValueSchema } from '../api/skills.schema.ts'
 import {
   agentPresetCopyValueSchema, agentPresetListValueSchema, agentPresetOpenDocumentValueSchema,
   agentPresetReadValueSchema, agentPresetRemoveValueSchema, agentPresetSelectValueSchema,
@@ -127,6 +127,7 @@ export interface IApiClient {
   }
   skills: {
     list(payload: RequestPayload<'skill.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'skill.list'>>>
+    inspect(payload: RequestPayload<'skill.inspect'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'skill.inspect'>>>
   }
   agentPresets: {
     list(payload: RequestPayload<'agentPreset.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentPreset.list'>>>
@@ -205,6 +206,7 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'workspace.unarchiveSession': workspaceUnarchiveSessionValueSchema,
   'workspace.deleteSession': workspaceDeleteSessionValueSchema,
   'skill.list': skillListValueSchema,
+  'skill.inspect': skillInspectValueSchema,
   'agentPreset.list': agentPresetListValueSchema,
   'agentPreset.select': agentPresetSelectValueSchema,
   'agentPreset.read': agentPresetReadValueSchema,
@@ -463,6 +465,7 @@ export abstract class AbstractApiClient implements IApiClient {
 
   readonly skills: IApiClient['skills'] = {
     list: (payload, signal) => this.callUnary('skill.list', payload, signal),
+    inspect: (payload, signal) => this.callUnary('skill.inspect', payload, signal),
   }
 
   // Annotated like every sibling, and load-bearing rather than cosmetic:

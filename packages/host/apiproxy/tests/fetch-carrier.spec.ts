@@ -231,6 +231,13 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
       },
     },
     skills: {
+      async inspect(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: {
+          agentPreset: 'leon', complete: true, modelToolAvailable: true, authorization: 'not-evaluated',
+          skills: [{ name: 'commit-helper', description: 'Git commits', source: 'runtime', modelInvocable: true, userInvocable: true }],
+          observedAt: '2026-09-21T12:00:00.000Z',
+        } } }
+      },
       async list(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { skills: [{ name: 'commit-helper', description: 'Git commits', modelInvocable: true }] } } }
       },
@@ -444,6 +451,16 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
     const c = client()
     const skills = await c.skills.list({ sessionId: 's' as never })
     expect(skills.result).toEqual({ ok: true, value: { skills: [{ name: 'commit-helper', description: 'Git commits', modelInvocable: true }] } })
+  })
+
+  it('round-trips skill.inspect metadata through the wire form', async () => {
+    const c = client()
+    const inspection = await c.skills.inspect({ sessionId: 's' as never })
+    expect(inspection.result).toEqual({ ok: true, value: {
+      agentPreset: 'leon', complete: true, modelToolAvailable: true, authorization: 'not-evaluated',
+      skills: [{ name: 'commit-helper', description: 'Git commits', source: 'runtime', modelInvocable: true, userInvocable: true }],
+      observedAt: '2026-09-21T12:00:00.000Z',
+    } })
   })
 
   it('lets host.pickDirectory finish after the 30-second default unary deadline', async () => {

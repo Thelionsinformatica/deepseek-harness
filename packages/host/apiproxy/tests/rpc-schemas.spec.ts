@@ -30,7 +30,10 @@ import {
   workspaceRenameRequestSchema, workspaceRenameValueSchema, workspaceViewSchema,
   workspaceUnarchiveSessionRequestSchema, workspaceUnarchiveSessionValueSchema,
 } from '../src/api/workspace.schema.ts'
-import { skillEntrySchema, skillListRequestSchema, skillListValueSchema } from '../src/api/skills.schema.ts'
+import {
+  skillEntrySchema, skillInspectRequestSchema, skillInspectValueSchema,
+  skillListRequestSchema, skillListValueSchema,
+} from '../src/api/skills.schema.ts'
 import {
   agentPresetEntrySchema, agentPresetListValueSchema, agentPresetOpenDocumentValueSchema,
 } from '../src/api/agent-presets.schema.ts'
@@ -437,6 +440,24 @@ describe('workspace domain schemas', () => {
 })
 
 describe('skills domain schemas', () => {
+  it('requires a session address and complete inspection metadata while omitting private provider fields', () => {
+    expect(skillInspectRequestSchema.parse({ sessionId: 's1', path: '/private' })).toEqual({ sessionId: 's1' })
+    expect(() => skillInspectRequestSchema.parse({ path: '/private' })).toThrow()
+    const value = {
+      agentPreset: null, complete: false, modelToolAvailable: false, authorization: 'not-evaluated',
+      observedAt: '2026-09-21T12:00:00.000Z',
+      skills: [{ name: 'user-only', description: 'Explicit invocation', source: 'runtime', modelInvocable: false, userInvocable: true, content: 'PRIVATE', path: '/private' }],
+    }
+    expect(skillInspectValueSchema.parse(value).skills[0]).toEqual({
+      name: 'user-only', description: 'Explicit invocation', source: 'runtime', modelInvocable: false, userInvocable: true,
+    })
+    expect(() => skillInspectValueSchema.parse({ ...value, complete: undefined })).toThrow()
+    expect(skillInspectValueSchema.parse(value).authorization).toBe('not-evaluated')
+    expect(() => skillInspectValueSchema.parse({ ...value, authorization: undefined })).toThrow()
+    expect(() => skillInspectValueSchema.parse({ ...value, authorization: 'allowed' })).toThrow()
+    expect(() => skillInspectValueSchema.parse({ ...value, observedAt: 'invalid' })).toThrow()
+  })
+
   it('validates the list request/value pair', () => {
     expect(skillListRequestSchema.parse({ sessionId: 's1' })).toEqual({ sessionId: 's1' })
     // The wire is session-addressed only: a sessionId-less payload fails.

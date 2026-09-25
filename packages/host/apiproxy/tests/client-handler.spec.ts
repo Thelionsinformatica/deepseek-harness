@@ -94,7 +94,11 @@ function scriptedApi(overrides: {
       unarchiveSession: r => ok(r, { archivedSessionIds: [] }),
       deleteSession: r => ok(r, { deleted: true as const, archivedSessionIds: [] }),
     },
-    skills: { list: r => ok(r, { skills: [] }), ...overrides.skills },
+    skills: {
+      list: r => ok(r, { skills: [] }),
+      inspect: r => ok(r, { agentPreset: null, complete: false, modelToolAvailable: false, authorization: 'not-evaluated', skills: [], observedAt: '2026-09-21T12:00:00.000Z' }),
+      ...overrides.skills,
+    },
     agentPresets: {
       list: r => ok(r, { presets: [], authorable: false, hasDocument: false }),
       select: r => ok(r, { agentPreset: r.payload.agentPreset }),

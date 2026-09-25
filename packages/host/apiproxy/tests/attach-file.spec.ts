@@ -4,7 +4,7 @@
  * so only the path — never the bytes — enters model context.
  */
 
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -17,7 +17,6 @@ import type {
   GenerateOptions, LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, StreamChunk, UserMessage,
 } from '@deepseek-ai/dsh-llm'
 import SessionStore from '@deepseek-ai/dsh-session'
-import type { SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
@@ -67,7 +66,7 @@ afterEach(() => {
   previousHome = undefined
 })
 
-async function harness(): Promise<{ ctx: Context; agent: Agent; sessionId: SessionId }> {
+async function harness() {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
   await ctx.plugin(SystemPrompt, { persona: '' })
@@ -87,10 +86,81 @@ async function harness(): Promise<{ ctx: Context; agent: Agent; sessionId: Sessi
   const session = ctx.sessions.create()
   const agent = { id: session.id, session, status: 'idle', ctx, inbox: { nextTurn: [], nextStep: [] } } as unknown as Agent
   ctx.agents.register(agent)
-  return { ctx, agent, sessionId: session.id }
+  return { ctx, agent, sessionId: session.id, attachments }
 }
 
 describe('browser file attachments', () => {
+  it.each(['', '%%%not-base64%%%', 'eA', 'eA==\n', 'eB=='])('rejects a malformed second file before persisting any attachment (%j)', async (data) => {
+    const root = useTemporaryHome()
+    const { ctx, agent, sessionId, attachments } = await harness()
+    const followup = vi.fn()
+    Object.assign(agent, { followup })
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'stub', model: 'stub-model' }), cwd: '/tmp',
+    })
+    try {
+      const outcome = await api.sessions.prompt(request({
+        sessionId, mode: 'queue' as const,
+        content: [
+          { type: 'file' as const, name: 'valid.md', data: Buffer.from('original').toString('base64') },
+          { type: 'file' as const, name: 'invalid.md', data },
+        ],
+      }))
+      expect(outcome.result.ok).toBe(false)
+      expect(outcome.result).toMatchObject({ error: { code: 'attachment-error', details: { reason: 'INVALID_FILE_BASE64' } } })
+      expect(existsSync(join(root, 'uploads'))).toBe(false)
+      expect(followup).not.toHaveBeenCalled()
+      expect(attachments.saveImages).not.toHaveBeenCalled()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('admits a Markdown file without calling the image store', async () => {
+    useTemporaryHome()
+    const { ctx, agent, sessionId, attachments } = await harness()
+    Object.assign(agent, { followup: vi.fn() })
+    attachments.saveImages.mockRejectedValue(new Error('image store unavailable'))
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'stub', model: 'stub-model' }), cwd: '/tmp',
+    })
+    try {
+      const outcome = await api.sessions.prompt(request({
+        sessionId, mode: 'queue' as const,
+        content: [{ type: 'file' as const, name: 'notas.md', data: Buffer.from('Documento').toString('base64') }],
+      }))
+      expect(outcome.result.ok).toBe(true)
+      expect(attachments.saveImages).not.toHaveBeenCalled()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it.each([1, 4])('rejects a file %i bytes beyond the limit without storing an earlier file', async (excess) => {
+    const root = useTemporaryHome()
+    const { ctx, agent, sessionId, attachments } = await harness()
+    const followup = vi.fn()
+    Object.assign(agent, { followup })
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'stub', model: 'stub-model' }), cwd: '/tmp',
+    })
+    try {
+      const outcome = await api.sessions.prompt(request({
+        sessionId, mode: 'queue' as const,
+        content: [
+          { type: 'file' as const, name: 'valid.md', data: Buffer.from('unchanged').toString('base64') },
+          { type: 'file' as const, name: 'oversized.md', data: Buffer.alloc(16 * 1024 * 1024 + excess, 65).toString('base64') },
+        ],
+      }))
+      expect(outcome.result).toMatchObject({ ok: false, error: { code: 'attachment-error', details: { reason: 'FILE_TOO_LARGE' } } })
+      expect(existsSync(join(root, 'uploads'))).toBe(false)
+      expect(followup).not.toHaveBeenCalled()
+      expect(attachments.saveImages).not.toHaveBeenCalled()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('stores the bytes below DSH_HOME/uploads and names that path in model context', async () => {
     const root = useTemporaryHome()
     const { ctx, agent, sessionId } = await harness()
@@ -122,7 +192,8 @@ describe('browser file attachments', () => {
 
     // The pointer names a real file inside the uploads directory, and the bytes
     // on disk are exactly what the browser sent.
-    const stored = pointer.text.replace('[arquivo anexado] ', '')
+    expect(pointer.text).toMatch(/^\n\n\[arquivo anexado\] .+\n\n$/u)
+    const stored = pointer.text.replace('[arquivo anexado] ', '').trim()
     expect(stored.startsWith(join(root, 'uploads'))).toBe(true)
     expect(readFileSync(stored, 'utf8')).toBe(body)
     expect(readdirSync(join(root, 'uploads'))).toHaveLength(1)
@@ -155,7 +226,7 @@ describe('browser file attachments', () => {
 
     const message = followup.mock.calls[0]?.[0] as UserMessage
     const pointer = message.content[0] as { text: string }
-    const stored = pointer.text.replace('[arquivo anexado] ', '')
+    const stored = pointer.text.replace('[arquivo anexado] ', '').trim()
     // Stored flat inside uploads: the name keeps no separator, never starts as
     // a dotfile, and cannot address anything outside the directory.
     const entries = readdirSync(join(root, 'uploads'))

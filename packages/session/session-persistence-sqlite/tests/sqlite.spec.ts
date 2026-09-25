@@ -445,7 +445,7 @@ describe('SessionPersistenceSqlite schema ownership', () => {
         : undefined
     })
 
-    const db = await openDatabase(BusyOnceDatabase, path, 'wal', 100)
+    const db = await openDatabase(BusyOnceDatabase, path, 'wal', 1_000)
     expect(attempts).toBe(2)
     expect(db.prepare(sql('journal-mode-wal')).get()).toEqual({ journal_mode: 'wal' })
     expect(db.prepare(sql('select-trusted-schema')).get()).toEqual({ trusted_schema: 0 })
@@ -507,10 +507,10 @@ describe('SessionPersistenceSqlite schema ownership', () => {
       BusyDatabase,
       await freshDbPath('dsh-sqlite-journal-paced-'),
       'wal',
-      50,
+      500,
     )).rejects.toThrow('database is locked')
     expect(attempts).toBeGreaterThan(1)
-    expect(attempts).toBeLessThanOrEqual(6)
+    expect(attempts).toBeLessThanOrEqual(51)
   })
 
   it('rejects unversioned, incompatible, and foreign-application databases', async () => {

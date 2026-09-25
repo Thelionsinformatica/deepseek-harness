@@ -128,6 +128,10 @@ const SESSION_SEARCH_PROVIDER_CALL_LIMIT = 100
 
 /** Bound cold-log stat fan-out and settle each started batch before cancellation returns. */
 const COLD_SUMMARY_BATCH_SIZE = 16
+/** Public source buckets exclude provider-specific labels that may contain private locations. */
+const SKILL_INSPECTION_SOURCES: ReadonlySet<string> = new Set([
+  'project-dsh', 'project-agents', 'runtime', 'user-dsh', 'user-agents', 'custom', 'bundled',
+])
 /** Default maximum artifact size eligible for one cold blankness read. */
 export const DEFAULT_COLD_BLANK_PROBE_MAX_BYTES = 1024
 
@@ -136,6 +140,29 @@ const MESSAGE_TYPES = new Set(['user/message', 'assistant/message'])
 
 /** Largest decoded browser-attached file the Host persists. */
 const MAX_ATTACHED_FILE_BYTES = 16 * 1024 * 1024
+
+/** Caller-correctable non-image upload failure, without document contents or paths. */
+class FileAdmissionError extends Error {
+  constructor(message: string, readonly code: 'INVALID_FILE_BASE64' | 'FILE_TOO_LARGE') {
+    super(message)
+    this.name = 'FileAdmissionError'
+  }
+}
+
+/** Validate the encoded size before allocation and require exact, nonempty base64 bytes. */
+function decodeAttachedFile(data: string): Buffer {
+  if (data.length > 4 * Math.ceil(MAX_ATTACHED_FILE_BYTES / 3)) {
+    throw new FileAdmissionError(`Attached file exceeds ${MAX_ATTACHED_FILE_BYTES} bytes.`, 'FILE_TOO_LARGE')
+  }
+  const bytes = Buffer.from(data, 'base64')
+  if (bytes.length === 0 || bytes.toString('base64') !== data) {
+    throw new FileAdmissionError('File upload must contain nonempty canonical base64.', 'INVALID_FILE_BASE64')
+  }
+  if (bytes.byteLength > MAX_ATTACHED_FILE_BYTES) {
+    throw new FileAdmissionError(`Attached file exceeds ${MAX_ATTACHED_FILE_BYTES} bytes.`, 'FILE_TOO_LARGE')
+  }
+  return bytes
+}
 
 /**
  * Reduce one browser-supplied name to a single safe path segment.
@@ -154,12 +181,7 @@ function attachedFileSegment(name: string): string {
  * model-facing text block that replaces the wire part. The bytes stay on disk;
  * only the path enters model context, so the agent reads the file on demand.
  */
-async function persistAttachedFile(part: { name: string; data: string }): Promise<string> {
-  const bytes = Buffer.from(part.data, 'base64')
-  if (bytes.byteLength === 0) throw new Error('attached file is empty')
-  if (bytes.byteLength > MAX_ATTACHED_FILE_BYTES) {
-    throw new Error(`attached file exceeds ${MAX_ATTACHED_FILE_BYTES} bytes`)
-  }
+async function persistAttachedFile(part: { name: string; bytes: Buffer }): Promise<string> {
   const directory = join(resolveDshHome(), 'uploads')
   await mkdir(directory, { recursive: true })
   const stamp = new Date().toISOString().replace(/[:.]/gu, '-')
@@ -169,8 +191,8 @@ async function persistAttachedFile(part: { name: string; data: string }): Promis
     const suffix = attempt === 0 ? '' : `-${String(attempt)}`
     const target = join(directory, `${stamp}${suffix}-${segment}`)
     try {
-      await writeFile(target, bytes, { flag: 'wx', mode: 0o600 })
-      return `[arquivo anexado] ${target}`
+      await writeFile(target, part.bytes, { flag: 'wx', mode: 0o600 })
+      return `\n\n[arquivo anexado] ${target}\n\n`
     } catch (error: unknown) {
       if ((error as { code?: string }).code !== 'EEXIST') throw error
       if (attempt >= 20) throw error
@@ -183,10 +205,14 @@ async function durablePromptContent(ctx: Context, content: readonly PromptConten
   if (content.every(part => part.type === 'text')) {
     return content.map(part => ({ type: 'text', text: part.text }))
   }
-  const refs = await admitEncodedImages(ctx.attachments, content.filter(part => part.type === 'image'))
+  const prepared = content.map(part => part.type === 'file'
+    ? { ...part, bytes: decodeAttachedFile(part.data) }
+    : part)
+  const images = content.filter(part => part.type === 'image')
+  const refs = images.length === 0 ? [] : await admitEncodedImages(ctx.attachments, images)
   let next = 0
   const blocks: ContentBlock[] = []
-  for (const part of content) {
+  for (const part of prepared) {
     if (part.type === 'text') {
       blocks.push({ type: 'text', text: part.text })
     } else if (part.type === 'file') {
@@ -3340,7 +3366,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
               pending?.delete(stagedMessageId)
               if (pending?.size === 0) pendingAdaptiveSelections.delete(agent)
             }
-            if (error instanceof AttachmentError) {
+            if (error instanceof AttachmentError || error instanceof FileAdmissionError) {
               return err(request, {
                 code: 'attachment-error',
                 message: error.message,
@@ -4099,6 +4125,68 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     },
 
     skills: {
+      async inspect(request) {
+        const { sessionId } = request.payload
+        const session = ctx.sessions.get(sessionId)
+        if (session === undefined) {
+          return err(request, {
+            code: 'session-not-found',
+            message: `session "${sessionId}" not found (not attached)`,
+            details: { sessionId },
+          })
+        }
+        const cwd = session.header.cwd
+        if (cwd === undefined) {
+          return err(request, { code: 'internal', message: `session "${sessionId}" has no project cwd`, details: {} })
+        }
+        const agentPreset = resolveSessionPreset(session)
+        const live = ctx.agents.get(sessionId)
+        const presets = ctx.get('agentPresets')
+        let scope: ScopeKey | undefined = live
+        if (live === undefined && agentPreset !== undefined) {
+          if (presets === undefined) return err(request, noRoster(agentPreset))
+          try {
+            scope = await presets.standingKeyFor(agentPreset)
+          } catch (error: unknown) {
+            if (error instanceof UnknownPresetError) return err(request, presetError(agentPreset, error))
+            return err(request, { code: 'internal', message: `skill inspection cannot resolve recorded agent preset "${agentPreset}"`, details: {} })
+          }
+        }
+        const skillRegistry = (live === undefined ? undefined : presets?.serviceFor(live, 'skills') ?? live.ctx.get('skills'))
+          ?? ctx.get('skills')
+        if (skillRegistry === undefined) {
+          return err(request, { code: 'internal', message: 'skill registry is absent: neither this session\'s agent preset nor the host composition mounts @deepseek-ai/dsh-skill', details: {} })
+        }
+        try {
+          const snapshot = await skillRegistry.snapshot({ cwd, scope })
+          // Discovery can yield while a blank session switches composition.
+          // Reject that observation instead of labelling another preset's catalog as current.
+          if (ctx.sessions.get(sessionId) !== session || ctx.agents.get(sessionId) !== live
+            || resolveSessionPreset(session) !== agentPreset) {
+            return err(request, { code: 'internal', message: 'session composition changed during skill inspection; retry the inspection', details: {} })
+          }
+          const tools = live === undefined ? undefined : presets?.serviceFor(live, 'tools') ?? live.ctx.get('tools')
+          const modelToolAvailable = live !== undefined && skillRegistry.isModelTool(tools?.get('skill', live))
+          return ok(request, {
+            agentPreset: agentPreset ?? null,
+            complete: snapshot.complete && live !== undefined && tools !== undefined,
+            modelToolAvailable,
+            authorization: 'not-evaluated',
+            skills: snapshot.skills.map(skill => ({
+              name: skill.name,
+              description: skill.description,
+              source: SKILL_INSPECTION_SOURCES.has(skill.source) ? skill.source : 'custom',
+              modelInvocable: skill.invocation.modelInvocable && modelToolAvailable,
+              userInvocable: skill.invocation.userInvocable,
+            })),
+            observedAt: new Date().toISOString(),
+          })
+        } catch {
+          // Provider diagnostics may contain private source paths; the read-only wire returns no locations.
+          return err(request, { code: 'internal', message: 'skill inspection failed while reading the session catalog', details: {} })
+        }
+      },
+
       // Skill lookup never creates or resumes an agent: the session address
       // resolves to a canonical cwd from the host-resident session header, and
       // the view scope is the live agent or the preset's standing key.

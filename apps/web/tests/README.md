@@ -44,3 +44,7 @@ That reachability is incidental, not a guarantee — if it ever leaves the graph
 mirror the helper like the rest.
 
 Nothing mechanically enforces this rule; keep it in review.
+
+## Isolated dashboard candidate
+
+`memory-capabilities.e2e.ts` normally consumes the installed browser artifact. For a local check that must preserve an active server's `lib/client.js`, set `DSH_WEB_DASHBOARD_CANDIDATE=1`. A separate Node process with the repository's `tsx/esm` launcher runs the dashboard's real browser bundler with `write: false`; the test serves those bytes only at the isolated scaffold's exact dashboard URL. This opt-in validates a compiled candidate with the real Host composition, not a complete release build. The default CI path still requires current built artifacts. Both modes enforce zero inference and zero memory mutations while inspecting the catalog.

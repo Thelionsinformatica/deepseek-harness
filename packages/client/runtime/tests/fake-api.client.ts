@@ -263,6 +263,10 @@ export class FakeApiClient implements IApiClient {
 
   readonly skills: IApiClient['skills'] = {
     list: (payload: unknown) => this.record('skill.list', payload, this.onSkillList(payload)),
+    inspect: (payload: unknown) => this.record('skill.inspect', payload, Promise.resolve(ok({
+      agentPreset: null, complete: false, modelToolAvailable: false, authorization: 'not-evaluated', skills: [],
+      observedAt: '2026-09-21T00:00:00.000Z',
+    }))),
   }
 
   readonly goals: IApiClient['goals'] = {

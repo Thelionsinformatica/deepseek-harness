@@ -1,0 +1,52 @@
+- banner:
+  - navigation "Session hierarchy":
+    - button "<document-session>" [disabled]
+  - img
+  - text: Standard mode
+  - button "Review memory":
+    - img
+    - text: Review memory
+  - button "Activity"
+  - button "Full screen"
+  - button "Session log":
+    - text: Session log
+    - img
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+- text: "[arquivo anexado] <attached-document> Analise o documento anexado usando a habilidade document-evidence-review. Informe total e prazo com evidência. {{clock}}"
+- button "Copy":
+  - img
+- button "Skill document-evidence-review":
+  - img
+  - img
+  - text: Skill document-evidence-review
+- button "Read <attached-document>":
+  - img
+  - img
+  - text: Read
+  - button "<attached-document>"
+- paragraph: "DOC-4721: 3 itens de 40 reais; total de 120 reais. Prazo não informado. Fonte: documento.md, linhas 3–7."
+- button "Copy":
+  - img
+- button "Good response":
+  - img
+- button "Bad response":
+  - img
+- button "Branch into a new conversation":
+  - img
+- text: {{clock}} Ran for {{duration}}
+- textbox "Message the agent"
+- button "Add":
+  - img
+- 'button "Access mode, current: Workspace Write"': Workspace Write
+- button "Enable web access for this session": Web
+- button "Start voice"
+- button "Select model, current DeepSeek-V4-Flash":
+  - text: DeepSeek-V4-Flash
+  - img
+- button "Send message" [disabled]
+- status:
+  - strong: Leon ready
+  - text: Ready for a new task.
+- text: 1 turns · 3 steps LLM {{duration}} · Tool call {{duration}} TTFT avg {{duration}} 3 unaccounted call(s)

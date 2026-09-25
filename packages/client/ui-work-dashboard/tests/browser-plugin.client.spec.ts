@@ -9,6 +9,22 @@ import { WorkDashboard } from '../src/client/WorkDashboard.tsx'
 import type { WorkDashboardInjected } from '../src/client/WorkDashboard.tsx'
 import { apply, inject } from '../src/client/index.ts'
 
+// This is a source-only coverage lane: generated Typert `./remote` modules are
+// emitted by the build gate and deliberately do not exist yet. Keep this UI
+// composition test on its own boundary while preserving the two-level Remote
+// result contract used by the real facade.
+vi.mock('@deepseek-ai/dsh-api-remotes/client', () => ({
+  remoteValue: (carried: {
+    ok: boolean
+    value?: { ok: boolean; value?: unknown; error?: { code: string } }
+    error?: { code: string; message: string }
+  }) => {
+    if (!carried.ok) throw new Error(`${carried.error?.code ?? 'REMOTE_ERROR'}: ${carried.error?.message ?? ''}`)
+    if (carried.value?.ok !== true) throw new Error(carried.value?.error?.code ?? 'BUSINESS_ERROR')
+    return carried.value.value
+  },
+}))
+
 async function bench(declare = true) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
@@ -109,6 +125,11 @@ async function bench(declare = true) {
     ok: true as const,
     value: { enabled: request.enabled, auditId: 'audit-personal-toggle' },
   }))
+  const inspectSkills = vi.fn((_request: unknown) => Promise.resolve({
+    rpcId: 'inspect-skills',
+    result: { ok: true as const, value: { agentPreset: 'leon', complete: true, modelToolAvailable: true, authorization: 'not-evaluated' as const, skills: [], observedAt: '2026-09-21T12:00:00.000Z' } },
+  }))
+  ctx.provide('connection', { api: { skills: { inspect: inspectSkills } } } as never)
   ctx.provide('sessions', { open })
   ctx.provide('workspaces', { startSession })
   ctx.provide('locale', new LocaleRuntime(ctx))
@@ -155,7 +176,7 @@ async function bench(declare = true) {
   } as never, () => null)
   const disposeHole = declare ? declareHole() : undefined
   return {
-    ctx, slots, open, startSession, list, markReviewed, listMemories, correctMemory, forgetMemory,
+    ctx, slots, open, startSession, list, markReviewed, listMemories, correctMemory, forgetMemory, inspectSkills,
     listPersonalMemories, rememberPersonalMemory, correctPersonalMemory,
     forgetPersonalMemory, setPersonalMemoryEnabled,
     memoryCandidateReview, declareHole, disposeHole,
@@ -165,7 +186,7 @@ async function bench(declare = true) {
 describe('ui-work-dashboard browser plugin', () => {
   it('declares only the services it binds', () => {
     expect(inject).toEqual([
-      'slots', 'sessions', 'workspaces', 'locale', 'remote', 'remote.memoryCandidateReview',
+      'slots', 'sessions', 'workspaces', 'locale', 'remote', 'remote.memoryCandidateReview', 'connection',
     ])
   })
 
@@ -205,6 +226,10 @@ describe('ui-work-dashboard browser plugin', () => {
     const actions = (entry.inject as unknown as () => MemoryReviewInjected)()
     const sessionId = 'session-one' as SessionId
     const candidateId = 'candidate-one' as MemoryCandidateId
+
+    const capabilities = await actions.listCapabilities(sessionId)
+    expect(b.inspectSkills).toHaveBeenCalledWith({ sessionId })
+    expect(capabilities).toMatchObject({ agentPreset: 'leon', complete: true, skills: [] })
 
     const page = await actions.list(sessionId)
     const reviewed = await actions.review(sessionId, candidateId, 'accept')
@@ -322,6 +347,18 @@ describe('ui-work-dashboard browser plugin', () => {
       await expect(invoke()).rejects.toThrow('business-rule')
       spy.mockRestore()
     }
+  })
+
+  it('surfaces a skill-inspection RPC failure without returning a fabricated empty catalog', async () => {
+    const b = await bench()
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const entry = b.slots.entries('conversation.session.header.actions')[0]!
+    const actions = (entry.inject as unknown as () => MemoryReviewInjected)()
+    b.inspectSkills.mockResolvedValueOnce({
+      rpcId: 'failed-inspection',
+      result: { ok: false, error: { code: 'not-found', message: 'session unavailable' } },
+    } as never)
+    await expect(actions.listCapabilities('missing' as SessionId)).rejects.toThrow('session unavailable')
   })
 
   it('delegates task start and recent-session navigation to their owners', async () => {

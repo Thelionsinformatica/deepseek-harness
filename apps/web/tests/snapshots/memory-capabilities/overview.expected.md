@@ -1,0 +1,81 @@
+- region "Memory and skills overview":
+  - text: AGENT CONTEXT
+  - heading "Memory and skills" [level=2]
+  - paragraph: Inspect saved memories and this conversation’s skills. Refreshing does not call AI or change records.
+  - button "Refresh overview"
+  - complementary "Agent profile":
+    - text: Agent profile
+    - heading "Not reported" [level=3]
+    - paragraph: Record inspection
+    - paragraph: "Conversation preset: Not reported"
+    - term: Project
+    - definition: "0"
+    - term: Personal
+    - definition: "1"
+    - term: Skills
+    - definition: "1"
+    - paragraph: Returned active memories and registered skills. + means a partial count; — means a source is loading or unavailable.
+    - text: LAST INSPECTION
+    - paragraph: Catalog inspected at {{date}}, {{clock}}
+  - heading "Context map" [level=3]
+  - group "Record display":
+    - button "Graph" [pressed]
+    - button "Records"
+  - figure "Each node represents a record. Lines link memories by derived similarity, not confirmed facts. Position only arranges groups; up to 12 nodes per group. Select a node or inspect the list.":
+    - group "Memory and skills graph by group":
+      - text: Project 0 of 0 records Personal
+      - button "Inspect node 1 in Personal"
+      - text: 1 of 1 records Skills
+      - button "Inspect node 1 in Skills" [pressed]
+      - text: 1 of 1 records
+    - button "Zoom out graph": −
+    - button "Reset graph zoom": 100%
+    - button "Zoom in graph": +
+    - text: Each node represents a record. Lines link memories by derived similarity, not confirmed facts. Position only arranges groups; up to 12 nodes per group. Select a node or inspect the list.
+  - 'status "Graph: Project"':
+    - strong: "Graph: Project"
+    - text: Graph unavailable for this source.
+  - 'status "Graph: Personal"':
+    - strong: "Graph: Personal"
+    - text: Graph unavailable for this source.
+  - region "Project":
+    - heading "Project" [level=3]
+    - paragraph: No records returned by this source.
+    - list
+  - region "Personal":
+    - heading "Personal" [level=3]
+    - paragraph: "Enabled: Leon may recall personal preferences across projects."
+    - list:
+      - listitem:
+        - button "I prefer concise reports with evidence. Active"
+  - region "Skills":
+    - heading "Skills" [level=3]
+    - list:
+      - listitem:
+        - button "safe-form-review Registered skill" [pressed]
+  - complementary "Record details":
+    - heading "Record details" [level=3]
+    - heading "safe-form-review" [level=4]
+    - paragraph: safe-form-review
+    - paragraph: Inspect a local test form without submitting data.
+    - term: Source
+    - definition: project-agents
+    - term: Status
+    - definition: Visible to the model in this conversation's catalog
+    - term: Direct user invocation permitted by registration
+    - definition: "Yes"
+    - term: Execution authorization
+    - definition: Not evaluated by this inspection; permissions and approvals are checked during execution.
+    - term: Operational test
+    - definition: Not reported by the catalog; registration does not prove operation.
+    - heading "Latest record changes" [level=3]
+    - region "Latest changes calendar":
+      - strong: September 2026
+      - text: S M T W T F S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30
+      - paragraph: Marked days contain records last changed in this month.
+    - paragraph: Latest change dates of returned memory records. Not a complete audit or version history. Personal lists active memories only; up to 100 records per source.
+    - list:
+      - listitem:
+        - button "{{date}}, {{clock}} Personal · I prefer concise reports with evidence.":
+          - time: {{date}}, {{clock}}
+          - text: Personal · I prefer concise reports with evidence.

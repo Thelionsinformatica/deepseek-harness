@@ -164,6 +164,17 @@ describe('createFixtureApi commands/skills', () => {
     const missingSession = await api.skills.list(req({ sessionId: sid('fx-nope') }))
     expect(missingSession.result).toMatchObject({ ok: false, error: { code: 'session-not-found' } })
   })
+
+  it('inspects only an attached fixture session without claiming a functional test', async () => {
+    const api = createFixtureApi()
+    const response = await api.skills.inspect(req({ sessionId: sid('fx-alpha') }))
+    expect(response.result).toMatchObject({ ok: true, value: {
+      agentPreset: 'fixture', complete: true, modelToolAvailable: true, authorization: 'not-evaluated',
+      skills: [{ name: 'fixture-demo', modelInvocable: true }, { name: 'fixture-user-only', modelInvocable: false }],
+    } })
+    const missing = await api.skills.inspect(req({ sessionId: sid('fx-nope') }))
+    expect(missing.result).toMatchObject({ ok: false, error: { code: 'session-not-found' } })
+  })
 })
 
 describe('FixtureApiClient command/skill dispatch', () => {
@@ -177,5 +188,7 @@ describe('FixtureApiClient command/skill dispatch', () => {
     const skills = await client.skills.list({ sessionId: sid('fx-alpha') })
     if (!skills.result.ok) throw new Error('skill.list failed')
     expect(skills.result.value.skills.length).toBeGreaterThan(0)
+    const inspection = await client.skills.inspect({ sessionId: sid('fx-alpha') })
+    expect(inspection.result).toMatchObject({ ok: true, value: { complete: true, modelToolAvailable: true, authorization: 'not-evaluated' } })
   })
 })

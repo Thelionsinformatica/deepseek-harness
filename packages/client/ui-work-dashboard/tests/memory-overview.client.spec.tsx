@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { SessionId, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import type { MemoryAdminItem } from '@deepseek-ai/dsh-tool-memory/types'
+import type { MemoryAdminGraphValue, MemoryAdminItem } from '@deepseek-ai/dsh-tool-memory/types'
 import { MemoryOverviewPanel, type MemoryOverviewProps } from '../src/client/MemoryOverviewPanel.tsx'
 import { MemoryReviewButton, type MemoryReviewButtonProps } from '../src/client/MemoryReviewButton.tsx'
 import { pt } from '../src/client/locales.ts'
@@ -17,6 +17,13 @@ function memory(id: string, content: string, overrides: Partial<MemoryAdminItem>
     sourceSessionId: sessionId, createdAt: '2026-09-20T12:00:00.000Z', updatedAt: '2026-09-21T12:00:00.000Z',
     ...overrides,
   }
+}
+
+function graphPair(prefix = 'project'): MemoryAdminGraphValue['edges'] {
+  return [{
+    a: `${prefix}-one` as MemoryAdminItem['id'], aRevision: 2,
+    b: `${prefix}-two` as MemoryAdminItem['id'], bRevision: 2, score: 0.9,
+  }]
 }
 
 function fixture() {
@@ -45,6 +52,72 @@ function fixture() {
 }
 
 describe('memory and capability overview', () => {
+  it('shows the observed preset and counts active records with partial and unknown sources', async () => {
+    const b = fixture()
+    b.listMemories.mockResolvedValue({
+      items: [memory('one', 'Active'), memory('two', 'Expired', { status: 'expired' })],
+      readOnly: false, hasMore: true, nextOffset: 2,
+    })
+    b.listPersonalMemories.mockRejectedValue(new Error('private source error'))
+    render(<MemoryOverviewPanel {...b.props} />)
+    const profile = screen.getByRole('complementary', { name: pt['memory.overview.agentProfile'] })
+    expect(within(profile).getAllByText('—')).toHaveLength(3)
+    await within(profile).findByRole('heading', { name: 'leon' })
+    expect(within(profile).getByText('1+')).toBeTruthy()
+    expect(within(profile).getByText('1', { selector: 'dd' })).toBeTruthy()
+    expect(within(profile).getByText('—')).toBeTruthy()
+    expect(within(profile).getByText(pt['memory.overview.countsNotice'])).toBeTruthy()
+  })
+
+  it('selects actual graph nodes with keyboard and zooms without fetching or drawing synthetic links', async () => {
+    const b = fixture()
+    const view = render(<MemoryOverviewPanel {...b.props} />)
+    const node = await screen.findByRole('button', { name: 'Inspecionar nó 1 de Projeto' })
+    fireEvent.keyDown(node, { key: 'Enter' })
+    expect(node.getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('complementary', { name: pt['memory.overview.details'] }).textContent).toContain('project-one')
+    expect(view.container.querySelectorAll('line')).toHaveLength(0)
+    const graph = screen.getByRole('group', { name: pt['memory.overview.graph'] })
+    const originalView = graph.getAttribute('viewBox')
+    fireEvent.click(screen.getByRole('button', { name: pt['memory.overview.zoomIn'] }))
+    expect(graph.getAttribute('viewBox')).not.toBe(originalView)
+    expect(screen.getByRole('button', { name: pt['memory.overview.zoomReset'] }).textContent).toBe('125%')
+    fireEvent.click(screen.getByRole('button', { name: pt['memory.overview.zoomReset'] }))
+    expect(graph.getAttribute('viewBox')).toBe(originalView)
+    fireEvent.click(screen.getByRole('button', { name: pt['memory.overview.zoomOut'] }))
+    expect(screen.getByRole('button', { name: pt['memory.overview.zoomOut'] }).hasAttribute('disabled')).toBe(true)
+    expect(b.listCapabilities).toHaveBeenCalledTimes(1)
+    expect(b.listMemories).toHaveBeenCalledTimes(1)
+  })
+
+  it('switches to records and back while retaining the selected details', async () => {
+    const b = fixture()
+    render(<MemoryOverviewPanel {...b.props} />)
+    fireEvent.click(await screen.findByRole('button', { name: /leon-browser/ }))
+    fireEvent.click(screen.getByRole('button', { name: pt['memory.overview.recordsView'], exact: true }))
+    expect(screen.queryByRole('group', { name: pt['memory.overview.graph'] })).toBeNull()
+    expect(screen.getByRole('region', { name: pt['memory.overview.group.skills'] })).toBeTruthy()
+    expect(screen.getByText('preset/skills/leon-browser')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: pt['memory.overview.graphView'], exact: true }))
+    expect(screen.getByRole('button', { name: 'Inspecionar nó 1 de Habilidades' }).getAttribute('aria-pressed')).toBe('true')
+    expect(b.listCapabilities).toHaveBeenCalledTimes(1)
+  })
+
+  it('derives calendar marks from the latest returned update month and keeps the audit limitation visible', async () => {
+    const b = fixture()
+    b.listMemories.mockResolvedValue({ items: [
+      memory('old', 'Old record', { updatedAt: '2026-08-10T12:00:00.000Z' }),
+      memory('recent', 'Recent record', { updatedAt: '2026-09-03T12:00:00.000Z' }),
+    ], readOnly: false, hasMore: false, nextOffset: 2 })
+    render(<MemoryOverviewPanel {...b.props} />)
+    const calendar = await screen.findByRole('region', { name: pt['memory.overview.calendar'] })
+    expect(within(calendar).getAllByTitle(pt['memory.overview.updated']).map(day => day.textContent)).toEqual(['3', '21'])
+    expect(screen.getByText(pt['memory.overview.changesNotice'])).toBeTruthy()
+    const details = screen.getByRole('complementary', { name: pt['memory.overview.details'] })
+    fireEvent.click(within(details).getByRole('button', { name: /Recent record/ }))
+    expect(within(details).getByText('recent', { selector: 'h4' })).toBeTruthy()
+  })
+
   it('loads only after its tab opens and never submits a memory mutation', async () => {
     const b = fixture()
     const list = vi.fn(async () => ({ items: [], hasMore: false, nextOffset: 0 }))
@@ -70,7 +143,7 @@ describe('memory and capability overview', () => {
     })
     b.memoryGraph.mockResolvedValue({
       status: 'computed', generation: 3,
-      edges: [{ a: 'project-one' as MemoryAdminItem['id'], b: 'project-two' as MemoryAdminItem['id'], score: 0.9 }],
+      edges: graphPair(),
     })
     const view = render(<MemoryOverviewPanel {...b.props} />)
     await waitFor(() => {
@@ -78,6 +151,104 @@ describe('memory and capability overview', () => {
     })
     expect(b.memoryGraph).toHaveBeenCalledWith(sessionId)
     expect(b.personalMemoryGraph).toHaveBeenCalledWith(sessionId)
+  })
+
+  it.each((['workspace', 'personal'] as const).flatMap(group => (
+    ['pending', 'failed', 'stale', 'computed', 'empty', 'unavailable'] as const
+  ).map(status => ({ group, status }))))('announces $group graph state $status and only draws computed edges', async ({ group, status }) => {
+    const b = fixture()
+    b.listMemories.mockResolvedValue({
+      items: [memory('project-one', 'First project record'), memory('project-two', 'Second project record')],
+      readOnly: false, hasMore: false, nextOffset: 2,
+    })
+    b.listPersonalMemories.mockResolvedValue({
+      items: [memory('personal-one', 'First personal record'), memory('personal-two', 'Second personal record')],
+      enabled: true, readOnly: false, hasMore: false, nextOffset: 2,
+    })
+    const graph = group === 'workspace' ? b.memoryGraph : b.personalMemoryGraph
+    graph.mockResolvedValue({ status, generation: 3, edges: graphPair(group === 'workspace' ? 'project' : 'personal') })
+    const view = render(<MemoryOverviewPanel {...b.props} />)
+    const label = b.props.t('memory.overview.graphStatus', { value: pt[`memory.overview.group.${group}`] })
+    const state = await screen.findByRole(status === 'failed' ? 'alert' : 'status', { name: label })
+    await waitFor(() => { expect(state.textContent).toContain(pt[`memory.overview.graphState.${status}`]) })
+    expect(state.getAttribute('aria-atomic')).toBe('true')
+    expect(view.container.querySelectorAll('line[stroke-width]')).toHaveLength(status === 'computed' ? 1 : 0)
+  })
+
+  it.each(['aRevision', 'bRevision'] as const)('does not attach an edge to a newer node with the same id when %s differs', async (revision) => {
+    const b = fixture()
+    b.listMemories.mockResolvedValue({
+      items: [memory('project-one', 'New first record'), memory('project-two', 'New second record')],
+      readOnly: false, hasMore: false, nextOffset: 2,
+    })
+    b.memoryGraph.mockResolvedValue({
+      status: 'computed', generation: 4,
+      edges: graphPair().map(edge => ({ ...edge, [revision]: 1 })),
+    })
+    const view = render(<MemoryOverviewPanel {...b.props} />)
+    await screen.findByText(pt['memory.overview.graphState.computed'])
+    expect(view.container.querySelectorAll('line[stroke-width]')).toHaveLength(0)
+    expect(screen.getByRole('region', { name: pt['memory.overview.group.workspace'] }).textContent).toContain('New first record')
+  })
+
+  it('removes previously drawn edges while refreshing and after a stale or failed result', async () => {
+    const b = fixture()
+    b.listMemories.mockResolvedValue({
+      items: [memory('project-one', 'First record'), memory('project-two', 'Second record')],
+      readOnly: false, hasMore: false, nextOffset: 2,
+    })
+    b.memoryGraph.mockResolvedValue({ status: 'computed', generation: 3, edges: graphPair() })
+    const view = render(<MemoryOverviewPanel {...b.props} />)
+    await waitFor(() => { expect(view.container.querySelectorAll('line[stroke-width]')).toHaveLength(1) })
+    let settle!: (value: MemoryAdminGraphValue) => void
+    b.memoryGraph.mockImplementationOnce(() => new Promise((resolve) => { settle = resolve }))
+    fireEvent.click(screen.getByRole('button', { name: pt['memory.overview.refresh'] }))
+    expect(view.container.querySelectorAll('line[stroke-width]')).toHaveLength(0)
+    expect(screen.getByRole('region', { name: pt['memory.overview.aria'] }).getAttribute('aria-busy')).toBe('true')
+    await act(async () => { settle({ status: 'stale', generation: 4, edges: graphPair() }) })
+    expect(view.container.querySelectorAll('line[stroke-width]')).toHaveLength(0)
+    expect(screen.getByText(pt['memory.overview.graphState.stale'])).toBeTruthy()
+    b.memoryGraph.mockResolvedValue({ status: 'failed', generation: 4, edges: graphPair(), failureCode: 'TIMEOUT' })
+    fireEvent.click(screen.getByRole('button', { name: pt['memory.overview.refresh'] }))
+    await screen.findByText(pt['memory.overview.graphState.failed'])
+    expect(view.container.querySelectorAll('line[stroke-width]')).toHaveLength(0)
+  })
+
+  it.each([
+    'computation-failed', 'graph-limit-exceeded', 'INPUT_TOO_LARGE', 'TIMEOUT',
+    'TRANSPORT', 'HTTP_ERROR', 'INVALID_RESPONSE', 'RESPONSE_TOO_LARGE',
+  ])('shows the public failure code %s without hiding other sources', async (failureCode) => {
+    const b = fixture()
+    b.memoryGraph.mockResolvedValue({ status: 'failed', generation: 3, edges: [], failureCode })
+    render(<MemoryOverviewPanel {...b.props} />)
+    const alert = await screen.findByRole('alert', { name: 'Grafo: Projeto' })
+    expect(alert.textContent).toContain(b.props.t('memory.overview.graphFailureCode', { value: failureCode }))
+    expect(screen.getByRole('button', { name: /leon-browser/ })).toBeTruthy()
+    expect(screen.getByRole('status', { name: 'Grafo: Pessoal' }).textContent).toContain(pt['memory.overview.graphState.pending'])
+  })
+
+  it.each(['private-path-error', 'C:\\private\\owner.txt', 'sk-private-token', '<script>private</script>', 'TIMEOUT\nprivate detail'])('never displays an arbitrary failure value: %s', async (failureCode) => {
+    const b = fixture()
+    b.personalMemoryGraph.mockResolvedValue({ status: 'failed', generation: 3, edges: [], failureCode })
+    const view = render(<MemoryOverviewPanel {...b.props} />)
+    const alert = await screen.findByRole('alert', { name: 'Grafo: Pessoal' })
+    expect(alert.textContent).toContain(pt['memory.overview.graphState.failed'])
+    expect(view.container.textContent).not.toContain(failureCode)
+    expect(view.container.textContent).not.toContain('Código da falha:')
+  })
+
+  it('announces graph request failures independently without exposing raw exceptions', async () => {
+    const b = fixture()
+    b.memoryGraph.mockRejectedValue(new Error('private-workspace-error'))
+    b.personalMemoryGraph.mockRejectedValue(new Error('private-personal-error'))
+    const view = render(<MemoryOverviewPanel {...b.props} />)
+    await screen.findByRole('alert', { name: 'Grafo: Projeto' })
+    await screen.findByRole('alert', { name: 'Grafo: Pessoal' })
+    expect(screen.getAllByText(pt['memory.overview.graphState.error'])).toHaveLength(2)
+    expect(view.container.textContent).not.toContain('private-')
+    expect(view.container.querySelectorAll('line[stroke-width]')).toHaveLength(0)
+    expect(screen.getByRole('button', { name: /leon-browser/ })).toBeTruthy()
+    expect(screen.getByRole('region', { name: pt['memory.overview.aria'] }).getAttribute('aria-busy')).toBe('false')
   })
 
   it('projects actual groups, source details and dates without claiming operational verification', async () => {
@@ -95,7 +266,7 @@ describe('memory and capability overview', () => {
     fireEvent.click(within(project).getByRole('button', { name: /Workspace usa testes locais/ }))
     const details = screen.getByRole('complementary', { name: pt['memory.overview.details'] })
     expect(within(details).getByText('project-one')).toBeTruthy()
-    expect(within(details).getByText('2')).toBeTruthy()
+    expect(within(details).getByText('2', { selector: 'dd' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: pt['memory.overview.refresh'] }))
     await waitFor(() => { expect(b.listCapabilities).toHaveBeenCalledTimes(2) })
     expect(screen.queryByText('project-one')).toBeNull()

@@ -1,0 +1,10 @@
+- region "Getting to know you":
+  - strong: Getting to know you
+  - paragraph: An optional conversation about how you like to work.
+  - paragraph: Nothing is saved while you answer. Review each fact before confirming. Do not enter passwords or sensitive data. Preferences do not grant permissions. Approved memories may reach external models according to Leon's configuration.
+  - strong: Review what you want Leon to remember
+  - text: What would you like me to call you?
+  - textbox "What would you like me to call you?": Test operator
+  - button "Confirm and save this fact"
+  - button "Discard"
+  - button "Close and discard drafts"

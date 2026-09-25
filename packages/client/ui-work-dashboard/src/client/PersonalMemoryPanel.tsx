@@ -5,6 +5,7 @@ import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MemoryAdminItem, PersonalMemoryAdminListValue } from '@deepseek-ai/dsh-tool-memory/types'
 import css from './MemoryReviewButton.module.css'
+import { GettingToKnowYou } from './GettingToKnowYou.tsx'
 
 /** Host operations exposed to the owner-isolated personal-memory panel. */
 export interface PersonalMemoryInjected {
@@ -156,6 +157,12 @@ export function PersonalMemoryPanel({
           {state.enabled ? t('memory.personal.disable') : t('memory.personal.enable')}
         </button>
       </div>
+
+      <GettingToKnowYou key={sessionId} t={t} disabled={!state.enabled || state.readOnly || busy}
+        save={async (content) => {
+          const item = await rememberPersonalMemory(sessionId, content)
+          setState(previous => previous.status === 'ready' ? { ...previous, items: [item, ...previous.items] } : previous)
+        }} />
 
       <form className={css.personalComposer} onSubmit={(event) => {
         event.preventDefault()

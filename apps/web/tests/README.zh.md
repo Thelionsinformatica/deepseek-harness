@@ -35,3 +35,7 @@ harness 的用途，且这两个包本来就在 Host 图中。另外，chat 场�
 偶然而非保证——一旦它离开该图，就像其余情形那样镜像该 helper。
 
 没有任何机制强制这条规则；靠 review 守住它。
+
+## 隔离的仪表板候选产物
+
+`memory-capabilities.e2e.ts` 默认使用已安装的浏览器产物。如需在本地检查时保留活动服务器的 `lib/client.js`，设置 `DSH_WEB_DASHBOARD_CANDIDATE=1`。独立 Node 进程通过仓库的 `tsx/esm` 启动器，以 `write: false` 运行仪表板的真实浏览器打包配置；测试只在隔离 scaffold 的精确仪表板 URL 提供这些字节。此选项验证编译候选产物与真实 Host 组合，而非完整发布构建。默认 CI 路径仍要求最新的构建产物。两种模式均强制目录检查不调用推理，也不修改记忆。

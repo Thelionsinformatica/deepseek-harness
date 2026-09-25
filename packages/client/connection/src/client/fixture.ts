@@ -2512,7 +2512,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           if (block.type === 'text') return block
           // Non-image attachment: the fixture mirrors the Host, which stores the
           // bytes below <DSH_HOME>/uploads and names the stored path in context.
-          if (block.type === 'file') return { type: 'text', text: `[arquivo anexado] ${block.name}` }
+          if (block.type === 'file') return { type: 'text', text: `\n\n[arquivo anexado] ${block.name}\n\n` }
           const attachment: ImageAttachmentRef = {
             attachmentId: `fixture:${randomUuid()}` as AttachmentIdType,
             mediaType: block.mediaType,
@@ -2907,6 +2907,19 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     },
 
     skills: {
+      inspect: (request) => {
+        const missing = requireSession(request)
+        if (missing !== undefined) return missing
+        return ok(request, {
+          agentPreset: 'fixture', complete: true, modelToolAvailable: true,
+          authorization: 'not-evaluated',
+          observedAt: '2026-09-21T00:00:00.000Z',
+          skills: [
+            { name: 'fixture-demo', description: 'Fixture skill', source: 'project', modelInvocable: true, userInvocable: true },
+            { name: 'fixture-user-only', description: 'User-only fixture skill', source: 'project', modelInvocable: false, userInvocable: true },
+          ],
+        })
+      },
       list: (request) => {
         const missing = requireSession(request)
         if (missing !== undefined) return missing
@@ -3241,6 +3254,7 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'workspace.unarchiveSession': return this.api.workspace.unarchiveSession(request)
       case 'workspace.deleteSession': return this.api.workspace.deleteSession(request)
       case 'skill.list': return this.api.skills.list(request)
+      case 'skill.inspect': return this.api.skills.inspect(request)
       case 'agentPreset.list': return this.api.agentPresets.list(request)
       case 'agentPreset.select': return this.api.agentPresets.select(request)
       case 'agentPreset.read': return this.api.agentPresets.read(request)

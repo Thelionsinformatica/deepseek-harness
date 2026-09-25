@@ -3,7 +3,7 @@
   align-items: center;
   gap: 0.35rem;
   padding: 0.25rem 0.55rem;
-  color: var(--dsh-color-text-secondary, #b8b8bd);
+  color: var(--dsw-alias-label-secondary);
   background: transparent;
   border: 1px solid transparent;
   border-radius: 0.5rem;
@@ -14,16 +14,26 @@
 
 .trigger:hover,
 .trigger:focus-visible {
-  color: var(--dsh-color-text-primary, #fff);
-  background: rgb(255 255 255 / 7%);
-  border-color: rgb(255 255 255 / 10%);
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-2);
+  border-color: var(--dsw-alias-bg-layer-2);
 }
 
 .memoryDialog.memoryDialog {
   width: min(42rem, calc(100vw - 2rem));
 }
 
+.memoryDialog.overviewDialog {
+  width: min(92rem, calc(100vw - 2rem));
+}
+
+.overviewDialog .modalContent {
+  max-height: calc(90vh - 6rem);
+}
+
 .modalContent {
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
   width: 100%;
   box-sizing: border-box;
   max-height: min(70vh, 42rem);
@@ -44,10 +54,10 @@
 
 .tabs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.35rem;
   padding: 0.25rem;
-  background: rgb(255 255 255 / 4%);
+  background: var(--dsw-alias-bg-layer-2);
   border-radius: 0.65rem;
 }
 
@@ -55,7 +65,7 @@
   min-width: 0;
   overflow-wrap: anywhere;
   padding: 0.5rem 0.75rem;
-  color: var(--dsh-color-text-secondary, #aaaab0);
+  color: var(--dsw-alias-label-secondary);
   background: transparent;
   border: 0;
   border-radius: 0.5rem;
@@ -64,8 +74,8 @@
 }
 
 .tabs button[aria-selected='true'] {
-  color: var(--dsh-color-text-primary, #fff);
-  background: rgb(255 255 255 / 10%);
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-2);
 }
 
 .saved {
@@ -79,23 +89,23 @@
   justify-content: space-between;
   gap: 1rem;
   padding: 0.8rem;
-  background: rgb(255 255 255 / 4%);
-  border: 1px solid rgb(255 255 255 / 9%);
+  background: var(--dsw-alias-bg-layer-2);
+  border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 0.65rem;
 }
 
 .personalControl p {
   margin: 0.2rem 0 0;
-  color: var(--dsh-color-text-secondary, #a8a8ad);
+  color: var(--dsw-alias-label-secondary);
   font-size: 0.8rem;
 }
 
 .personalControl button,
 .personalComposer button {
   padding: 0.45rem 0.75rem;
-  color: var(--dsh-color-text-primary, #fff);
-  background: rgb(255 255 255 / 7%);
-  border: 1px solid rgb(255 255 255 / 12%);
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-2);
+  border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 0.5rem;
   cursor: pointer;
   font: inherit;
@@ -107,7 +117,7 @@
 }
 
 .personalComposer label {
-  color: var(--dsh-color-text-secondary, #a8a8ad);
+  color: var(--dsw-alias-label-secondary);
   font-size: 0.82rem;
 }
 
@@ -132,9 +142,9 @@
 .filters button,
 .editor {
   padding: 0.5rem 0.65rem;
-  color: var(--dsh-color-text-primary, #fff);
-  background: rgb(255 255 255 / 7%);
-  border: 1px solid rgb(255 255 255 / 12%);
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-2);
+  border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 0.5rem;
   font: inherit;
 }
@@ -198,7 +208,7 @@
 .notice,
 .failure p {
   margin: 0;
-  color: var(--dsh-color-text-secondary, #a8a8ad);
+  color: var(--dsw-alias-label-secondary);
   font-size: 0.875rem;
 }
 
@@ -214,8 +224,8 @@
   display: grid;
   gap: 0.7rem;
   padding: 0.9rem;
-  background: rgb(255 255 255 / 4%);
-  border: 1px solid rgb(255 255 255 / 9%);
+  background: var(--dsw-alias-bg-layer-2);
+  border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 0.75rem;
 }
 
@@ -231,13 +241,13 @@
 
 .meta,
 .policy {
-  color: var(--dsh-color-text-tertiary, #88888f);
+  color: var(--dsw-alias-label-tertiary);
   font-size: 0.75rem;
 }
 
 .content {
   margin: 0;
-  color: var(--dsh-color-text-primary, #f2f2f3);
+  color: var(--dsw-alias-label-primary);
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
@@ -249,15 +259,16 @@
 .actions button,
 .failure button {
   padding: 0.42rem 0.75rem;
-  color: var(--dsh-color-text-primary, #fff);
-  background: rgb(255 255 255 / 7%);
-  border: 1px solid rgb(255 255 255 / 12%);
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-2);
+  border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 0.5rem;
   cursor: pointer;
   font: inherit;
 }
 
 .actions button:first-child {
+  color: #fff;
   background: #2857a5;
   border-color: #376bc0;
 }

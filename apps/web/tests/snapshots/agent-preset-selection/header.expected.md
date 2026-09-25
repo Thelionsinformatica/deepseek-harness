@@ -6,6 +6,11 @@
     - img
 - img
 - text: Minimal mode
+- button "Review memory":
+  - img
+  - text: Review memory
+- button "Activity"
+- button "Full screen"
 - button "Session log":
   - text: Session log
   - img

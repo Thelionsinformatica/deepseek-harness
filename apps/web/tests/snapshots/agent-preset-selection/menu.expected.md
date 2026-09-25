@@ -1,5 +1,5 @@
 - menu:
-  - menuitem "Leon The Lions Informática local assistant in Brazilian Portuguese, with coding, files, terminal, search, planning, and automation tools."
+  - menuitem "Leon The Lions Informática assistant for coding, project engineering, automation, and optional persistent memory."
   - menuitem "Standard mode Full coding agent with file editing, shell, file and web search, skills, planning, goals, subagents, and workflows.":
     - text: Standard mode Full coding agent with file editing, shell, file and web search, skills, planning, goals, subagents, and workflows.
     - img

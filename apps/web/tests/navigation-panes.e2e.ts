@@ -15,6 +15,7 @@ import { strFromU8, unzipSync } from 'fflate'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, onTestFailed, vi } from 'vitest'
 import { parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { defineTool } from '@deepseek-ai/dsh-tools'
 import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
   launchWebScaffold, recordFixture, seedSession, watchConsole, webSnapshotMode, type WebScaffold,
@@ -23,6 +24,7 @@ import { newEnglishPage, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/navigation-panes', import.meta.url))
 const SEED = join(SNAPSHOT_DIR, 'seed.jsonl')
+const CATALOG = join(SNAPSHOT_DIR, 'catalog-only.jsonl')
 const TRAJECTORY_EXPECTED = join(SNAPSHOT_DIR, 'trajectory.expected.md')
 const SEARCH_EXPECTED = join(SNAPSHOT_DIR, 'search-results.expected.md')
 const TERMINAL_EXPECTED = join(SNAPSHOT_DIR, 'terminal-card.expected.md')
@@ -85,7 +87,42 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
   let slotErrors: string[] = []
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({})
+    // The history fixture predates persisted presentation metadata and makes
+    // no model call in this test. Mount only the deterministic replay catalog
+    // so host-side slash commands remain usable without a network provider.
+    scaffold = await launchWebScaffold({ replayFixture: CATALOG, replayProvidersOnly: true })
+    // Windows compositions expose `pwsh` while Linux compositions expose
+    // `bash`. This history fixture intentionally records `bash`, so provide a
+    // presentation-only fallback when the active host has no bash tool. The
+    // body is never executed: cold history asks only for the pure presenters.
+    if (scaffold.ctx.tools.get('bash') === undefined) {
+      scaffold.ctx.tools.register(defineTool({
+        name: 'bash',
+        description: 'Cross-platform history presentation fixture.',
+        parameters: {
+          command: { type: 'string', required: true },
+          description: { type: 'string' },
+          workdir: { type: 'string' },
+        },
+        output: {
+          schema: { type: 'string' },
+          render: (_args, value) => [{ type: 'text', text: value }],
+        },
+        presentCall: args => ({
+          card: 'terminal',
+          title: args.command,
+          ...(args.description === undefined ? {} : { description: args.description }),
+          ...(args.workdir === undefined ? {} : { cwd: args.workdir }),
+        }),
+        presentResult: (_args, result) => {
+          const block = result.content.length === 1 ? result.content[0] : undefined
+          return block?.type === 'text' && !result.isError
+            ? { card: 'terminal', output: block.text, exitCode: 0 }
+            : undefined
+        },
+        async execute() { return '' },
+      }))
+    }
     // The workspace-aware flow runs sessions in <workspaceCwd>/workspace;
     // the read targets must live in that session cwd (pre-creation is safe
     // because the picker adopts an existing directory by path).
@@ -515,7 +552,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
 
   it.skipIf(MODE === 'record')('keeps the recorded fixture inventory exact', async () => {
     await assertFixtureInventory(SNAPSHOT_DIR, [
-      'seed.jsonl', 'search-results.expected.md', 'trajectory.expected.md',
+      'catalog-only.jsonl', 'seed.jsonl', 'search-results.expected.md', 'trajectory.expected.md',
       'terminal-card.expected.md',
     ])
   })

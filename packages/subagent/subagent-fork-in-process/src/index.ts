@@ -59,7 +59,9 @@ function completedTurnPrefix(parent: Agent): SessionEvent[] {
  * restrict() and a scoped shadowing persona section).
  */
 class ForkInProcessProvider implements SubagentProvider {
-  readonly capabilities: SubagentCapabilities = { outputSchema: true, depthLimit: true, toolFilter: true, persona: true }
+  readonly capabilities: SubagentCapabilities = {
+    outputSchema: true, depthLimit: true, toolFilter: true, persona: true, setup: true, evidenceTools: true,
+  }
   // Context contract: a forked child IS seeded with the parent's completed-turn prefix.
   readonly inheritsParentContext = true
 

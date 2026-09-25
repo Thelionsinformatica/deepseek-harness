@@ -35,7 +35,6 @@ import type { ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-ll
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
-import type { ToolRestriction } from '@deepseek-ai/dsh-tools'
 import { foldSubagentDescriptor, snapshotSubagentDescriptor } from './descriptor.ts'
 import type { SubagentDescriptorData } from './descriptor.ts'
 import {
@@ -46,7 +45,9 @@ import {
   resolveChildAgentOptions,
   resolveChildDepth,
 } from './child-agent.ts'
-import type { DelegatedPolicyOverrides } from './child-agent.ts'
+import type { ChildComposition, DelegatedPolicyOverrides } from './child-agent.ts'
+import { evaluateSubagentEvidence, subagentEvidenceDiagnostic } from './evidence.ts'
+import type { SubagentEvidence } from './evidence.ts'
 import { assertSubagentMaxDepth } from './depth.ts'
 import { seedDescriptorTurn } from './descriptor-seed.ts'
 import type { ContinuableCreateRequest, ContinuableCreateSpec, SubagentResult, SubagentStartRequest } from './types.ts'
@@ -65,6 +66,8 @@ export interface CoordinatorMessageSource {
 
 /** Durable attribution for a continuable child's explicit parent report. */
 export interface SubagentReportMessageSource {
+  /** Host assessment of this report's current turn, not a model claim. */
+  readonly evidence?: SubagentEvidence
   readonly kind: 'subagent-report'
   /** A message another agent addressed to this one (`relay` context form). */
   readonly form: 'relay'
@@ -80,6 +83,8 @@ export interface SubagentReportMessageSource {
  * transcript that merged them would credit the child with words it never wrote.
  */
 export interface SubagentSettledMessageSource {
+  /** Host assessment independent of the terminal turn outcome. */
+  readonly evidence?: SubagentEvidence
   readonly kind: 'subagent-settled'
   /** A runtime account shown without expanding the row (`notice` context form). */
   readonly form: 'notice'
@@ -124,7 +129,7 @@ export interface ContinuableStartSpec {
    * The delegation request. The manager reserves the stable child id, resolves
    * the durable descriptor, and composes the child itself.
    */
-  readonly request: Omit<SubagentStartRequest, 'label' | 'signal' | 'outputSchema'>
+  readonly request: Omit<SubagentStartRequest, 'label' | 'signal' | 'outputSchema' | 'setup'>
   /** Caller cancellation, owning the operation only until inbox acceptance. */
   readonly signal: AbortSignal
 }
@@ -186,7 +191,7 @@ interface ContinuationHost {
    * @param parent - the exact live direct parent for scoped dispatch.
    * @returns the observer whose edges this epoch publishes.
    */
-  observeActivation(provider: string, childId: SessionId, parent: Agent): ActivationObserver
+  observeActivation(provider: string, childId: SessionId, parent: Agent, evidenceTools?: readonly string[]): ActivationObserver
 }
 
 /**
@@ -195,6 +200,9 @@ interface ContinuationHost {
  * scope is its structural Cordis owner.
  */
 interface Activation {
+  /** Boundary and immutable policy for this residency, excluding replay and seed. */
+  readonly evidenceBoundary: number
+  readonly evidenceTools: readonly string[] | undefined
   /** The durable child this Activation is an epoch of. */
   readonly childId: SessionId
   /**
@@ -262,7 +270,7 @@ interface MaterializeInputs {
     delegatedPolicies: DelegatedPolicyOverrides
   }
   agentOptions: AgentOptions
-  composition: { persona?: string | undefined; toolFilter?: ToolRestriction | undefined }
+  composition: ChildComposition
   signal: AbortSignal
 }
 
@@ -427,6 +435,7 @@ export class SubagentContinuationManager {
       ...agentModel !== undefined ? { agentModel } : {},
       ...request.persona !== undefined ? { persona: request.persona } : {},
       ...request.toolFilter !== undefined ? { toolFilter: request.toolFilter } : {},
+      ...request.evidenceTools !== undefined ? { evidenceTools: request.evidenceTools } : {},
     })
     // Capture before the first await: a later parent switch belongs to the
     // parent's future, not to this child.
@@ -461,7 +470,7 @@ export class SubagentContinuationManager {
         parent,
         create: { seed, meta: childSessionMeta(parent, childDepth, lineageSeedLength), delegatedPolicies },
         agentOptions: resolveChildAgentOptions(parent, request.agentOptions, childDepth),
-        composition: { persona: request.persona, toolFilter: request.toolFilter },
+        composition: { persona: descriptor.persona, toolFilter: descriptor.toolFilter, evidenceTools: descriptor.evidenceTools },
         signal: spec.signal,
       })
       return this.submitMaterialized(
@@ -659,15 +668,20 @@ export class SubagentContinuationManager {
     content: ContentBlock[],
     delivery: SubagentReportDelivery,
   ): MessageId {
+    const evidence = evaluateSubagentEvidence(
+      activation.handle.agent.session.events.slice(activation.evidenceBoundary), activation.evidenceTools,
+    )
     const message = createUserMessage({
       content: [
         { type: 'text' as const, text: `Background subagent ${activation.childId} reported:` },
+        ...evidence === undefined ? [] : [{ type: 'text' as const, text: subagentEvidenceDiagnostic(evidence) }],
         ...content,
       ],
       source: {
         kind: 'subagent-report' as const,
         form: 'relay' as const,
         senderSessionId: activation.childId,
+        ...evidence === undefined ? {} : { evidence },
       },
     })
     if (delivery === 'next-step') {
@@ -982,7 +996,7 @@ export class SubagentContinuationManager {
           ...descriptor.agentProvider !== undefined ? { provider: descriptor.agentProvider } : {},
           ...descriptor.agentModel !== undefined ? { model: descriptor.agentModel } : {},
         },
-        composition: { persona: descriptor.persona, toolFilter: descriptor.toolFilter },
+        composition: { persona: descriptor.persona, toolFilter: descriptor.toolFilter, evidenceTools: descriptor.evidenceTools },
         signal: options.signal,
       })
     } catch (error: unknown) {
@@ -1065,7 +1079,7 @@ export class SubagentContinuationManager {
       applyChildComposition(childCtx, parent, inputs.composition)
       return this.setupRegistry.apply(childCtx)
     }
-    const observer = this.host.observeActivation(provider, childId, parent)
+    const observer = this.host.observeActivation(provider, childId, parent, inputs.composition.evidenceTools)
     // Agent creation owns rollback before handle transfer. A rejection leaves
     // no resident Activation and therefore publishes no lifecycle edge.
     const handle: AgentHandle = create === undefined
@@ -1085,6 +1099,8 @@ export class SubagentContinuationManager {
       })
 
     const activation: Activation = {
+      evidenceBoundary: handle.agent.session.events.length,
+      evidenceTools: inputs.composition.evidenceTools,
       childId,
       // The durable lineage, not merely the caller: creation stamps this same
       // agent into the child's header, and cold resume authorized it against
@@ -1464,10 +1480,13 @@ export class SubagentContinuationManager {
     try {
       const parent = this.ctx.agents.get(activation.parentSession)
       if (parent === undefined) return
-      const summary = settlementSummary(activation.childId, terminal.stopReason)
+      const summary = terminal.evidence?.status === 'missing'
+        ? `Background subagent ${activation.childId} ended (turn: ${terminal.stopReason}); required audit evidence is missing. Do not accept it as a proven result.`
+        : settlementSummary(activation.childId, terminal.stopReason)
       const message = createUserMessage({
         content: [
           { type: 'text' as const, text: summary },
+          ...terminal.evidence === undefined ? [] : [{ type: 'text' as const, text: subagentEvidenceDiagnostic(terminal.evidence) }],
           ...terminal.output === undefined
             ? [{ type: 'text' as const, text: 'It left no closing message.' }]
             : [{ type: 'text' as const, text: 'Its closing message:' }, ...terminal.output],
@@ -1477,6 +1496,7 @@ export class SubagentContinuationManager {
           form: 'notice' as const,
           summary: boundContextSummary(summary),
           senderSessionId: activation.childId,
+          ...terminal.evidence === undefined ? {} : { evidence: terminal.evidence },
         },
       })
       // A parent whose own teardown already began must not be woken. Waking is

@@ -40,6 +40,7 @@ subagent seam 允许一个 agent（智能体）通过具名提供方把工作委
 - `depthLimit`：强制执行 `maxDepth`；
 - `toolFilter`：应用请求的子 agent 工具限制；
 - `persona`：应用每个子 agent 独立的 persona。
+- `evidenceTools`：从子级自身日志评估宿主要求的执行证据；仅用于显式启用的审计委派。
 
 每个进程内子 agent 都通过一次 `applyChildComposition(childCtx, parent, composition)` 调用完成组装：先加入父级的 agent-preset 组合，再应用子 agent 自己的 persona 和工具限制。加入父级组合正是子 agent 获得能力的途径：所有面向模型的行都位于 agent 平面，完全没有加入任何组合的子 agent 抵达模型时会看到空的工具注册表（见 [`dsh-agent-presets`](../../preset/agent-presets/README.zh.md)）。将父级作为参数是刻意设计：这让“组装子 agent 却不做该加入”在各调用点无法表达，而这正是这一次调用所要杜绝的缺陷。未组装 preset roster 的部署不加入任何组合、也不需要加入；其面向模型的行位于宿主组合中，子 agent 已能通过工具注册表的全局层解析到它们。
 
@@ -50,6 +51,18 @@ subagent seam 允许一个 agent（智能体）通过具名提供方把工作委
 ## 持久化描述符
 
 该 Service Definition 拥有版本化的 `subagent/descriptor` 会话事件词汇（`src/descriptor.ts`）：`snapshotSubagentDescriptor()` 会在提供方工作之前校验并分离记录，`foldSubagentDescriptor()` 则会在从已加载子 agent 日志中恢复描述符之前，校验当前版本的完整 payload。每次由本地会话支撑的启动都会追加一个带有提供方名称与生命周期 `mode` 的描述符。`one-shot` 描述符可以携带调用方拥有的可选持久化显示 `label`；`continuable` 描述符要求其持久化创建标签，并另外记录已解析的子 agent `agentOptions.provider`／`model`，以及用于从持久化存储恢复的可选 `persona`／`toolFilter`。这些是显式字段，绝不是可通过合并扩展的 `AgentOptions` 对象，因此无关的扩展值不会破坏继续执行。描述符省略 `subagentDepth`（持久化 header 的 `delegationDepth` 是单调下界）和 `outputSchema`（单次 Activation 的结果约定）。该事件只进入日志：不含 `surfaceOp`，不进入模型历史，并由仅追加日志跨压缩（compaction）保留。格式错误的当前版本 payload 属于损坏；本运行时无法对不受支持的版本进行分类。
+
+<a id="host-owned-audit-evidence"></a>
+
+## 宿主拥有的审计证据
+
+`SubagentStartRequest.evidenceTools` 是由宿主拥有的可选列表，包含 1-64 个不重复的工具名称，既不是模型参数，也不授予权限。子级组合及工具过滤后，每个列出的工具都必须可用，否则启动会在推理前以 `EVIDENCE_TOOL_UNAVAILABLE` 失败。普通工作省略该要求，继续使用描述符 v2；审计工作将其持久化为描述符 v3。冷恢复加载首个权威描述符，而不是父级当前配置或子级报告。已有记录保持不变。
+
+宿主评估激活边界之后的最新轮次。至少一个符合条件的 `tool/call` 必须具有随后成功的 `tool/result`，且源事件序号、调用 id、轮次和步骤一致。fork 种子、此前激活、之前轮次、助手声明和流式分片均不计入；重复结果不能扩大证据数量，重复调用 id 产生的歧义会被排除。`evidence` 包含 `status: observed | missing`、`semanticVerification: unverified`、符合条件的名称以及确切的调用／结果序号引用，不含工具参数或文件内容。成功读取仅证明执行发生，不证明报告的正确性、相关性、完整性或产物新鲜度；父级仍必须复核。
+
+实际 `stopReason` 与子级输出保持不变。缺少证据是独立的宿主评估：前台消费方不得将其接受为已证实结果，`settleRun()` 会将轮次已完成但无证据支持的审计映射为失败的后台任务。可继续子级的报告和结算通知会在持久消息来源中携带宿主评估，并添加强制的 `SUBAGENT_EVIDENCE_MISSING` 或 `SUBAGENT_EVIDENCE_OBSERVED` 前缀，包括直接调用 `reportFrom()` 的情况。证据缺失不会抹去有用的进度报告，也不会伪称子级轮次崩溃。策略和底层调用／结果事件会持久化；每个当前轮次都重新计算评估，而不是信任模型文本。
+
+启用证据要求且明确配置 `toolFilter` 的子级还会为其允许／拒绝名称安装单调执行守卫，覆盖子级作用域新增工具、嵌套分派和 `run_code`。审计参与者不能扩大该范围。这不会改变普通委派；仅有 `evidenceTools` 不构成只读策略。初始只读组合使用自动结算，不为 `report` 提供例外。把稍后安装的作用域工具名加入允许列表，不会让该工具在预检时就可用；显式上报或结构化交付需要兼容的宿主组合。
 
 ## 委派深度
 
@@ -64,6 +77,8 @@ subagent seam 允许一个 agent（智能体）通过具名提供方把工作委
 两条进程内委派路径都会通过共享的子 agent 辅助函数，在委派边界固定子 agent 的权限范围。`captureDelegatedPolicyOverrides(parent)` 会为父会话的显式沙箱覆盖项（`sandboxPolicy.overrideOf()`）创建快照，并在审批能力已组合时将子 agent 的审批策略固定为 `'never'`，无论父级自身采用何种策略。这样，被委派的子 agent 只能在继承的沙箱范围内行动，每次审批请求（例如 `sandbox_permissions` 升权）都会被确定性拒绝，而不会等待无人处理的提示（这两个服务都是可选的 `ctx.get` 消费方）。`appendDelegatedPolicyOverrides()` 则在未发布的设置阶段、在任何 fork 种子之后，把每个值作为一条 `source: 'delegation'` 的 `sandbox/mode` 或 `approval/policy` 事件写入子 agent 自己的日志。因此，新捕获的策略会覆盖种子中的陈旧状态，而子 agent 的生效策略始终可以仅凭其日志重建。沙箱的部署默认值绝不复制：未切换的父级不会记录 `sandbox/mode`，其子 agent 会动态跟随部署默认值。可继续启动会在第一次 await 前捕获策略，并且只为全新物化写入这些委派事件；冷恢复只会重放已持久化的委派事件，不会重新捕获父级策略，因此创建之后的父级切换绝不会追溯性地改变持久化子 agent。每个进程内子 agent 还会收到一条作用域内的运行时上下文声明（`subagent:delegation`），告知其权限范围已固定，需要更宽访问的任务应以上报限制收尾，而不是重试。参见[一次性](../../../.agents/notes/implemented/feature/2026-07-25-subagent-policy-inheritance.zh.md)与[可继续](../../../.agents/notes/implemented/feature/2026-08-10-continuable-subagent-policy-inheritance.zh.md)两篇委派策略 Agent Note。
 
 ## 一次性所有权与生命周期
+
+宿主调用方仅可向声明 `capabilities.setup: true` 的提供方传入 `SubagentStartRequest.setup(childCtx)`。进程内 spawn 和 fork 在子级组合及结构化输出安装后、发布及首次推理前等待该回调；失败会回滚尚未发布的子级。效果归属其作用域。该一次性回调不是模型参数或持久继续字段。消费方可借此在任何工具运行前实施能力守卫；参见[完成审核边界](../../../.agents/notes/implemented/bug-fix/2026-09-21-completion-audit-boundaries.zh.md)。
 
 `provider.start(request): Promise<SubagentRun>` 是所有权转移边界；委派工具也会在其由 Task 支撑的一次性后台路径中使用它。兑现前，提供方拥有设置过程，并且在任何失败路径上都必须取消、回滚并使尚未发布的资源完全停稳。兑现后，run 的所有权转移给调用方；调用方必须在每条路径上调用 `dispose()`。剩余提示词和轮次工作属于 `SubagentRun.result`。
 
@@ -146,6 +161,20 @@ You are a delegated subagent: your permission scope was fixed when you were star
 #### KV Cache 影响
 
 子级内部前缀稳定：该声明在子 agent 生命周期内绝不变化，因此只写入第一份运行时上下文快照一次。父级侧不会直接使缓存失效；具名工具消费方共同负责请求前缀的任何变化。
+
+### 模型上下文中的审计证据
+
+#### 模型看到的内容
+
+只有启用证据要求的子级才收到 `subagent:evidence`，它是顺序为 125、会被记录的运行时上下文贡献。该声明列出宿主允许计入证据的工具，要求每个报告轮次都执行成功，要求引用证据并区分观察与推断，同时明确父级必须复核正确性、子级不能禁用要求。父级报告和结算通知包含前文说明的独立宿主评估，但不修改子级原文。
+
+#### Token 影响
+
+子级承担简短固定策略及合格工具名称，每个父级报告／通知承担一条固定宿主评估。该评估不会添加工具参数、文件内容或第二份证据数据库。
+
+#### KV Cache 影响
+
+策略在子级组合内保持稳定，冷恢复时从描述符重建。父级评估是仅追加消息；普通委派不会增加策略或评估 token。
 
 ## 已知限制与暂缓事项
 

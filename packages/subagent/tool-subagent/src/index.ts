@@ -14,7 +14,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { AgentOptions } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { JsonValue } from '@deepseek-ai/dsh-session'
-import { assertSubagentMaxDepth, settleRun } from '@deepseek-ai/dsh-subagent'
+import { assertEvidenceTools, assertSubagentMaxDepth, settleRun } from '@deepseek-ai/dsh-subagent'
 import type { SubagentProvider, SubagentResult, SubagentRun } from '@deepseek-ai/dsh-subagent'
 import type { JobOutcome } from '@deepseek-ai/dsh-jobs'
 import type {} from '@deepseek-ai/dsh-system-prompt'
@@ -34,6 +34,8 @@ export interface Config {
    * a distinct name.
    */
   toolName?: string
+  /** Maximum logged attempts for this tool in one session; omission leaves it uncapped. Failed calls consume budget. */
+  maxCallsPerSession?: number
   /**
    * Expose `run_in_background` (default true). Disabled instances omit the
    * parameter and reject forced background calls.
@@ -67,6 +69,11 @@ export interface Config {
     deny?: string[]
   }
   /**
+   * Eligible tools whose successful results must be recorded before accepting a
+   * child audit. Omission leaves general delegation unchanged.
+   */
+  evidenceTools?: string[]
+  /**
    * Maximum child depth: a non-negative safe integer (default `3`; `0` forbids
    * delegation entirely), or `'provider-managed'` to send no cap. A numeric cap
    * requires the provider's `depthLimit` capability (mount fails loud
@@ -81,6 +88,7 @@ export interface Config {
 export const Config: z<Config> = z.object({
   provider: z.string().required(),
   toolName: z.string().default('subagent'),
+  maxCallsPerSession: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER),
   enableRunInBackground: z.boolean().default(true),
   backgroundMode: z.union(['one-shot', 'continuable'] as const).default('one-shot'),
   // Prevent Schemastery from materializing omitted agentOptions as `{}`.
@@ -95,6 +103,7 @@ export const Config: z<Config> = z.object({
     allow: z.array(z.string()).default(undefined as unknown as string[]),
     deny: z.array(z.string()).default(undefined as unknown as string[]),
   }).default(undefined as unknown as { allow: string[]; deny: string[] }),
+  evidenceTools: z.array(z.string().min(1)).min(1).default(undefined as unknown as string[]),
   maxDepth: z.union([z.natural().max(Number.MAX_SAFE_INTEGER), z.const('provider-managed' as const)]).default(3),
 })
 
@@ -125,7 +134,9 @@ async function settleStart(start: Promise<SubagentRun>, signal: AbortSignal): Pr
 function stopReasonError(result: SubagentResult): string | undefined {
   switch (result.stopReason) {
     case 'completed':
-      return undefined
+      return result.evidence?.status === 'missing'
+        ? 'subagent audit has no successful recorded tool evidence; do not accept its findings'
+        : undefined
     case 'aborted':
       return 'subagent run was cancelled'
     case 'error':
@@ -167,6 +178,7 @@ type ForegroundToolResult = {
   readonly kind: 'foreground'
   readonly runId: SubagentRun['id']
   readonly output: JsonValue[]
+  readonly evidence?: JsonValue
 }
 
 /**
@@ -188,6 +200,13 @@ async function settleForegroundRun(run: SubagentRun): Promise<ForegroundToolResu
         // Content blocks already cross durable JSON boundaries elsewhere;
         // the registry performs the authoritative lossless snapshot here.
         output: result.output as unknown as JsonValue[],
+        ...result.evidence === undefined ? {} : {
+          evidence: {
+            ...result.evidence,
+            tools: [...result.evidence.tools],
+            calls: result.evidence.calls.map(call => ({ ...call })),
+          },
+        },
       }
     }),
   ])
@@ -274,12 +293,24 @@ function resolveDelegationRun(
 }
 
 export function apply(ctx: Context, config: Config): void {
+  if (config.maxCallsPerSession !== undefined
+    && (!Number.isSafeInteger(config.maxCallsPerSession) || config.maxCallsPerSession < 1)) {
+    throw new Error('tool-subagent: maxCallsPerSession must be a positive safe integer')
+  }
   // Direct apply() bypasses Schemastery's numeric constraints. A direct-apply
   // omission stays capless (the schema default only runs through the loader).
   if (config.maxDepth !== 'provider-managed') assertSubagentMaxDepth(config.maxDepth)
   // Reject an empty explicit filter at load instead of failing every delegation.
   if (config.toolFilter !== undefined && config.toolFilter.allow === undefined && config.toolFilter.deny === undefined) {
     throw new Error('tool-subagent: `toolFilter` is configured but names neither `allow` nor `deny` — remove the key or fill the filter')
+  }
+  if (config.evidenceTools !== undefined) {
+    assertEvidenceTools(config.evidenceTools)
+    const names = config.evidenceTools
+    if (names.some(name => config.toolFilter?.deny?.includes(name)
+      || (config.toolFilter?.allow !== undefined && !config.toolFilter.allow.includes(name)))) {
+      throw new Error('tool-subagent: every evidenceTools entry must be allowed by toolFilter')
+    }
   }
   const backgroundEnabled = config.enableRunInBackground !== false
   const continuable = (config.backgroundMode ?? 'one-shot') === 'continuable'
@@ -305,7 +336,11 @@ export function apply(ctx: Context, config: Config): void {
     }
     disposeTool = ctx.tools.register(defineTool({
       name: toolName,
-      description: wording.description + (backgroundEnabled
+      description: (config.evidenceTools === undefined ? wording.description
+        : 'Delegate an evidence-gathering audit or investigation, not an implementation task. '
+          + 'The host requires successful tool evidence before accepting the child result. '
+          + 'Recorded tool use does not verify the findings: independently check the cited evidence. '
+          + wording.description) + (backgroundEnabled
         // The completion notice is the continuation service's own behavior, not
         // a separately installed capability, so this promise holds whenever the
         // continuable background path is reachable at all.
@@ -359,6 +394,7 @@ export function apply(ctx: Context, config: Config): void {
                 kind: { type: 'string', required: true, const: 'foreground' },
                 runId: { type: 'string', required: true },
                 output: { type: 'array', required: true, items: { type: 'json' } },
+                evidence: { type: 'json' },
               },
             },
           ],
@@ -369,7 +405,8 @@ export function apply(ctx: Context, config: Config): void {
             ? `started background subagent job ${value.jobId}`
             : value.kind === 'continuable'
               ? `started subagent ${value.subagentId}`
-              : outputValueText(value.output),
+              : (value.evidence === undefined ? '' : 'Host tool evidence recorded; findings remain unverified.\n')
+                + outputValueText(value.output),
         }],
       },
       // Children never mutate the parent session; the one parent-owned write
@@ -382,6 +419,19 @@ export function apply(ctx: Context, config: Config): void {
           throw new Error('subagent tool requires a calling agent (exec.agent was undefined)')
         }
 
+        if (config.maxCallsPerSession !== undefined) {
+          const calls = parent.session.events.filter(event => event.type === 'tool/call' && event.data.name === toolName)
+          const position = calls.findIndex(event => event.type === 'tool/call' && event.data.callId === exec.callId)
+          if (position < 0) throw new Error('Bounded delegation requires its logged tool/call record before execution')
+          if (position >= config.maxCallsPerSession) {
+            throw new Error(`Delegation limit reached: ${config.maxCallsPerSession} attempt(s) per session for ${toolName}. Failed attempts count. Do not retry or replace this delegation; report the blocker.`)
+          }
+          if (parent.session.events.some(event => event.type === 'tool/result'
+            && event.data.message.source.callId === exec.callId)) {
+            throw new Error('This delegation attempt already has a persisted result; do not execute it again')
+          }
+        }
+
         const maxDepth = typeof config.maxDepth === 'number' ? config.maxDepth : undefined
         const auxiliary = ctx.get('agentDefaultModel')?.auxiliarySelection('worker')
         const agentOptions = auxiliary === undefined ? config.agentOptions : { ...config.agentOptions, ...auxiliary }
@@ -392,6 +442,7 @@ export function apply(ctx: Context, config: Config): void {
           ...agentOptions === undefined ? {} : { agentOptions },
           ...config.persona !== undefined ? { persona: config.persona } : {},
           ...config.toolFilter !== undefined ? { toolFilter: config.toolFilter } : {},
+          ...config.evidenceTools !== undefined ? { evidenceTools: config.evidenceTools } : {},
           ...maxDepth !== undefined ? { maxDepth } : {},
         }
 

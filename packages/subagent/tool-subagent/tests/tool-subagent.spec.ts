@@ -5,9 +5,9 @@ import path from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import AgentDefaultModelConfig from '@deepseek-ai/dsh-agent-default-model'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { CallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime, { TOOL_ABORTED_BEFORE_DISPATCH } from '@deepseek-ai/dsh-tools'
+import ToolRuntime, { TOOL_ABORTED_BEFORE_DISPATCH, defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 import { assembleContextFor, type Agent } from '@deepseek-ai/dsh-agent'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
@@ -18,10 +18,10 @@ import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
-import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
+import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import * as mock from './scripted-provider.ts'
 import * as tool from '../src/index.ts'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import { Session, SessionId } from '@deepseek-ai/dsh-session'
 
 const testToolSignal = new AbortController().signal
 
@@ -69,6 +69,162 @@ function text(result: { content: { type: string; text?: string }[] }): string {
 }
 
 describe('dsh-tool-subagent', () => {
+  it.each(['none', 'read', 'write', 'failed-read'] as const)(
+    'keeps audit evidence separate from child completion for %s', async (attempt) => {
+      const ctx = new Context()
+      try {
+        await mountAgentLoopTestDependencies(ctx)
+        await ctx.plugin(AgentLoop, { agents: [] })
+        await ctx.plugin(SubagentRuntime)
+        await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
+        let writes = 0
+        for (const name of ['read', 'write']) {
+          ctx.tools.register(defineContentToolFixture({
+            name, description: name, parameters: {},
+            execute: async () => {
+              if (name === 'write') writes++
+              if (attempt === 'failed-read') throw new Error('fixture read failed')
+              return [{ type: 'text', text: 'verified fixture bytes' }]
+            },
+          }))
+        }
+        await ctx.plugin(tool, {
+          provider: 'spawn', enableRunInBackground: false,
+          toolFilter: { allow: ['read'] }, evidenceTools: ['read'],
+          agentOptions: { provider: 'child', model: 'child' },
+        })
+        ctx.llm.registerAdapter(['parent'], new MockAdapter([
+          toolCallResponse('audit-call', 'subagent', {
+            description: 'Audit fixture', prompt: 'Inspect the fixture',
+            evidenceTools: [], toolFilter: { allow: ['read', 'write'] },
+          }),
+          textResponse('parent checks host evidence'),
+        ]))
+        const childModel = new MockAdapter([
+          ...attempt === 'none' ? [] : [toolCallResponse('audit-probe', attempt === 'write' ? 'write' : 'read', {})],
+          textResponse('child claims audit complete'),
+        ])
+        ctx.llm.registerAdapter(['child'], childModel)
+        const parent = ctx.agentLoop.create(SessionId(`audit-${attempt}`), { provider: 'parent', model: 'parent' })
+        parent.followup(createUserMessage({ content: [{ type: 'text', text: 'start audit' }], source: { kind: 'user' } }))
+        await parent.whenIdle()
+        const result = parent.session.events.find(event => event.type === 'tool/result')
+        expect(writes).toBe(0)
+        expect(childModel.requests[0]?.tools?.map(entry => entry.name)).toEqual(['read'])
+        expect(JSON.stringify(result)).toContain(attempt === 'read'
+          ? 'Host tool evidence recorded; findings remain unverified.'
+          : 'subagent audit has no successful recorded tool evidence')
+      } finally {
+        await ctx.fiber.dispose()
+      }
+    },
+  )
+
+  it.each([[], [''], [' '], ['read', 'read']].map(evidenceTools => ({ evidenceTools })))(
+    'rejects invalid configured audit evidence $evidenceTools', async ({ evidenceTools }) => {
+      const ctx = new Context()
+      try {
+        expect(() => { tool.apply(ctx, { provider: 'mock', evidenceTools }) }).toThrow()
+      } finally {
+        await ctx.fiber.dispose()
+      }
+    })
+
+  it.each([{ allow: ['glob'] }, { deny: ['read'] }])('rejects audit evidence excluded by %j', async (toolFilter) => {
+    const ctx = new Context()
+    try {
+      expect(() => { tool.apply(ctx, { provider: 'mock', evidenceTools: ['read'], toolFilter }) }).toThrow('must be allowed')
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('enforces the attempt cap and a read-only child filter through real parent and child loops', async () => {
+    const ctx = new Context()
+    await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(AgentLoop, { agents: [] })
+    await ctx.plugin(SubagentRuntime)
+    await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
+    let writes = 0
+    for (const name of ['read', 'write']) {
+      ctx.tools.register(defineContentToolFixture({
+        name, description: name, parameters: {},
+        execute: async () => {
+          if (name === 'write') writes++
+          return [{ type: 'text', text: 'ok' }]
+        },
+      }))
+    }
+    await ctx.plugin(tool, {
+      provider: 'spawn', enableRunInBackground: false, maxCallsPerSession: 1,
+      toolFilter: { allow: ['read'] }, agentOptions: { provider: 'child', model: 'child' },
+    })
+    const args = { description: 'inspect', prompt: 'inspect only' }
+    ctx.llm.registerAdapter(['parent'], new MockAdapter([
+      toolCallResponse('attempt-1', 'subagent', args),
+      toolCallResponse('attempt-2', 'subagent', args),
+      textResponse('blocked retry acknowledged'),
+    ]))
+    const childModel = new MockAdapter([
+      toolCallResponse('unauthorized-write', 'write', {}), textResponse('read-only result'),
+    ])
+    ctx.llm.registerAdapter(['child'], childModel)
+    const parent = ctx.agentLoop.create(SessionId('bounded-loop'), { provider: 'parent', model: 'parent' })
+    parent.followup(createUserMessage({ content: [{ type: 'text', text: 'start' }], source: { kind: 'user' } }))
+    await parent.whenIdle()
+    const results = parent.session.events.filter(event => event.type === 'tool/result')
+    expect(results).toHaveLength(2)
+    expect(JSON.stringify(results[0])).toContain('read-only result')
+    expect(JSON.stringify(results[1])).toContain('Delegation limit reached')
+    expect(writes).toBe(0)
+    expect(childModel.requests).toHaveLength(2)
+    expect(childModel.requests[0]?.tools?.map(entry => entry.name)).toEqual(['read'])
+    expect(JSON.stringify(childModel.requests[1])).toContain('unknown tool')
+    const replay = await ctx.tools.execute({
+      signal: testToolSignal, callId: CallId('attempt-1'), name: 'subagent', arguments: args, agent: parent,
+    })
+    expect(replay.isError).toBe(true)
+    expect(text(replay)).toContain('already has a persisted result')
+    expect(childModel.requests).toHaveLength(2)
+  })
+
+  it.each([0, -1, 1.5, Number.POSITIVE_INFINITY])('rejects invalid delegation budget %s', async (maxCallsPerSession) => {
+    await expect(setup({ provider: 'mock', maxCallsPerSession })).rejects.toThrow()
+  })
+
+  it('fails closed when a bounded invocation has no logged call', async () => {
+    const ctx = await setup({ provider: 'mock', maxCallsPerSession: 1 })
+    const session = Session.create(SessionId('bounded-missing'))
+    const agent = { id: session.id, session } as unknown as Agent
+    const result = await callSubagent(ctx, { description: 'd', prompt: 'p' }, { agent })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('tool/call record')
+  })
+
+  it.each(['completed', 'error'] as const)('counts logged attempts including %s across restoration and parallel dispatch', async (stopReason) => {
+    const started: string[] = []
+    const ctx = await setup({ provider: 'mock', maxCallsPerSession: 1 }, {
+      stopReason,
+      onStart: (request) => { started.push(request.label ?? '') },
+    })
+    const original = Session.create(SessionId(`bounded-${stopReason}`))
+    original.append('turn/start', { turn: 1 })
+    const args = { description: 'first', prompt: 'p', run_in_background: false }
+    for (const callId of ['budget-first', 'budget-second']) {
+      original.append('tool/call', { turn: 1, step: 1, callId: CallId(callId), name: 'subagent', arguments: JSON.stringify(args) })
+    }
+    const session = Session.fromRestore(original.id, structuredClone(original.events), structuredClone(original.header))
+    const agent = { id: session.id, session } as unknown as Agent
+    const invoke = (id: string) => ctx.tools.execute({
+      signal: testToolSignal, callId: CallId(id), name: 'subagent', arguments: args, agent,
+    })
+    const [first, second] = await Promise.all([invoke('budget-first'), invoke('budget-second')])
+    expect(first.isError).toBe(stopReason !== 'completed')
+    expect(second.isError).toBe(true)
+    expect(text(second)).toContain('Delegation limit reached')
+    expect(started).toEqual(['first'])
+  })
+
   it('rejects continuable background policy when the provider cannot prepare continuable children', async () => {
     let failure: unknown
     try {

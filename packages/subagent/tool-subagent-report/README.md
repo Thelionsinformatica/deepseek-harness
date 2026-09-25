@@ -8,7 +8,7 @@ The child-scoped `tool:report` prompt section instructs the child to call `repor
 
 `reportDelivery` selects parent scheduling for every accepted report. `next-step` (the default) uses `parent.steer()`: a running parent receives the report at its nearest safe step boundary, while an idle parent starts a turn. Reports accepted in sequence share the next-step FIFO, including the later manager-authored settlement notice, so the parent cannot observe settlement before an earlier report; reports waiting together enter one claimed batch. `quiet` uses `parent.inject()`, adding the same next-step context without waking a parked parent. This is deployment scheduling policy, so the model-facing schema cannot select or override it per call.
 
-Scope-local registration deliberately survives the child's global `toolFilter`, so a delegation allow-list cannot remove the only return channel. A deployment that requires a child with no return channel omits this package.
+Ordinary scope-local registration deliberately survives the child's global `toolFilter`. An opt-in host audit with persisted `evidenceTools` and an explicit filter excluding `report` is different: installation reads the child's own authoritative descriptor, excluding any fork seed, and omits both the tool and its mandatory guidance before inference. Cold resume repeats that decision from the descriptor; child text cannot override it. Such audits return through the continuation manager's automatic settlement notice, with its separate host evidence assessment. No execution-guard exception is introduced. A deployment requiring no reporting channel for any child can still omit this package entirely.
 
 The contribution body is exported as `installReportTool(childCtx, ctx, delivery)` so inspection consumers can install `report` and its guidance into a minted child scope, and returns the one disposer revoking both. The generated tool catalog uses that path because the global registry cannot expose a scope-local schema. Production composition still enters through `apply()`; the subagent seam's contribution registry remains private.
 
@@ -23,6 +23,8 @@ The generated [`report` schema](../../../docs/tool-catalog.md#deepseek-aidsh-too
 #### Token effect
 
 Fixed schema and prompt-section cost per continuable-child request, and none in any other Agent's requests.
+
+Host-restricted audits that omit `report` pay neither its schema nor its guidance cost and receive no impossible instruction to call it.
 
 #### KV Cache effect
 

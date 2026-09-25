@@ -24,8 +24,10 @@ import {
   captureDelegatedPolicyOverrides,
   childSessionMeta,
   finalAssistantOutput,
+  evaluateSubagentEvidence,
   resolveChildAgentOptions,
   resolveChildDepth,
+  SubagentError,
 } from '@deepseek-ai/dsh-subagent'
 import type {
   ResolvedSubagentStartRequest,
@@ -36,6 +38,7 @@ import type {
 } from '@deepseek-ai/dsh-subagent'
 import {
   attachStructuredRuntime,
+  STRUCTURED_OUTPUT_TOOL,
   type StructuredAttachment,
 } from './structured.ts'
 
@@ -105,6 +108,14 @@ export async function startInProcessRun(
 ): Promise<SubagentRun> {
   assertSubagentMaxDepth(request.maxDepth)
   if (request.signal.aborted) throw prePublicationAbort()
+  if (request.outputSchema !== undefined && request.descriptor.evidenceTools !== undefined
+    && (request.toolFilter?.deny?.includes(STRUCTURED_OUTPUT_TOOL)
+      || (request.toolFilter?.allow !== undefined && !request.toolFilter.allow.includes(STRUCTURED_OUTPUT_TOOL)))) {
+    throw new SubagentError(
+      'audit tool scope excludes structured_output required by outputSchema; choose a compatible host composition before starting',
+      'EVIDENCE_OUTPUT_SCOPE_CONFLICT',
+    )
+  }
   const parent = request.parent
   const childDepth = resolveChildDepth(parent, request.maxDepth)
 
@@ -117,16 +128,18 @@ export async function startInProcessRun(
   const inherited = captureDelegatedPolicyOverrides(parent)
 
   let structured: StructuredAttachment | undefined
-  const setup = (childCtx: Context): void => {
+  const setup = async (childCtx: Context): Promise<void> => {
     appendDelegatedPolicyOverrides((childCtx.agent as Agent).session, inherited)
     applyChildComposition(childCtx, parent, {
       persona: request.persona,
       toolFilter: request.toolFilter,
+      evidenceTools: request.descriptor.evidenceTools,
     })
     if (request.outputSchema !== undefined) {
       structured = attachStructuredRuntime(childCtx, request.outputSchema)
     }
     attachDescriptorAppend(childCtx, request.descriptor)
+    await request.setup?.(childCtx)
   }
 
   const handle = await parent.ctx.agents.create({
@@ -144,6 +157,7 @@ export async function startInProcessRun(
     childId,
     activationBoundary,
     structured,
+    request.descriptor.evidenceTools,
   )
 }
 
@@ -158,6 +172,7 @@ function drivePublishedRun(
   childId: SessionId,
   boundary: number,
   structured: StructuredAttachment | undefined,
+  evidenceTools: readonly string[] | undefined,
 ): SubagentRun {
   const child = handle.agent
   const flags = { cancelled: false }
@@ -177,12 +192,14 @@ function drivePublishedRun(
         child.followup(createUserMessage({ content: prompt, source: { kind: 'user' } }))
         await child.whenIdle()
       }
-      return readResult(
+      const result = readResult(
         child,
         boundary,
         flags.cancelled,
         structured ? { captured: structured.captured() } : undefined,
       )
+      const evidence = evaluateSubagentEvidence(child.session.events.slice(boundary), evidenceTools)
+      return evidence === undefined ? result : { ...result, evidence }
     } finally {
       signal.removeEventListener('abort', onAbort)
     }

@@ -11,6 +11,7 @@ import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SubagentReportDelivery } from '@deepseek-ai/dsh-subagent'
+import { foldSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
@@ -51,6 +52,16 @@ export function installReportTool(
   ctx: Context,
   delivery: SubagentReportDelivery,
 ): () => void {
+  const child = childCtx.agent
+  const descriptor = child === undefined ? undefined
+    : foldSubagentDescriptor(child.session.events.slice(child.session.header.seedLength ?? 0))
+  if (descriptor?.mode === 'continuable' && descriptor.evidenceTools !== undefined
+    && (descriptor.toolFilter?.deny?.includes('report')
+      || (descriptor.toolFilter?.allow !== undefined && !descriptor.toolFilter.allow.includes('report')))) {
+    // Host-owned read-only audits use automatic settlement. Do not present a
+    // return tool or obligation that the monotonic execution guard will deny.
+    return () => {}
+  }
   const disposeSection = childCtx.systemPrompt.section({
     name: 'tool:report',
     order: REPORT_SECTION_ORDER,

@@ -11,6 +11,7 @@ import { CallId, LlmAdapter, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
@@ -53,6 +54,10 @@ class HeldAdapter extends LlmAdapter {
     this.released = true
     for (const gate of this.gates.values()) gate.resolve(undefined)
     this.gates.clear()
+  }
+
+  hold(sessionId: SessionId): void {
+    this.releasedSessions.delete(sessionId)
   }
 }
 
@@ -160,6 +165,51 @@ async function sectionNames(ctx: Context, agent: Agent): Promise<string[]> {
 }
 
 describe('dsh-tool-subagent-report', () => {
+  it('omits report and its impossible guidance for host-restricted audits, including cold resume', async () => {
+    const { ctx, parent, adapter } = await setup()
+    ctx.tools.register(defineContentToolFixture({
+      name: 'read', description: 'Read fixture', parameters: {},
+      execute: () => Promise.resolve([{ type: 'text', text: 'fixture' }]),
+    }))
+    const started = await ctx.subagents.startContinuable({
+      provider: 'spawn', label: 'read-only audit', signal: testSignal,
+      request: {
+        parent, prompt: [{ type: 'text', text: 'Audit without writes or explicit reports.' }],
+        evidenceTools: ['read'], toolFilter: { allow: ['read'] },
+      },
+    })
+    const child = ctx.agents.get(started.childId)!
+    expect(ctx.tools.schemas(child).map(schema => schema.name)).not.toContain('report')
+    expect(await sectionNames(ctx, child)).not.toContain('tool:report')
+    expect((await callReport(ctx, child, 'try to expand scope')).isError).toBe(true)
+    adapter.release(started.childId)
+    await vi.waitFor(() => { expect(ctx.agents.get(started.childId)).toBeUndefined() })
+    adapter.hold(started.childId)
+    await ctx.subagents.followup(parent, started.childId, [{ type: 'text', text: 'Audit again.' }], {
+      signal: testSignal, source: { kind: 'user' },
+    })
+    const resumed = ctx.agents.get(started.childId)!
+    expect(resumed).not.toBe(child)
+    expect(ctx.tools.schemas(resumed).map(schema => schema.name)).not.toContain('report')
+    expect(await sectionNames(ctx, resumed)).not.toContain('tool:report')
+    adapter.release(started.childId)
+    await vi.waitFor(() => { expect(ctx.agents.get(started.childId)).toBeUndefined() })
+    const loaded = await ctx.sessionPersistence.load(started.childId)
+    expect(loaded.events.find(event => event.type === 'subagent/descriptor')?.data).toMatchObject({ evidenceTools: ['read'], version: 3 })
+    expect(loaded.events.filter(event => event.type === 'turn/end').at(-1)?.data).toMatchObject({ reason: { kind: 'completed' } })
+  })
+
+  it('keeps the legacy scoped reporting channel when evidence policy is absent', async () => {
+    const { ctx, parent } = await setup()
+    const started = await ctx.subagents.startContinuable({
+      provider: 'spawn', label: 'ordinary', signal: testSignal,
+      request: { parent, prompt: [{ type: 'text', text: 'Discuss.' }], toolFilter: { allow: [] } },
+    })
+    const child = ctx.agents.get(started.childId)!
+    expect(ctx.tools.schemas(child).map(schema => schema.name)).toContain('report')
+    expect(await sectionNames(ctx, child)).toContain('tool:report')
+  })
+
   it('registers report only in continuable child scopes', async () => {
     const { ctx, parent } = await setup()
     expect(ctx.tools.schemas().map(schema => schema.name)).not.toContain('report')

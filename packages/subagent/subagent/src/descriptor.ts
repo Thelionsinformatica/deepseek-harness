@@ -24,6 +24,7 @@
 import { snapshotJsonValue } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ToolRestriction } from '@deepseek-ai/dsh-tools'
+import { assertEvidenceTools } from './evidence.ts'
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
@@ -39,21 +40,24 @@ declare module '@deepseek-ai/dsh-session/types' {
 }
 
 /**
- * The current descriptor format version, stamped into every appended
- * `subagent/descriptor` event and required verbatim by {@link foldSubagentDescriptor}.
- * Supporting another composition input is a deliberate version change, never
- * an implicit extra field.
+ * The ordinary descriptor format version. Evidence-requiring children use
+ * {@link SUBAGENT_EVIDENCE_DESCRIPTOR_VERSION}; both are explicitly parsed.
+ * Existing ordinary records are not rewritten or implicitly upgraded.
  */
 export const SUBAGENT_DESCRIPTOR_VERSION = 2
+/** Opt-in evidence composition has its own version; ordinary children remain v2. */
+export const SUBAGENT_EVIDENCE_DESCRIPTOR_VERSION = 3
 
 /** Fields shared by every supported `subagent/descriptor` payload. */
 interface SubagentDescriptorBase {
-  /** Descriptor format version ({@link SUBAGENT_DESCRIPTOR_VERSION}). */
+  /** Ordinary v2 or opt-in evidence v3 descriptor format. */
   readonly version: number
   /** Whether the child is a terminal one-shot run or a resumable conversation. */
   readonly mode: 'one-shot' | 'continuable'
   /** The `ctx.subagents` provider name that established the child. */
   readonly provider: string
+  /** Host evidence requirement; present only in format v3. */
+  readonly evidenceTools?: readonly string[]
 }
 
 /** A session-backed subagent that cannot be cold-resumed after its run. */
@@ -93,6 +97,8 @@ interface SubagentDescriptorInputBase {
   readonly mode: 'one-shot' | 'continuable'
   /** The `ctx.subagents` provider name that will establish the child. */
   readonly provider: string
+  /** Host-owned eligible tool names; omitted for ordinary delegations. */
+  readonly evidenceTools?: readonly string[]
 }
 
 /** Input for a one-shot child's durable identity. */
@@ -127,6 +133,7 @@ const DESCRIPTOR_BASE_KEYS = [
   'mode',
   'provider',
   'label',
+  'evidenceTools',
 ] as const
 const ONE_SHOT_DESCRIPTOR_KEYS = new Set(DESCRIPTOR_BASE_KEYS)
 const CONTINUABLE_DESCRIPTOR_KEYS = new Set([
@@ -201,7 +208,16 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
   if (typeof version !== 'number') {
     throw new Error('persisted subagent descriptor version must be a number')
   }
-  if (version !== SUBAGENT_DESCRIPTOR_VERSION) return undefined
+  if (version !== SUBAGENT_DESCRIPTOR_VERSION && version !== SUBAGENT_EVIDENCE_DESCRIPTOR_VERSION) return undefined
+  let evidenceTools: readonly string[] | undefined
+  if (version === SUBAGENT_DESCRIPTOR_VERSION && Object.hasOwn(value, 'evidenceTools')) {
+    throw new Error('persisted v2 subagent descriptor cannot contain evidenceTools')
+  }
+  if (version === SUBAGENT_EVIDENCE_DESCRIPTOR_VERSION) {
+    const tools = value['evidenceTools']
+    assertEvidenceTools(tools)
+    evidenceTools = tools
+  }
 
   const mode = value['mode']
   if (mode !== 'one-shot' && mode !== 'continuable') {
@@ -219,9 +235,10 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
   if (mode === 'one-shot') {
     const label = optionalString(value, 'label')
     return {
-      version: SUBAGENT_DESCRIPTOR_VERSION,
+      version,
       mode,
       provider,
+      ...evidenceTools !== undefined ? { evidenceTools: [...evidenceTools] } : {},
       ...label !== undefined ? { label } : {},
     }
   }
@@ -236,9 +253,10 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
     ? parseToolFilter(value['toolFilter'])
     : undefined
   return {
-    version: SUBAGENT_DESCRIPTOR_VERSION,
+    version,
     mode,
     provider,
+    ...evidenceTools !== undefined ? { evidenceTools: [...evidenceTools] } : {},
     label,
     ...agentProvider !== undefined ? { agentProvider } : {},
     ...agentModel !== undefined ? { agentModel } : {},
@@ -269,15 +287,20 @@ export function snapshotSubagentDescriptor(
   input: ContinuableSubagentDescriptorInput,
 ): ContinuableSubagentDescriptorData
 export function snapshotSubagentDescriptor(input: SubagentDescriptorInput): SubagentDescriptorData {
+  if (input.evidenceTools !== undefined) assertEvidenceTools(input.evidenceTools)
+  const version = input.evidenceTools === undefined ? SUBAGENT_DESCRIPTOR_VERSION : SUBAGENT_EVIDENCE_DESCRIPTOR_VERSION
+  const evidence = input.evidenceTools === undefined ? {} : { evidenceTools: [...input.evidenceTools] }
   const candidate: SubagentDescriptorData = input.mode === 'one-shot'
     ? {
-      version: SUBAGENT_DESCRIPTOR_VERSION,
+      version,
+      ...evidence,
       mode: input.mode,
       provider: input.provider,
       ...input.label !== undefined ? { label: input.label } : {},
     }
     : {
-      version: SUBAGENT_DESCRIPTOR_VERSION,
+      version,
+      ...evidence,
       mode: input.mode,
       provider: input.provider,
       label: input.label,
@@ -300,8 +323,7 @@ export function snapshotSubagentDescriptor(input: SubagentDescriptorInput): Suba
  * composition.
  * @param events - the loaded child session events.
  * @returns the descriptor, or `undefined` when the log has none or its
- *   version is not {@link SUBAGENT_DESCRIPTOR_VERSION} (the child cannot be
- *   classified by this runtime).
+ *   version is neither supported v2 nor v3 (the child cannot be classified).
  * @throws when a current-version persisted payload does not match its complete
  *   declared schema.
  */

@@ -40,6 +40,7 @@ Start-time features are advertised in `provider.capabilities` because the servic
 - `depthLimit` — enforce `maxDepth`.
 - `toolFilter` — apply the requested child tool restriction.
 - `persona` — apply a per-child persona.
+- `evidenceTools` — evaluate host-required execution evidence from the child's own log; opt-in audit delegations only.
 
 Every in-process child is composed by one call, `applyChildComposition(childCtx, parent, composition)`, which joins the parent's agent-preset composition before applying the child's own persona and tool filter. The join is what gives the child its capabilities: with every model-facing row on the agent plane, a child that joined nothing would reach the model with an empty tool registry ([`dsh-agent-presets`](../../preset/agent-presets/README.md)). Taking the parent as a parameter is deliberate — it makes composing a child WITHOUT that join unrepresentable at the call sites, which is the defect the one call exists to prevent. A deployment composing no preset roster joins nothing and needs nothing: its model-facing rows sit in the host composition, where the child already resolves them through the tool registry's global layer.
 
@@ -50,6 +51,16 @@ Continuable creation is the optional `SubagentProvider.prepareContinuable?()` me
 ## The durable descriptor
 
 The Service Definition owns the versioned `subagent/descriptor` session event vocabulary (`src/descriptor.ts`): `snapshotSubagentDescriptor()` validates and detaches the record before provider work, and `foldSubagentDescriptor()` validates the complete current-version payload before recovering it from a loaded child log. Every local session-backed start appends one descriptor with the provider name and lifecycle `mode`. A `one-shot` descriptor optionally carries the caller-owned durable display `label`; a `continuable` descriptor requires its durable creation label and additionally records resolved child `agentOptions.provider`/`model` and optional `persona`/`toolFilter` for cold resume. These are explicit fields, never the merge-extensible `AgentOptions` object, so an unrelated extension value cannot break continuation. The descriptor omits `subagentDepth` (the persisted header's `delegationDepth` is the monotone floor) and `outputSchema` (an Activation's result contract). The event is log-only: no `surfaceOp`, absent from model history, and retained by the append-only log across compaction. Malformed current-version payloads are corrupt; unsupported versions cannot be classified by this runtime.
+
+## Host-owned audit evidence
+
+`SubagentStartRequest.evidenceTools` is an optional host-owned list of 1-64 unique tool names, not a model argument or permission grant. Every listed tool must be available after child composition and tool filtering, otherwise startup fails with `EVIDENCE_TOOL_UNAVAILABLE` before inference. Ordinary work omits this requirement and keeps descriptor v2; audit work persists it in descriptor v3. Cold resume reloads that first authoritative descriptor, not the parent's current configuration or a child's report. Existing records are preserved.
+
+The host evaluates the latest turn after the activation boundary. At least one eligible `tool/call` must have a later successful `tool/result` with matching source event sequence, call id, turn and step. Fork seeds, prior activations, previous turns, assistant claims and streaming chunks do not count; duplicate results cannot multiply evidence and ambiguous duplicate call ids are excluded. `evidence` carries `status: observed | missing`, `semanticVerification: unverified`, eligible names and exact call/result sequence references. It contains no tool arguments or file contents. A successful read is evidence of execution, not proof of the report's correctness, relevance, completeness or artifact freshness; the parent must still review it.
+
+The actual `stopReason` and child output are preserved. Missing evidence is a separate host assessment: foreground consumers must reject it as a proven result, and `settleRun()` maps a completed-but-unsupported audit to a failed background job. Continuable reports and settlement notices carry the host assessment in their durable message source and a mandatory `SUBAGENT_EVIDENCE_MISSING` or `SUBAGENT_EVIDENCE_OBSERVED` prefix, including direct `reportFrom()` calls. Missing evidence does not erase a useful progress report or pretend the child turn itself crashed. The policy and underlying call/result events persist; assessment is recomputed for each current turn, not trusted from model text.
+
+With an explicit `toolFilter`, evidence-enabled children also install a monotonic execution guard for its allow/deny names, covering child-scoped additions, nested dispatch and `run_code`. An audit participant cannot expand that scope. This does not alter ordinary delegations; `evidenceTools` alone is not a read-only policy. The initial read-only composition uses automatic settlement, not an exception for `report`. Adding a late-installed scoped tool name to an allow-list does not make it available during preflight; explicit reporting or structured delivery needs a compatible host composition.
 
 ## Delegation depth
 
@@ -62,6 +73,8 @@ The seam owns the depth vocabulary shared by Service Providers and Consumers: th
 Both in-process delegation paths fix the child's permission scope at the delegation boundary through the shared child-agent helpers. `captureDelegatedPolicyOverrides(parent)` snapshots the parent session's explicit sandbox override (`sandboxPolicy.overrideOf()`) and pins the child's approval policy to `'never'` whenever the approval capability is composed — regardless of the parent's own policy — so a delegated child acts only within its inherited sandbox scope and every ask (for example a `sandbox_permissions` escalation) is rejected deterministically instead of waiting on a prompt no one is watching (both services are optional `ctx.get` consumers). `appendDelegatedPolicyOverrides()` writes each value onto the child's own log as a `source: 'delegation'` `sandbox/mode` or `approval/policy` event during unpublished setup, after any fork seed — so fresh policy wins stale seed state and the child's effective policy stays reconstructable from its log alone. The sandbox deployment default is never copied: an unswitched parent stamps no `sandbox/mode` and its child follows the deployment default dynamically. A continuable start captures before its first await and seeds only fresh materialization; a cold resume replays the persisted delegation events instead of re-capturing the parent, so a parent switch after creation never retroactively changes a durable child. Every in-process child also receives a scoped runtime-context statement (`subagent:delegation`) telling it the scope is fixed and that a task needing wider access ends with a reported limitation, not retries. See the [one-shot](../../../.agents/notes/implemented/feature/2026-07-25-subagent-policy-inheritance.md) and [continuable](../../../.agents/notes/implemented/feature/2026-08-10-continuable-subagent-policy-inheritance.md) delegation-policy Agent Notes.
 
 ## One-shot ownership and lifecycle
+
+Host callers may supply `SubagentStartRequest.setup(childCtx)` only to providers advertising `capabilities.setup: true`. In-process spawn and fork await this callback after child composition and structured output installation, before publication and first inference; failure rolls back the unpublished child. Effects belong to its scope. This one-shot callback is not a model argument or durable continuation field. It lets consumers enforce capability guards before any tool can run; see [completion audit boundaries](../../../.agents/notes/implemented/bug-fix/2026-09-21-completion-audit-boundaries.md).
 
 `provider.start(request): Promise<SubagentRun>` is the ownership-transfer boundary; the delegation tool also uses it inside its one-shot Task-backed background path. Before fulfillment, the provider owns setup and must cancel, roll back, and quiesce unpublished resources on every failure. After fulfillment, the caller owns the run and must call `dispose()` on every path; remaining prompt and turn work belongs to `SubagentRun.result`.
 
@@ -142,6 +155,20 @@ One fixed statement in each child's runtime-context snapshot; none in the parent
 #### KV Cache effect
 
 Prefix-stable within a child: the statement never changes during the child's lifetime, so it is written once into the first runtime-context snapshot. Parent-side, no direct invalidation; the named tool consumers own any request-prefix changes.
+
+### Audit evidence in the model context
+
+#### What the model sees
+
+Only an evidence-enabled child receives `subagent:evidence`, a logged runtime-context contribution at order 125. It names the host's eligible tools, requires successful execution in each reported turn, asks for citations and distinguishes observations from inference. It states that the parent must review correctness and that the child cannot disable the requirement. Parent reports and settlement notices contain the independent host assessment described above, without changing the child's original wording.
+
+#### Token effect
+
+The child pays a short fixed policy plus eligible tool names, while each parent report/notice pays one fixed host assessment. No tool arguments, file contents or second evidence database are added by this assessment.
+
+#### KV Cache effect
+
+The policy is stable within a child's composition and is reproduced from its descriptor on cold resume. Parent assessments are append-only messages; ordinary delegations add neither policy nor assessment tokens.
 
 ## Known Limitations and Deferred Work
 

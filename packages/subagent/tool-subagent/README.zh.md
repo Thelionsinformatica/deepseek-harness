@@ -12,7 +12,9 @@
 
 `backgroundMode` 同时选择后台路由与省略 `run_in_background` 时的默认行为。`one-shot` 默认在前台等待；显式传入 `true` 时，它会注册一个归父级所有的普通 Task，并返回规范值 `{ kind: 'background', jobId }`，渲染为 `started background subagent job <id>`，即使提供方支持可继续子 agent 也不例外。通用 Task 工具负责其后续状态、收集、取消和通知；失败 Task 的 detail 会保留终止原因与同一份可选提供方诊断。`continuable` 在参数省略或为 `true` 时于后台运行；显式传入 `false` 时则在前台等待结果。其后台路由要求提供方具备 `prepareContinuable` 能力，调用 `ctx.subagents.startContinuable()`，并返回 `{ kind: 'continuable', subagentId }`，渲染为 `started subagent <childId>`。该路由在 inbox 接受时结算：子 agent 自此拥有自己的轮次，因此该调用既不等待也不收集结果。通过该 id 查看其 transcript（文本记录）仍是其详细输出的来源，可选的全局 `send_message` 工具则向其发送更多工作。每当子 agent 的 Activation 结束，继续执行服务都会投递一条结算通知，其中包含结束结果及可能存在的最终 assistant 消息，且这项投递不依赖 `report`。启动可继续工作不要求加载 `send_message`。见[后台 subagent Agent Note](../../../.agents/notes/implemented/feature/2026-07-08-background-subagent-tasks.zh.md)、[可继续的 subagent Agent Note](../../../.agents/notes/implemented/feature/2026-07-28-continuable-subagent-conversations.zh.md)和[后台优先委派 Agent Note](../../../.agents/notes/implemented/feature/2026-08-11-background-first-continuable-delegation.zh.md)。
 
-`toolFilter` 会改变子 agent 的全局工具层，但不是从父级派生的权限上限。见 [agent 作用域的安全非目标](../../../.agents/notes/implemented/architecture/2026-07-08-agent-scope-contexts.zh.md#security-and-authority-are-non-goals)。
+单独使用 `toolFilter` 会改变子 agent 的全局工具层，但不是从父级派生的权限上限。与 `evidenceTools` 组合使用时，进程内子 agent 还会获得单调执行守卫：后来添加的子作用域工具和嵌套调用也必须满足同一过滤器。因此，`read`、`grep`、`glob` 允许列表也会排除 `report`、`structured_output` 和 `run_code`；该审计配置使用原生工具和普通最终回答。宿主插件与合格工具实现仍然是可信代码。见 [agent 作用域的安全非目标](../../../.agents/notes/implemented/architecture/2026-07-08-agent-scope-contexts.zh.md#security-and-authority-are-non-goals)。
+
+`evidenceTools` 配置需要成功且已记录工具结果的调查。宿主固定合格工具名称；模型参数不能替换这些名称。前台子 agent 的生成完成但没有证据时，工具返回错误并保留其部分回答。存在记录的结果会单独包含宿主的 `evidence`，并在回答前显示 `Host tool evidence recorded; findings remain unverified.`。工具使用记录既不能证明发现正确，也不能证明任务完成；父级必须检查引用的结果。同一要求在可继续子 agent 恢复后仍有效，并由宿主生成的结算通知报告。只读审计应使用带严格 `toolFilter` 的专用工具实例；通用委派保持不变。
 
 ## 配置
 
@@ -20,14 +22,18 @@
 |---|---|
 | `provider`（必填） | 提供方名称（`spawn`、`fork`、`acp` 等）。 |
 | `toolName` | 面向模型的名称，默认 `subagent`；每个已加载实例必须不同。 |
+| `maxCallsPerSession` | 可选正整数，限制一个会话中该工具已记录的尝试次数。失败尝试也计数；省略时保持不设上限的行为。 |
 | `enableRunInBackground` | 公开后台模式，默认 `true`；禁用时也会拒绝强制后台调用。 |
 | `backgroundMode` | 后台生命周期策略，默认 `one-shot`。`one-shot` 默认前台调用；`continuable` 默认后台调用，要求提供方具备 `prepareContinuable` 能力，并返回持久化子 agent ID，且不要求加载后续消息工具。 |
 | `agentOptions` | 传给具体提供方的子 agent `provider`、`model` 和正整数 `maxTokens`；进程内提供方会用显式值覆盖继承的父级选项。 |
 | `persona` | 每个子 agent 独立的 persona；要求提供方具备 `persona` 能力。 |
 | `toolFilter` | 每个子 agent 独立的全局工具限制；要求提供方具备 `toolFilter` 能力。 |
+| `evidenceTools` | 可选的非空合格工具名称列表，名称不能重复且必须仍被 `toolFilter` 允许；一次性提供方必须支持证据收集。这是宿主策略，不是模型参数。 |
 | `maxDepth` | 绝对委派深度上限，默认 `3`（`0` 禁止委派）；数值上限要求 `depthLimit` 能力，缺失时挂载失败。对于预算由子 harness 拥有的进程外提供方，`'provider-managed'` 不发送上限。工具在达到上限时仍然可见；每次尝试启动都会检查调用 agent 的当前深度，被拒绝时返回出错的工具结果。 |
 
 ## 并发
+
+设置 `maxCallsPerSession` 时，准入依据调用方会话中按顺序排列的 `tool/call` 事件，包括恢复的历史。即使并发分发，也只有前 N 次尝试可以启动子 agent。缺少调用记录或已有结果的调用会被拒绝。这是每工具、每会话的限制，不是共享任务预算：其他委派工具及子 agent 后续消息需要各自的限制。持久性依赖现有会话持久化；此控制不保证跨崩溃的恰好一次执行。
 
 前台调用和后台调用均并发安全：同一条 assistant 消息中的同级委派会在循环的滚动池（`maxParallelToolCalls`）下重叠执行，结果仍按模型顺序提交。子 agent 在各自的会话中工作，一次运行绝不变更父会话；一次性后台形态对父级拥有状态的唯一写入是注册一个 Task——这是一次同步、可交换、能容忍并发分发的插入，因此重叠的后台调用按分发竞态顺序获得各自的 job id。协调同级工作区效果由模型负责，正如模型已经对后台和可继续子 agent 所承担的那样。见 [并行 subagent Agent Note](../../../.agents/notes/implemented/feature/2026-08-09-parallel-subagent-delegations.zh.md) 和 [并行工具调用 Agent Note](../../../.agents/notes/implemented/feature/2026-07-10-parallel-tool-call-execution.zh.md)。
 
@@ -51,7 +57,7 @@
 
 #### 模型看到的内容
 
-调用会保留描述和提示词。成功时只包含子 agent 的最终文本；其他结果会变为 `Error: <终止原因>`，随后在存在时附上安全的提供方诊断，再附上任何部分 assistant 文本。子 agent 中间步骤不会进入父级。
+调用会保留描述和提示词。普通成功结果包含子 agent 的最终文本；要求证据的成功结果还警告发现尚未验证。其他结果会变为 `Error: <终止原因>`，随后在存在时附上安全的提供方诊断，再附上任何部分 assistant 文本。子 agent 中间步骤不会进入父级。
 
 #### Token 影响
 

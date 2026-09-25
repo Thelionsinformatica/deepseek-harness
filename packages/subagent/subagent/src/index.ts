@@ -69,6 +69,8 @@ import { snapshotSubagentDescriptor } from './descriptor.ts'
 import { subagentIdentityProjectionDefinition, subagentTimingProjectionDefinition } from './projection.ts'
 
 export * from './out-of-process.ts'
+export { assertEvidenceTools, evaluateSubagentEvidence, subagentEvidenceDiagnostic } from './evidence.ts'
+export type { SubagentEvidence, SubagentEvidenceCall } from './evidence.ts'
 export { AssistantOutputFold, finalAssistantOutput } from './assistant-output.ts'
 export { SubagentRunId } from './types.ts'
 export type {
@@ -87,6 +89,7 @@ export {
   foldSubagentDescriptor,
   snapshotSubagentDescriptor,
   SUBAGENT_DESCRIPTOR_VERSION,
+  SUBAGENT_EVIDENCE_DESCRIPTOR_VERSION,
 } from './descriptor.ts'
 export type {
   ContinuableSubagentDescriptorData,
@@ -186,7 +189,7 @@ export class SubagentRuntime extends Service {
     ctx.inject(['agents'], (childCtx: Context) => {
       const manager = new SubagentContinuationManager(childCtx, {
         prepareContinuable: (name, request) => this.prepareContinuable(name, request),
-        observeActivation: (provider, childId, parent) => this.observeActivation(provider, childId, parent),
+        observeActivation: (provider, childId, parent, evidenceTools) => this.observeActivation(provider, childId, parent, evidenceTools),
       }, this.setupRegistry)
       this.continuations = manager
       childCtx.effect(() => () => {
@@ -436,6 +439,7 @@ export class SubagentRuntime extends Service {
       mode: 'one-shot',
       provider: name,
       ...request.label !== undefined ? { label: request.label } : {},
+      ...request.evidenceTools !== undefined ? { evidenceTools: request.evidenceTools } : {},
     })
     const resolved: ResolvedSubagentStartRequest = { ...request, descriptor }
     return observeRun(this.emitLifecycle, name, request.parent, await provider.start(resolved))
@@ -489,8 +493,9 @@ export class SubagentRuntime extends Service {
     provider: string,
     childId: SessionId,
     parent: Agent,
+    evidenceTools?: readonly string[],
   ): ActivationObserver {
-    return createActivationObserver(this.emitLifecycle, provider, childId, parent)
+    return createActivationObserver(this.emitLifecycle, provider, childId, parent, evidenceTools)
   }
 
   /** Reject the first requested capability that the provider lacks. */
@@ -500,6 +505,8 @@ export class SubagentRuntime extends Service {
       { when: request.maxDepth !== undefined, cap: 'depthLimit' },
       { when: request.toolFilter !== undefined, cap: 'toolFilter' },
       { when: request.persona !== undefined, cap: 'persona' },
+      { when: request.setup !== undefined, cap: 'setup' },
+      { when: request.evidenceTools !== undefined, cap: 'evidenceTools' },
     ]
     for (const { when, cap } of needs) {
       if (when && !provider.capabilities[cap]) {

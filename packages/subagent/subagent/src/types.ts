@@ -9,12 +9,14 @@
  * @module @deepseek-ai/dsh-subagent/types
  */
 
+import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import type { ObjectJsonSchema, ToolRestriction } from '@deepseek-ai/dsh-tools'
 import type { SubagentDescriptorData } from './descriptor.ts'
+import type { SubagentEvidence } from './evidence.ts'
 
 /** Identifies one accepted subagent run across its lifecycle event pair. */
 export type SubagentRunId = Branded<'SubagentRunId'>
@@ -70,6 +72,8 @@ export interface SubagentRunEndInfo {
    * the child produced none.
    */
   readonly lastAssistantMessage?: ContentBlock[]
+  /** Host evidence assessment, separate from the recorded turn outcome. */
+  readonly evidence?: SubagentEvidence
 }
 
 /**
@@ -88,6 +92,10 @@ export interface SubagentCapabilities {
   readonly depthLimit: boolean
   readonly toolFilter: boolean
   readonly persona: boolean
+  /** Host-owned unpublished setup is supported only when explicitly advertised. */
+  readonly setup?: true
+  /** Provider can evaluate this child's own persisted tool execution. */
+  readonly evidenceTools?: true
 }
 
 /**
@@ -146,6 +154,23 @@ export interface SubagentStartRequest {
    * persona (strict `{{…}}` interpolation against the registered variables).
    */
   readonly persona?: string
+  /**
+   * Host-only opt-in evidence requirement for audit work. At least one named
+   * tool must have a successful paired result in the child's current turn.
+   * Persisted for cold resume; never a model-selectable permission or proof
+   * of correctness. General delegations omit it.
+   */
+  readonly evidenceTools?: readonly string[]
+  /**
+   * Host-only one-shot composition after the provider installs its persona,
+   * tool filter and structured-output tool, but before publication or prompt
+   * delivery. Requires the provider's explicit `setup` capability. Effects
+   * belong to `childCtx` and unwind on setup failure or run disposal. A thrown
+   * or rejected setup rolls back without first inference. The callback is not
+   * persisted, model-selectable, or replayed for continuable children.
+   * @param childCtx - exact unpublished child scope; `childCtx.agent` is its Agent.
+   */
+  readonly setup?: (childCtx: Context) => void | Promise<void>
 }
 
 /**
@@ -217,6 +242,8 @@ export type SubagentStopReason = SubagentStopReasonMap[keyof SubagentStopReasonM
  * The terminal outcome of a subagent run, resolved by {@link SubagentRun.result}.
  */
 export interface SubagentResult {
+  /** Host assessment of execution evidence, independent of the actual stop reason. */
+  readonly evidence?: SubagentEvidence
   /**
    * The child's final assistant output is the content of its last non-empty
    * assistant message. Empty-content messages, including usage-only messages,

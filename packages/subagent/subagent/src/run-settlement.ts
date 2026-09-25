@@ -9,6 +9,7 @@
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { JobOutcome } from '@deepseek-ai/dsh-jobs'
 import type { SubagentResult, SubagentRun } from './types.ts'
+import { subagentEvidenceDiagnostic } from './evidence.ts'
 
 /** Flatten a child's final output blocks to the task's final text. */
 function finalText(blocks: ContentBlock[]): string {
@@ -33,9 +34,13 @@ function failureDetail(result: SubagentResult): string {
  * @returns outcome for the `ctx.jobs` registration.
  */
 function runOutcome(result: SubagentResult): JobOutcome {
+  if (result.evidence?.status === 'missing' && result.stopReason === 'completed') {
+    return { status: 'failed', detail: `turn stopReason: completed; ${subagentEvidenceDiagnostic(result.evidence)}` }
+  }
   switch (result.stopReason) {
     case 'completed':
-      return { status: 'completed', output: finalText(result.output) }
+      return { status: 'completed', output: result.evidence === undefined ? finalText(result.output)
+        : `${subagentEvidenceDiagnostic(result.evidence)}\n\n${finalText(result.output)}` }
     case 'aborted':
       return { status: 'killed' }
     case 'error':

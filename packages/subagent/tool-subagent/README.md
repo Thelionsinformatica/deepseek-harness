@@ -12,7 +12,9 @@ A foreground call passes the execution signal through startup and execution, awa
 
 `backgroundMode` selects both the background route and the omitted `run_in_background` default. `one-shot` waits in the foreground by default; an explicit `true` registers a plain parent-owned Task and returns canonical `{ kind: 'background', jobId }`, rendered as `started background subagent job <id>`, even when the provider supports continuable children. Generic task tools own its later status, collection, cancellation, and notices; a failed Task keeps the stop reason and the same optional provider diagnostic in its detail. `continuable` runs in the background when the argument is omitted or `true`; an explicit `false` waits for the result in the foreground. Its background route requires a provider with the `prepareContinuable` capability, calls `ctx.subagents.startContinuable()`, and returns `{ kind: 'continuable', subagentId }`, rendered as `started subagent <childId>`. The route resolves at inbox acceptance: the child owns its own turns from there, so this call neither waits for nor collects a result. The child's transcript by that id remains the source of its detailed output, and the optional global `send_message` tool sends it more work. The continuation service delivers one settlement notice whenever the child's Activation ends, containing its outcome and any final assistant message independently of `report`. Starting continuable work does not require `send_message` to be loaded. See the [background subagent Agent Note](../../../.agents/notes/implemented/feature/2026-07-08-background-subagent-tasks.md), the [continuable subagents Agent Note](../../../.agents/notes/implemented/feature/2026-07-28-continuable-subagent-conversations.md), and the [background-first delegation Agent Note](../../../.agents/notes/implemented/feature/2026-08-11-background-first-continuable-delegation.md).
 
-`toolFilter` changes the child's global tool layer but is not a parent-derived authority ceiling. See the [agent-scope security non-goal](../../../.agents/notes/implemented/architecture/2026-07-08-agent-scope-contexts.md#security-and-authority-are-non-goals).
+`toolFilter` alone changes the child's global tool layer but is not a parent-derived authority ceiling. Combined with `evidenceTools`, in-process children also receive a monotonic execution guard: later child-scoped tools and nested dispatch must satisfy that same filter. An allowlist of `read`, `grep`, and `glob` therefore also excludes `report`, `structured_output`, and `run_code`; use native tools and ordinary final answers for this audit profile. Trusted host plugins and eligible tool implementations remain trusted code. See the [agent-scope security non-goal](../../../.agents/notes/implemented/architecture/2026-07-08-agent-scope-contexts.md#security-and-authority-are-non-goals).
+
+`evidenceTools` configures an investigation requiring successful recorded tool results. The host fixes the eligible names; model arguments cannot replace them. A foreground child whose generation completed without evidence returns an error with its partial answer preserved. An observed result includes the host's `evidence` separately and renders `Host tool evidence recorded; findings remain unverified.` before the answer. Recorded tool use proves neither the findings nor task completion; the parent must inspect the cited results. The same requirement survives continuable-child restoration and is reported in host-authored settlement notices. Use a dedicated tool instance with a restrictive `toolFilter` for read-only audits; general delegation is unchanged.
 
 ## Config
 
@@ -20,14 +22,18 @@ A foreground call passes the execution signal through startup and execution, awa
 |---|---|
 | `provider` (required) | Provider name (`spawn`, `fork`, `acp`, ...). |
 | `toolName` | Model-facing name, default `subagent`; distinct for every loaded instance. |
+| `maxCallsPerSession` | Optional positive integer limiting logged attempts for this tool in a session. Failed attempts count; omission preserves uncapped behavior. |
 | `enableRunInBackground` | Exposes background mode, default `true`; disabling also rejects forced background calls. |
 | `backgroundMode` | Background lifecycle policy, default `one-shot`. `one-shot` defaults calls to foreground; `continuable` defaults them to background, requires the provider's `prepareContinuable` capability, and returns a durable child id without requiring the follow-up tool. |
 | `agentOptions` | Provider-specific child `provider`, `model`, and positive `maxTokens`; the in-process provider treats explicit values as overrides of inherited parent options. |
 | `persona` | Per-child persona; requires provider `persona` capability. |
 | `toolFilter` | Per-child global-tool restriction; requires `toolFilter` capability. |
+| `evidenceTools` | Optional non-empty list of distinct eligible tool names. Names must remain allowed by `toolFilter`; one-shot providers must support evidence collection. This is host policy, not a model parameter. |
 | `maxDepth` | Absolute delegation-depth cap, default `3` (`0` forbids delegation); a numeric cap requires the `depthLimit` capability and fails the mount without it. `'provider-managed'` sends no cap for an out-of-process provider whose budget belongs to the child harness. The tool stays visible at the cap; each attempted start checks the calling agent's current depth and returns an errored tool result when rejected. |
 
 ## Concurrency
+
+When `maxCallsPerSession` is set, admission uses the calling session's ordered `tool/call` events, including restored history. Only the first N attempts can start a child, even when dispatched concurrently. Missing call records and calls with an existing result fail closed. This is a per-tool, per-session limit, not a shared mission budget: other delegation tools and child follow-up messages need their own restrictions. Durability depends on the existing session persistence; this control does not provide exactly-once execution across a crash.
 
 Foreground and background calls are concurrency-safe: sibling delegations in one assistant message overlap under the loop's rolling pool (`maxParallelToolCalls`), and results still commit in model order. Children work in their own sessions and a run never mutates the parent session; the one-shot background form's one parent-owned write — registering a Task — is a synchronous, commutative insertion that tolerates concurrent dispatch, so overlapping background calls acquire their job ids in dispatch-race order. Coordinating sibling workspace effects belongs to the model, exactly as it already does for background and continuable children. See the [parallel subagent Agent Note](../../../.agents/notes/implemented/feature/2026-08-09-parallel-subagent-delegations.md) and the [parallel tool-call Agent Note](../../../.agents/notes/implemented/feature/2026-07-10-parallel-tool-call-execution.md).
 
@@ -51,7 +57,7 @@ Prefix-stable while provider instances, names, descriptions, and schemas are unc
 
 #### What the model sees
 
-The call retains the description and prompt. Success contains only the child's final text; other outcomes become `Error: <stop reason>`, followed by a safe provider diagnostic when present and then any partial assistant text. Intermediate child steps stay out of the parent.
+The call retains the description and prompt. General success contains the child's final text; evidence-required success additionally warns that findings remain unverified. Other outcomes become `Error: <stop reason>`, followed by a safe provider diagnostic when present and then any partial assistant text. Intermediate child steps stay out of the parent.
 
 #### Token effect
 

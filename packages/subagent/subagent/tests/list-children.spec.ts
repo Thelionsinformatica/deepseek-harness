@@ -548,7 +548,7 @@ describe('SubagentRuntime.listChildren', () => {
     const future = await authorChild(ctx, '00000000-0000-4000-8000-0000000000aa', {
       parentSession: parent.id,
       origin: 'subagent',
-    }, childEvents(descriptorPayload('from the future', SUBAGENT_DESCRIPTOR_VERSION + 1)))
+    }, childEvents(descriptorPayload('from the future', 999)))
     // The projection fold does not distinguish an unrecognized version from
     // other invalid descriptors: both serve no identity, and a settled
     // no-value candidate is corrupt.

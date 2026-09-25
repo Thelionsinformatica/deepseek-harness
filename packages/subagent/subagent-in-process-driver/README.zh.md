@@ -22,6 +22,12 @@
 
 驱动器通过共享的子 agent 辅助函数应用该 seam 的[委派策略](../subagent/README.zh.md#delegated-policy)：它会在创建子 agent 前捕获父级的显式沙箱覆盖项与 `'never'` 审批钉定，并在未发布的设置阶段追加带来源标记的事件，使其位于所有 fork 历史之后、会话发布之前。参见[委派策略决策](../../../.agents/notes/implemented/feature/2026-07-25-subagent-policy-inheritance.zh.md)。
 
+## 可选审计证据
+
+当宿主解析的描述符包含 `evidenceTools` 时，子级组合会在发布前校验这些工具可用。完全停稳后，驱动只评估种子边界之后子级的最新轮次，并返回独立的 `evidence` 评估。实际结束原因、助手输出和已捕获的结构化值保持不变。成功且配对的合格执行标为 `observed`，但结论在语义上仍为 `unverified`；声称已成功检查的文本、继承的父级调用和失败读取均为 `missing`。策略在描述符中分离保存，子级输出不能改变它。父级投递与冷恢复语义参见[宿主拥有的审计证据](../subagent/README.zh.md#host-owned-audit-evidence)。
+
+启用证据要求时，显式工具过滤由执行守卫强制实施，而不只是控制 schema 可见性。如果过滤排除了 `structured_output`，但 `outputSchema` 又要求该工具，启动会在发布或推理前以 `EVIDENCE_OUTPUT_SCOPE_CONFLICT` 拒绝，而不是绕过限制或为无法完成的交付消耗请求。兼容的证据组合仍支持结构化捕获；没有证据策略的普通请求保留原有行为。
+
 ## 取消与所有权
 
 必需的请求信号同时覆盖启动阶段和实时运行。发布前，`AgentCreationTransaction` 会观察该信号、回滚并拒绝。工厂返回前会移除仅用于创建阶段的监听器；驱动器随即再次检查信号，然后安装最小化的实时运行监听器，从而消除交接竞态。发布后，中止会取消子 agent。

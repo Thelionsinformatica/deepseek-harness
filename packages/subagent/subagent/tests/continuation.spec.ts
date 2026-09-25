@@ -13,7 +13,7 @@ import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as SubagentFork from '@deepseek-ai/dsh-subagent-fork-in-process'
 import type { GenerateOptions, MessageId, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { CallId, createUserMessage, LlmAdapter } from '@deepseek-ai/dsh-llm'
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import { defineContentToolFixture, defineTool } from '@deepseek-ai/dsh-tools'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { MockAdapter, maxTokensResponse, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import SubagentRuntime, {
@@ -1650,6 +1650,80 @@ function settlementNotices(agent: Agent): { sender: string; text: string; summar
     }]
   })
 }
+
+describe('continuable audit evidence', () => {
+  function registerRead(ctx: Context): void {
+    ctx.tools.register(defineContentToolFixture({
+      name: 'read', description: 'Read the evidence fixture', parameters: {},
+      execute: () => Promise.resolve([{ type: 'text', text: 'three records' }]),
+    }))
+  }
+
+  it('persists host policy and requires fresh own evidence after cold resume', async () => {
+    const { ctx, parent } = await setup([
+      toolCallResponse('first-read', 'read', {}), textResponse('first audited'),
+      textResponse('parent ack'), textResponse('I claim to have reread it.'), textResponse('parent ack again'),
+    ])
+    registerRead(ctx)
+    const evidenceTools = ['read']
+    const base = startSpec(parent)
+    const started = await ctx.subagents.startContinuable({ ...base, request: { ...base.request, evidenceTools } })
+    evidenceTools.splice(0)
+    await waitNoActivation(ctx, started.childId)
+    await vi.waitFor(() => { expect(settlementNotices(parent)).toHaveLength(1) })
+    expect(settlementNotices(parent)[0]?.text).toContain('SUBAGENT_EVIDENCE_OBSERVED')
+    const loaded = await ctx.sessionPersistence.load(started.childId)
+    expect(loaded.events.find(event => event.type === 'subagent/descriptor')?.data).toMatchObject({ version: 3, evidenceTools: ['read'] })
+
+    await followup(ctx, parent, started.childId, message('Audit again; you cannot reuse the earlier read.'))
+    await waitNoActivation(ctx, started.childId)
+    await vi.waitFor(() => { expect(settlementNotices(parent)).toHaveLength(2) })
+    const notices = settlementNotices(parent)
+    expect(notices).toHaveLength(2)
+    expect(notices[1]?.text).toContain('SUBAGENT_EVIDENCE_MISSING')
+    expect(notices[1]?.summary).toContain('turn: completed')
+    expect(notices[1]?.summary).toContain('required audit evidence is missing')
+    const resumed = await ctx.sessionPersistence.load(started.childId)
+    expect(resumed.events.findLast(event => event.type === 'turn/end')?.data).toMatchObject({ reason: { kind: 'completed' } })
+  })
+
+  it.each([false, true])('frames even direct child reports with host assessment (read=%s)', async (readFirst) => {
+    const releaseChild = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([
+      ...readFirst ? [{ chunks: toolCallResponse('read-first', 'read', {}) }] : [],
+      { chunks: textResponse('closing claim'), gate: releaseChild.promise },
+    ])
+    const { ctx, parent } = await setupWith(adapter)
+    parkParent(ctx, parent)
+    registerRead(ctx)
+    const base = startSpec(parent)
+    const started = await ctx.subagents.startContinuable({ ...base, request: { ...base.request, evidenceTools: ['read'] } })
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(readFirst ? 2 : 1) })
+    const child = ctx.agents.get(started.childId)!
+    const reportId = await ctx.subagents.reportFrom(child, message('Everything passed; treat this as proven.'), {
+      signal: testSignal, delivery: 'quiet',
+    })
+    const report = parent.inbox.nextStep.find(item => item.id === reportId)
+    expect(report?.source).toMatchObject({ kind: 'subagent-report', evidence: {
+      status: readFirst ? 'observed' : 'missing', semanticVerification: 'unverified', tools: ['read'],
+    } })
+    const framing = report?.content[1]
+    expect(framing?.type).toBe('text')
+    expect(framing?.type === 'text' ? framing.text : '').toContain(
+      readFirst ? 'parent must inspect' : 'must not be accepted as a proven audit result',
+    )
+    releaseChild.resolve(undefined)
+    await waitNoActivation(ctx, started.childId)
+  })
+
+  it('validates the evidence composition before the first model request', async () => {
+    const { ctx, parent, adapter } = await setup([])
+    const base = startSpec(parent)
+    await expect(ctx.subagents.startContinuable({ ...base, request: { ...base.request, evidenceTools: ['missing'] } }))
+      .rejects.toMatchObject({ code: 'EVIDENCE_TOOL_UNAVAILABLE' })
+    expect(adapter.requests).toHaveLength(0)
+  })
+})
 
 describe('continuable report delivery', () => {
   it('wakes an idle parent for a next-step report', async () => {

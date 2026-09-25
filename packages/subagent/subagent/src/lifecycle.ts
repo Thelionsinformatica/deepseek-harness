@@ -23,12 +23,16 @@ import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import { finalAssistantOutput } from './assistant-output.ts'
 import { SubagentRunId } from './types.ts'
 import type { SubagentResult, SubagentRun, SubagentRunEndInfo, SubagentRunInfo } from './types.ts'
+import { evaluateSubagentEvidence } from './evidence.ts'
+import type { SubagentEvidence } from './evidence.ts'
 
 /**
  * How one Activation's residency epoch ended, as both the terminal lifecycle
  * edge and the manager's own parent delivery report it.
  */
 export interface ActivationTerminal {
+  /** Independent host evidence assessment; does not rewrite turn status. */
+  readonly evidence?: SubagentEvidence
   /** Why this epoch's last ordinary turn ended, or `error` when teardown failed. */
   readonly stopReason: SubagentResult['stopReason']
   /** The epoch's final assistant content, absent when it produced none or failed. */
@@ -149,6 +153,7 @@ export function observeRun(
       emit('subagent/end', {
         ...identity,
         stopReason: result.stopReason,
+        ...result.evidence === undefined ? {} : { evidence: result.evidence },
         // Omit the field when no output exists, matching continuable epochs.
         ...result.output.length === 0 ? {} : { lastAssistantMessage: result.output },
       }, parent)
@@ -177,6 +182,7 @@ export function createActivationObserver(
   provider: string,
   childId: SessionId,
   parent: Agent,
+  evidenceTools?: readonly string[],
 ): ActivationObserver {
   const identity = { runId: SubagentRunId(randomUUID()), provider, id: childId, local: true }
   // A cold resume replays earlier turns, so this epoch's telemetry must come
@@ -199,17 +205,20 @@ export function createActivationObserver(
     capture: (child: Agent): void => {
       const own = child.session.events.slice(boundary)
       const output = finalAssistantOutput(own)
+      const evidence = evaluateSubagentEvidence(own, evidenceTools)
       captured = {
         stopReason: epochStopReason(own),
+        ...evidence === undefined ? {} : { evidence },
         ...output === undefined ? {} : { output },
       }
     },
     terminal,
     settle: (failure: unknown): void => {
-      const { stopReason, output } = terminal(failure)
+      const { stopReason, output, evidence } = terminal(failure)
       emit('subagent/end', {
         ...identity,
         stopReason,
+        ...evidence === undefined ? {} : { evidence },
         ...output === undefined ? {} : { lastAssistantMessage: output },
       }, parent)
     },

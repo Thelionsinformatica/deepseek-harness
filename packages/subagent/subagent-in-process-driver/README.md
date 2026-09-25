@@ -22,6 +22,12 @@ This result boundary is valid because the provider owns an isolated child lifecy
 
 The driver applies the seam's [delegated policy](../subagent/README.md#delegated-policy) through the shared child-agent helpers: it captures the parent's explicit sandbox override and the `'never'` approval pin before child creation and appends the source-tagged events during unpublished setup, after any fork history and before session publication. See the [delegation-policy decision](../../../.agents/notes/implemented/feature/2026-07-25-subagent-policy-inheritance.md).
 
+## Optional audit evidence
+
+When the host's resolved descriptor includes `evidenceTools`, child composition validates that those tools are available before publication. After quiescence the driver evaluates only the child's latest turn beyond its seed boundary and returns a separate `evidence` assessment. Actual stop reason, assistant output and any structured capture remain unchanged. A successful paired eligible execution is `observed`, but its conclusion is still semantically `unverified`; text claiming a successful inspection, inherited parent calls and failed reads yield `missing`. The policy is detached in the descriptor and cannot be changed by child output. See [host-owned audit evidence](../subagent/README.md#host-owned-audit-evidence) for parent delivery and cold-resume semantics.
+
+An evidence-enabled explicit tool filter is enforced by an execution guard, not merely schema visibility. If it excludes `structured_output` while `outputSchema` requires that tool, startup rejects with `EVIDENCE_OUTPUT_SCOPE_CONFLICT` before publication or inference rather than bypassing the restriction or spending requests on an impossible delivery. A compatible evidence composition retains structured capture; ordinary requests without the evidence policy keep their existing behavior.
+
 ## Cancellation and ownership
 
 The required request signal covers both startup and the live run. Before publication, `AgentCreationTransaction` observes it, rolls back, and rejects. The factory detaches that creation-only listener before returning; the driver immediately checks the signal once more before installing a minimal live-run listener, closing the handoff race. After publication, abort cancels the child.

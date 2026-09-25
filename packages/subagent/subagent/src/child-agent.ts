@@ -26,6 +26,8 @@ import type {} from '@deepseek-ai/dsh-user-approval'
 // them through the tool registry's global layer.
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import { delegationDepthOf } from './depth.ts'
+import { assertEvidenceTools } from './evidence.ts'
+import { SubagentError } from './error.ts'
 
 /** Thrown when starting a child would exceed the requested depth cap. */
 export class SubagentDepthError extends Error {
@@ -121,6 +123,8 @@ export function childSessionMeta(
 
 /** The scoped composition a child agent's creation window applies. */
 export interface ChildComposition {
+  /** Optional host-owned tool evidence requirement; never read from model output. */
+  readonly evidenceTools?: readonly string[] | undefined
   /** Per-child persona shadowing the deployment persona. */
   readonly persona?: string | undefined
   /** Per-child tool scoping. */
@@ -172,6 +176,29 @@ export function applyChildComposition(
     childCtx.systemPrompt.section({ name: 'deployment:persona', order: 0, text: composition.persona })
   }
   if (composition.toolFilter !== undefined) childCtx.tools.restrict(composition.toolFilter)
+  if (composition.evidenceTools !== undefined) {
+    assertEvidenceTools(composition.evidenceTools)
+    for (const name of composition.evidenceTools) {
+      if (childCtx.tools.get(name, childCtx.agent) === undefined) {
+        throw new SubagentError(`audit evidence tool "${name}" is unavailable in child composition`, 'EVIDENCE_TOOL_UNAVAILABLE')
+      }
+    }
+    // Audit-only admission is monotonic: scoped tool additions and the code
+    // transport must not escape the host's explicitly declared restriction.
+    if (composition.toolFilter !== undefined) {
+      const allow = composition.toolFilter.allow === undefined ? undefined : new Set(composition.toolFilter.allow)
+      const deny = new Set(composition.toolFilter.deny ?? [])
+      childCtx.tools.guard(exec => deny.has(exec.name) || (allow !== undefined && !allow.has(exec.name))
+        ? 'SUBAGENT_AUDIT_TOOL_DENIED: host audit tool scope cannot be expanded by the participant'
+        : undefined)
+    }
+    childCtx.systemPrompt.context({
+      name: 'subagent:evidence', order: 125,
+      text: 'This audit delegation requires host-observed successful tool execution in each reported turn. '
+        + `Eligible tools: ${composition.evidenceTools.join(', ')}. Cite the evidence and distinguish observations from inference. `
+        + 'Tool use is not proof that a conclusion is correct; the parent must review it. You cannot disable this requirement.',
+    })
+  }
 }
 
 /** Policy seeded onto a child session's log at the delegation boundary. */

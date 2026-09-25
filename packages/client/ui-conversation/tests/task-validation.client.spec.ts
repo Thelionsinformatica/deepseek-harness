@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { ConversationNodeAssembler } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConversationEventInput, ConversationViewDefinition, ConversationViewNode } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
-import { readTaskValidation, taskValidationPhase, taskValidationDefinition, type TaskValidationState } from '../src/client/conversation-nodes/task-validation.ts'
+import { readTaskValidation, taskValidationDefinition } from '../src/client/conversation-nodes/task-validation.ts'
+import { taskValidationPhase, type TaskValidationState } from '../src/client/contract/chat-nodes.ts'
 
 describe('explicit task validation presentation', () => {
   it('does not show success before the turn completes', () => {

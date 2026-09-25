@@ -63,6 +63,28 @@ export interface TurnTailChatData {
   readonly tokensPerSecond?: number
 }
 
+/** UI states for a task with an explicit acceptance decision. */
+export type ValidationPhase = 'checking' | 'correcting' | 'validated' | 'unvalidated'
+
+/** Latest observed acceptance decision and terminal outcome for one turn. */
+export interface TaskValidationState {
+  readonly turn: number
+  readonly seq: number
+  readonly attempt: number
+  readonly status: 'passed' | 'retry' | 'failed'
+  readonly ended?: 'completed' | 'other'
+}
+
+/**
+ * Resolve a conservative label, never treating an intermediate pass as final success.
+ * @param state - Latest decision and optional turn ending.
+ * @returns Display phase limited to the supplied acceptance criterion.
+ */
+export function taskValidationPhase(state: TaskValidationState): ValidationPhase {
+  if (state.ended !== undefined) return state.ended === 'completed' && state.status === 'passed' ? 'validated' : 'unvalidated'
+  return state.status === 'retry' ? 'correcting' : state.status === 'failed' ? 'unvalidated' : 'checking'
+}
+
 /**
  * Test whether a Tool root has settled.
  * @param block - Tool root lifecycle value.

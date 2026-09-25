@@ -1,5 +1,5 @@
 import type { ChatNodeViewProps } from '../contract/slots.ts'
-import { taskValidationPhase } from '../conversation-nodes/task-validation.ts'
+import { taskValidationPhase } from '../contract/chat-nodes.ts'
 import css from './MessageItem.module.css'
 
 /** Status applies only to explicit acceptance criteria, not to the entire conversation. */

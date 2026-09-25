@@ -1,35 +1,14 @@
 /** Browser-safe projection of explicit acceptance decisions; turn completion alone is not validation. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { ConversationNodeDefinition } from '@deepseek-ai/dsh-client-runtime/client'
+import type { TaskValidationState } from '../contract/chat-nodes.ts'
 import { chatNode } from './common.ts'
-
-/** UI states for a task with an explicit acceptance decision. */
-export type ValidationPhase = 'checking' | 'correcting' | 'validated' | 'unvalidated'
-
-/** Latest observed decision and terminal outcome for one turn. */
-export interface TaskValidationState {
-  turn: number
-  seq: number
-  attempt: number
-  status: 'passed' | 'retry' | 'failed'
-  ended?: 'completed' | 'other'
-}
 
 declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
   interface ChatNodeDataMap {
     /** Explicit task acceptance, separate from the ordinary completion footer. */
     'task-validation': TaskValidationState
   }
-}
-
-/**
- * Resolve a conservative label, never treating an intermediate pass as final success.
- * @param state Latest decision and optional turn ending.
- * @returns Display phase limited to the supplied acceptance criterion.
- */
-export function taskValidationPhase(state: TaskValidationState): ValidationPhase {
-  if (state.ended !== undefined) return state.ended === 'completed' && state.status === 'passed' ? 'validated' : 'unvalidated'
-  return state.status === 'retry' ? 'correcting' : state.status === 'failed' ? 'unvalidated' : 'checking'
 }
 
 /**

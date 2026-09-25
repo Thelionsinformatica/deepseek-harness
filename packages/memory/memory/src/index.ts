@@ -302,6 +302,7 @@ export class MemoryRuntime extends Service {
     const normalized = {
       ...request,
       content: normalizeContent(request.content),
+      ...normalizeRankingMetadata(request),
       ...normalizeUpdateTemporal(request),
     }
     const provider = this.resolveProvider({
@@ -506,7 +507,7 @@ function normalizeContent(content: string): string {
 }
 
 /** Validate optional ranking signals at the provider-neutral write boundary. */
-function normalizeRankingMetadata(request: MemoryCreateRequest): Pick<
+function normalizeRankingMetadata(request: Pick<MemoryCreateRequest, 'importance' | 'confidence' | 'validation'>): Pick<
   MemoryCreateRequest,
   'importance' | 'confidence' | 'validation'
 > {

@@ -49,6 +49,8 @@ export interface MemoryRecord {
   readonly confidence?: number
   /** Optional confirmation class; legacy records remain valid without it. */
   readonly validation?: MemoryValidation
+  /** Optional marker that this fact belongs to the always-present core profile. */
+  readonly core?: boolean
   /** Persistent record schema version; legacy records default to 1. */
   readonly schemaVersion?: MemoryRecordSchemaVersion
   /** Inclusive instant from which this revision may participate in active search. */
@@ -106,6 +108,8 @@ export interface MemoryCreateRequest {
   readonly confidence?: number
   /** Optional confirmation class used by final retrieval ranking. */
   readonly validation?: MemoryValidation
+  /** Optional marker that this fact belongs to the always-present core profile. */
+  readonly core?: boolean
   /** Optional ISO timestamp that schedules when the memory becomes active. */
   readonly validFrom?: string
   /** Optional ISO timestamp that expires the memory from active search. */
@@ -178,6 +182,12 @@ export interface MemoryUpdateRequest {
   readonly scope: MemoryScope
   readonly ref: MemoryRef
   readonly content: string
+  /** Explicit confidence for this revision; omitted values survive only unchanged content. */
+  readonly confidence?: number
+  /** Explicit confirmation for this revision; omitted values survive only unchanged content. */
+  readonly validation?: MemoryValidation
+  /** Optional marker toggling membership in the always-present core profile. */
+  readonly core?: boolean
   /** Optional provenance for the correcting session; legacy callers retain the prior source. */
   readonly source?: MemorySource
   /** Optional ISO timestamp that schedules activation of the corrected revision. */

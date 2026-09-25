@@ -1,3 +1,4 @@
+import { createServer } from 'node:http'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MemoryId, type MemoryRecord } from '@deepseek-ai/dsh-memory'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -127,6 +128,103 @@ describe('Ollama local semantic index', () => {
       .rejects.toMatchObject({ code: 'RESPONSE_TOO_LARGE' })
   })
 
+  it.each([400, 500])('bounds a streamed HTTP %s error before classifying it', async (status) => {
+    const cancelled = vi.fn()
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(new TextEncoder().encode('é'.repeat(6))) },
+      cancel: cancelled,
+    })
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, { status })))
+    const index = new OllamaSemanticIndex(config({ maxResponseBytes: 10 }))
+    await expect(index.rank('consulta', [candidate('one', 'Documento.')]))
+      .rejects.toMatchObject({ code: 'RESPONSE_TOO_LARGE' })
+    expect(cancelled).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    [400, { error: { code: 'context_length_exceeded', message: 'private-response-text' } }, 'INPUT_TOO_LARGE'],
+    [400, { error: { type: 'exceed_context_size_error' } }, 'INPUT_TOO_LARGE'],
+    [413, { error: { code: 'context_window_exceeded' } }, 'INPUT_TOO_LARGE'],
+    [422, { error: 'the input length exceeds the context length' }, 'INPUT_TOO_LARGE'],
+    [400, { error: { message: 'request (3000 tokens) exceeds the available context size (2048 tokens), try increasing it' } }, 'INPUT_TOO_LARGE'],
+    [500, { error: { message: 'out of memory; private-response-text' } }, 'HTTP_ERROR'],
+    [503, { error: { code: 'context_length_exceeded' } }, 'HTTP_ERROR'],
+    [400, { error: { message: 'private note mentions context or physical batch size' } }, 'HTTP_ERROR'],
+    [400, { error: null }, 'HTTP_ERROR'],
+    [400, null, 'HTTP_ERROR'],
+    [400, {}, 'HTTP_ERROR'],
+  ] as const)('classifies HTTP %s without retaining provider detail: %j', async (status, body, code) => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), { status })))
+    const index = new OllamaSemanticIndex(config())
+    await expect(index.rank('private-query', [candidate('one', 'private-document')]))
+      .rejects.toMatchObject({ code, message: `local semantic search failed: ${code}` })
+  })
+
+  it('keeps invalid HTTP error bodies generic rather than exposing or parsing them as embeddings', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('private-invalid-json', { status: 500 })))
+    await expect(new OllamaSemanticIndex(config()).rank('consulta', [candidate('one', 'Documento.')]))
+      .rejects.toMatchObject({ code: 'HTTP_ERROR', message: 'local semantic search failed: HTTP_ERROR' })
+  })
+
+  it.each(['ollama', 'openai-compatible'] as const)('does not truncate or retry oversized %s input', async (api) => {
+    const longContent = 'conteúdo privado '.repeat(1000)
+    const fetchMock = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      if (typeof init?.body !== 'string') throw new TypeError('expected serialized body')
+      expect(JSON.parse(init.body)).toEqual({
+        model: 'nomic-embed-text:latest',
+        input: ['search_query: consulta', `search_document: ${longContent}`],
+        ...(api === 'ollama' ? { truncate: false, dimensions: 64 } : {}),
+      })
+      expect(init.redirect).toBe('error')
+      return new Response(JSON.stringify({ error: {
+        code: 500,
+        message: 'input (970 tokens) is too large to process. increase the physical batch size (current batch size: 512)',
+        type: 'server_error',
+      } }), { status: 500 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(new OllamaSemanticIndex(config({ api })).rank('consulta', [candidate('one', longContent)]))
+      .rejects.toMatchObject({ code: 'INPUT_TOO_LARGE', message: 'local semantic search failed: INPUT_TOO_LARGE' })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([307, 308])('never follows HTTP %s with a memory-bearing POST through real fetch', async (status) => {
+    let redirectedRequests = 0
+    const entryRequests: string[] = []
+    const server = createServer((request, response) => {
+      if (request.url === '/must-not-receive') {
+        redirectedRequests++
+        response.writeHead(500).end()
+        return
+      }
+      entryRequests.push(request.url ?? '')
+      response.writeHead(status, { location: '/must-not-receive' }).end()
+    })
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.once('error', reject)
+        server.listen(0, '127.0.0.1', resolve)
+      })
+      const address = server.address()
+      if (address === null || typeof address === 'string') throw new Error('expected loopback test port')
+      for (const api of ['ollama', 'openai-compatible'] as const) {
+        const index = new OllamaSemanticIndex(config({ api, baseUrl: `http://127.0.0.1:${address.port}` }))
+        await expect(index.rank('consulta', [candidate('one', 'Documento privado sintético.')]))
+          .rejects.toMatchObject({ code: 'TRANSPORT', message: 'local semantic search failed: TRANSPORT' })
+      }
+      expect(entryRequests).toEqual(['/api/embed', '/v1/embeddings'])
+      expect(redirectedRequests).toBe(0)
+    } finally {
+      server.closeAllConnections()
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error === undefined) resolve()
+          else reject(error)
+        })
+      })
+    }
+  })
+
   it('classifies local timeout and transport failures separately', async () => {
     vi.stubGlobal('fetch', vi.fn((_input: string | URL | Request, init?: RequestInit) => {
       const signal = init?.signal
@@ -208,6 +306,64 @@ describe('OpenAI-compatible embedding dialect', () => {
     expect(seen.url).toBe('http://127.0.0.1:8099/v1/embeddings')
     expect(seen.body).toEqual({ model: 'nomic-embed-text:latest', input: ['search_query: consulta', 'search_document: Documento.'] })
     expect(ranking.scores.get(MemoryId('one'))).toBe(0)
+  })
+
+  it('maps every reordered row to its exact input index rather than response position', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      data: [
+        { index: 2, embedding: unitVector(1) },
+        { index: 0, embedding: unitVector(0) },
+        { index: 1, embedding: unitVector(0) },
+      ],
+    }), { status: 200 })))
+    const index = new OllamaSemanticIndex(config({ api: 'openai-compatible' }))
+    const ranking = await index.rank('consulta', [candidate('one', 'Relacionado.'), candidate('two', 'Outro tema.')])
+    expect(ranking.scores).toEqual(new Map([[MemoryId('one'), 1], [MemoryId('two'), 0]]))
+  })
+
+  it.each([
+    ['duplicate', [0, 0]],
+    ['missing', [0, undefined]],
+    ['negative', [-1, 1]],
+    ['outside range', [0, 2]],
+    ['fractional', [0, 0.5]],
+    ['string', [0, '1']],
+    ['null', [0, null]],
+    ['boolean', [0, true]],
+    ['unsafe integer', [0, Number.MAX_SAFE_INTEGER + 1]],
+  ] as const)('rejects %s indices rather than assigning vectors to the wrong memory', async (_label, indices) => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      data: indices.map(index => ({ index, embedding: unitVector() })),
+    }), { status: 200 })))
+    await expect(new OllamaSemanticIndex(config({ api: 'openai-compatible' })).rank('consulta', [candidate('one', 'Documento.')]))
+      .rejects.toMatchObject({ code: 'INVALID_RESPONSE' })
+  })
+
+  it.each([null, false, 'row', 3, []])('rejects a non-object embedding row %j as INVALID_RESPONSE', async (row) => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      data: [{ index: 0, embedding: unitVector() }, row],
+    }), { status: 200 })))
+    await expect(new OllamaSemanticIndex(config({ api: 'openai-compatible' })).rank('consulta', [candidate('one', 'Documento.')]))
+      .rejects.toMatchObject({ code: 'INVALID_RESPONSE' })
+  })
+
+  it('does not populate the document cache after an invalid indexed batch', async () => {
+    const batches: string[][] = []
+    vi.stubGlobal('fetch', vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as { input: string[] }
+      batches.push(body.input)
+      return new Response(JSON.stringify({
+        data: body.input.map((_item, position) => ({
+          index: batches.length === 1 ? 0 : position,
+          embedding: unitVector(),
+        })),
+      }), { status: 200 })
+    }))
+    const index = new OllamaSemanticIndex(config({ api: 'openai-compatible' }))
+    const records = [candidate('one', 'Documento.')]
+    await expect(index.rank('consulta', records)).rejects.toMatchObject({ code: 'INVALID_RESPONSE' })
+    await expect(index.rank('consulta', records)).resolves.toMatchObject({ embeddedCount: 1, cacheHitCount: 0 })
+    expect(batches.map(batch => batch.length)).toEqual([2, 2])
   })
 
   it.each([

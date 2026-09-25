@@ -23,7 +23,11 @@ The model guidance permits writes only for explicit remember intent or a clearly
 
 ## Personal memory
 
-Personal tools never accept an owner id from the model. They use the deployment-configured partition, require an owning agent Session for provenance, and preserve the same exact-revision correction and forgetting behavior as workspace memory. First-step personal recall derives its query only from human-authored text, skips credential-like values, stays inside the configured owner partition, and labels the bounded `personal-memory:recall` snapshot as untrusted data with no instruction authority. It does not create durable memory automatically.
+Personal tools never accept an owner id from the model. They use the deployment-configured partition, require an owning agent Session for provenance, and preserve the same exact-revision correction and forgetting behavior as workspace memory. Personal recall derives its query only from human-authored text, skips credential-like values, stays inside the configured owner partition, and labels the bounded `personal-memory:recall` snapshot as untrusted data with no instruction authority. It does not create durable memory automatically.
+
+Confirmed active records marked `core: true` also form a query-independent `personal-memory:core` snapshot, including on a greeting such as "oi". `coreRecallLimit` defaults to 10 and `coreRecallMaxChars` to 2,000. Listing traverses all active pages; only facts actually serialized within that budget are excluded from query recall. Marking `core` alone does not confirm a fact.
+
+Before every step, the plugin clears its prior personal snapshots through logged Session surface replacements, then reads the current provider state and projects fresh snapshots. It also refreshes after request-error recovery that retries within the same step, including backoff and context-overflow recovery. Original events remain intact. A mutation, provider change, or enablement change during the read invalidates the result, including disable followed by re-enable; this guard does not depend on telemetry. Provider failure logs a warning and does not restore the failed snapshot's previous values.
 
 ## Final ranking
 
@@ -61,6 +65,8 @@ The same Host Remote exposes workspace-scoped listing, correction, and forgettin
 When `personalOwnerId`, `personalMemory`, and `settings` are composed, the Host Remote exposes a separate owner-isolated panel for listing, explicitly adding, correcting, forgetting, and enabling or disabling personal memory. The owner id is deployment configuration and never crosses the browser boundary. Writes require visible confirmation, reject credential-like content, use exact revisions for correction and forgetting, and append content-free records to the separate `personal_memory_admin` domain.
 
 The live enablement preference is stored under the `personal-memory` settings namespace. Disabling it immediately blocks model recall, creation, and correction, while listing and permanent forgetting remain available so the user can inspect or remove existing local data. Personal rows, settings, and audit records never share a workspace-memory partition.
+
+The confirmed correction operation also reconfirms the complete submitted text, even when unchanged, with `validation: explicit` and `confidence: 1`. It still requires full administration, visible confirmation, the owning Session, and the exact revision. Ordinary model corrections do not receive this approval: changing content without a new confirmation removes the previous confirmation and keeps the fact outside the core profile.
 
 ## Structured procedure learning
 
@@ -110,6 +116,20 @@ Zero when disabled or no safe hit is found; otherwise data-dependent and hard-bo
 #### KV Cache effect
 
 The snapshot is inserted immediately before the current human message and varies with query and stored facts, so that turn's dynamic suffix changes. Earlier durable history remains reusable.
+
+### Personal core and query projections
+
+#### What the model sees
+
+The current core and query snapshots carry ids, revisions, and bounded values as untrusted data. Replaced snapshots remain in the audit log but leave the active model surface. A cleared retained slot says `Personal memory context cleared. Previously injected personal-memory values are not current facts.` Removing a snapshot through compaction causes the next refresh to recreate it from the provider, not from old message text.
+
+#### Token effect
+
+The current core payload is bounded by `coreRecallMaxChars`, and query recall by `recallMaxChars`. Existing slots are replaced instead of accumulating a new profile each step. Clearing legacy duplicate slots leaves content-free markers until compaction. Re-reading all active pages each step adds local I/O; it does not call a language model.
+
+#### KV Cache effect
+
+A replacement changes the active prefix from its first changed token. Audit-log growth is append-only, but KV Cache reuse of old personal snapshots is not guaranteed. This favors current memory state over retaining stale cached values.
 
 ### Optional shadow extraction
 
@@ -217,6 +237,9 @@ Append-only; individual calls and results follow the reusable request prefix and
 
 ## Known Limitations and Deferred Work
 
+- The existing `personal_memory_remember` tool assigns `validation: explicit` and confidence 1 based on the model following its explicit-intent instructions. It has no separate deterministic consent gate. The core filter checks recorded metadata, not independent evidence of human approval; the confirmed administration path does not govern this creation tool.
+- Clearing personal snapshots does not redact values already copied into human messages, tool results, assistant replies, or older summaries. Audit events are deliberately preserved; this is current-context invalidation, not retroactive erasure of the conversation.
+- Core recall traverses every active page on each step. Output is bounded, but read cost grows with the owner partition; large deployments need measured latency before activation.
 - Controlled writes require an explicit approval plus exact Host configuration; the current UI does not yet edit the per-user or per-workspace allowlists.
 - Personal administration targets one configured local owner. Authenticated multi-user and organization-wide memory controls remain intentionally unavailable.
 - Global memories and cross-workspace search are intentionally unavailable.

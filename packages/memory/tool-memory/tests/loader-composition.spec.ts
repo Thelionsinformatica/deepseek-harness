@@ -27,6 +27,8 @@ let context: Context | undefined
 
 afterEach(async () => {
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+  vi.useRealTimers()
   await context?.fiber.dispose()
   context = undefined
   if (root !== undefined) await rm(root, { recursive: true, force: true })
@@ -56,6 +58,21 @@ function registerAgent(ctx: Context, cwd: string): Agent {
   }
   ctx.agents.register(agent)
   return agent
+}
+
+/** Fire one first-step pre-step and return every injected text block. */
+async function runPreStep(agent: Agent, text: string): Promise<string[]> {
+  if (context === undefined) throw new Error('loader context was not initialized')
+  const message = createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } })
+  const result = await agentEvents(context, agent).waterfall(
+    'agent/pre-step',
+    { messages: [message], turn: 1, step: 1, signal: new AbortController().signal },
+    async () => ({ kind: 'enter', messages: [message] }),
+  )
+  if (result.kind !== 'enter') return []
+  return result.messages
+    .filter(item => item.source.kind === 'plugin')
+    .flatMap(item => item.content.flatMap(block => block.type === 'text' ? [block.text] : []))
 }
 
 /** Boot the production Loader seam with the local memory stack plus scenario-specific plugins. */
@@ -221,5 +238,270 @@ describe('memory shadow extraction through a real Loader composition', () => {
       query: 'Onde estão as cópias de segurança?',
       limit: 4,
     })).resolves.toMatchObject([{ record: { id: created.id } }])
+  })
+
+  it('injects the always-present core profile on a new session, even for a bare "oi"', async () => {
+    const workspacePath = await bootMemoryLoader([
+      "- name: '@deepseek-ai/dsh-tool-memory'",
+      '  config: { personalOwnerId: core-owner, personalAutomaticRecall: true }',
+    ])
+    if (context === undefined) throw new Error('loader context was not initialized')
+    const scope = { ownerId: PersonalMemoryOwnerId('core-owner') }
+    await context.personalMemory.create({
+      scope, content: 'O usuário se chama Alessandro.', validation: 'explicit', core: true,
+      source: { kind: 'session', sessionId: SessionId('core-source') },
+    })
+    await context.personalMemory.create({
+      scope, content: 'Fato não essencial sobre um projeto.',
+      source: { kind: 'session', sessionId: SessionId('core-source') },
+    })
+
+    const agent = registerAgent(context, workspacePath)
+    const message = createUserMessage({ content: [{ type: 'text', text: 'oi' }], source: { kind: 'user' } })
+    const result = await agentEvents(context, agent).waterfall(
+      'agent/pre-step',
+      { messages: [message], turn: 1, step: 1, signal: new AbortController().signal },
+      async () => ({ kind: 'enter', messages: [message] }),
+    )
+    expect(result.kind).toBe('enter')
+    const coreText = (result.kind === 'enter' ? result.messages : [])
+      .flatMap(item => item.content.flatMap(block => block.type === 'text' ? [block.text] : []))
+      .find(text => text.includes('personal-core-profile'))
+    expect(coreText).toBeDefined()
+    expect(coreText).toContain('Alessandro')
+    expect(coreText).not.toContain('não essencial')
+  })
+
+  it('does not inject the core profile when personal memory is disabled', async () => {
+    const workspacePath = await bootMemoryLoader([
+      "- name: '@deepseek-ai/dsh-tool-memory'",
+      '  config: { personalOwnerId: core-owner, personalAutomaticRecall: true }',
+    ])
+    if (context === undefined) throw new Error('loader context was not initialized')
+    const scope = { ownerId: PersonalMemoryOwnerId('core-owner') }
+    await context.personalMemory.create({
+      scope, content: 'O usuário se chama Alessandro.', validation: 'explicit', core: true,
+      source: { kind: 'session', sessionId: SessionId('core-source') },
+    })
+    context.personalMemory.setEnabled(false)
+
+    const agent = registerAgent(context, workspacePath)
+    const message = createUserMessage({ content: [{ type: 'text', text: 'oi' }], source: { kind: 'user' } })
+    const result = await agentEvents(context, agent).waterfall(
+      'agent/pre-step',
+      { messages: [message], turn: 1, step: 1, signal: new AbortController().signal },
+      async () => ({ kind: 'enter', messages: [message] }),
+    )
+    const texts = (result.kind === 'enter' ? result.messages : [])
+      .flatMap(item => item.content.flatMap(block => block.type === 'text' ? [block.text] : []))
+    expect(texts.some(text => text.includes('personal-core-profile'))).toBe(false)
+  })
+
+  it('invalidates a corrected core fact from the active projection', async () => {
+    const workspacePath = await bootMemoryLoader([
+      "- name: '@deepseek-ai/dsh-tool-memory'",
+      '  config: { personalOwnerId: core-owner, personalAutomaticRecall: true }',
+    ])
+    if (context === undefined) throw new Error('loader context was not initialized')
+    const scope = { ownerId: PersonalMemoryOwnerId('core-owner') }
+    const created = await context.personalMemory.create({
+      scope, content: 'Alessandro prefere café.', validation: 'explicit', core: true,
+      source: { kind: 'session', sessionId: SessionId('core-source') },
+    })
+    const agent = registerAgent(context, workspacePath)
+
+    const first = await runPreStep(agent, 'oi')
+    expect(first.some(text => text.includes('café'))).toBe(true)
+
+    await context.personalMemory.update({
+      scope, ref: { id: created.id, revision: created.revision }, content: 'Alessandro prefere chá.',
+      source: { kind: 'session', sessionId: SessionId('core-source') },
+    })
+
+    const second = await runPreStep(agent, 'oi')
+    expect(second.some(text => text.includes('café'))).toBe(false)
+    expect(second.some(text => text.includes('chá'))).toBe(false)
+  })
+
+  it('marks and unmarks an existing fact as core through update', async () => {
+    const workspacePath = await bootMemoryLoader([
+      "- name: '@deepseek-ai/dsh-tool-memory'",
+      '  config: { personalOwnerId: core-owner, personalAutomaticRecall: true }',
+    ])
+    if (context === undefined) throw new Error('loader context was not initialized')
+    const scope = { ownerId: PersonalMemoryOwnerId('core-owner') }
+    const created = await context.personalMemory.create({
+      scope, content: 'Alessandro usa Linux.', validation: 'explicit',
+      source: { kind: 'session', sessionId: SessionId('core-source') },
+    })
+    const agent = registerAgent(context, workspacePath)
+
+    let texts = await runPreStep(agent, 'oi')
+    expect(texts.some(text => text.includes('Linux'))).toBe(false)
+
+    const marked = await context.personalMemory.update({
+      scope, ref: { id: created.id, revision: created.revision }, content: 'Alessandro usa Linux.', core: true,
+      source: { kind: 'session', sessionId: SessionId('core-source') },
+    })
+    texts = await runPreStep(agent, 'oi')
+    expect(texts.some(text => text.includes('Linux'))).toBe(true)
+
+    await context.personalMemory.update({
+      scope, ref: { id: created.id, revision: marked.revision }, content: 'Alessandro usa Linux.', core: false,
+      source: { kind: 'session', sessionId: SessionId('core-source') },
+    })
+    texts = await runPreStep(agent, 'oi')
+    expect(texts.some(text => text.includes('Linux'))).toBe(false)
+  })
+
+  it('removes a forgotten core fact from later turns', async () => {
+    const workspacePath = await bootMemoryLoader([
+      "- name: '@deepseek-ai/dsh-tool-memory'",
+      '  config: { personalOwnerId: core-owner, personalAutomaticRecall: true }',
+    ])
+    if (context === undefined) throw new Error('loader context was not initialized')
+    const scope = { ownerId: PersonalMemoryOwnerId('core-owner') }
+    const created = await context.personalMemory.create({
+      scope, content: 'Alessandro prefere café.', validation: 'explicit', core: true,
+      source: { kind: 'session', sessionId: SessionId('core-source') },
+    })
+    await context.personalMemory.forget({ scope, ref: { id: created.id, revision: created.revision } })
+
+    const agent = registerAgent(context, workspacePath)
+    const texts = await runPreStep(agent, 'oi')
+    expect(texts.some(text => text.includes('café'))).toBe(false)
+  })
+
+  it('does not duplicate a core fact in the query recall of the same turn', async () => {
+    const workspacePath = await bootMemoryLoader([
+      "- name: '@deepseek-ai/dsh-tool-memory'",
+      '  config: { personalOwnerId: core-owner, personalAutomaticRecall: true }',
+    ])
+    if (context === undefined) throw new Error('loader context was not initialized')
+    const scope = { ownerId: PersonalMemoryOwnerId('core-owner') }
+    await context.personalMemory.create({
+      scope, content: 'Alessandro prefere café.', validation: 'explicit', core: true,
+      source: { kind: 'session', sessionId: SessionId('core-source') },
+    })
+    await context.personalMemory.create({
+      scope, content: 'O projeto usa Ollama.',
+      source: { kind: 'session', sessionId: SessionId('core-source') },
+    })
+
+    const agent = registerAgent(context, workspacePath)
+    const texts = await runPreStep(agent, 'café Ollama')
+    expect(texts.filter(text => text.includes('café')).length).toBe(1)
+    expect(texts.some(text => text.includes('Ollama'))).toBe(true)
+  })
+
+  it('finds a core fact beyond the first listing page', async () => {
+    const workspacePath = await bootMemoryLoader([
+      "- name: '@deepseek-ai/dsh-tool-memory'",
+      '  config: { personalOwnerId: core-owner, personalAutomaticRecall: true }',
+    ])
+    if (context === undefined) throw new Error('loader context was not initialized')
+    const scope = { ownerId: PersonalMemoryOwnerId('core-owner') }
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-09-22T12:00:00.000Z'))
+    const core = await context.personalMemory.create({
+      scope, content: 'Alessandro prefere café.', validation: 'explicit', core: true,
+      source: { kind: 'session', sessionId: SessionId('core-source') },
+    })
+    vi.setSystemTime(new Date('2026-09-22T12:00:01.000Z'))
+    for (let i = 0; i < 201; i++) {
+      await context.personalMemory.create({
+        scope, content: `Fato ordinário ${i}.`,
+        source: { kind: 'session', sessionId: SessionId('core-source') },
+      })
+    }
+    const firstPage = await context.personalMemory.list({ scope, statuses: ['active'], offset: 0, limit: 200 })
+    expect(firstPage.items).toHaveLength(200)
+    expect(firstPage.hasMore).toBe(true)
+    expect(firstPage.items.some(item => item.record.id === core.id)).toBe(false)
+
+    const agent = registerAgent(context, workspacePath)
+    const texts = await runPreStep(agent, 'oi')
+    expect(texts.some(text => text.includes('café'))).toBe(true)
+  })
+
+  it('keeps query recall available when the core listing fails', async () => {
+    const workspacePath = await bootMemoryLoader([
+      "- name: '@deepseek-ai/dsh-tool-memory'",
+      '  config: { personalOwnerId: core-owner, personalAutomaticRecall: true }',
+    ])
+    if (context === undefined) throw new Error('loader context was not initialized')
+    const scope = { ownerId: PersonalMemoryOwnerId('core-owner') }
+    await context.personalMemory.create({
+      scope, content: 'O projeto usa armazenamento local.',
+      source: { kind: 'session', sessionId: SessionId('core-source') },
+    })
+    const list = vi.spyOn(PersonalMemoryLocal.LocalPersonalMemoryProvider.prototype, 'list')
+      .mockRejectedValueOnce(new Error('synthetic core listing failure'))
+
+    const agent = registerAgent(context, workspacePath)
+    const texts = await runPreStep(agent, 'armazenamento')
+    expect(list).toHaveBeenCalledOnce()
+    expect(texts.some(text => text.includes('personal-core-profile'))).toBe(false)
+    expect(texts.some(text => text.includes('armazenamento local'))).toBe(true)
+  })
+
+  it('suppresses both snapshots when memory is disabled while search resolves', async () => {
+    const workspacePath = await bootMemoryLoader([
+      "- name: '@deepseek-ai/dsh-tool-memory'",
+      '  config: { personalOwnerId: core-owner, personalAutomaticRecall: true }',
+    ])
+    if (context === undefined) throw new Error('loader context was not initialized')
+    const personalMemory = context.personalMemory
+    const scope = { ownerId: PersonalMemoryOwnerId('core-owner') }
+    await personalMemory.create({
+      scope, content: 'O usuário prefere respostas compactas.', validation: 'explicit', core: true,
+      source: { kind: 'session', sessionId: SessionId('core-source') },
+    })
+    await personalMemory.create({
+      scope, content: 'O projeto usa armazenamento local.',
+      source: { kind: 'session', sessionId: SessionId('core-source') },
+    })
+    const providerSearch = personalMemory.search.bind(personalMemory)
+    const search = vi.spyOn(personalMemory, 'search')
+      .mockImplementation(async (request, signal) => {
+        const hits = await providerSearch(request, signal)
+        personalMemory.setEnabled(false)
+        return hits
+      })
+
+    const agent = registerAgent(context, workspacePath)
+    const texts = await runPreStep(agent, 'armazenamento')
+    expect(search).toHaveBeenCalledOnce()
+    expect(personalMemory.isEnabled()).toBe(false)
+    expect(texts).toEqual([])
+  })
+
+  it('recalls a matching core fact omitted by the core character budget', async () => {
+    const workspacePath = await bootMemoryLoader([
+      "- name: '@deepseek-ai/dsh-tool-memory'",
+      '  config: { personalOwnerId: core-owner, personalAutomaticRecall: true, coreRecallMaxChars: 512, recallMaxChars: 2000 }',
+    ])
+    if (context === undefined) throw new Error('loader context was not initialized')
+    const scope = { ownerId: PersonalMemoryOwnerId('core-owner') }
+    const longFact = `Observatório experimental: ${'documentação local de laboratório. '.repeat(20)}`
+    await context.personalMemory.create({
+      scope, content: longFact, validation: 'explicit', core: true,
+      source: { kind: 'session', sessionId: SessionId('core-source') },
+    })
+    await context.personalMemory.create({
+      scope, content: 'O usuário prefere respostas compactas.', validation: 'explicit', core: true,
+      source: { kind: 'session', sessionId: SessionId('core-source') },
+    })
+
+    const agent = registerAgent(context, workspacePath)
+    const texts = await runPreStep(agent, 'Observatório')
+    const coreText = texts.find(text => text.includes('personal-core-profile'))
+    expect(coreText).toBeDefined()
+    expect(coreText).toContain('respostas compactas')
+    expect(coreText).not.toContain('Observatório')
+    expect(coreText!.length).toBeLessThanOrEqual(512)
+    const recallText = texts.find(text => text.includes('personal-memory-context'))
+    expect(recallText).toContain(longFact.trim())
+    expect(recallText!.length).toBeLessThanOrEqual(2000)
   })
 })

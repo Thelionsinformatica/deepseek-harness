@@ -15,6 +15,8 @@ This package is the local provider for `ctx.personalMemory`. It opens the versio
 
 `historyMode` defaults to `temporal-v2`. `v1` is an emergency rollback to in-place correction; it does not merge the personal and workspace domains.
 
+Optional `linking` derives revision-pinned similarity edges with the same validated bounds, durable publication, temporal scheduling, and read-only snapshots as `memory-local`. `embeddings` selects its loopback transport; a deployment must verify that endpoint runs locally rather than proxies remotely. The live personal-memory enablement preference also gates background work: disabling cancels pending computation, suppresses publication, and drains submitted writes; re-enabling seeds known partitions without editing their facts. The domain closes only after graph work settles.
+
 ## Model Experience
 
 Indirectly, through `@deepseek-ai/dsh-tool-memory`; this provider adds no schema or prompt text.

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-21-derived-memory-graph.md
-2026-09-21-derived-memory-graph.md: a50a2a05ba5afaffb0a5f223e4148804ae79790d
-2026-09-21-derived-memory-graph.zh.md: ed2bb9bd36b43d1fc59f056ec2061d433c58e026
+2026-09-21-derived-memory-graph.md: 22d018f60dd98c0cbceb3c4d64ae08d65a81256d
+2026-09-21-derived-memory-graph.zh.md: 8342887cf9276805e7fddf84b3efdae9c22c46bf

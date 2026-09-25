@@ -16,6 +16,8 @@ Every operation carries a stable `WorkspaceId`; raw paths are never ownership ke
 
 Record schema V2 adds `validFrom`, `validUntil`, `expiresAt`, `supersedes`, and `supersededBy`. The contract still accepts schema V1 records. Preservation and physical layout are provider responsibilities; the shipped local provider preserves revisions atomically instead of silently overwriting them.
 
+`update()` optionally accepts fresh `validation` (`explicit` or `reviewed`) and `confidence` (0–1). These are Host-supplied confirmation metadata, not self-approval fields on model tools. In the local provider, changed content clears omitted confirmation metadata; unchanged content retains omitted metadata. Explicit values apply to the new revision without rewriting temporal history.
+
 Provider selection is execution-time and registration-order independent. An explicit `provider` must be registered and usable. Without one, exactly one usable provider is required; zero or several usable providers fail with a structured `MemoryError` code.
 
 ## Model Experience

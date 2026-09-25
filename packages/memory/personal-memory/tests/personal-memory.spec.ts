@@ -6,6 +6,7 @@ import PersonalMemoryRuntime, {
   type PersonalMemoryCreateRequest,
   type PersonalMemoryProvider,
   type PersonalMemoryRecord,
+  type PersonalMemoryUpdateRequest,
 } from '@deepseek-ai/dsh-personal-memory'
 import { SessionId } from '@deepseek-ai/dsh-session'
 
@@ -125,6 +126,38 @@ describe('PersonalMemoryRuntime', () => {
     await expect(missing.personalMemory.search({ scope, query: 'x', limit: 1 }))
       .rejects.toThrow(expect.objectContaining({ code: 'PERSONAL_MEMORY_PROVIDER_MISSING' }))
     await missing.fiber.dispose()
+  })
+
+  it('validates confirmation metadata on correction and forwards explicit values without promoting core-only updates', async () => {
+    const ctx = await harness()
+    const update = vi.fn((request: PersonalMemoryUpdateRequest) => Promise.resolve(record(request.content)))
+    const create = vi.fn((request: PersonalMemoryCreateRequest) => Promise.resolve(record(request.content)))
+    ctx.personalMemory.registerProvider({ ...provider(), create, update })
+    const request = { scope, ref: { id: MemoryId('personal-one'), revision: 1 }, content: ' corrected ' }
+    try {
+      for (const confidence of [Number.NaN, Number.POSITIVE_INFINITY, -0.1, 1.1]) {
+        await expect(ctx.personalMemory.update({ ...request, confidence }))
+          .rejects.toThrow(expect.objectContaining({ code: 'PERSONAL_MEMORY_INVALID_CONFIDENCE' }))
+      }
+      await expect(ctx.personalMemory.update({ ...request, validation: 'automatic' as 'explicit' }))
+        .rejects.toThrow(expect.objectContaining({ code: 'PERSONAL_MEMORY_INVALID_VALIDATION' }))
+      await expect(ctx.personalMemory.create({ scope, content: 'invalid confirmation', source, validation: 'automatic' as 'explicit' }))
+        .rejects.toThrow(expect.objectContaining({ code: 'PERSONAL_MEMORY_INVALID_VALIDATION' }))
+      expect(update).not.toHaveBeenCalled()
+      expect(create).not.toHaveBeenCalled()
+      await ctx.personalMemory.update({ ...request, confidence: 0, validation: 'explicit' })
+      await ctx.personalMemory.update({ ...request, confidence: 1, validation: 'reviewed' })
+      await ctx.personalMemory.update({ ...request, core: true })
+      expect(update.mock.calls.map(([value]) => value)).toMatchObject([
+        { content: 'corrected', confidence: 0, validation: 'explicit' },
+        { content: 'corrected', confidence: 1, validation: 'reviewed' },
+        { content: 'corrected', core: true },
+      ])
+      expect(update.mock.calls[2]?.[0]).not.toHaveProperty('validation')
+      expect(update.mock.calls[2]?.[0]).not.toHaveProperty('confidence')
+    } finally {
+      await ctx.fiber.dispose()
+    }
   })
 
   it('disables model and mutation operations while preserving administrative listing', async () => {

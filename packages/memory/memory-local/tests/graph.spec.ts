@@ -39,6 +39,12 @@ function table<K extends string, V>(initial: Iterable<readonly [K, V]> = []): Kv
     get: (key: K) => records.get(key),
     entries: () => records.entries(),
     put: async (key: K, value: V) => { records.set(key, value) },
+    mutate: async <R>(key: K, decide: (current: V | undefined) =>
+      { kind: 'keep'; result: R } | { kind: 'put'; value: V; result: R }) => {
+      const decision = decide(records.get(key))
+      if (decision.kind === 'put') records.set(key, decision.value)
+      return decision.result
+    },
     delete: async (key: K) => records.delete(key),
   } as unknown as KvTable<K, V>
 }
@@ -90,7 +96,7 @@ function schedulerHarness(
       maxResponseBytes: 1_000_000,
     }),
     config,
-    event => events.push(event),
+    (event) => { events.push(event) },
   )
   return { graphTable, scheduler, events }
 }
@@ -106,17 +112,17 @@ afterEach(() => {
 })
 
 describe('memory similarity graph scheduler', () => {
-  it('reports pending without scheduling work when never computed', async () => {
+  it('reports empty without scheduling work for an unused partition', async () => {
     const memories = table<MemoryId, LocalMemoryRecord>()
     const { scheduler, graphTable } = schedulerHarness(memories)
     const fetchSpy = vi.fn()
     vi.stubGlobal('fetch', fetchSpy)
 
-    expect(scheduler.snapshot(alpha)).toEqual({ row: undefined, status: 'pending' })
+    expect(scheduler.snapshot(alpha)).toEqual({ row: undefined, status: 'empty' })
     await settled()
     expect(fetchSpy).not.toHaveBeenCalled()
     expect(graphTable.get(alpha)).toBeUndefined()
-    scheduler.dispose()
+    await scheduler.dispose()
   })
 
   it('publishes one atomic snapshot with revision-pinned edges after a commit', async () => {
@@ -140,7 +146,7 @@ describe('memory similarity graph scheduler', () => {
     })
     expect(snapshot.recordRevisions).toEqual({ 'mem-a': 1, 'mem-b': 1 })
     expect(scheduler.snapshot(alpha).status).toBe('computed')
-    scheduler.dispose()
+    await scheduler.dispose()
   })
 
   it('distinguishes computed-empty from pending when no pair reaches the threshold', async () => {
@@ -158,7 +164,7 @@ describe('memory similarity graph scheduler', () => {
     expect(snapshot.status).toBe('empty')
     expect(snapshot.edges).toEqual([])
     expect(scheduler.snapshot(alpha).status).toBe('empty')
-    scheduler.dispose()
+    await scheduler.dispose()
   })
 
   it('marks a published snapshot stale after correction and recomputes against new revisions', async () => {
@@ -184,7 +190,7 @@ describe('memory similarity graph scheduler', () => {
     })
     expect(scheduler.snapshot(alpha).status).toBe('computed')
     expect(graphTable.get(alpha)?.edges[0]?.a).toEqual({ id: MemoryId('mem-a'), revision: 2 })
-    scheduler.dispose()
+    await scheduler.dispose()
   })
 
   it('drops edges of a forgotten record instead of reintroducing it', async () => {
@@ -205,7 +211,7 @@ describe('memory similarity graph scheduler', () => {
     const snapshot = graphTable.get(alpha)!
     expect(snapshot.status).toBe('empty')
     expect(snapshot.edges).toEqual([])
-    scheduler.dispose()
+    await scheduler.dispose()
   })
 
   it('discards an obsolete computation whose generation a newer commit superseded', async () => {
@@ -232,7 +238,7 @@ describe('memory similarity graph scheduler', () => {
 
     const snapshot = graphTable.get(alpha)!
     expect(snapshot.generation).toBe(2)
-    scheduler.dispose()
+    await scheduler.dispose()
   })
 
   it('records a failed snapshot once instead of retrying on every read', async () => {
@@ -251,7 +257,7 @@ describe('memory similarity graph scheduler', () => {
     expect(scheduler.snapshot(alpha).status).toBe('failed')
     await settled()
     expect(fetchSpy.mock.calls.length).toBe(callsAfterFailure)
-    scheduler.dispose()
+    await scheduler.dispose()
   })
 
   it('keeps workspace partitions disjoint when seeding existing records', async () => {
@@ -278,7 +284,7 @@ describe('memory similarity graph scheduler', () => {
     expect(alphaSnapshot.edges).toHaveLength(1)
     expect(JSON.stringify(alphaSnapshot.edges)).not.toContain('mem-b1')
     expect(graphTable.get(beta)!.status).toBe('empty')
-    scheduler.dispose()
+    await scheduler.dispose()
   })
 
   it('cancels debounced work on dispose without publishing', async () => {
@@ -290,7 +296,7 @@ describe('memory similarity graph scheduler', () => {
     ])
     const { scheduler, graphTable } = schedulerHarness(memories, graphConfig({ debounceMs: 60_000 }))
     scheduler.dirty(alpha)
-    scheduler.dispose()
+    await scheduler.dispose()
     await settled()
     expect(fetchSpy).not.toHaveBeenCalled()
     expect(graphTable.get(alpha)).toBeUndefined()

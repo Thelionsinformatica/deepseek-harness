@@ -14,9 +14,15 @@ Provider selection is registration-order independent. An explicit provider must 
 
 The runtime also accepts a live enablement preference. When disabled, model recall, creation, and correction fail before provider execution. Administrative listing and permanent forgetting remain available, so disabling the feature never prevents the user from inspecting or deleting local data.
 
+Changes emit the content-free `personal-memory/enabled` host event. Background consumers use it to suspend derived processing; the event neither grants permissions nor changes stored facts.
+
+The process-local `contextVersion` advances after successful create, update, or forget operations, provider registration or disposal, and enablement changes. Consumers can reject asynchronous reads that span one of these changes, even with operation telemetry disabled. It is not a durable revision, a lock, or a detector for out-of-process storage edits.
+
+Host corrections may supply fresh `validation` (`explicit` or `reviewed`) and `confidence` (0–1) with the exact revision. The local provider clears omitted confirmation metadata when content changes; callers must not reuse an old approval as authority for new text. The confirmed browser correction path owns reconfirmation; ordinary model correction tools expose no approval fields.
+
 ## Model Experience
 
-Indirectly, through `@deepseek-ai/dsh-tool-memory`, which contributes explicit personal remember, search, correct, and forget tools plus optional bounded first-step recall when configured with a valid `personalOwnerId`; this service adds no model-visible tools or prompt content by itself.
+Indirectly, through `@deepseek-ai/dsh-tool-memory`, which contributes explicit personal remember, search, correct, and forget tools plus optional bounded recall refreshed before each step when configured with a valid `personalOwnerId`; this service adds no model-visible tools or prompt content by itself.
 
 #### KV Cache effect
 

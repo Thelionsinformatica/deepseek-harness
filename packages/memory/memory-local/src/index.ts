@@ -39,6 +39,7 @@ import {
   type SemanticFallbackCode,
 } from './semantic.ts'
 import {
+  activeGraphMemoryVersion,
   MemoryGraphScheduler,
   type MemoryGraphConfig,
   type MemoryGraphEvent,
@@ -211,6 +212,7 @@ export class LocalMemoryProvider implements MemoryProvider {
         ...(request.importance === undefined ? {} : { importance: request.importance }),
         ...(request.confidence === undefined ? {} : { confidence: request.confidence }),
         ...(request.validation === undefined ? {} : { validation: request.validation }),
+        ...(request.core === undefined ? {} : { core: request.core }),
         schemaVersion: this.historyMode === 'temporal-v2' ? MEMORY_RECORD_SCHEMA_VERSION : 1,
         ...(this.historyMode === 'temporal-v2' ? { validFrom } : {}),
         ...(this.historyMode === 'temporal-v2' && request.expiresAt !== undefined
@@ -228,7 +230,8 @@ export class LocalMemoryProvider implements MemoryProvider {
   async search(request: MemorySearchRequest, signal?: AbortSignal): Promise<readonly MemorySearchHit[]> {
     assertNotAborted(signal)
     const lexical = lexicalSearch(this.table, request, this.historyMode)
-    if (this.semantic === undefined || request.includeHistory === true) {
+    if (request.includeHistory === true) return lexical
+    if (this.semantic === undefined) {
       return this.expandWithGraph(lexical, request)
     }
     const candidates = workspaceCandidates(
@@ -289,14 +292,16 @@ export class LocalMemoryProvider implements MemoryProvider {
     if (scheduler === undefined || hits.length === 0 || hits.length >= request.limit) return hits
     const { row, status } = scheduler.snapshot(request.scope.workspaceId)
     if (row === undefined || status !== 'computed' || row.edges.length === 0) return hits
-    const adjacency = new Map<string, { id: ReturnType<typeof MemoryId>; score: number }[]>()
+    const adjacency = new Map<string, { id: ReturnType<typeof MemoryId>; revision: number; score: number }[]>()
     for (const edge of row.edges) {
-      const forward = adjacency.get(String(edge.a.id)) ?? []
-      forward.push({ id: edge.b.id, score: edge.score })
-      adjacency.set(String(edge.a.id), forward)
-      const backward = adjacency.get(String(edge.b.id)) ?? []
-      backward.push({ id: edge.a.id, score: edge.score })
-      adjacency.set(String(edge.b.id), backward)
+      const aKey = `${edge.a.id}:${edge.a.revision}`
+      const bKey = `${edge.b.id}:${edge.b.revision}`
+      const forward = adjacency.get(aKey) ?? []
+      forward.push({ ...edge.b, score: edge.score })
+      adjacency.set(aKey, forward)
+      const backward = adjacency.get(bKey) ?? []
+      backward.push({ ...edge.a, score: edge.score })
+      adjacency.set(bKey, backward)
     }
     const seen = new Set(hits.map(hit => String(hit.record.id)))
     const expanded = [...hits]
@@ -304,7 +309,7 @@ export class LocalMemoryProvider implements MemoryProvider {
     const now = Date.now()
     for (const hit of hits) {
       if (expanded.length - hits.length >= capacity) break
-      for (const neighbor of adjacency.get(String(hit.record.id)) ?? []) {
+      for (const neighbor of adjacency.get(`${hit.record.id}:${hit.record.revision}`) ?? []) {
         if (expanded.length - hits.length >= capacity) break
         const key = String(neighbor.id)
         if (seen.has(key)) continue
@@ -312,8 +317,9 @@ export class LocalMemoryProvider implements MemoryProvider {
         const stored = this.table.get(neighbor.id)
         if (stored === undefined) continue
         if (stored.workspaceId !== request.scope.workspaceId) continue
-        if (memoryStatusAt(stored, now) !== 'active') continue
-        expanded.push({ record: project(neighbor.id, stored), score: neighbor.score })
+        const active = activeGraphMemoryVersion(stored, this.historyMode, now)
+        if (active === undefined || active.revision !== neighbor.revision) continue
+        expanded.push({ record: projectVersion(neighbor.id, stored.workspaceId, active), score: neighbor.score })
       }
     }
     return expanded
@@ -364,7 +370,8 @@ export class LocalMemoryProvider implements MemoryProvider {
             const { confidence, validation, ...retained } = current
             return {
               ...retained,
-              ...(request.content === current.content ? { confidence, validation } : {}),
+              ...updatedConfirmation(request, current.content, confidence, validation),
+              ...(request.core === undefined ? {} : { core: request.core }),
               content: request.content,
               source: request.source ?? current.source,
               revision: current.revision + 1,
@@ -453,9 +460,12 @@ export class LocalMemoryProvider implements MemoryProvider {
 
 /** Open the provider-owned domain, register the provider, and couple both lifecycles to this fiber. */
 export async function apply(ctx: Context, config: Config = {}): Promise<void> {
-  const domain = await ctx.storageDomain.open(localMemoryDomainSpec)
-  ctx.effect(() => () => domain.close(), 'memory-local.domainClose')
   const semanticConfig = resolveSemanticConfig(config.semanticSearch)
+  validateMemoryGraphLinkingConfig(config.linking)
+  if (config.linking?.enabled === true && !semanticConfig.enabled) {
+    throw new TypeError('memory-local: linking.enabled requires semanticSearch.enabled with a configured embedding endpoint')
+  }
+  const domain = await ctx.storageDomain.open(localMemoryDomainSpec)
   const semantic: SemanticRuntime | undefined = semanticConfig.enabled
     ? {
       config: semanticConfig,
@@ -472,6 +482,10 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     domain.table('memories'),
     semantic,
   )
+  ctx.effect(() => async () => {
+    await graph?.dispose()
+    await domain.close()
+  }, 'memory-local.domainClose')
   const provider = new LocalMemoryProvider(domain.table('memories'), (event) => {
     ctx.emit('memory/blocked', {
       ...event,
@@ -502,6 +516,7 @@ function resolveGraphScheduler(
     debounceMs: linking.debounceMs ?? 2_000,
     model: semantic.config.model,
     api: semantic.config.api ?? 'ollama',
+    historyMode: config.historyMode ?? 'temporal-v2',
   }
   const scheduler = new MemoryGraphScheduler(
     graphTable,
@@ -512,7 +527,6 @@ function resolveGraphScheduler(
       ctx.emit('memory/graph', { ...event, schemaVersion: 1 })
     },
   )
-  ctx.effect(() => () => { scheduler.dispose() }, 'memory-local.graphDispose')
   scheduler.seedExisting()
   return scheduler
 }
@@ -586,7 +600,8 @@ function sortHits(hits: MemorySearchHit[]): MemorySearchHit[] {
     || right.record.revision - left.record.revision)
 }
 
-function resolveSemanticConfig(input: SemanticSearchConfig = {}): ResolvedSemanticSearchConfig {
+/** Resolve and validate shared loopback embedding limits before opening provider storage. */
+export function resolveSemanticConfig(input: SemanticSearchConfig = {}): ResolvedSemanticSearchConfig {
   const resolved: ResolvedSemanticSearchConfig = {
     enabled: input.enabled ?? false,
     baseUrl: validateLoopbackBaseUrl(input.baseUrl ?? 'http://127.0.0.1:11434'),
@@ -616,6 +631,24 @@ function resolveSemanticConfig(input: SemanticSearchConfig = {}): ResolvedSemant
     throw new TypeError('memory-local: semanticWeight and lexicalWeight cannot both be zero')
   }
   return resolved
+}
+
+/** Validate graph limits before a provider can schedule work or mutate durable storage. */
+export function validateMemoryGraphLinkingConfig(input: MemoryGraphLinkingConfig = {}): void {
+  const score = input.minScore ?? 0.72
+  if (!Number.isFinite(score) || score < -1 || score > 1) {
+    throw new TypeError('memory-local: linking.minScore must be a finite number from -1 to 1')
+  }
+  for (const [name, value, minimum] of [
+    ['maxEdgesPerNode', input.maxEdgesPerNode ?? 5, 1],
+    ['maxGraphNodes', input.maxGraphNodes ?? 200, 1],
+    ['maxExpandedHits', input.maxExpandedHits ?? 4, 0],
+    ['debounceMs', input.debounceMs ?? 2_000, 0],
+  ] as const) {
+    if (!Number.isSafeInteger(value) || value < minimum || value > 2_147_483_647) {
+      throw new TypeError(`memory-local: linking.${name} must be an integer from ${minimum} to 2147483647`)
+    }
+  }
 }
 
 /**
@@ -668,6 +701,31 @@ function semanticFallbackCode(error: unknown): SemanticSearchError['code'] {
   return 'TRANSPORT'
 }
 
+/** Keep prior confirmation only for unchanged text, unless the correcting request supplies it. */
+function updatedConfirmation(
+  request: MemoryUpdateRequest,
+  previousContent: string,
+  previousConfidence: MemoryRecord['confidence'],
+  previousValidation: MemoryRecord['validation'],
+): Pick<MemoryRecord, 'confidence' | 'validation'> {
+  const suppliedConfidence = request.confidence
+  if (suppliedConfidence !== undefined
+    && (!Number.isFinite(suppliedConfidence) || suppliedConfidence < 0 || suppliedConfidence > 1)) {
+    throw new MemoryError('memory confidence must be a finite number from 0-1', 'MEMORY_INVALID_CONFIDENCE')
+  }
+  const suppliedValidation: unknown = request.validation
+  if (suppliedValidation !== undefined && suppliedValidation !== 'explicit' && suppliedValidation !== 'reviewed') {
+    throw new MemoryError('memory validation must be "explicit" or "reviewed"', 'MEMORY_INVALID_VALIDATION')
+  }
+  const unchanged = request.content === previousContent
+  const confidence = suppliedConfidence ?? (unchanged ? previousConfidence : undefined)
+  const validation = suppliedValidation ?? (unchanged ? previousValidation : undefined)
+  return {
+    ...(confidence === undefined ? {} : { confidence }),
+    ...(validation === undefined ? {} : { validation }),
+  }
+}
+
 function supersede(
   current: LocalMemoryRecord,
   id: ReturnType<typeof MemoryId>,
@@ -693,8 +751,8 @@ function supersede(
     revision: nextRef.revision,
     source: request.source ?? current.source,
     ...(current.importance === undefined ? {} : { importance: current.importance }),
-    ...(request.content !== current.content || current.confidence === undefined ? {} : { confidence: current.confidence }),
-    ...(request.content !== current.content || current.validation === undefined ? {} : { validation: current.validation }),
+    ...updatedConfirmation(request, current.content, current.confidence, current.validation),
+    ...(request.core === undefined ? (current.core === undefined ? {} : { core: current.core }) : { core: request.core }),
     schemaVersion: MEMORY_RECORD_SCHEMA_VERSION,
     validFrom,
     ...(expiresAt === undefined ? {} : { expiresAt }),
@@ -713,6 +771,7 @@ function versionOf(record: LocalMemoryRecord): LocalMemoryVersion {
     ...(record.importance === undefined ? {} : { importance: record.importance }),
     ...(record.confidence === undefined ? {} : { confidence: record.confidence }),
     ...(record.validation === undefined ? {} : { validation: record.validation }),
+    ...(record.core === undefined ? {} : { core: record.core }),
     schemaVersion: record.schemaVersion,
     ...(record.validFrom === undefined ? {} : { validFrom: record.validFrom }),
     ...(record.validUntil === undefined ? {} : { validUntil: record.validUntil }),
@@ -798,6 +857,7 @@ function projectVersion(
     ...(stored.importance === undefined ? {} : { importance: stored.importance }),
     ...(stored.confidence === undefined ? {} : { confidence: stored.confidence }),
     ...(stored.validation === undefined ? {} : { validation: stored.validation }),
+    ...(stored.core === undefined ? {} : { core: stored.core }),
     ...(stored.validFrom === undefined ? {} : { validFrom: stored.validFrom }),
     ...(stored.validUntil === undefined ? {} : { validUntil: stored.validUntil }),
     ...(stored.expiresAt === undefined ? {} : { expiresAt: stored.expiresAt }),

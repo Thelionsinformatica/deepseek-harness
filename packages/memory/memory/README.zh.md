@@ -16,6 +16,8 @@
 
 记录 schema V2 增加 `validFrom`、`validUntil`、`expiresAt`、`supersedes` 和 `supersededBy`。该约定仍接受 schema V1 记录。历史保留方式与物理布局由提供方负责；随产品提供的本地提供方会原子保留修订，而不是静默覆盖。
 
+`update()` 可选择接受新的 `validation`（`explicit` 或 `reviewed`）和 `confidence`（0–1）。这些是 Host 提供的确认元数据，不是模型工具中的自我批准字段。在本地提供方中，正文改变会清除未提供的确认元数据；正文不变会保留未提供的元数据。显式值应用于新 revision，不重写时间历史。
+
 提供方选择发生在执行时，且不依赖注册顺序。显式 `provider` 必须已注册且可用。未指定时必须恰好只有一个可用提供方；没有或存在多个可用提供方都会通过结构化 `MemoryError` code 失败。
 
 ## 模型体验

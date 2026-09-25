@@ -10,6 +10,7 @@ export type SemanticFallbackCode =
   | 'TIMEOUT'
   | 'TRANSPORT'
   | 'HTTP_ERROR'
+  | 'INPUT_TOO_LARGE'
   | 'INVALID_RESPONSE'
   | 'RESPONSE_TOO_LARGE'
 
@@ -237,6 +238,7 @@ export class OllamaSemanticIndex {
     try {
       const response = await fetch(this.endpoint, {
         method: 'POST',
+        redirect: 'error',
         headers: { 'content-type': 'application/json' },
         body: this.config.api === 'openai-compatible'
           ? JSON.stringify({ model: this.config.model, input: inputs })
@@ -248,8 +250,8 @@ export class OllamaSemanticIndex {
           }),
         signal: requestDeadline.signal,
       })
-      if (!response.ok) throw new SemanticSearchError('HTTP_ERROR')
       const body = await readBoundedText(response, this.config.maxResponseBytes, requestDeadline.signal)
+      if (!response.ok) throw new SemanticSearchError(classifyEmbeddingHttpError(response.status, body))
       let parsed: unknown
       try {
         parsed = JSON.parse(body)
@@ -268,6 +270,34 @@ export class OllamaSemanticIndex {
       throw new SemanticSearchError('TRANSPORT')
     }
   }
+}
+
+/** Recognize explicit context/batch overflow without retaining or exposing provider detail. */
+function classifyEmbeddingHttpError(status: number, body: string): 'HTTP_ERROR' | 'INPUT_TOO_LARGE' {
+  if (![400, 413, 422, 500].includes(status)) return 'HTTP_ERROR'
+  let value: unknown
+  try {
+    value = JSON.parse(body)
+  } catch {
+    return 'HTTP_ERROR'
+  }
+  if (value === null || typeof value !== 'object' || !('error' in value)) return 'HTTP_ERROR'
+  const detail = value.error
+  const message = typeof detail === 'string' ? detail
+    : detail !== null && typeof detail === 'object' && 'message' in detail && typeof detail.message === 'string'
+      ? detail.message : ''
+  if (detail !== null && typeof detail === 'object') {
+    const overflowCodes = ['context_length_exceeded', 'context_window_exceeded', 'exceed_context_size_error']
+    if (('code' in detail && typeof detail.code === 'string' && overflowCodes.includes(detail.code))
+      || ('type' in detail && typeof detail.type === 'string' && overflowCodes.includes(detail.type))) {
+      return 'INPUT_TOO_LARGE'
+    }
+  }
+  const physicalBatch = /^input \(\d+ tokens\) is too large to process\. increase the physical batch size \(current batch size: \d+\)$/i
+  const contextSize = /^(?:input|request) \(\d+ tokens\) exceeds the available context size \(\d+ tokens\)(?:, try increasing it)?$/i
+  const contextLength = /^(?:the )?input length exceeds (?:the |maximum )?context length\.?$/i
+  return physicalBatch.test(message) || contextSize.test(message) || contextLength.test(message)
+    ? 'INPUT_TOO_LARGE' : 'HTTP_ERROR'
 }
 
 async function readBoundedText(response: Response, maxBytes: number, signal: AbortSignal): Promise<string> {
@@ -331,18 +361,18 @@ function validateOpenAIEmbeddingResponse(
   if (!Array.isArray(data) || data.length !== expectedCount) {
     throw new SemanticSearchError('INVALID_RESPONSE')
   }
-  const rows = data as readonly { index?: unknown; embedding?: unknown }[]
-  const ordered = rows.slice().sort(
-    (left, right) => typeof left.index === 'number' && typeof right.index === 'number'
-      ? left.index - right.index
-      : 0,
-  )
-  const validated: (readonly number[])[] = []
-  for (const row of ordered) {
-    const vector: unknown = row.embedding
-    validated.push(...validateEmbeddingResponse({ embeddings: [vector] }, 1, expectedDimensions))
+  const byIndex = new Map<number, readonly number[]>()
+  for (const row of data as readonly unknown[]) {
+    if (row === null || typeof row !== 'object' || Array.isArray(row)
+      || !('index' in row) || typeof row.index !== 'number' || !Number.isInteger(row.index)
+      || row.index < 0 || row.index >= expectedCount || byIndex.has(row.index)
+      || !('embedding' in row)) {
+      throw new SemanticSearchError('INVALID_RESPONSE')
+    }
+    const validated = validateEmbeddingResponse({ embeddings: [row.embedding] }, 1, expectedDimensions)
+    byIndex.set(row.index, requiredVector(validated[0]))
   }
-  return validated
+  return Array.from({ length: expectedCount }, (_value, index) => requiredVector(byIndex.get(index)))
 }
 
 function cosine(left: readonly number[], right: readonly number[]): number {

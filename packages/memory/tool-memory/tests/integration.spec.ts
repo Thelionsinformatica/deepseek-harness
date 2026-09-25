@@ -945,6 +945,133 @@ describe('memory tools through the real agent loop', () => {
     await ctx.fiber.dispose()
   })
 
+  it.each(['same', 'changed'] as const)('reconfirms %s personal content through the human administrative correction', async (contentMode) => {
+    const adapter = new MockAdapter([textResponse('Pronto.'), textResponse('Confirmado.')])
+    const { ctx, cwd } = await harness(
+      adapter,
+      { personalOwnerId: 'test-local-owner', personalAutomaticRecall: true },
+      {
+        reviewedBy: 'test-local-reviewer',
+        administrationMode: 'full',
+        personalOwnerId: 'test-local-owner',
+      },
+    )
+    try {
+      const agent = ctx.agentLoop.create(
+        SessionId(`personal-reconfirmation-${contentMode}`),
+        { provider: 'mock', model: 'mock' },
+        { cwd },
+      )
+      const scope = { ownerId: PersonalMemoryOwnerId('test-local-owner') }
+      const created = await ctx.personalMemory.create({
+        scope, content: 'O usuário prefere tabelas.', core: true, validation: 'explicit', confidence: 1,
+        source: { kind: 'session', sessionId: agent.session.header.id },
+      })
+      const unconfirmed = await ctx.personalMemory.update({
+        scope, ref: { id: created.id, revision: created.revision }, content: 'O usuário prefere listas.',
+      })
+      expect(unconfirmed.validation).toBeUndefined()
+      expect(unconfirmed.confidence).toBeUndefined()
+      expect(unconfirmed.core).toBe(true)
+      agent.followup(createUserMessage({ content: [{ type: 'text', text: 'oi' }], source: { kind: 'user' } }))
+      await agent.whenIdle()
+      expect(adapter.requests).toHaveLength(1)
+      expect(JSON.stringify(adapter.requests[0]?.messages)).not.toContain('personal-core-profile')
+
+      const confirmedContent = contentMode === 'same' ? unconfirmed.content : 'O usuário prefere parágrafos curtos.'
+      const result = await ctx.memoryCandidateReview.correctPersonalMemory({
+        sessionId: agent.session.header.id,
+        id: unconfirmed.id,
+        revision: unconfirmed.revision,
+        content: confirmedContent,
+        confirmed: true,
+      })
+      expect(result).toMatchObject({
+        ok: true,
+        value: { item: {
+          id: created.id, revision: 3, content: confirmedContent, validation: 'explicit', confidence: 1,
+        } },
+      })
+      const active = await ctx.personalMemory.list({ scope, statuses: ['active'], limit: 10 })
+      expect(active.items).toHaveLength(1)
+      expect(active.items[0]?.record).toMatchObject({
+        id: created.id, revision: 3, content: confirmedContent, core: true,
+        validation: 'explicit', confidence: 1,
+        supersedes: { id: created.id, revision: 2 },
+      })
+      agent.followup(createUserMessage({ content: [{ type: 'text', text: 'oi' }], source: { kind: 'user' } }))
+      await agent.whenIdle()
+      expect(adapter.requests).toHaveLength(2)
+      expect(JSON.stringify(adapter.requests[1]?.messages)).toContain('personal-core-profile')
+      expect(JSON.stringify(adapter.requests[1]?.messages)).toContain(confirmedContent)
+      const audit = readPersonalAdminActions(ctx)
+      expect(audit).toMatchObject([{
+        action: 'correct', status: 'succeeded', memoryId: created.id,
+        expectedRevision: 2, resultRevision: 3,
+      }])
+      expect(JSON.stringify(audit)).not.toContain(confirmedContent)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it.each(['missing-confirmation', 'stale-revision', 'read-only'] as const)('rejects personal reconfirmation with %s', async (failureMode) => {
+    const { ctx, cwd } = await harness(
+      new MockAdapter([]),
+      {},
+      {
+        reviewedBy: 'test-local-reviewer',
+        administrationMode: failureMode === 'read-only' ? 'read-only' : 'full',
+        personalOwnerId: 'test-local-owner',
+      },
+    )
+    try {
+      const agent = ctx.agentLoop.create(
+        SessionId(`personal-reconfirmation-denied-${failureMode}`),
+        { provider: 'mock', model: 'mock' },
+        { cwd },
+      )
+      const scope = { ownerId: PersonalMemoryOwnerId('test-local-owner') }
+      const created = await ctx.personalMemory.create({
+        scope, content: 'O usuário prefere tabelas.', core: true, validation: 'explicit', confidence: 1,
+        source: { kind: 'session', sessionId: agent.session.header.id },
+      })
+      const unconfirmed = await ctx.personalMemory.update({
+        scope, ref: { id: created.id, revision: created.revision }, content: 'O usuário prefere listas.',
+      })
+      const revision = failureMode === 'stale-revision' ? created.revision : unconfirmed.revision
+      const result = await ctx.memoryCandidateReview.correctPersonalMemory({
+        sessionId: agent.session.header.id,
+        id: created.id,
+        revision,
+        content: unconfirmed.content,
+        confirmed: failureMode !== 'missing-confirmation',
+      })
+      const expectedCode = failureMode === 'stale-revision'
+        ? 'memory-admin-operation-failed'
+        : failureMode === 'read-only' ? 'memory-admin-read-only' : 'memory-admin-confirmation-required'
+      expect(result).toMatchObject({ ok: false, error: { code: expectedCode } })
+      const active = await ctx.personalMemory.list({ scope, statuses: ['active'], limit: 10 })
+      expect(active.items).toHaveLength(1)
+      expect(active.items[0]?.record).toMatchObject({
+        id: created.id, revision: 2, content: unconfirmed.content, core: true,
+      })
+      expect(active.items[0]?.record.validation).toBeUndefined()
+      expect(active.items[0]?.record.confidence).toBeUndefined()
+      const audit = readPersonalAdminActions(ctx)
+      if (failureMode === 'stale-revision') {
+        expect(audit).toMatchObject([{
+          action: 'correct', status: 'failed', memoryId: created.id,
+          expectedRevision: 1, failureCode: 'PERSONAL_MEMORY_REVISION_CONFLICT',
+        }])
+      } else {
+        expect(audit).toEqual([])
+      }
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('rejects invalid administrative requests and audits provider failures without content', async () => {
     const adapter = new MockAdapter([])
     const { ctx, cwd, workspace } = await harness(
@@ -1829,7 +1956,9 @@ describe('memory tools through the real agent loop', () => {
           status: 'computed',
           edges: [{
             a: [String(first.id), String(second.id)].sort()[0],
+            aRevision: 1,
             b: [String(first.id), String(second.id)].sort()[1],
+            bRevision: 1,
           }],
         },
       })

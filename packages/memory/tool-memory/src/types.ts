@@ -351,10 +351,12 @@ export type MemoryAdminGraphStatus =
   | 'failed'
   | 'unavailable'
 
-/** One derived similarity edge between two memory ids. */
+/** One derived similarity edge between two revision-pinned memories. */
 export interface MemoryAdminGraphEdge {
   readonly a: MemoryAdminId
+  readonly aRevision: number
   readonly b: MemoryAdminId
+  readonly bRevision: number
   readonly score: number
 }
 

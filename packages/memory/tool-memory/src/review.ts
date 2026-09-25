@@ -452,9 +452,9 @@ export class MemoryCandidateReviewService extends TypertRemoteService {
   }
 
   /**
-   * Correct one exact personal-memory revision after confirmation.
-   * @param request - Session anchor, exact revision, replacement text, and confirmation.
-   * @returns The corrected browser-safe row and content-free audit id, or an explicit failure.
+   * Correct or reconfirm one exact personal-memory revision after explicit operator confirmation.
+   * @param request - Session anchor, exact revision, complete confirmed text, and confirmation.
+   * @returns The explicitly validated browser-safe row and content-free audit id, or an explicit failure.
    */
   @Remote('correctPersonalMemory')
   correctPersonalMemory(request: MemoryAdminCorrectRequest): Promise<MemoryAdminCorrectResult> {
@@ -473,6 +473,8 @@ export class MemoryCandidateReviewService extends TypertRemoteService {
           ref: { id: request.id, revision: request.revision },
           content,
           source: { kind: 'session', sessionId: request.sessionId },
+          confidence: 1,
+          validation: 'explicit',
         })
         await this.finishPersonalAdminAction(audit, updated.id, updated.revision)
         return success({ item: projectMemory(updated, memoryStatusAt(updated)), auditId: audit.id })
@@ -956,7 +958,10 @@ function projectGraph(snapshot: MemoryGraphSnapshot | PersonalMemoryGraphSnapsho
     status: snapshot.status,
     generation: snapshot.generation,
     ...(snapshot.computedAt === undefined ? {} : { computedAt: snapshot.computedAt }),
-    edges: Object.freeze(snapshot.edges.map(edge => Object.freeze({ a: edge.a.id, b: edge.b.id, score: edge.score }))),
+    edges: Object.freeze(snapshot.edges.map(edge => Object.freeze({
+      a: edge.a.id, aRevision: edge.a.revision,
+      b: edge.b.id, bRevision: edge.b.revision, score: edge.score,
+    }))),
     ...(snapshot.failureCode === undefined ? {} : { failureCode: snapshot.failureCode }),
   })
 }

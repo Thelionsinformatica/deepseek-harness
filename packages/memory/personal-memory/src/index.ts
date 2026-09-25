@@ -52,6 +52,12 @@ declare module '@deepseek-ai/cordis' {
 
   interface Events {
     /**
+     * Host preference changed; background consumers must suspend while disabled.
+     * @param event - The new content-free operation state.
+     * @mode emit
+     */
+    'personal-memory/enabled'(event: { readonly enabled: boolean }): void
+    /**
      * A personal-memory operation completed or failed without exposing its content.
      * @param event - Content-free operation, provider, owner, and result metadata.
      * @mode emit
@@ -95,6 +101,12 @@ export class PersonalMemoryRuntime extends Service {
   private readonly configuredProvider: string | undefined
   private readonly telemetryEnabled: boolean
   private enabledState: boolean
+  private contextGeneration = 0
+
+  /** Process-local revision for rejecting reads spanning mutations, provider changes, or enablement changes. */
+  get contextVersion(): number {
+    return this.contextGeneration
+  }
 
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'personalMemory')
@@ -116,8 +128,12 @@ export class PersonalMemoryRuntime extends Service {
       )
     }
     this.providers.set(provider.id, provider)
+    this.contextGeneration += 1
     return () => {
-      if (this.providers.get(provider.id) === provider) this.providers.delete(provider.id)
+      if (this.providers.get(provider.id) === provider) {
+        this.providers.delete(provider.id)
+        this.contextGeneration += 1
+      }
     }
   }
 
@@ -135,7 +151,10 @@ export class PersonalMemoryRuntime extends Service {
    * @param enabled - Whether create, search, and correction operations may reach a provider.
    */
   setEnabled(enabled: boolean): void {
+    if (this.enabledState === enabled) return
     this.enabledState = enabled
+    this.contextGeneration += 1
+    this.ctx.emit('personal-memory/enabled', { enabled })
   }
 
   /**
@@ -229,6 +248,7 @@ export class PersonalMemoryRuntime extends Service {
         ...request,
         scope: checkedScope(request.scope),
         content: checkedContent(request.content),
+        ...checkedRanking(request),
         ...checkedUpdateTimes(request),
       } satisfies PersonalMemoryUpdateRequest
     })
@@ -307,6 +327,7 @@ export class PersonalMemoryRuntime extends Service {
       }
       provider = this.resolveProvider()
       const result = await call(provider)
+      if (operation === 'create' || operation === 'update' || operation === 'forget') this.contextGeneration += 1
       this.emitOperation({
         operation,
         provider: provider.id,
@@ -435,16 +456,23 @@ function checkedRef(ref: MemoryRef): void {
   }
 }
 
-function checkedRanking(request: PersonalMemoryCreateRequest): Pick<
+function checkedRanking(request: Pick<PersonalMemoryCreateRequest, 'importance' | 'confidence' | 'validation'>): Pick<
   PersonalMemoryCreateRequest,
   'importance' | 'confidence' | 'validation'
 > {
   const importance = checkedUnit('importance', request.importance)
   const confidence = checkedUnit('confidence', request.confidence)
+  const validation: unknown = request.validation
+  if (validation !== undefined && validation !== 'explicit' && validation !== 'reviewed') {
+    throw validationError(
+      'personal-memory validation must be "explicit" or "reviewed"',
+      'PERSONAL_MEMORY_INVALID_VALIDATION',
+    )
+  }
   return {
     ...(importance === undefined ? {} : { importance }),
     ...(confidence === undefined ? {} : { confidence }),
-    ...(request.validation === undefined ? {} : { validation: request.validation }),
+    ...(validation === undefined ? {} : { validation }),
   }
 }
 

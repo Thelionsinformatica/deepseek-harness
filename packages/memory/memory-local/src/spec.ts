@@ -20,6 +20,7 @@ export interface LocalMemoryVersion {
   readonly importance?: number
   readonly confidence?: number
   readonly validation?: MemoryValidation
+  readonly core?: boolean
   readonly schemaVersion: MemoryRecordSchemaVersion
   readonly validFrom?: string
   readonly validUntil?: string
@@ -80,6 +81,7 @@ const localMemoryVersionFields = {
   importance: z.number().min(0).max(1).optional(),
   confidence: z.number().min(0).max(1).optional(),
   validation: z.enum(['explicit', 'reviewed']).optional(),
+  core: z.boolean().optional(),
   schemaVersion: z.union([z.literal(1), z.literal(MEMORY_RECORD_SCHEMA_VERSION)]).optional().default(1),
   validFrom: z.string().optional(),
   validUntil: z.string().optional(),

@@ -18,7 +18,8 @@ import {
   LocalMemoryProvider,
   MemoryGraphScheduler,
   OllamaSemanticIndex,
-  validateLoopbackBaseUrl,
+  resolveSemanticConfig,
+  validateMemoryGraphLinkingConfig,
   type LocalMemoryGraph,
   type LocalMemoryRecord,
   type MemoryGraphConfig,
@@ -56,7 +57,7 @@ export interface Config {
   readonly linking?: PersonalLinkingConfig
 }
 
-/** Loopback embedding transport for the personal graph; memory text never leaves the machine. */
+/** Loopback embedding transport; deployments must ensure the local endpoint does not proxy remotely. */
 export interface PersonalEmbeddingsConfig {
   /** Absolute credential-free loopback HTTP origin of the embedding server. */
   readonly baseUrl?: string
@@ -201,9 +202,15 @@ export class LocalPersonalMemoryProvider implements PersonalMemoryProvider {
 
 /** Open the isolated domain and register the provider for this fiber lifetime. */
 export async function apply(ctx: Context, config: Config = {}): Promise<void> {
+  validateMemoryGraphLinkingConfig(config.linking)
+  // Validate the same transport bounds as workspace memory before opening storage.
+  resolveSemanticConfig({ ...config.embeddings, dimensions: config.embeddings?.dimensions ?? 768 })
   const domain = await ctx.storageDomain.open(localPersonalMemoryDomainSpec)
-  ctx.effect(() => () => domain.close(), 'personal-memory-local.domainClose')
   const graph = resolveGraph(ctx, config, domain.table('graph'), domain.table('memories'))
+  ctx.effect(() => async () => {
+    await graph?.dispose()
+    await domain.close()
+  }, 'personal-memory-local.domainClose')
   const delegate = new LocalMemoryProvider(
     domain.table('memories'),
     undefined,
@@ -224,23 +231,17 @@ function resolveGraph(
 ): MemoryGraphScheduler | undefined {
   if (config.linking?.enabled !== true) return undefined
   const embeddings = config.embeddings
-  const index = new OllamaSemanticIndex({
-    baseUrl: validateLoopbackBaseUrl(embeddings?.baseUrl ?? 'http://127.0.0.1:11434'),
-    model: embeddings?.model ?? 'nomic-embed-text:latest',
-    dimensions: embeddings?.dimensions ?? 768,
-    timeoutMs: embeddings?.timeoutMs ?? 10_000,
-    maxCacheEntries: embeddings?.maxCacheEntries ?? 2_000,
-    maxResponseBytes: embeddings?.maxResponseBytes ?? 8_000_000,
-    api: embeddings?.api ?? 'ollama',
-  })
+  const resolved = resolveSemanticConfig({ ...embeddings, dimensions: embeddings?.dimensions ?? 768 })
+  const index = new OllamaSemanticIndex(resolved)
   const graphConfig: MemoryGraphConfig = {
     enabled: true,
     minScore: config.linking.minScore ?? 0.72,
     maxEdgesPerNode: config.linking.maxEdgesPerNode ?? 5,
     maxGraphNodes: config.linking.maxGraphNodes ?? 200,
     debounceMs: config.linking.debounceMs ?? 2_000,
-    model: embeddings?.model ?? 'nomic-embed-text:latest',
-    api: embeddings?.api ?? 'ollama',
+    model: resolved.model,
+    api: resolved.api ?? 'ollama',
+    historyMode: config.historyMode ?? 'temporal-v2',
   }
   const scheduler = new MemoryGraphScheduler(
     graphTable,
@@ -251,7 +252,8 @@ function resolveGraph(
       ctx.emit('memory/graph', { ...event, schemaVersion: 1 })
     },
   )
-  ctx.effect(() => () => { scheduler.dispose() }, 'personal-memory-local.graphDispose')
+  void scheduler.setEnabled(ctx.personalMemory.isEnabled())
+  ctx.on('personal-memory/enabled', ({ enabled }) => { void scheduler.setEnabled(enabled) })
   scheduler.seedExisting()
   return scheduler
 }

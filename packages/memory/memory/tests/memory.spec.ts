@@ -219,6 +219,30 @@ describe('MemoryRuntime provider selection', () => {
     })).rejects.toThrow(expect.objectContaining({ code: 'MEMORY_INVALID_VALIDATION' }))
   })
 
+  it('validates update confirmation before calling the provider and forwards explicit values', async () => {
+    const ctx = await harness()
+    const update = vi.fn((request: MemoryUpdateRequest) => Promise.resolve(record(request.content)))
+    ctx.memory.registerProvider({ ...provider('local'), update })
+    const request = { scope, ref: { id: MemoryId('id'), revision: 1 }, content: ' corrected ' }
+    try {
+      for (const confidence of [Number.NaN, Number.POSITIVE_INFINITY, -0.1, 1.1]) {
+        await expect(ctx.memory.update({ ...request, confidence }))
+          .rejects.toThrow(expect.objectContaining({ code: 'MEMORY_INVALID_CONFIDENCE' }))
+      }
+      await expect(ctx.memory.update({ ...request, validation: 'automatic' as 'explicit' }))
+        .rejects.toThrow(expect.objectContaining({ code: 'MEMORY_INVALID_VALIDATION' }))
+      expect(update).not.toHaveBeenCalled()
+      await ctx.memory.update({ ...request, confidence: 0, validation: 'explicit' })
+      await ctx.memory.update({ ...request, confidence: 1, validation: 'reviewed' })
+      expect(update.mock.calls.map(([value]) => value)).toMatchObject([
+        { content: 'corrected', confidence: 0, validation: 'explicit' },
+        { content: 'corrected', confidence: 1, validation: 'reviewed' },
+      ])
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('normalizes temporal bounds and forwards an explicit history search', async () => {
     const ctx = await harness()
     const create = vi.fn((request: MemoryCreateRequest) => Promise.resolve({

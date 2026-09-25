@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Storage from '@deepseek-ai/dsh-storage'
-import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
-import MemoryRuntime, { MemoryId } from '@deepseek-ai/dsh-memory'
+import { DomainFacility, type KvTable } from '@deepseek-ai/dsh-storage-domain'
+import MemoryRuntime, { MemoryId, type MemoryIdType } from '@deepseek-ai/dsh-memory'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import * as MemoryLocal from '@deepseek-ai/dsh-memory-local'
@@ -61,6 +61,85 @@ const beta = { workspaceId: WorkspaceId('workspace-beta') }
 const source = { kind: 'session' as const, sessionId: SessionId('session-alpha') }
 
 describe('local durable memory operations', () => {
+  it.each(['temporal-v2', 'v1'] as const)('applies explicit reconfirmation with CAS and preserves earlier evidence in %s', async (historyMode) => {
+    const { ctx, pool } = await harness(new MemoryMediaPool(), { historyMode })
+    try {
+      const original = await ctx.memory.create({
+        scope: alpha, source, content: 'Estado original confirmado.', confidence: 0.8, validation: 'reviewed',
+      })
+      let current = await ctx.memory.update({
+        scope: alpha, ref: { id: original.id, revision: 1 }, content: 'Estado corrigido confirmado.',
+        confidence: 1, validation: 'explicit', core: true,
+      })
+      expect(current).toMatchObject({ revision: 2, confidence: 1, validation: 'explicit', core: true })
+      await expect(ctx.memory.update({
+        scope: alpha, ref: { id: original.id, revision: 1 }, content: 'Correção obsoleta.',
+        confidence: 0.5, validation: 'reviewed',
+      })).rejects.toThrow(expect.objectContaining({ code: 'MEMORY_REVISION_CONFLICT' }))
+
+      current = await ctx.memory.update({
+        scope: alpha, ref: { id: current.id, revision: current.revision }, content: current.content, core: false,
+      })
+      expect(current).toMatchObject({ revision: 3, confidence: 1, validation: 'explicit', core: false })
+
+      current = await ctx.memory.update({
+        scope: alpha, ref: { id: current.id, revision: current.revision }, content: 'Estado com validação apenas.',
+        validation: 'reviewed',
+      })
+      expect(current.validation).toBe('reviewed')
+      expect(current.confidence).toBeUndefined()
+      current = await ctx.memory.update({
+        scope: alpha, ref: { id: current.id, revision: current.revision }, content: 'Estado com confiança apenas.',
+        confidence: 0,
+      })
+      expect(current.confidence).toBe(0)
+      expect(current.validation).toBeUndefined()
+      current = await ctx.memory.update({
+        scope: alpha, ref: { id: current.id, revision: current.revision }, content: 'Estado sem confirmação.',
+      })
+      current = await ctx.memory.update({
+        scope: alpha, ref: { id: current.id, revision: current.revision }, content: current.content, core: true,
+      })
+      expect(current).toMatchObject({ revision: 7, core: true })
+      expect(current.validation).toBeUndefined()
+      expect(current.confidence).toBeUndefined()
+      const stored = pool.media.get('memory_local')?.tables.get('memories')?.get(String(original.id)) as {
+        revision: number
+        history?: Array<{ revision: number; confidence?: number; validation?: string }>
+      }
+      expect(stored.revision).toBe(7)
+      if (historyMode === 'temporal-v2') {
+        expect(stored.history).toHaveLength(6)
+        expect(stored.history?.[0]).toMatchObject({ revision: 1, confidence: 0.8, validation: 'reviewed' })
+        expect(stored.history?.[1]).toMatchObject({ revision: 2, confidence: 1, validation: 'explicit' })
+      } else expect(stored.history).toBeUndefined()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it.each(['temporal-v2', 'v1'] as const)('rejects malformed confirmation even when updating the %s provider directly', async (historyMode) => {
+    const { ctx } = await harness(new MemoryMediaPool(), { historyMode })
+    try {
+      const original = await ctx.memory.create({ scope: alpha, source, content: 'Estado confirmado.', confidence: 1, validation: 'explicit' })
+      // The real domain was opened with localMemoryDomainSpec by the provider mounted above.
+      const table = ctx.storageDomain.get('memory_local')?.table('memories') as KvTable<MemoryIdType, MemoryLocal.LocalMemoryRecord> | undefined
+      if (table === undefined) throw new Error('expected the loaded local-memory table')
+      const direct = new MemoryLocal.LocalMemoryProvider(table, undefined, undefined, historyMode)
+      const request = { scope: alpha, ref: { id: original.id, revision: 1 }, content: 'Novo estado.' }
+      for (const confidence of [Number.NaN, Number.POSITIVE_INFINITY, -0.1, 1.1]) {
+        await expect(direct.update({ ...request, confidence }))
+          .rejects.toThrow(expect.objectContaining({ code: 'MEMORY_INVALID_CONFIDENCE' }))
+      }
+      await expect(direct.update({ ...request, validation: 'automatic' as 'explicit' }))
+        .rejects.toThrow(expect.objectContaining({ code: 'MEMORY_INVALID_VALIDATION' }))
+      await expect(ctx.memory.search({ scope: alpha, query: 'confirmado', limit: 4 }))
+        .resolves.toMatchObject([{ record: { revision: 1, confidence: 1, validation: 'explicit' } }])
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it.each(['temporal-v2', 'v1'] as const)('invalidates confirmation on changed content in %s', async (historyMode) => {
     const { ctx } = await harness(new MemoryMediaPool(), { historyMode })
     try {
@@ -80,6 +159,27 @@ describe('local durable memory operations', () => {
         const history = await ctx.memory.search({ scope: alpha, query: 'verified', limit: 10, includeHistory: true })
         expect(history.some(hit => hit.record.revision === 1 && hit.record.validation === 'reviewed')).toBe(true)
       }
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+  it('persists and preserves the core-profile marker across create and correction', async () => {
+    const { ctx } = await harness()
+    try {
+      const created = await ctx.memory.create({
+        scope: alpha, source, content: 'O usuário prefere respostas diretas.', confidence: 1, validation: 'reviewed', core: true,
+      })
+      expect(created.core).toBe(true)
+      const found = await ctx.memory.search({ scope: alpha, query: 'diretas', limit: 4 })
+      expect(found[0]?.record.core).toBe(true)
+      const corrected = await ctx.memory.update({
+        scope: alpha, ref: { id: created.id, revision: 1 }, content: 'O usuário prefere respostas concisas.',
+      })
+      expect(corrected.core).toBe(true)
+      const nonCore = await ctx.memory.create({
+        scope: alpha, source, content: 'Configuração do ambiente.', confidence: 1,
+      })
+      expect(nonCore.core).toBeUndefined()
     } finally {
       await ctx.fiber.dispose()
     }

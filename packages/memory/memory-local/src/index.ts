@@ -600,7 +600,12 @@ function sortHits(hits: MemorySearchHit[]): MemorySearchHit[] {
     || right.record.revision - left.record.revision)
 }
 
-/** Resolve and validate shared loopback embedding limits before opening provider storage. */
+/**
+ * Resolve and validate shared loopback embedding limits before opening provider storage.
+ * @param input - declared semantic-search config; omitted leaves are filled with the documented defaults.
+ * @returns the effective config, with the loopback base URL normalized and every limit checked.
+ * @throws TypeError when the model text or any resolved limit falls outside its accepted range, or both retrieval weights are zero.
+ */
 export function resolveSemanticConfig(input: SemanticSearchConfig = {}): ResolvedSemanticSearchConfig {
   const resolved: ResolvedSemanticSearchConfig = {
     enabled: input.enabled ?? false,
@@ -633,7 +638,12 @@ export function resolveSemanticConfig(input: SemanticSearchConfig = {}): Resolve
   return resolved
 }
 
-/** Validate graph limits before a provider can schedule work or mutate durable storage. */
+/**
+ * Validate graph limits before a provider can schedule work or mutate durable storage.
+ * @param input - declared graph-linking config; omitted leaves are validated against the same defaults the provider applies.
+ * @throws TypeError when `minScore` is not a finite number within -1..1, or when an
+ * integer limit is not a safe integer, below its minimum, or above the 32-bit ceiling.
+ */
 export function validateMemoryGraphLinkingConfig(input: MemoryGraphLinkingConfig = {}): void {
   const score = input.minScore ?? 0.72
   if (!Number.isFinite(score) || score < -1 || score > 1) {

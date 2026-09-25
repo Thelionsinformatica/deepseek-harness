@@ -18,7 +18,15 @@ export interface SubagentEvidence {
   readonly calls: readonly SubagentEvidenceCall[]
 }
 
-/** Validate the host configuration or persisted policy without silently weakening it. */
+/**
+ * Validate the configured evidence tool list at the caller side instead of
+ * coercing it: 1-64 unique, nonempty names of at most 128 characters, each free
+ * of leading or trailing whitespace.
+ * @param value - configured list, or a persisted descriptor's decoded list.
+ * @returns nothing; a valid list narrows `value` in place.
+ * @throws SubagentError INVALID_EVIDENCE_TOOLS when the list is absent, empty,
+ * oversized, duplicated, blank, untrimmed, or holds a non-string.
+ */
 export function assertEvidenceTools(value: unknown): asserts value is readonly string[] {
   if (!Array.isArray(value) || value.length === 0 || value.length > 64
     || value.some((item: unknown) => typeof item !== 'string' || item.length === 0
@@ -76,7 +84,14 @@ export function evaluateSubagentEvidence(
   return { status: calls.length > 0 ? 'observed' : 'missing', semanticVerification: 'unverified', tools: [...tools], calls }
 }
 
-/** Safe host wording without exposing tool inputs or file contents. */
+/**
+ * Render the parent-facing assessment of one host evidence evaluation, naming
+ * the outcome without exposing tool inputs or file contents.
+ * @param evidence - the host assessment produced for the child's current turn,
+ *   never text the child model authored.
+ * @returns the diagnostic text for the report or settlement notice, prefixed
+ *   with the outcome code and stating that the claims remain unverified.
+ */
 export function subagentEvidenceDiagnostic(evidence: SubagentEvidence): string {
   return evidence.status === 'missing'
     ? 'SUBAGENT_EVIDENCE_MISSING: host found no eligible successful tool call/result pair in this activation\'s current turn. This report is unverified and must not be accepted as a proven audit result.'

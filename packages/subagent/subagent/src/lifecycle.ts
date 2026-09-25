@@ -175,6 +175,8 @@ export function observeRun(
  * @param provider - the provider name recorded in the durable descriptor.
  * @param childId - the durable child session id.
  * @param parent - the exact live direct parent keying scoped dispatch.
+ * @param evidenceTools - immutable host-owned tool names whose successful calls
+ *   count as evidence for this epoch, or absent to publish no evidence at all.
  * @returns the observer whose edges this epoch publishes.
  */
 export function createActivationObserver(

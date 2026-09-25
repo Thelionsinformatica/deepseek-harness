@@ -110,6 +110,7 @@ function nonemptyText(value: unknown): value is string {
 /**
  * Validate untrusted durable evidence without permitting invented fields or ambiguous empty coverage.
  * @param value - parsed receipt artifact manifest, never inferred from model text.
+ * @returns nothing; a valid manifest narrows `value` in place.
  * @throws when version, keys, coverage, identities, digests, or byte counts are invalid.
  */
 export function validateAuditArtifactManifest(value: unknown): asserts value is AuditArtifactManifest {

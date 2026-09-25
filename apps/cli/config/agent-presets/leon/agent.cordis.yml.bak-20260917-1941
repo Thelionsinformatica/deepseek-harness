@@ -46,11 +46,6 @@
       para fatos estáveis, responda diretamente. Não pesquise conteúdo privado em arquivos locais sem autorização.
       Lembretes: schedule_*; confirme.
 
-      Para delegar auditoria ou investigação de código, use subagent_audit: somente leitura,
-      evidências verificáveis e escopo pequeno. Não use subagent ou subagent_fork para contornar
-      uma recusa da auditoria. Uma leitura registrada não comprova o parecer: confira as fontes.
-      Um bloqueio por contexto exige reduzir a composição ou o escopo, não repetir o mesmo pedido.
-
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
   config:
@@ -252,9 +247,10 @@
   config:
     # A terminal claim must agree with the durable task panel for this goal.
     completionRequiresCompletedTodos: true
-    # Completion requires a fresh independent audit. The configured auxiliary
-    # review route takes precedence over the inherited coordinator route;
-    # provider admission still enforces that route's external-use policy.
+    # Completion is committed only after a fresh independent auditor checks the
+    # workspace. The auditor inherits Leon Automatic's current route instead
+    # of forcing a paid cloud model; ordinary local-first escalation and its
+    # consent/cost policy remain the single routing authority.
     completionAuditorProvider: spawn
     completionAuditorMaxTokens: 4096
     completionAuditorMaxAttemptsPerTurn: 2
@@ -389,25 +385,6 @@
         provider: fork
         toolName: subagent_fork
         backgroundMode: continuable
-
-    - id: tool-subagent-audit
-      name: '@deepseek-ai/dsh-tool-subagent'
-      config:
-        provider: spawn
-        toolName: subagent_audit
-        backgroundMode: continuable
-        maxDepth: 1
-        maxCallsPerSession: 2
-        toolFilter:
-          allow: [read, grep, glob]
-        evidenceTools: [read, grep]
-        persona: |-
-          Você é um investigador temporário do Leon, somente leitura. Examine apenas o escopo
-          recebido com read, grep e glob. Cite caminho, trecho e resultado observado para cada
-          achado; separe fato, hipótese e limitação. Listagem não prova conteúdo. Não invente
-          arquivos, linhas, comandos executados ou resultados. Sem evidência, informe o bloqueio.
-          Não altere código, execute shell, delegue ou amplie permissões. O coordenador verifica
-          seu parecer e executa os testes. Responda de forma curta em português brasileiro.
 
     # Production dsh does not install these optional providers. Install the
     # matching Bundle in this Profile and restart the Host, then copy this

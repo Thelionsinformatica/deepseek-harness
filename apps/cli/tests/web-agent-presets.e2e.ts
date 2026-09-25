@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -64,6 +64,7 @@ async function bootWeb(
   profileBundles?: readonly string[],
 ): Promise<Context> {
   const storageRoot = join(dirname(settingsFile), 'storages')
+  const sessionRoot = join(dirname(settingsFile), 'sessions')
   const overrides: PatchOptions[] = [
     // The settings row defaults to `$DSH_HOME/settings.yaml`. Left alone it
     // reads the developer's own document — and since the default preset is a
@@ -76,6 +77,8 @@ async function bootWeb(
     // back on the next run, so a stored document from any other build decides
     // this test's boot. Same reason the settings row above is pinned.
     { id: 'storage-json', config: { root: storageRoot } },
+    // Session logs have an independent backend root, resolved during boot.
+    { id: 'session-persistence-jsonl', config: { root: sessionRoot } },
     // Host rows with side effects outside this process: a bound port, a served
     // asset tree, a telemetry exporter. `api-gateway` and `directory-picker`
     // stay ENABLED on purpose — the api-proxy is the host row that injects
@@ -188,11 +191,24 @@ function enablePresetTool(composition: string, id: string): string {
 }
 
 let ctx: Context
+let testHome: string
+let externalHome: string
 const lspProjects: string[] = []
 beforeAll(async () => {
-  const settingsFile = join(await mkdtemp(join(tmpdir(), 'dsh-web-presets-')), 'settings.yaml')
+  testHome = await mkdtemp(join(tmpdir(), 'dsh-web-presets-'))
+  externalHome = await mkdtemp(join(tmpdir(), 'dsh-web-presets-external-'))
+  lspProjects.push(externalHome)
+  await writeFile(join(externalHome, 'preserved.txt'), 'external home sentinel\n')
+  const settingsFile = join(testHome, 'settings.yaml')
   await writeFile(settingsFile, '{}\n')
-  ctx = await bootWeb(settingsFile)
+  const previousHome = process.env.DSH_HOME
+  process.env.DSH_HOME = externalHome
+  try {
+    ctx = await bootWeb(settingsFile)
+  } finally {
+    if (previousHome === undefined) delete process.env.DSH_HOME
+    else process.env.DSH_HOME = previousHome
+  }
 }, 120_000)
 
 afterAll(async () => {
@@ -201,6 +217,30 @@ afterAll(async () => {
 })
 
 describe('the shipped Web composition', () => {
+  it('persists session logs beside the test settings despite an external DSH_HOME at boot', async () => {
+    const sessionId = SessionId(`preset-session-isolation-${randomUUID()}`)
+    const handle = await ctx.agents.create({
+      sessionId,
+      meta: { agentPreset: 'minimal' },
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'minimal').then(() => undefined),
+    })
+    try {
+      handle.agent.session.append('agent-preset/selected', { agentPreset: 'minimal' })
+      expect(await ctx.sessions.flush(handle.agent.session)).toBe(true)
+
+      const path = join(testHome, 'sessions', '_no-cwd', sessionId, 'session.jsonl.zstd')
+      expect((await readFile(path)).byteLength).toBeGreaterThan(0)
+      const stored = await ctx.sessionPersistence.readRaw(sessionId)
+      expect(stored?.content).toContain(sessionId)
+      expect(stored?.content).toContain('"agent-preset/selected"')
+      expect(stored?.content).toContain('"agentPreset":"minimal"')
+      expect(await readdir(externalHome)).toEqual(['preserved.txt'])
+      expect(await readFile(join(externalHome, 'preserved.txt'), 'utf8')).toBe('external home sentinel\n')
+    } finally {
+      await handle.dispose()
+    }
+  })
+
   it('leaves the global tool layer empty', () => {
     // Every model-facing tool belongs to a preset, `ask_user_question`
     // included: a tool in the global layer reaches EVERY agent regardless of
@@ -348,6 +388,62 @@ describe('the shipped Web composition', () => {
       const scoped = (await ctx.skills.list({ scope: handle.agent })).map(skill => skill.name)
       expect(scoped).toContain('editing-cordis-compositions')
       expect((await ctx.skills.list()).map(skill => skill.name)).not.toContain('editing-cordis-compositions')
+    } finally {
+      await handle.dispose()
+    }
+  })
+
+  it('discovers and loads the approved project browser skill in a fresh cordis session without sharing another preset', async () => {
+    const project = await mkdtemp(join(tmpdir(), 'dsh-project-browser-'))
+    lspProjects.push(project)
+    await mkdir(join(project, '.git'))
+    const unrelated = join(project, '.agent-presets', 'other', 'skills', 'private-only')
+    await mkdir(unrelated, { recursive: true })
+    await writeFile(join(unrelated, 'SKILL.md'), '---\nname: private-only\ndescription: Another preset only.\n---\nPrivate body.\n')
+    const browserRoot = join(project, '.agents', 'skills', 'leon-browser')
+    const shipped = join(CONFIG_DIR, 'agent-presets', 'leon', 'skills', 'leon-browser')
+    await mkdir(join(browserRoot, 'scripts'), { recursive: true })
+    for (const relative of ['SKILL.md', 'scripts/context.mjs']) {
+      await copyFile(join(shipped, relative), join(browserRoot, relative))
+    }
+    const handle = await ctx.agents.create({
+      sessionId: SessionId(`preset-project-browser-${randomUUID()}`),
+      meta: { cwd: project, agentPreset: 'cordis' },
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'cordis').then(() => undefined),
+    })
+    try {
+      const snapshot = await ctx.skills.snapshot({ cwd: project, scope: handle.agent })
+      expect(snapshot.complete).toBe(true)
+      expect(snapshot.skills.find(skill => skill.name === 'leon-browser')).toMatchObject({
+        source: 'project-agents', resourceBase: { kind: 'directory', path: browserRoot },
+      })
+      expect(snapshot.skills.some(skill => skill.name === 'private-only')).toBe(false)
+      const message = createUserMessage({
+        content: [{ type: 'text', text: 'Liste as habilidades disponíveis sem operar o navegador.' }],
+        source: { kind: 'user' },
+      })
+      const decision = await agentEvents(ctx, handle.agent).waterfall('agent/pre-step', {
+        messages: [message], turn: 1, step: 1, signal: new AbortController().signal,
+      }, () => Promise.resolve({ kind: 'enter', messages: [message] }))
+      if (decision.kind !== 'enter') throw new Error('browser skill pre-step rejected')
+      const catalog = decision.messages.find(item => item.source.kind === 'skill-catalog')
+      expect(JSON.stringify(catalog?.source)).toContain('leon-browser')
+      expect(JSON.stringify(catalog?.source)).not.toContain('private-only')
+      const loaded = await ctx.tools.execute({
+        callId: CallId('project-browser-skill-load'), name: 'skill',
+        arguments: { name: 'leon-browser' }, signal: new AbortController().signal,
+        agent: handle.agent,
+      })
+      expect(loaded.isError).toBe(false)
+      expect(JSON.stringify(loaded.content)).toContain('Navegação visível e segura')
+      expect(JSON.stringify(loaded.content)).toContain('não se conecta automaticamente ao navegador pessoal')
+      const denied = await ctx.tools.execute({
+        callId: CallId('private-skill-not-shared'), name: 'skill',
+        arguments: { name: 'private-only' }, signal: new AbortController().signal,
+        agent: handle.agent,
+      })
+      expect(denied.isError).toBe(true)
+      expect(JSON.stringify(denied.content)).toContain('unknown or no longer available')
     } finally {
       await handle.dispose()
     }
@@ -767,8 +863,6 @@ describe('the shipped Web composition', () => {
     ].join('\n'))
 
     const handle = await ctx.agents.create({
-      // Unique per run: the composition persists into the ambient DSH home,
-      // and a fixed id would collide with a log an earlier run left there.
       sessionId: SessionId(`preset-skills-standard-${randomUUID()}`),
       setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'standard').then(() => undefined),
     })

@@ -14,6 +14,7 @@ Transforme o pedido em uma mudança verificável, preservando o trabalho existen
 - Use busca e leitura para navegação comum. Antes de uma refatoração estrutural, use `lsp` para confirmar definições, implementações e referências quando a linguagem for suportada; trate resultados vazios como inconclusivos e valide a mudança com build e testes.
 - Diferencie explicação, diagnóstico e implementação. Um pedido de diagnóstico autoriza investigar e explicar, mas não alterar arquivos.
 - Para trabalhos com várias etapas dependentes, registre um plano curto e mantenha somente uma etapa em andamento. Não crie um plano para uma alteração trivial.
+- Delegue investigação e auditoria com `subagent_audit` quando disponível. Essa trilha restringe ferramentas no host e exige evidência registrada; uma resposta encerrada ainda precisa de conferência independente. Não troque para uma ferramenta geral para contornar recusa ou orçamento esgotado.
 
 ## Implementação segura
 
@@ -26,6 +27,7 @@ Transforme o pedido em uma mudança verificável, preservando o trabalho existen
 ## Verificação e entrega
 
 - Execute o teste mais próximo do comportamento alterado. Acrescente lint, typecheck, build ou testes mais amplos conforme o risco e as regras do projeto.
+- Antes de rodar um script, leia seu conteúdo e seus scripts encadeados. No próprio Leon ativo, `pnpm run lint` e `pnpm run typecheck` recompilam bibliotecas: não os use em uma auditoria ao vivo. Prefira lint direto sem `--fix` e testes de fonte isolados. Build necessário exige cópia isolada ou parada/ativação controlada; não reconstrua os artefatos carregados pelo processo que executa a tarefa.
 - Revise o diff final para detectar mudanças acidentais, credenciais, arquivos gerados indevidos e diferenças de formatação.
 - Se uma verificação não puder rodar, informe o comando, o motivo e o que permanece sem comprovação. Nunca apresente uma verificação pendente como aprovada.
 - Entregue primeiro o resultado. Depois informe os principais arquivos alterados, as verificações realizadas e qualquer limitação ou próximo passo realmente necessário.

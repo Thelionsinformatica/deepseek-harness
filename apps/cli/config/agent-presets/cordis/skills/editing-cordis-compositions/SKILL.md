@@ -27,6 +27,14 @@ A preset is a directory holding one `agent.cordis.yml`, optionally beside a `pre
 
 Locally authored presets live one directory per preset under `${DSH_HOME:-$HOME/.dsh}/.agent-presets/`, and the shipped set sits beside the deployment's own config. Use those when the user asks where to look. A deployment can configure other roots, so the path you read or edit comes from `list()` or `resolve()` — which is also where `copy()` reports what it just created.
 
+## Skills and session scope
+
+Creating a skill does not require creating or changing an agent preset. Use the current session's published skill catalog first; do not recursively search the installation or assume that another preset's `skills/` directory is shared. A preset's custom skill root contributes only to sessions using that composition.
+
+For the standard filesystem provider, put a project skill in `<projectRoot>/.agents/skills/<name>/SKILL.md` (or the project's existing `.dsh/skills` convention). The project root is the nearest `.git` ancestor of the session working directory, or that working directory when no `.git` ancestor exists. Use `<DSH_HOME>/skills/<name>/SKILL.md` only when the user intends a computer-wide skill and that provider's default roots are enabled. A deployment can disable default roots or use a different provider; inspect its actual configuration before selecting a write destination. Do not change permissions or copy skills between presets to bypass their scope.
+
+Use a kebab-case `name` and a meaningful `description` in YAML frontmatter. After writing, check that the current session's next catalog contains the exact name, load it with `skill`, then run a safe task-specific test. Report discovery, loading, and successful execution separately. A file on disk or a successful test invoked manually does not prove that the agent can discover the skill. If the catalog remains absent, check the intended root, frontmatter, invocation policy, and filesystem-provider diagnostics before declaring completion.
+
 ## The roster service
 
 `ctx.agentPresets` owns discovery, authoring, and mounting. You reach it by mounting a temporary plugin that injects it and registers a tool for yourself — `cordis_mount` returns only the mount acknowledgement, so a registered tool is how a service answer gets back to you, and it becomes callable on your next step.

@@ -29,6 +29,10 @@ interface SubagentCapabilities {
   readonly depthLimit: boolean
   readonly toolFilter: boolean
   readonly persona: boolean
+  /** Host-owned unpublished setup is supported only when explicitly advertised. */
+  readonly setup?: true
+  /** Provider can evaluate this child's own persisted tool execution. */
+  readonly evidenceTools?: true
 }
 ```
 
@@ -93,6 +97,23 @@ interface SubagentStartRequest {
    * persona (strict `{{…}}` interpolation against the registered variables).
    */
   readonly persona?: string
+  /**
+   * Host-only opt-in evidence requirement for audit work. At least one named
+   * tool must have a successful paired result in the child's current turn.
+   * Persisted for cold resume; never a model-selectable permission or proof
+   * of correctness. General delegations omit it.
+   */
+  readonly evidenceTools?: readonly string[]
+  /**
+   * Host-only one-shot composition after the provider installs its persona,
+   * tool filter and structured-output tool, but before publication or prompt
+   * delivery. Requires the provider's explicit `setup` capability. Effects
+   * belong to `childCtx` and unwind on setup failure or run disposal. A thrown
+   * or rejected setup rolls back without first inference. The callback is not
+   * persisted, model-selectable, or replayed for continuable children.
+   * @param childCtx - exact unpublished child scope; `childCtx.agent` is its Agent.
+   */
+  readonly setup?: (childCtx: Context) => void | Promise<void>
 }
 ```
 
@@ -196,6 +217,8 @@ An optional continuable-child setup contribution can install scope-local capabil
 ```ts type-equiv
 /** Durable attribution for a continuable child's explicit parent report. */
 interface SubagentReportMessageSource {
+  /** Host assessment of this report's current turn, not a model claim. */
+  readonly evidence?: SubagentEvidence
   readonly kind: 'subagent-report'
   /** A message another agent addressed to this one (`relay` context form). */
   readonly form: 'relay'
@@ -220,6 +243,8 @@ Reporting is the child's own choice, so the manager keeps a separate account of 
  * transcript that merged them would credit the child with words it never wrote.
  */
 interface SubagentSettledMessageSource {
+  /** Host assessment independent of the terminal turn outcome. */
+  readonly evidence?: SubagentEvidence
   readonly kind: 'subagent-settled'
   /** A runtime account shown without expanding the row (`notice` context form). */
   readonly form: 'notice'
@@ -314,6 +339,8 @@ The outcome of a one-shot run, resolved by `SubagentRun.result`. `structured` is
  * The terminal outcome of a subagent run, resolved by {@link SubagentRun.result}.
  */
 interface SubagentResult {
+  /** Host assessment of execution evidence, independent of the actual stop reason. */
+  readonly evidence?: SubagentEvidence
   /**
    * The child's final assistant output is the content of its last non-empty
    * assistant message. Empty-content messages, including usage-only messages,

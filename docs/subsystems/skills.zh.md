@@ -250,6 +250,22 @@ Layered registry of skill providers, the host+per-scope shape the tools registry
 
 ```ts cordis-catalog
 /**
+ * Identify one trusted model loader for this registry. This records only identity;
+ * consumers must also resolve the tool through the calling agent's tool scope.
+ * Re-registering the same object fails, and plugin disposal withdraws the identity.
+ * @param tool - exact model-loader object owned by the registering plugin.
+ * @returns the registration's Cordis effect disposer.
+ */
+registerModelTool(tool: object): () => void
+
+/**
+ * Recognize a currently registered model-loader identity without inspecting its name.
+ * @param tool - tool resolved for the viewing agent, or undefined when unavailable.
+ * @returns whether this exact object is an active model loader for this registry.
+ */
+isModelTool(tool: object | undefined): boolean
+
+/**
  * Register a borrowed same-process provider synchronously during plugin
  * apply, into the calling context's layer: a scoped context (an agent
  * preset's standing mount) registers for that scope alone, an unscoped

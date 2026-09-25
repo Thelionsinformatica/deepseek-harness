@@ -433,7 +433,7 @@ Source: [`packages/goal/goal/src/domain.ts:66`](../packages/goal/goal/src/domain
 'goal/completion-audit': GoalCompletionAuditMeta
 ```
 
-Source: [`packages/goal/tool-goal/src/completion-evidence.ts:45`](../packages/goal/tool-goal/src/completion-evidence.ts)
+Source: [`packages/goal/tool-goal/src/completion-evidence.ts:48`](../packages/goal/tool-goal/src/completion-evidence.ts)
 
 ### `hook/*`
 
@@ -741,7 +741,7 @@ Source: [`packages/core/session/src/types.ts:254`](../packages/core/session/src/
 'subagent/descriptor': SubagentDescriptorData
 ```
 
-Source: [`packages/subagent/subagent/src/descriptor.ts:37`](../packages/subagent/subagent/src/descriptor.ts)
+Source: [`packages/subagent/subagent/src/descriptor.ts:38`](../packages/subagent/subagent/src/descriptor.ts)
 
 ### `task/*`
 

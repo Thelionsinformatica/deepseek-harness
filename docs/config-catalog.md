@@ -593,14 +593,14 @@ export interface Config {
   maxRecoveryMessageBytes?: number
   /** Maximum quoted absolute artifact paths checked per claim (default 32). */
   maxArtifactClaims?: number
-  /** Verify absolute Windows paths quoted in backticks by the final claim (default false). */
+  /** Verify absolute filesystem paths quoted in backticks by the final claim (default false). */
   verifyAbsoluteArtifactClaims?: boolean
   /** Require at least one successful tool result in the current turn (default false). */
   requireCurrentTurnEvidence?: boolean
 }
 ```
 
-Source: [`packages/guard/completion-claim-policy/src/index.ts:43`](../packages/guard/completion-claim-policy/src/index.ts)
+Source: [`packages/guard/completion-claim-policy/src/index.ts:44`](../packages/guard/completion-claim-policy/src/index.ts)
 
 <a id="deepseek-aidsh-cordis-host-runner"></a>
 
@@ -1804,7 +1804,7 @@ export interface MemoryRuntimeConfig {
 }
 ```
 
-Source: [`packages/memory/memory/src/index.ts:96`](../packages/memory/memory/src/index.ts)
+Source: [`packages/memory/memory/src/index.ts:102`](../packages/memory/memory/src/index.ts)
 
 <a id="deepseek-aidsh-memory-local"></a>
 
@@ -1868,7 +1868,7 @@ export interface MemoryGraphLinkingConfig {
 }
 ```
 
-Source: [`packages/memory/memory-local/src/index.ts:86`](../packages/memory/memory-local/src/index.ts)
+Source: [`packages/memory/memory-local/src/index.ts:87`](../packages/memory/memory-local/src/index.ts)
 
 <a id="deepseek-aidsh-message-feedback"></a>
 
@@ -1965,7 +1965,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/memory/personal-memory/src/index.ts:66`](../packages/memory/personal-memory/src/index.ts)
+Source: [`packages/memory/personal-memory/src/index.ts:76`](../packages/memory/personal-memory/src/index.ts)
 
 <a id="deepseek-aidsh-personal-memory-local"></a>
 
@@ -1984,7 +1984,7 @@ export interface Config {
   readonly linking?: PersonalLinkingConfig
 }
 
-/** Loopback embedding transport for the personal graph; memory text never leaves the machine. */
+/** Loopback embedding transport; deployments must ensure the local endpoint does not proxy remotely. */
 export interface PersonalEmbeddingsConfig {
   /** Absolute credential-free loopback HTTP origin of the embedding server. */
   readonly baseUrl?: string
@@ -2008,7 +2008,7 @@ export interface PersonalLinkingConfig {
   readonly enabled?: boolean
   /** Minimum cosine similarity an edge must reach to be published. */
   readonly minScore?: number
-  /** Maximum edges retained per node, highest score first. */
+  /** Maximum edges retained per memory node, highest score first. */
   readonly maxEdgesPerNode?: number
   /** Maximum active memories embedded per rebuild; excess is skipped. */
   readonly maxGraphNodes?: number
@@ -2021,7 +2021,7 @@ export interface PersonalLinkingConfig {
 
 Depends on: [`SemanticEmbeddingApi`](../packages/memory/memory-local/src/index.ts)
 
-Source: [`packages/memory/personal-memory-local/src/index.ts:50`](../packages/memory/personal-memory-local/src/index.ts)
+Source: [`packages/memory/personal-memory-local/src/index.ts:51`](../packages/memory/personal-memory-local/src/index.ts)
 
 <a id="deepseek-aidsh-plan-mode"></a>
 
@@ -3167,10 +3167,20 @@ export interface Config {
   completionAuditorMaxAttemptsPerTurn?: number
   /** Maximum correction-report characters returned to the executor. */
   completionAuditorReportMaxCharacters?: number
+  /** Maximum serialized execution evidence characters per auditor delivery or page. */
+  completionAuditorEvidenceMaxCharacters?: number
+  /** Extra host-approved read-only verifier tool names; no generic execution tools by default. */
+  completionAuditorTools?: string[]
+  /** Maximum distinct artifact paths in one review. */
+  completionAuditorArtifactMaxFiles?: number
+  /** Maximum bytes per complete UTF-8 artifact. */
+  completionAuditorArtifactMaxBytes?: number
+  /** Require at least one complete artifact read before accepting PASS. */
+  completionAuditorRequireArtifacts?: boolean
 }
 ```
 
-Source: [`packages/goal/tool-goal/src/index.ts:34`](../packages/goal/tool-goal/src/index.ts)
+Source: [`packages/goal/tool-goal/src/index.ts:37`](../packages/goal/tool-goal/src/index.ts)
 
 <a id="deepseek-aidsh-tool-jobs"></a>
 
@@ -3273,6 +3283,10 @@ export interface Config {
   personalOwnerId?: string
   /** Recall safe personal memories automatically on the first step of each turn. */
   personalAutomaticRecall?: boolean
+  /** Maximum always-present core-profile facts injected each turn, independent of the query. */
+  coreRecallLimit?: number
+  /** Maximum characters in one always-present core-profile snapshot. */
+  coreRecallMaxChars?: number
   /** Deterministic final ranking shared by explicit search and automatic recall. */
   ranking?: MemoryRankingConfig
 }
@@ -3294,7 +3308,7 @@ export interface MemoryRankingConfig {
 }
 ```
 
-Source: [`packages/memory/tool-memory/src/index.ts:93`](../packages/memory/tool-memory/src/index.ts)
+Source: [`packages/memory/tool-memory/src/index.ts:94`](../packages/memory/tool-memory/src/index.ts)
 
 <a id="deepseek-aidsh-tool-pwsh"></a>
 
@@ -3394,7 +3408,7 @@ Requires: `agents` · `tools` · `skills`
 export interface Config {
   /** Maximum normalized description length rendered in the session catalog; minimum 3. */
   catalogDescriptionMaxLength?: number
-  /** Trusted deployment rules that inject a skill when direct human text contains one configured literal. */
+  /** Trusted literal rules for direct human text, active only when this plugin's model loader is visible. */
   autoLoad?: AutoLoadRule[]
 }
 
@@ -3443,6 +3457,8 @@ export interface Config {
    * a distinct name.
    */
   toolName?: string
+  /** Maximum logged attempts for this tool in one session; omission leaves it uncapped. Failed calls consume budget. */
+  maxCallsPerSession?: number
   /**
    * Expose `run_in_background` (default true). Disabled instances omit the
    * parameter and reject forced background calls.
@@ -3475,6 +3491,11 @@ export interface Config {
     /** Global tool names removed from the child. */
     deny?: string[]
   }
+  /**
+   * Eligible tools whose successful results must be recorded before accepting a
+   * child audit. Omission leaves general delegation unchanged.
+   */
+  evidenceTools?: string[]
   /**
    * Maximum child depth: a non-negative safe integer (default `3`; `0` forbids
    * delegation entirely), or `'provider-managed'` to send no cap. A numeric cap
@@ -3512,7 +3533,7 @@ export interface Config {
 
 Depends on: [`SubagentReportDelivery`](subsystems/subagent.md)
 
-Source: [`packages/subagent/tool-subagent-report/src/index.ts:27`](../packages/subagent/tool-subagent-report/src/index.ts)
+Source: [`packages/subagent/tool-subagent-report/src/index.ts:28`](../packages/subagent/tool-subagent-report/src/index.ts)
 
 <a id="deepseek-aidsh-tool-terminal"></a>
 

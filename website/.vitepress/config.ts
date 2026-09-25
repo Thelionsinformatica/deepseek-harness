@@ -1,6 +1,6 @@
 /** VitePress configuration for the locally projected documentation site. */
 
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { DefaultTheme, PageData, SiteConfig } from 'vitepress'
 import type { ViteDevServer } from 'vite'
@@ -209,6 +209,24 @@ const siteIdentity = {
   description: '用于构建 Agent Harness 的插件化 SDK',
 }
 
+/** Output directories whose raw twins were already emitted during this build process. */
+const rawMarkdownBuilds = new Set<string>()
+
+function buildDirectoryKey(path: string): string {
+  const absolute = resolve(path)
+  return process.platform === 'win32' ? absolute.toLowerCase() : absolute
+}
+
+// Raw Markdown twins are emitted after VitePress finishes and therefore survive
+// its ordinary output cleanup. Remove the disposable tree exactly once before
+// a build, including MPA builds that evaluate this config more than once.
+const documentationOutDir = resolve(import.meta.dirname, '../.dist')
+const preparedOutputKey = 'DSH_DOCS_PREPARED_OUTPUT'
+if (process.argv.includes('build') && process.env[preparedOutputKey] !== buildDirectoryKey(documentationOutDir)) {
+  rmSync(documentationOutDir, { recursive: true, force: true })
+  process.env[preparedOutputKey] = buildDirectoryKey(documentationOutDir)
+}
+
 /**
  * The DeepSeek wordmark, inlined so its `currentColor` fills follow the active
  * theme. An `<img>` would freeze the mark at the colors the file declares.
@@ -298,6 +316,12 @@ export default withMermaid({
   base,
   /** Emit the raw-Markdown twin of every route plus llms.txt beside the rendered site. */
   buildEnd(siteConfig: SiteConfig) {
+    // VitePress MPA mode invokes buildEnd once per rendered page while keeping
+    // the same output directory. The projection is deliberately collision-safe,
+    // so a second invocation would reject the files written by the first one.
+    const key = buildDirectoryKey(siteConfig.outDir)
+    if (rawMarkdownBuilds.has(key)) return
+    rawMarkdownBuilds.add(key)
     emitRawMarkdownPages(siteConfig.outDir)
     writeFileSync(resolve(siteConfig.outDir, 'llms.txt'), llmsTxt({ base, ...siteIdentity }))
   },

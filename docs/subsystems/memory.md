@@ -206,9 +206,9 @@ async recordCandidate(record: MemoryCandidateRecord): Promise<void>
 @Remote('rememberPersonalMemory') rememberPersonalMemory(request: PersonalMemoryAdminRememberRequest): Promise<PersonalMemoryAdminRememberResult>
 
 /**
- * Correct one exact personal-memory revision after confirmation.
- * @param request - Session anchor, exact revision, replacement text, and confirmation.
- * @returns The corrected browser-safe row and content-free audit id, or an explicit failure.
+ * Correct or reconfirm one exact personal-memory revision after explicit operator confirmation.
+ * @param request - Session anchor, exact revision, complete confirmed text, and confirmation.
+ * @returns The explicitly validated browser-safe row and content-free audit id, or an explicit failure.
  */
 @Remote('correctPersonalMemory') correctPersonalMemory(request: MemoryAdminCorrectRequest): Promise<MemoryAdminCorrectResult>
 
@@ -521,6 +521,23 @@ A personal-memory operation was rejected before durable mutation.
  * @mode emit
  */
 'personal-memory/blocked'(event: PersonalMemoryBlockedEvent): void
+```
+
+Source: [`packages/memory/personal-memory/src/index.ts`](../../packages/memory/personal-memory/src/index.ts)
+
+<a id="personal-memoryenabled--emit"></a>
+
+#### `personal-memory/enabled` — emit
+
+Host preference changed; background consumers must suspend while disabled.
+
+```ts cordis-catalog
+/**
+ * Host preference changed; background consumers must suspend while disabled.
+ * @param event - The new content-free operation state.
+ * @mode emit
+ */
+'personal-memory/enabled'(event: { readonly enabled: boolean }): void
 ```
 
 Source: [`packages/memory/personal-memory/src/index.ts`](../../packages/memory/personal-memory/src/index.ts)

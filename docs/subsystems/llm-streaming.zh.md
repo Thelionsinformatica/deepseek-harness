@@ -920,6 +920,32 @@ The provider topology changed: an adapter registered or unregistered routes, or 
 
 Source: [`packages/llm/llm/src/types.ts`](../../packages/llm/llm/src/types.ts)
 
+<a id="llmadmission--serial"></a>
+
+#### `llm/admission` — serial
+
+Admit the frozen final request with the exact metadata bound to its adapter generation. Runs after stream middleware, defaults, image projection, and replay-state filtering. Return a failure to stop before inference; undefined continues. Listener errors remain thrown. Requests handled entirely by stream middleware do not dispatch or invoke admission. Scope-filtered dispatch: host listeners apply globally; scoped listeners apply only to their scope and descendants. The routing key belongs to the calling Context, not the provider-neutral request payload.
+
+```ts cordis-catalog
+/**
+ * Admit the frozen final request with the exact metadata bound to its adapter generation.
+ * Runs after stream middleware, defaults, image projection, and replay-state filtering.
+ * Return a failure to stop before inference; undefined continues. Listener errors remain thrown.
+ * Requests handled entirely by stream middleware do not dispatch or invoke admission.
+ * Scope-filtered dispatch: host listeners apply globally; scoped listeners apply only to their scope and descendants.
+ * The routing key belongs to the calling Context, not the provider-neutral request payload.
+ * @param options - frozen effective request immediately before adapter dispatch.
+ * @param model - model metadata captured from the prepared adapter registration.
+ * @mode serial
+ * @dshScopeScan unsupported
+ */
+'llm/admission'(this: Scoped<LlmRuntime>, options: GenerateOptions, model: LlmResolvedModelInfo): LlmFailure | void | Promise<LlmFailure | void>
+```
+
+Types: [Scoped](scope.zh.md)
+
+Source: [`packages/llm/llm/src/index.ts`](../../packages/llm/llm/src/index.ts)
+
 <a id="llmstream--waterfall"></a>
 
 #### `llm/stream` — waterfall

@@ -1,0 +1,43 @@
+# Keyless audit-worker composition. The runner supplies adapters and an isolated
+# DSH_AUDIT_FIXTURE_ROOT; this scenario never rebuilds or touches the live host.
+- id: agent
+  name: '@deepseek-ai/dsh-agent-spine-demo'
+  config:
+    agents: []
+    workspaceContext: false
+    skills:
+      enabled: false
+    toolBash: false
+    toolJobs: false
+    goals: false
+- id: persistence
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: !!js process.env.DSH_AUDIT_FIXTURE_ROOT
+    compression: none
+- id: filesystem
+  name: '@deepseek-ai/dsh-fs-local'
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+- id: subagents
+  name: '@deepseek-ai/dsh-subagent'
+- id: spawn
+  name: '@deepseek-ai/dsh-subagent-spawn-in-process'
+  config:
+    providerName: spawn
+- id: report
+  name: '@deepseek-ai/dsh-tool-subagent-report'
+- id: audit
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: spawn
+    toolName: subagent_audit
+    backgroundMode: continuable
+    maxCallsPerSession: 2
+    maxDepth: 1
+    agentOptions:
+      provider: fixture-worker
+      model: audit-worker
+    toolFilter:
+      allow: [read]
+    evidenceTools: [read]

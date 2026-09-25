@@ -23,8 +23,8 @@
     "kind": "chunks",
     "chunks": [
       { "type": "block-start", "index": 0, "blockType": "tool-call" },
-      { "type": "tool-call-delta", "index": 0, "id": "call_todo_complete", "name": "todo_write", "argumentsDelta": "{\"todos\":[{\"content\":\"Implement project\",\"status\":\"completed\"},{\"content\":\"Validate result\",\"status\":\"completed\"}]}" },
-      { "type": "block-end", "index": 0, "block": { "type": "tool-call", "id": "call_todo_complete", "name": "todo_write", "arguments": "{\"todos\":[{\"content\":\"Implement project\",\"status\":\"completed\"},{\"content\":\"Validate result\",\"status\":\"completed\"}]}" } },
+      { "type": "tool-call-delta", "index": 0, "id": "call_todo_complete", "name": "todo_write", "argumentsDelta": "{\"todos\":[{\"content\":\"Implement project\",\"status\":\"completed\"},{\"content\":\"Validate result\",\"status\":\"completed\"},{\"content\":\"Independent review\",\"status\":\"in_progress\"}]}" },
+      { "type": "block-end", "index": 0, "block": { "type": "tool-call", "id": "call_todo_complete", "name": "todo_write", "arguments": "{\"todos\":[{\"content\":\"Implement project\",\"status\":\"completed\"},{\"content\":\"Validate result\",\"status\":\"completed\"},{\"content\":\"Independent review\",\"status\":\"in_progress\"}]}" } },
       { "type": "usage", "usage": { "inputTokens": 35, "outputTokens": 8 } },
       { "type": "finish", "reason": { "kind": "tool-calls" } }
     ]
@@ -33,12 +33,22 @@
     "kind": "chunks",
     "chunks": [
       { "type": "block-start", "index": 0, "blockType": "tool-call" },
-      { "type": "tool-call-delta", "index": 0, "id": "call_goal_complete", "name": "update_goal", "argumentsDelta": "{\"goal_id\":\"{{fromRequest:goal-[0-9a-f-]+}}\",\"revision\":1,\"action\":\"complete\"}" },
-      { "type": "block-end", "index": 0, "block": { "type": "tool-call", "id": "call_goal_complete", "name": "update_goal", "arguments": "{\"goal_id\":\"{{fromRequest:goal-[0-9a-f-]+}}\",\"revision\":1,\"action\":\"complete\"}" } },
+      { "type": "tool-call-delta", "index": 0, "id": "call_goal_review", "name": "update_goal", "argumentsDelta": "{\"goal_id\":\"{{fromRequest:goal-[0-9a-f-]+}}\",\"revision\":1,\"action\":\"review\"}" },
+      { "type": "block-end", "index": 0, "block": { "type": "tool-call", "id": "call_goal_review", "name": "update_goal", "arguments": "{\"goal_id\":\"{{fromRequest:goal-[0-9a-f-]+}}\",\"revision\":1,\"action\":\"review\"}" } },
       { "type": "usage", "usage": { "inputTokens": 42, "outputTokens": 9 } },
       { "type": "finish", "reason": { "kind": "tool-calls" } }
     ]
   },
+  { "kind": "chunks", "chunks": [
+    { "type": "block-start", "index": 0, "blockType": "tool-call" },
+    { "type": "block-end", "index": 0, "block": { "type": "tool-call", "id": "call_review_done", "name": "todo_write", "arguments": "{\"todos\":[{\"content\":\"Implement project\",\"status\":\"completed\"},{\"content\":\"Validate result\",\"status\":\"completed\"},{\"content\":\"Independent review\",\"status\":\"completed\"}]}" } },
+    { "type": "finish", "reason": { "kind": "tool-calls" } }
+  ] },
+  { "kind": "chunks", "chunks": [
+    { "type": "block-start", "index": 0, "blockType": "tool-call" },
+    { "type": "block-end", "index": 0, "block": { "type": "tool-call", "id": "call_goal_complete", "name": "update_goal", "arguments": "{\"goal_id\":\"{{fromRequest:goal-[0-9a-f-]+}}\",\"revision\":1,\"action\":\"complete\"}" } },
+    { "type": "finish", "reason": { "kind": "tool-calls" } }
+  ] },
   {
     "kind": "chunks",
     "chunks": [

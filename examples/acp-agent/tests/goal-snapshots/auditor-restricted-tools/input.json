@@ -1,0 +1,1 @@
+{"steps":[{"op":"initialize"},{"op":"newSession"},{"op":"prompt","text":"Create a goal to validate evidence.txt through independent review and complete only when verified. If completion is refused, inspect the current goal and pause it; do not retry autonomously."}]}

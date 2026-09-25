@@ -1,0 +1,31 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`audit worker evidence snapshot > preserves evidence and denied writes with background=false 1`] = `
+{
+  "background": false,
+  "deniedWrite": true,
+  "evidencePolicyPersisted": true,
+  "impossibleReportInstruction": false,
+  "originalPreserved": "ORIGINAL
+",
+  "readEvidence": true,
+  "tools": [
+    "read",
+  ],
+}
+`;
+
+exports[`audit worker evidence snapshot > preserves evidence and denied writes with background=true 1`] = `
+{
+  "background": true,
+  "deniedWrite": true,
+  "evidencePolicyPersisted": true,
+  "impossibleReportInstruction": false,
+  "originalPreserved": "ORIGINAL
+",
+  "readEvidence": true,
+  "tools": [
+    "read",
+  ],
+}
+`;

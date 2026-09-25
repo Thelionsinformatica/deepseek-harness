@@ -170,9 +170,9 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   // durable domain schema between it and the ordinary tool entry through one
   // hashed chunk, so both runtime artifacts must ship together.
   '@deepseek-ai/dsh-tool-memory': ['lib/review.js', 'lib/procedure-learning.js', 'lib/spec-*.js'],
-  // The goal entry and invariant share the generated completion-evidence
-  // implementation, so its hashed runtime chunk is part of the package closure.
-  '@deepseek-ai/dsh-tool-goal': ['lib/completion-evidence-*.js'],
+  // Goal receipts and artifact validation share generated runtime chunks
+  // between the tool entry and invariant; both chunk families must ship.
+  '@deepseek-ai/dsh-tool-goal': ['lib/completion-evidence-*.js', 'lib/audit-artifacts-*.js'],
   '@deepseek-ai/dsh-skill-badge': ['assets'],
   '@deepseek-ai/dsh-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
   // Explicit laboratory entries share tsdown chunks and are not official runtime dependencies.

@@ -1,0 +1,10 @@
+{"type":"session","version":0,"id":"auditor-restricted-child","createdAt":1,"cwd":"{{cwd}}","parentSession":"auditor-restricted-parent","origin":"subagent","delegationDepth":1}
+{"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"block-start","index":0,"blockType":"tool-call"}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"block-end","index":0,"block":{"type":"tool-call","id":"forbidden-write","name":"write","arguments":"{\"file_path\":\"evidence.txt\",\"content\":\"Forbidden mutation.\\n\"}"}}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"finish","reason":{"kind":"tool-calls"}}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"block-start","index":0,"blockType":"tool-call"}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"block-end","index":0,"block":{"type":"tool-call","id":"auditor-read","name":"completion_artifact_read","arguments":"{\"file_path\":\"evidence.txt\"}"}}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"finish","reason":{"kind":"tool-calls"}}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":3,"chunk":{"type":"block-start","index":0,"blockType":"tool-call"}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":3,"chunk":{"type":"block-end","index":0,"block":{"type":"tool-call","id":"auditor-pass","name":"structured_output","arguments":"{\"status\":\"pass\",\"summary\":\"A leitura independente confirmou o conteúdo exato do artefato.\",\"findings\":[]}"}}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":3,"chunk":{"type":"finish","reason":{"kind":"tool-calls"}}}}

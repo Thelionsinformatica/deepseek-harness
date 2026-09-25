@@ -1174,9 +1174,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote(\'correctPersonalMemory\') correctPersonalMemory(request: MemoryAdminCorrectRequest): Promise<MemoryAdminCorrectResult>',
-        description: 'Correct one exact personal-memory revision after confirmation.',
-        parameters: [{ name: 'request', description: 'Session anchor, exact revision, replacement text, and confirmation.' }],
-        returns: 'The corrected browser-safe row and content-free audit id, or an explicit failure.',
+        description: 'Correct or reconfirm one exact personal-memory revision after explicit operator confirmation.',
+        parameters: [{ name: 'request', description: 'Session anchor, exact revision, complete confirmed text, and confirmation.' }],
+        returns: 'The explicitly validated browser-safe row and content-free audit id, or an explicit failure.',
       },
       {
         signature: '@Remote(\'forgetPersonalMemory\') forgetPersonalMemory(request: MemoryAdminForgetRequest): Promise<MemoryAdminForgetResult>',
@@ -1981,6 +1981,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     summary: 'Layered registry of skill providers, the host+per-scope shape the tools registry established.',
     description: 'Layered registry of skill providers, the host+per-scope shape the tools registry established. A registration files into the layer of its calling context\'s scope (scopeOf): host rows and repository plugins land in the global layer, while a plugin mounted by an agent preset\'s standing composition lands in that preset\'s layer. A read merges the global layer with the viewing scope\'s chain — the nearest layer\'s entry wins a duplicate name outright, and the rank order decides duplicates only within one layer. It exposes sorted invocation-neutral summaries and loads full skill bodies on demand.',
     methods: [
+      {
+        signature: 'registerModelTool(tool: object): () => void',
+        description: 'Identify one trusted model loader for this registry. This records only identity; consumers must also resolve the tool through the calling agent\'s tool scope. Re-registering the same object fails, and plugin disposal withdraws the identity.',
+        parameters: [{ name: 'tool', description: 'exact model-loader object owned by the registering plugin.' }],
+        returns: 'the registration\'s Cordis effect disposer.',
+      },
+      {
+        signature: 'isModelTool(tool: object | undefined): boolean',
+        description: 'Recognize a currently registered model-loader identity without inspecting its name.',
+        parameters: [{ name: 'tool', description: 'tool resolved for the viewing agent, or undefined when unavailable.' }],
+        returns: 'whether this exact object is an active model loader for this registry.',
+      },
       {
         signature: 'registerProvider(create: (control: SkillProviderControl) => SkillProvider): () => void',
         description: 'Register a borrowed same-process provider synchronously during plugin apply, into the calling context\'s layer: a scoped context (an agent preset\'s standing mount) registers for that scope alone, an unscoped context registers globally. Duplicate names within one layer and reserved names throw; remote initialization belongs in `list()`. Fiber disposal unregisters the provider and invalidates catalog caches.',
@@ -3031,6 +3043,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [],
   },
   {
+    name: 'llm/admission',
+    mode: 'serial',
+    signature: '\'llm/admission\'(this: Scoped<LlmRuntime>, options: GenerateOptions, model: LlmResolvedModelInfo): LlmFailure | void | Promise<LlmFailure | void>',
+    summary: 'Admit the frozen final request with the exact metadata bound to its adapter generation.',
+    description: 'Admit the frozen final request with the exact metadata bound to its adapter generation. Runs after stream middleware, defaults, image projection, and replay-state filtering. Return a failure to stop before inference; undefined continues. Listener errors remain thrown. Requests handled entirely by stream middleware do not dispatch or invoke admission. Scope-filtered dispatch: host listeners apply globally; scoped listeners apply only to their scope and descendants. The routing key belongs to the calling Context, not the provider-neutral request payload.',
+    parameters: [{ name: 'options', description: 'frozen effective request immediately before adapter dispatch.' }, { name: 'model', description: 'model metadata captured from the prepared adapter registration.' }],
+  },
+  {
     name: 'llm/stream',
     mode: 'waterfall',
     signature: '\'llm/stream\'(this: LlmRuntime, options: GenerateOptions, next: () => AsyncIterable<StreamChunk>): AsyncIterable<StreamChunk>',
@@ -3085,6 +3105,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'A personal-memory operation was rejected before durable mutation.',
     description: 'A personal-memory operation was rejected before durable mutation.',
     parameters: [{ name: 'event', description: 'Sanitized operation, owner, reason, and error code.' }],
+  },
+  {
+    name: 'personal-memory/enabled',
+    mode: 'emit',
+    signature: '\'personal-memory/enabled\'(event: { readonly enabled: boolean }): void',
+    summary: 'Host preference changed; background consumers must suspend while disabled.',
+    description: 'Host preference changed; background consumers must suspend while disabled.',
+    parameters: [{ name: 'event', description: 'The new content-free operation state.' }],
   },
   {
     name: 'personal-memory/operation',
@@ -3636,7 +3664,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ContinuableStartSpec',
-    declaration: 'export interface ContinuableStartSpec {\n    readonly provider: string;\n    readonly label: string;\n    readonly childId?: SessionId;\n    readonly request: Omit<SubagentStartRequest, \'label\' | \'signal\' | \'outputSchema\'>;\n    readonly signal: AbortSignal;\n}',
+    declaration: 'export interface ContinuableStartSpec {\n    readonly provider: string;\n    readonly label: string;\n    readonly childId?: SessionId;\n    readonly request: Omit<SubagentStartRequest, \'label\' | \'signal\' | \'outputSchema\' | \'setup\'>;\n    readonly signal: AbortSignal;\n}',
   },
   {
     name: 'ContinuableSubagentDescriptorData',
@@ -4148,7 +4176,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LocalMemoryVersion',
-    declaration: 'export interface LocalMemoryVersion {\n    readonly content: string;\n    readonly revision: number;\n    readonly source: {\n        readonly kind: \'session\';\n        readonly sessionId: SessionIdentity;\n    };\n    readonly importance?: number;\n    readonly confidence?: number;\n    readonly validation?: MemoryValidation;\n    readonly schemaVersion: MemoryRecordSchemaVersion;\n    readonly validFrom?: string;\n    readonly validUntil?: string;\n    readonly expiresAt?: string;\n    readonly supersedes?: MemoryRef;\n    readonly supersededBy?: MemoryRef;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+    declaration: 'export interface LocalMemoryVersion {\n    readonly content: string;\n    readonly revision: number;\n    readonly source: {\n        readonly kind: \'session\';\n        readonly sessionId: SessionIdentity;\n    };\n    readonly importance?: number;\n    readonly confidence?: number;\n    readonly validation?: MemoryValidation;\n    readonly core?: boolean;\n    readonly schemaVersion: MemoryRecordSchemaVersion;\n    readonly validFrom?: string;\n    readonly validUntil?: string;\n    readonly expiresAt?: string;\n    readonly supersedes?: MemoryRef;\n    readonly supersededBy?: MemoryRef;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
     name: 'LocalSemanticSearchEvent',
@@ -4236,7 +4264,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MemoryAdminGraphEdge',
-    declaration: 'export interface MemoryAdminGraphEdge {\n    readonly a: MemoryAdminId;\n    readonly b: MemoryAdminId;\n    readonly score: number;\n}',
+    declaration: 'export interface MemoryAdminGraphEdge {\n    readonly a: MemoryAdminId;\n    readonly aRevision: number;\n    readonly b: MemoryAdminId;\n    readonly bRevision: number;\n    readonly score: number;\n}',
   },
   {
     name: 'MemoryAdminGraphRequest',
@@ -4428,7 +4456,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MemoryCreateRequest',
-    declaration: 'export interface MemoryCreateRequest {\n    readonly scope: MemoryScope;\n    readonly content: string;\n    readonly source: MemorySource;\n    readonly importance?: number;\n    readonly confidence?: number;\n    readonly validation?: MemoryValidation;\n    readonly validFrom?: string;\n    readonly expiresAt?: string;\n}',
+    declaration: 'export interface MemoryCreateRequest {\n    readonly scope: MemoryScope;\n    readonly content: string;\n    readonly source: MemorySource;\n    readonly importance?: number;\n    readonly confidence?: number;\n    readonly validation?: MemoryValidation;\n    readonly core?: boolean;\n    readonly validFrom?: string;\n    readonly expiresAt?: string;\n}',
   },
   {
     name: 'MemoryEventSchemaVersion',
@@ -4484,7 +4512,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MemoryRecord',
-    declaration: 'export interface MemoryRecord {\n    readonly id: MemoryId;\n    readonly scope: MemoryScope;\n    readonly content: string;\n    readonly revision: number;\n    readonly source: MemorySource;\n    readonly importance?: number;\n    readonly confidence?: number;\n    readonly validation?: MemoryValidation;\n    readonly schemaVersion?: MemoryRecordSchemaVersion;\n    readonly validFrom?: string;\n    readonly validUntil?: string;\n    readonly expiresAt?: string;\n    readonly supersedes?: MemoryRef;\n    readonly supersededBy?: MemoryRef;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+    declaration: 'export interface MemoryRecord {\n    readonly id: MemoryId;\n    readonly scope: MemoryScope;\n    readonly content: string;\n    readonly revision: number;\n    readonly source: MemorySource;\n    readonly importance?: number;\n    readonly confidence?: number;\n    readonly validation?: MemoryValidation;\n    readonly core?: boolean;\n    readonly schemaVersion?: MemoryRecordSchemaVersion;\n    readonly validFrom?: string;\n    readonly validUntil?: string;\n    readonly expiresAt?: string;\n    readonly supersedes?: MemoryRef;\n    readonly supersededBy?: MemoryRef;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
     name: 'MemoryRecordSchemaVersion',
@@ -4516,7 +4544,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MemoryUpdateRequest',
-    declaration: 'export interface MemoryUpdateRequest {\n    readonly scope: MemoryScope;\n    readonly ref: MemoryRef;\n    readonly content: string;\n    readonly source?: MemorySource;\n    readonly validFrom?: string;\n    readonly expiresAt?: string | null;\n}',
+    declaration: 'export interface MemoryUpdateRequest {\n    readonly scope: MemoryScope;\n    readonly ref: MemoryRef;\n    readonly content: string;\n    readonly confidence?: number;\n    readonly validation?: MemoryValidation;\n    readonly core?: boolean;\n    readonly source?: MemorySource;\n    readonly validFrom?: string;\n    readonly expiresAt?: string | null;\n}',
   },
   {
     name: 'MemoryValidation',
@@ -5072,7 +5100,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SemanticFallbackCode',
-    declaration: 'export type SemanticFallbackCode = \'TIMEOUT\' | \'TRANSPORT\' | \'HTTP_ERROR\' | \'INVALID_RESPONSE\' | \'RESPONSE_TOO_LARGE\';',
+    declaration: 'export type SemanticFallbackCode = \'TIMEOUT\' | \'TRANSPORT\' | \'HTTP_ERROR\' | \'INPUT_TOO_LARGE\' | \'INVALID_RESPONSE\' | \'RESPONSE_TOO_LARGE\';',
   },
   {
     name: 'SendTeamMessageRequest',
@@ -5476,7 +5504,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubagentCapabilities',
-    declaration: 'export interface SubagentCapabilities {\n    readonly outputSchema: boolean;\n    readonly depthLimit: boolean;\n    readonly toolFilter: boolean;\n    readonly persona: boolean;\n}',
+    declaration: 'export interface SubagentCapabilities {\n    readonly outputSchema: boolean;\n    readonly depthLimit: boolean;\n    readonly toolFilter: boolean;\n    readonly persona: boolean;\n    readonly setup?: true;\n    readonly evidenceTools?: true;\n}',
   },
   {
     name: 'SubagentDescendantListEntry',
@@ -5485,6 +5513,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SubagentDescriptorData',
     declaration: 'export type SubagentDescriptorData = OneShotSubagentDescriptorData | ContinuableSubagentDescriptorData;',
+  },
+  {
+    name: 'SubagentEvidence',
+    declaration: 'export interface SubagentEvidence {\n    readonly status: \'observed\' | \'missing\';\n    readonly semanticVerification: \'unverified\';\n    readonly tools: readonly string[];\n    readonly calls: readonly SubagentEvidenceCall[];\n}',
+  },
+  {
+    name: 'SubagentEvidenceCall',
+    declaration: 'export interface SubagentEvidenceCall {\n    readonly tool: string;\n    readonly callId: string;\n    readonly callSeq: number;\n    readonly resultSeq: number;\n}',
   },
   {
     name: 'SubagentFollowupOptions',
@@ -5508,7 +5544,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubagentResult',
-    declaration: 'export interface SubagentResult {\n    readonly output: ContentBlock[];\n    readonly structured?: unknown;\n    readonly diagnostic?: string;\n    readonly stopReason: SubagentStopReason;\n}',
+    declaration: 'export interface SubagentResult {\n    readonly evidence?: SubagentEvidence;\n    readonly output: ContentBlock[];\n    readonly structured?: unknown;\n    readonly diagnostic?: string;\n    readonly stopReason: SubagentStopReason;\n}',
   },
   {
     name: 'SubagentRun',
@@ -5516,7 +5552,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubagentRunEndInfo',
-    declaration: 'export interface SubagentRunEndInfo {\n    readonly runId: SubagentRunId;\n    readonly provider: string;\n    readonly id: SessionId;\n    readonly local: boolean;\n    readonly stopReason: SubagentResult[\'stopReason\'];\n    readonly lastAssistantMessage?: ContentBlock[];\n}',
+    declaration: 'export interface SubagentRunEndInfo {\n    readonly runId: SubagentRunId;\n    readonly provider: string;\n    readonly id: SessionId;\n    readonly local: boolean;\n    readonly stopReason: SubagentResult[\'stopReason\'];\n    readonly lastAssistantMessage?: ContentBlock[];\n    readonly evidence?: SubagentEvidence;\n}',
   },
   {
     name: 'SubagentRunId',
@@ -5532,7 +5568,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubagentStartRequest',
-    declaration: 'export interface SubagentStartRequest {\n    readonly label?: string;\n    readonly prompt: ContentBlock[];\n    readonly parent: Agent;\n    readonly signal: AbortSignal;\n    readonly agentOptions?: AgentOptions;\n    readonly outputSchema?: ObjectJsonSchema;\n    readonly maxDepth?: number;\n    readonly toolFilter?: ToolRestriction;\n    readonly persona?: string;\n}',
+    declaration: 'export interface SubagentStartRequest {\n    readonly label?: string;\n    readonly prompt: ContentBlock[];\n    readonly parent: Agent;\n    readonly signal: AbortSignal;\n    readonly agentOptions?: AgentOptions;\n    readonly outputSchema?: ObjectJsonSchema;\n    readonly maxDepth?: number;\n    readonly toolFilter?: ToolRestriction;\n    readonly persona?: string;\n    readonly evidenceTools?: readonly string[];\n    readonly setup?: (childCtx: Context) => void | Promise<void>;\n}',
   },
   {
     name: 'SubagentStopReason',

@@ -45,6 +45,13 @@ function parseJsonl(content: string): JsonObject[] {
 function normalizeGoalTimestamps(value: unknown): unknown {
   if (typeof value === 'string') {
     return value
+      .replace(/(Host-captured parent execution trace \(JSON\):\n)([^\n]+)/g, (_match, prefix: string, json: string) => {
+        const trace = JSON.parse(json) as JsonObject
+        const parent = trace.scope === 'parent-and-direct-children' ? trace.parent as JsonObject : trace
+        if (!Array.isArray(parent.events)) return prefix + json
+        const normalized = { ...parent, digest: '<digest>', events: (parent.events as JsonObject[]).map(event => ({ ...event, time: 0 })) }
+        return prefix + JSON.stringify(trace.scope === 'parent-and-direct-children' ? { ...trace, parent: normalized } : normalized)
+      })
       .replace(/("(?:createdAt|updatedAt|clearedAt|auditedAt)":)\d+/g, '$10')
       // The evidence digest hashes raw session events (real ids and times), so
       // it changes every run; the auditor verdict digest stays stable.
@@ -66,7 +73,8 @@ function normalizeGoalTimestamps(value: unknown): unknown {
 
 /** Normalize one persisted goal log after the shared snapshot scrubbers. */
 function normalizeGoalLog(content: string, context: NormalizeContext): string {
-  return normalizeGoalTimestamps(normalizeSessionSnapshot(content, context)) as string
+  return parseJsonl(normalizeSessionSnapshot(content, context))
+    .map(record => JSON.stringify(normalizeGoalTimestamps(record))).join('\n') + '\n'
 }
 
 describe('same-session goal snapshot through the ACP automation driver', () => {
@@ -93,6 +101,8 @@ describe('same-session goal snapshot through the ACP automation driver', () => {
       ? [event.data.source.round]
       : [])
     expect(rounds).toEqual([1, 2])
+    expect(events.some(event => event.type === 'turn/end'
+      && event.data.turn === 2 && event.data.reason.kind === 'max-tokens')).toBe(true)
     expect(foldGoal(events)).toMatchObject({
       goal: {
         objective: 'Finish the ACP goal-round-driver snapshot proof',
@@ -198,7 +208,13 @@ describe('same-session goal snapshot through the ACP automation driver', () => {
     const records = parseJsonl(log.content)
     const events = records.slice(1) as unknown as SessionEvent[]
     const calls = events.filter(event => event.type === 'tool/call').map(event => event.data.name)
-    expect(calls).toEqual(['todo_write', 'todo_write', 'update_goal'])
+    expect(calls).toEqual(['todo_write', 'todo_write', 'update_goal', 'todo_write', 'update_goal'])
+    const receipt = events.find(event => event.type === 'goal/completion-audit')!
+    expect(events.filter(event => event.type === 'goal/completion-audit')).toHaveLength(1)
+    expect(events.slice(0, receipt.seq).findLast(event => event.type === 'todo/write')?.data.todos.at(-1)?.status)
+      .toBe('in_progress')
+    expect(events.slice(receipt.seq + 1).find(event => event.type === 'todo/write')?.data.todos.at(-1)?.status)
+      .toBe('completed')
     const rounds = events.flatMap(event => event.type === 'user/message' && event.data.source.kind === 'goal'
       && event.data.source.round > 0
       ? [event.data.source.round]
@@ -215,6 +231,20 @@ describe('same-session goal snapshot through the ACP automation driver', () => {
     })
     const auditRecords = parseJsonl(auditLog.content)
     const auditEvents = auditRecords.slice(1) as unknown as SessionEvent[]
+    const auditPrompt = auditEvents.filter(event => event.type === 'user/message')
+      .flatMap(event => event.data.content)
+      .filter(block => block.type === 'text')
+      .map(block => block.text).find(text => text.includes('Host-captured parent execution trace (JSON):'))
+    expect(auditPrompt).toBeDefined()
+    const traceJson = auditPrompt!.split('Host-captured parent execution trace (JSON):\n')[1]!.split('\n')[0]!
+    const bundle = JSON.parse(traceJson) as JsonObject
+    const trace = bundle.parent as JsonObject
+    expect(bundle.scope).toBe('parent-and-direct-children')
+    const parentTools = events.filter(event => (event.type === 'tool/call' || event.type === 'tool/result')
+      && event.seq <= (trace.throughSeq as number))
+    expect(trace).toMatchObject({ scope: 'parent-session-only', complete: true, eventCount: parentTools.length })
+    expect(trace.events).toEqual(parentTools)
+    expect(trace.digest).toMatch(/^[0-9a-f]{64}$/)
     expect(auditEvents.filter(event => event.type === 'tool/call').map(event => event.data.name))
       .toEqual(['structured_output'])
 

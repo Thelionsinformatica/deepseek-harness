@@ -1,0 +1,26 @@
+# Independent audit contract scenario over the runnable ACP application.
+- id: base
+  name: '@deepseek-ai/cordis-plugin-include'
+  config:
+    path: ./cordis.yml
+    patches:
+      - id: acp-agent
+        name: '@deepseek-ai/dsh-acp-demo'
+        config:
+          provider: deepseek-official
+          model: deepseek-v4-flash
+          persistenceRoot: !!js process.env.DSH_SNAPSHOT_SESSIONS_ROOT ?? './.sessions'
+          persistenceCompression: !!js "process.env.DSH_SNAPSHOT === undefined ? 'zstd' : 'none'"
+          workspaceContext:
+            maxBytes: 65536
+          goals:
+            tool:
+              completionRequiresCompletedTodos: true
+              completionAuditorProvider: spawn
+              completionAuditorModelProvider: deepseek-official
+              completionAuditorModel: deepseek-v4-flash
+              completionAuditorMaxTokens: 4096
+              completionAuditorMaxAttemptsPerTurn: 1
+              completionAuditorRequireArtifacts: true
+          persona: |
+            Verify the supplied workspace evidence before independent review. If completion is refused, inspect the goal state and pause as requested by the human.

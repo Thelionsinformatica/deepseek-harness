@@ -22,9 +22,7 @@ The generated [`report` schema](../../../docs/tool-catalog.md#deepseek-aidsh-too
 
 #### Token effect
 
-Fixed schema and prompt-section cost per continuable-child request, and none in any other Agent's requests.
-
-Host-restricted audits that omit `report` pay neither its schema nor its guidance cost and receive no impossible instruction to call it.
+Fixed schema and prompt-section cost per continuable-child request, and none in any other Agent's requests. Host-restricted audits that omit `report` pay neither its schema nor its guidance cost and receive no impossible instruction to call it.
 
 #### KV Cache effect
 

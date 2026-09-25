@@ -343,7 +343,7 @@ export class ReactLoopAgent implements Agent {
       const assembler = new BlockAssembler()
       const chunkSeqs: number[] = []
       try {
-        const stream = preparedCall?.stream(request) ?? this.loopCtx.llm.stream(request)
+        const stream = preparedCall?.stream(request) ?? this.ctx.llm.stream(request)
         signal.throwIfAborted()
         for await (const chunk of stream) {
           signal.throwIfAborted()
@@ -466,7 +466,7 @@ export class ReactLoopAgent implements Agent {
     let config: LlmCallConfig
     let preparedCall: PreparedLlmCall | undefined
     try {
-      preparedCall = await this.loopCtx.llm.prepareCall(proposedConfig, signal)
+      preparedCall = await this.ctx.llm.prepareCall(proposedConfig, signal)
       config = preparedCall.config
     } catch (error: unknown) {
       // Middleware may serve an unregistered route; terminal dispatch still requires an adapter.

@@ -2,7 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { createHash, randomUUID } from 'node:crypto'
 import { lstat, open, readFile, realpath, rename, unlink } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { z } from 'zod'
 import schema from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -49,7 +49,11 @@ const output = {
  * @returns parsed policy and digest of the exact bytes inspected.
  */
 export async function readImportPolicy(workspace: string): Promise<ImportPolicy> {
-  if (resolve(await realpath(workspace)) !== resolve(workspace)) throw new Error('Lab workspace is redirected')
+  const requested = resolve(workspace)
+  const expected = resolve(await realpath(dirname(requested)), basename(requested))
+  const actual = resolve(await realpath(requested))
+  const identity = (value: string) => process.platform === 'win32' ? value.toLowerCase() : value
+  if (identity(actual) !== identity(expected)) throw new Error('Lab workspace is redirected')
   const path = join(workspace, 'import-policy.json')
   const stat = await lstat(path)
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 4096) throw new Error('Invalid lab policy file')

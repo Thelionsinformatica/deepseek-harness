@@ -7,6 +7,7 @@
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
+import { scopeOf, scopeTarget, type Scoped } from '@deepseek-ai/dsh-scope'
 import type {
   GenerateOptions,
   LlmConfigurableProvider,
@@ -63,6 +64,20 @@ declare module '@deepseek-ai/cordis' {
      * @mode waterfall
      */
     'llm/stream'(this: LlmRuntime, options: GenerateOptions, next: () => AsyncIterable<StreamChunk>): AsyncIterable<StreamChunk>
+
+    /**
+     * Admit the frozen final request with the exact metadata bound to its adapter generation.
+     * Runs after stream middleware, defaults, image projection, and replay-state filtering.
+     * Return a failure to stop before inference; undefined continues. Listener errors remain thrown.
+     * Requests handled entirely by stream middleware do not dispatch or invoke admission.
+     * Scope-filtered dispatch: host listeners apply globally; scoped listeners apply only to their scope and descendants.
+     * The routing key belongs to the calling Context, not the provider-neutral request payload.
+     * @param options - frozen effective request immediately before adapter dispatch.
+     * @param model - model metadata captured from the prepared adapter registration.
+     * @mode serial
+     * @dshScopeScan unsupported
+     */
+    'llm/admission'(this: Scoped<LlmRuntime>, options: GenerateOptions, model: LlmResolvedModelInfo): LlmFailure | void | Promise<LlmFailure | void>
 
   }
 }
@@ -900,12 +915,13 @@ export class LlmRuntime extends Service {
     prepared?: PreparedDispatch,
   ): AsyncGenerator<StreamChunk> {
     let iterator: AsyncIterator<StreamChunk>
+    let modelInfo: LlmResolvedModelInfo
+    let dispatch: (options: GenerateOptions) => AsyncIterable<StreamChunk>
+    let finalOptions: GenerateOptions
     try {
       const registration = prepared?.registration ?? this.registration(options.provider)
       const adapter = registration.adapter
-      let modelInfo: LlmResolvedModelInfo
       let resolvedConfig: LlmCallConfig
-      let dispatch: (options: GenerateOptions) => AsyncIterable<StreamChunk>
       if (prepared === undefined) {
         const adapterCall = await adapter.prepareCall(options.provider, options.model, options.signal)
         modelInfo = this.normalizeModelInfo(registration, options.model, adapterCall.model)
@@ -934,8 +950,20 @@ export class LlmRuntime extends Service {
           ? deepFreeze({ ...resolvedOptions, messages: projectImagesForTextModel(resolvedOptions.messages) as Message[] })
           : { ...resolvedOptions, messages: projectImagesForTextModel(resolvedOptions.messages) as Message[] }
         : resolvedOptions
-      const stream = dispatch(this.forAdapter(projectedOptions, adapter))
-      iterator = stream[Symbol.asyncIterator]()
+      finalOptions = deepFreeze(this.forAdapter(projectedOptions, adapter))
+      deepFreeze(modelInfo)
+    } catch (error: unknown) {
+      yield adapterFailureChunk(error, options.signal)
+      return
+    }
+
+    const refusal = await this.ctx.serial(scopeTarget(this, scopeOf(this.ctx)), 'llm/admission', finalOptions, modelInfo)
+    if (refusal !== undefined) {
+      yield { type: 'finish', reason: { kind: 'error', failure: refusal } }
+      return
+    }
+    try {
+      iterator = dispatch(finalOptions)[Symbol.asyncIterator]()
     } catch (error: unknown) {
       yield adapterFailureChunk(error, options.signal)
       return

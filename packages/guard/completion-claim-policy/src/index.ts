@@ -7,6 +7,7 @@
 
 import { Buffer } from 'node:buffer'
 import { existsSync } from 'node:fs'
+import { posix, win32 } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -47,7 +48,7 @@ export interface Config {
   maxRecoveryMessageBytes?: number
   /** Maximum quoted absolute artifact paths checked per claim (default 32). */
   maxArtifactClaims?: number
-  /** Verify absolute Windows paths quoted in backticks by the final claim (default false). */
+  /** Verify absolute filesystem paths quoted in backticks by the final claim (default false). */
   verifyAbsoluteArtifactClaims?: boolean
   /** Require at least one successful tool result in the current turn (default false). */
   requireCurrentTurnEvidence?: boolean
@@ -294,12 +295,14 @@ interface ArtifactClaims {
   limitExceeded: boolean
 }
 
-/** Extract a bounded set of absolute Windows code-span paths. */
+/** Extract a bounded set of portable absolute code-span paths. */
 function absoluteArtifactClaims(text: string, maxClaims: number): ArtifactClaims {
   const paths = new Set<string>()
-  for (const match of text.matchAll(/`([a-z]:[\\/][^`\r\n]+)`/giu)) {
+  for (const match of text.matchAll(/`([^`\r\n]+)`/gu)) {
     const path = match[1]?.trim()
-    if (path === undefined || path.length <= 3 || paths.has(path)) continue
+    if (path === undefined
+      || (!posix.isAbsolute(path) && !win32.isAbsolute(path))
+      || paths.has(path)) continue
     if (paths.size >= maxClaims) return { paths: [...paths], limitExceeded: true }
     paths.add(path)
   }

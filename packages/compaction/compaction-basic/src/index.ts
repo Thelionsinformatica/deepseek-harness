@@ -34,6 +34,7 @@ import type {
   ModelCompactPolicyConfig,
   ResolvedConfig,
 } from './types.ts'
+import { installRequestAdmission } from './request-admission.ts'
 
 export type {
   BasicCompactionConfig,
@@ -136,6 +137,7 @@ export class BasicCompactionEngine extends CompactionEngine {
    */
   private _registerAutomaticCompaction(): void {
     const { ctx } = this
+    installRequestAdmission(ctx)
     const logResult = (result: CompactionResult, trigger: string): void => {
       ctx.logger.info(
         `compaction (${trigger}): shadowed ${result.shadowedSeqs.length} surface nodes `

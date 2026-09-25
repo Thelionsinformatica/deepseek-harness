@@ -12,6 +12,8 @@
 
 ### 公开 API
 
+- `ctx.skills.registerModelTool(tool): () => void` 在其 Cordis effect 释放前记录受信模型加载器的精确对象身份。重复注册同一对象会抛错；名称相同的另一对象不会被识别。这既不注册工具，也不授予权限或 scope 可见性。
+- `ctx.skills.isModelTool(tool | undefined): boolean` 检查该精确对象是否仍是活动的模型加载器。检查消费方必须先通过观察 agent 的分层工具注册表解析工具，再执行身份检查；单独调用此方法不能证明任何 agent 可使用该工具。
 - `ctx.skills.registerProvider(create): () => void` 调用同步提供方工厂并向其传入 `{ signal, invalidate }`，随后以在调用方上下文所在层内唯一的 `provider.name` 注册其只读结果。同层重复提供方名称会抛错，`runtime` 为保留名称；注册失败会中止信号。精确的 Cordis disposer 会注销提供方、中止信号，并保持有序组合拆卸。
 - `ctx.skills.snapshot({ cwd?, signal?, scope? })` 返回观察 scope 各层合并后、与调用策略无关的 `{ skills, complete }` 观测。任一提供方调用被拒绝或显式报告发现不完整，或有界重试期间又发生目录修订时，`complete` 为 false；该次观测提供的候选项仍保留在此结果中，但该结果绝不缓存。
 - `ctx.skills.list({ cwd?, signal?, scope? })` 借用只读视图选项，然后返回当前工作区中的全部胜出摘要；这些摘要在全局层与观察 scope 链之间合并，并按名称排序。消费方在自身边界调用 `isModelInvocable(skill)` 或 `isUserInvocable(skill)`。

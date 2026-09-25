@@ -169,6 +169,8 @@ describe('dsh-tool-skill', () => {
 
     const fiber = await ctx.plugin(toolSkill)
     expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(['skill'])
+    const loader = ctx.tools.get('skill')
+    expect(ctx.skills.isModelTool(loader)).toBe(true)
     expect(await composePrefix(ctx, '/workspace')).toHaveLength(1)
     expect(ctx.tools.get('skill')?.presentCall?.({ name: 'project-skill' })).toEqual({
       card: 'generic',
@@ -177,6 +179,7 @@ describe('dsh-tool-skill', () => {
       rawInput: 'project-skill',
     })
     await fiber.dispose()
+    expect(ctx.skills.isModelTool(loader)).toBe(false)
     expect(ctx.tools.schemas()).toEqual([])
     expect(await composePrefix(ctx, '/workspace')).toEqual([])
 
@@ -288,6 +291,7 @@ describe('dsh-tool-skill', () => {
             '',
             "If the user names a skill, or the task clearly matches a skill's description, call the `skill` tool with the exact skill name before taking task actions. Load all applicable skills, then follow their full instructions. This catalog contains summaries only; do not infer or follow a skill's instructions until it has been loaded.",
             'A user may also invoke a skill directly; its <skill_content> block then appears in this conversation. Follow it, and do not call the `skill` tool again for that skill.',
+            'This catalog describes the current session only. Files in another preset are not available here merely because they exist. After creating a skill, confirm its discovery in this catalog and load it before claiming it is available; successful execution requires a separate test.',
             '</system-reminder>',
           ].join('\n'),
         }],
@@ -740,6 +744,8 @@ describe('dsh-tool-skill', () => {
     }))
 
     expect(ctx.tools.get('skill', agent)).not.toBe(ctx.tools.get('skill'))
+    expect(ctx.skills.isModelTool(ctx.tools.get('skill', agent))).toBe(false)
+    expect(ctx.skills.isModelTool(ctx.tools.get('skill'))).toBe(true)
     expect(await composePrefixForAgent(ctx, agent)).toEqual([])
     expect(await composePrefix(ctx, '/workspace')).toHaveLength(1)
     await scope.dispose()
@@ -1113,6 +1119,39 @@ describe('user-explicit invocation injection', () => {
     if (decision.kind !== 'enter') throw new Error('expected enter')
     expect(decision.messages.some(message =>
       (message.source as { kind?: string }).kind === 'skill-invocation')).toBe(false)
+  })
+
+  it.each(['restricted', 'shadowed'] as const)('does not auto-load when the shipped skill tool is %s', async (state) => {
+    const { ctx, agent } = await invokeHarness({
+      autoLoad: [{ name: 'shared-skill', contains: ['load marker'] }],
+    })
+    const { scope } = await mintAgentScope(ctx, agent)
+    if (state === 'restricted') {
+      scope.ctx.tools.restrict({ deny: ['skill'] })
+    } else {
+      scope.ctx.tools.register(defineContentToolFixture({
+        name: 'skill',
+        description: 'An unrelated scoped tool.',
+        parameters: {},
+        execute: () => Promise.resolve([{ type: 'text', text: 'shadow' }]),
+      }))
+    }
+    try {
+      const automatic = await proposeStep(ctx, agent, [gesture('load marker')])
+      if (automatic.kind !== 'enter') throw new Error('expected enter')
+      expect(automatic.messages.map(message => message.source.kind)).toEqual(['user'])
+
+      // Direct human gestures have their own user-invocation policy; hiding the
+      // model loader does not silently revoke that separate capability.
+      const explicit = await proposeStep(ctx, agent, [gesture('/shared-skill load marker')])
+      if (explicit.kind !== 'enter') throw new Error('expected enter')
+      expect(explicit.messages.filter(message => message.source.kind === 'skill-invocation')).toHaveLength(1)
+    } finally {
+      await scope.dispose()
+    }
+    const restored = await proposeStep(ctx, agent, [gesture('load marker')])
+    if (restored.kind !== 'enter') throw new Error('expected enter')
+    expect(restored.messages.filter(message => message.source.kind === 'skill-invocation')).toHaveLength(1)
   })
 
   it('dedupes an automatic match with an explicit gesture and respects model invocation policy', async () => {

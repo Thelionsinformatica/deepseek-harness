@@ -45,6 +45,11 @@ Exact-model metadata is a separate correctness query, not a catalog decoration o
 | Event | Mode | Purpose |
 |---|---|---|
 | `llm/stream` | waterfall | Intercept/wrap every streaming model call for caching, logging, or routing |
+| `llm/admission` | serial | Admit the final frozen request against its registration-bound model metadata before adapter inference |
+
+`llm/admission(options, model)` runs after stream middleware, adapter defaults, image projection, and replay-state filtering. Its immutable options and exact model metadata describe the adapter generation that will dispatch, including prepared calls across HMR. The first returned `LlmFailure` becomes a terminal error finish without adapter inference; `undefined` continues, and listener exceptions remain thrown plugin errors. Admission does not run when stream middleware supplies the complete response without dispatching. Policy plugins own decisions; the service does not impose a context budget.
+
+Admission uses the calling context's canonical scope, retained by a prepared call. Host listeners apply globally; agent or preset listeners apply only within their scope and descendants, never to the host or unrelated siblings. The scope key stays outside the provider-neutral request payload.
 
 ### Extension points
 

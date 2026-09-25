@@ -6,11 +6,15 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
-import LlmRuntime from '@deepseek-ai/dsh-llm'
-import SessionStore from '@deepseek-ai/dsh-session'
+import LlmRuntime, { CallId, createUserMessage, LlmAdapter } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
+import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import BasicCompactionEngine from '@deepseek-ai/dsh-compaction-basic'
 import ToolResultPruner from '@deepseek-ai/dsh-compaction-tool-result-pruner'
+import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
+import { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 
 let root: string | undefined
 let context: Context | undefined
@@ -37,6 +41,8 @@ async function loadYaml(lines: readonly string[]): Promise<Context> {
     ['@deepseek-ai/dsh-token-meter', TokenMeter],
     ['@deepseek-ai/dsh-compaction-tool-result-pruner', ToolResultPruner],
     ['@deepseek-ai/dsh-compaction-basic', BasicCompactionEngine],
+    ['@deepseek-ai/dsh-agent-loop', AgentLoop],
+    ['test-loop-dependencies', { name: 'test-loop-dependencies', apply: mountAgentLoopTestDependencies }],
   ])
   context.loader.internal = {
     version: 'v2',
@@ -54,6 +60,80 @@ async function loadYaml(lines: readonly string[]): Promise<Context> {
 }
 
 describe('real Loader composition', () => {
+  it('refuses newly injected instructions before the next adapter call and after replay', async () => {
+    const loaded = await loadYaml([
+      '- name: test-loop-dependencies',
+      "- name: '@deepseek-ai/dsh-token-meter'",
+      "- name: '@deepseek-ai/dsh-agent-loop'",
+      '  config:',
+      '    agents: []',
+      "- name: '@deepseek-ai/dsh-compaction-basic'",
+      '  config:',
+      '    thresholdRatio: 1',
+      '    maxOverflowRetries: 0',
+    ])
+    class WorkerAdapter extends LlmAdapter {
+      calls = 0
+      override async resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+        return { provider, id: model, name: model, context: { contextWindow: 32768 }, defaultMaxTokens: 4096 }
+      }
+      override async * stream(_options: GenerateOptions): AsyncIterable<StreamChunk> {
+        this.calls += 1
+        yield { type: 'block-start', index: 0, blockType: 'tool-call' }
+        yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: CallId('read-one'), name: 'read', arguments: '{}' } }
+        yield { type: 'finish', reason: { kind: 'tool-calls' } }
+      }
+    }
+    const adapter = new WorkerAdapter()
+    loaded.llm.registerAdapter(['local'], adapter)
+    loaded.systemPrompt.section({ name: 'baseline', order: 0, text: 'required baseline '.repeat(4000) })
+    const mandatoryInstructions = 'REQUIRED INSTRUCTION\n'.repeat(2400).slice(0, 46688)
+    loaded.tools.register(defineContentToolFixture({
+      name: 'read', description: 'Read the assigned source.', parameters: {},
+      async execute(_args, execution) {
+        if (execution.agent === undefined) throw new Error('expected the live worker executing read')
+        execution.agent.inject(createUserMessage({
+          content: [{ type: 'text', text: mandatoryInstructions }],
+          source: { kind: 'plugin', plugin: 'mandatory-workspace-instructions' },
+        }))
+        return [{ type: 'text', text: 'source contents' }]
+      },
+    }))
+    const agent = loaded.agentLoop.create(SessionId('injected-worker-context'), { provider: 'local', model: 'worker' })
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Review this file.' }], source: { kind: 'user' } }))
+    await agent.whenIdle()
+
+    expect(adapter.calls).toBe(1)
+    const final = agent.session.events.at(-1)
+    expect(final).toMatchObject({
+      type: 'turn/end', data: { reason: { kind: 'error', error: {
+        code: 'CONTEXT_WINDOW_EXCEEDED',
+      } } },
+    })
+    if (final?.type !== 'turn/end' || final.data.reason.kind !== 'error') throw new Error('expected a refused turn')
+    expect(final.data.reason.error.message).toContain('Request refused before inference:')
+    expect(agent.session.events.filter(event => event.type === 'tool/result')).toHaveLength(1)
+    expect(agent.session.events.some(event => event.type === 'compaction/start')).toBe(false)
+    const stored = agent.session.deriveMessages()
+    expect(stored.some(message => message.content.some(block =>
+      block.type === 'text' && block.text === mandatoryInstructions,
+    ))).toBe(true)
+
+    const replayed = Session.create(agent.session.id, agent.session.events, agent.session.header)
+    expect(replayed.deriveMessages()).toEqual(stored)
+    const header = replayed.requestHeader()
+    if (header === undefined) throw new Error('expected the refused request header to remain logged')
+    const chunks: StreamChunk[] = []
+    for await (const chunk of loaded.llm.stream({
+      ...header.config,
+      ...header.system === undefined ? {} : { system: header.system },
+      ...header.tools === undefined ? {} : { tools: header.tools },
+      messages: replayed.deriveMessages(),
+    })) chunks.push(chunk)
+    expect(chunks).toMatchObject([{ type: 'finish', reason: { kind: 'error', failure: { code: 'CONTEXT_WINDOW_EXCEEDED' } } }])
+    expect(adapter.calls).toBe(1)
+  })
+
   it('loads the shipped token-meter, pruning, and compaction-basic YAML order', async () => {
     const loaded = await loadYaml([
       "- name: '@deepseek-ai/dsh-llm'",

@@ -58,6 +58,28 @@ function scopedSkills(ctx: Context): SkillRegistry {
 }
 
 describe('SkillRegistry registry', () => {
+  it('recognizes loader identity and revokes it with its owning plugin', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SkillRegistry)
+    const tool = { name: 'skill' }
+    let dispose!: () => void
+    const owner = await ctx.plugin(Object.assign((inner: Context) => {
+      dispose = inner.skills.registerModelTool(tool)
+    }, { inject: ['skills'] }))
+    expect(ctx.skills.isModelTool(undefined)).toBe(false)
+    expect(ctx.skills.isModelTool({ name: 'skill' })).toBe(false)
+    expect(ctx.skills.isModelTool(tool)).toBe(true)
+    expect(() => ctx.skills.registerModelTool(tool)).toThrow('already registered')
+    expect(ctx.skills.isModelTool(tool)).toBe(true)
+    await owner.dispose()
+    expect(ctx.skills.isModelTool(tool)).toBe(false)
+    dispose()
+    const second = ctx.skills.registerModelTool(tool)
+    expect(ctx.skills.isModelTool(tool)).toBe(true)
+    second()
+    expect(ctx.skills.isModelTool(tool)).toBe(false)
+  })
+
   it('registers providers, resolves duplicates first-wins, and disposes providers', async () => {
     const ctx = new Context()
     await ctx.plugin(SkillRegistry)

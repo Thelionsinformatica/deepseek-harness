@@ -18,6 +18,10 @@
 
 `autoLoad` 是可选的部署配置，由 `{ name, contains[] }` 规则组成。插件会规范化 Unicode 宽度、大小写、空白和斜杠方向，并且只在用户直接输入中匹配这些字面片段。匹配后，它通过与显式 `/name` 手势相同的 `skill-invocation` 上下文注入当前完整 skill 正文。目录、历史、文档、工具结果和插件注入都不能触发规则。自动加载要求 skill 可由模型调用；显式 `/name` 仍遵循用户调用策略。空标记或非法 skill 名会使插件加载失败。
 
+自动加载还要求调用 agent 解析到本插件注册的那个 `skill` 工具。限制该工具或由另一注册遮蔽它时，自动注入与目录指引均被抑制。用户 `/name` 手势仍遵循独立的用户调用策略。发现或加载都不授予执行 skill 脚本或工具的权限。
+
+插件还通过 `ctx.skills.registerModelTool()` 记录同一加载器对象。受信检查消费方可将分层工具查找与 `ctx.skills.isModelTool()` 结合，而不必仅凭名称识别加载器，也不必依赖本包。释放插件会同时撤回工具注册和身份标记。
+
 ## 工具：`skill`
 
 | 参数 | 类型 | 说明 |
@@ -52,6 +56,7 @@ A skill is a reusable set of task-specific instructions. The following skills ar
 
 If the user names a skill, or the task clearly matches a skill's description, call the `skill` tool with the exact skill name before taking task actions. Load all applicable skills, then follow their full instructions. This catalog contains summaries only; do not infer or follow a skill's instructions until it has been loaded.
 A user may also invoke a skill directly; its <skill_content> block then appears in this conversation. Follow it, and do not call the `skill` tool again for that skill.
+This catalog describes the current session only. Files in another preset are not available here merely because they exist. After creating a skill, confirm its discovery in this catalog and load it before claiming it is available; successful execution requires a separate test.
 </system-reminder>
 ```
 

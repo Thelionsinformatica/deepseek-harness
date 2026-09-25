@@ -365,6 +365,7 @@ export class SkillRegistry extends Service {
     () => { this.invalidateCache() },
   )
   private readonly collectCache = new Map<string, Map<string, IndexedCandidate>>()
+  private readonly modelTools = new Set<object>()
   private revision = 0
   private nextProviderOrder = 0
   /** Stable identities for cache keys; scope keys are opaque identity-compared objects. */
@@ -375,6 +376,31 @@ export class SkillRegistry extends Service {
     super(ctx, 'skills')
     this.collectCacheMaxEntries = config.collectCacheMaxEntries ?? DEFAULT_COLLECT_CACHE_ENTRIES
     assertPositiveInteger('collectCacheMaxEntries', this.collectCacheMaxEntries)
+  }
+
+  /**
+   * Identify one trusted model loader for this registry. This records only identity;
+   * consumers must also resolve the tool through the calling agent's tool scope.
+   * Re-registering the same object fails, and plugin disposal withdraws the identity.
+   * @param tool - exact model-loader object owned by the registering plugin.
+   * @returns the registration's Cordis effect disposer.
+   */
+  registerModelTool(tool: object): () => void {
+    if (this.modelTools.has(tool)) throw new Error('skill model loader is already registered')
+    // oxlint-disable-next-line typescript/no-misused-promises -- synchronous teardown; direct return preserves Cordis disposer identity
+    return this.ctx.effect(() => {
+      this.modelTools.add(tool)
+      return () => { this.modelTools.delete(tool) }
+    }, 'skills.registerModelTool()')
+  }
+
+  /**
+   * Recognize a currently registered model-loader identity without inspecting its name.
+   * @param tool - tool resolved for the viewing agent, or undefined when unavailable.
+   * @returns whether this exact object is an active model loader for this registry.
+   */
+  isModelTool(tool: object | undefined): boolean {
+    return tool !== undefined && this.modelTools.has(tool)
   }
 
   /**

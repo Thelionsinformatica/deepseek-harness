@@ -1329,6 +1329,20 @@ describe('SessionStore', () => {
     expect(ctx.sessions.get(SessionId('rel'))).toBeUndefined()
   })
 
+  it('accepts portable absolute cwd values from Windows and POSIX sessions', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const windows = ctx.sessions.create(SessionId('windows-cwd'), {
+      meta: { cwd: String.raw`E:\Leon\Dados` },
+    })
+    const posix = ctx.sessions.create(SessionId('posix-cwd'), {
+      meta: { cwd: '/srv/leon' },
+    })
+
+    expect(windows.header.cwd).toBe(String.raw`E:\Leon\Dados`)
+    expect(posix.header.cwd).toBe('/srv/leon')
+  })
+
   it('a bare Session() constructed without the store still exposes a current-version header', () => {
     const session = Session.create(SessionId('bare'))
     expect(session.header).toMatchObject({ version: SESSION_FORMAT_VERSION, id: 'bare' })

@@ -18,6 +18,10 @@ The catalog is omitted when no model-invocable skills are initially available, a
 
 `autoLoad` is an optional deployment-owned list of `{ name, contains[] }` rules. The plugin normalizes Unicode width, case, whitespace, and slash direction, then matches configured literals only against direct human text. A match injects the current full skill body through the same `skill-invocation` context used by an explicit `/name` gesture. Catalogs, history, documents, tool results, and plugin injections cannot activate a rule. Automatic loading requires a model-invocable skill; a direct `/name` gesture continues to use the skill's user-invocation policy. Blank markers and invalid skill names fail plugin loading.
 
+Automatic loading also requires the calling agent to resolve this plugin's exact `skill` tool registration. Restricting that tool or shadowing it with another registration suppresses automatic injections as well as catalog guidance. Human `/name` gestures remain governed by the separate user-invocation policy. Neither discovery nor loading grants permission to execute a skill's scripts or tools.
+
+The plugin also records that same loader object through `ctx.skills.registerModelTool()`. Trusted inspection consumers can combine a scoped tool lookup with `ctx.skills.isModelTool()` without recognizing a loader by name alone or depending on this package. Disposing the plugin withdraws both the tool registration and the identity marker.
+
 ## Tool: `skill`
 
 | Arg | Type | Notes |
@@ -52,6 +56,7 @@ A skill is a reusable set of task-specific instructions. The following skills ar
 
 If the user names a skill, or the task clearly matches a skill's description, call the `skill` tool with the exact skill name before taking task actions. Load all applicable skills, then follow their full instructions. This catalog contains summaries only; do not infer or follow a skill's instructions until it has been loaded.
 A user may also invoke a skill directly; its <skill_content> block then appears in this conversation. Follow it, and do not call the `skill` tool again for that skill.
+This catalog describes the current session only. Files in another preset are not available here merely because they exist. After creating a skill, confirm its discovery in this catalog and load it before claiming it is available; successful execution requires a separate test.
 </system-reminder>
 ```
 

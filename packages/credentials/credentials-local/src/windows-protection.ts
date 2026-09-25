@@ -32,6 +32,8 @@ const DPAPI_ENTROPY = 'dsh-credentials-local/v2'
 const DPAPI_TIMEOUT_MS = 10_000
 /** Bound diagnostics from a failed helper without retaining their contents. */
 const MAX_STDERR_BYTES = 64 * 1024
+/** Serialize inbox PowerShell startup so concurrent credential providers do not exhaust the host. */
+let dpapiQueue: Promise<void> = Promise.resolve()
 
 /**
  * Build the fixed PowerShell program for one DPAPI operation. Credential bytes
@@ -97,7 +99,7 @@ function powershellEnvironment(systemRoot: string): NodeJS.ProcessEnv {
  * @param input - plaintext or ciphertext bytes supplied over standard input.
  * @returns the DPAPI result bytes emitted over standard output.
  */
-export function runWindowsDpapi(operation: WindowsDpapiOperation, input: Buffer): Promise<Buffer> {
+function runWindowsDpapiNow(operation: WindowsDpapiOperation, input: Buffer): Promise<Buffer> {
   const command = powershellPath()
   if (command instanceof Error) return Promise.reject(command)
   const maximumOutputBytes = Math.max(64 * 1024, input.length * 2 + 8 * 1024)
@@ -176,6 +178,20 @@ export function runWindowsDpapi(operation: WindowsDpapiOperation, input: Buffer)
     })
     child.stdin.end(input)
   })
+}
+
+/**
+ * Queue one bounded DPAPI helper invocation. Coverage and multi-provider boots
+ * can initialize several credential stores at once; starting all PowerShell
+ * processes concurrently makes a healthy host miss the per-process deadline.
+ * @param operation - DPAPI operation to run.
+ * @param input - plaintext or protected bytes supplied to DPAPI.
+ * @returns the transformed DPAPI bytes.
+ */
+export function runWindowsDpapi(operation: WindowsDpapiOperation, input: Buffer): Promise<Buffer> {
+  const result = dpapiQueue.then(() => runWindowsDpapiNow(operation, input))
+  dpapiQueue = result.then(() => undefined, () => undefined)
+  return result
 }
 
 /**

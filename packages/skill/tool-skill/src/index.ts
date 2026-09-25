@@ -69,7 +69,7 @@ export interface AutoLoadRule {
 export interface Config {
   /** Maximum normalized description length rendered in the session catalog; minimum 3. */
   catalogDescriptionMaxLength?: number
-  /** Trusted deployment rules that inject a skill when direct human text contains one configured literal. */
+  /** Trusted literal rules for direct human text, active only when this plugin's model loader is visible. */
   autoLoad?: AutoLoadRule[]
 }
 
@@ -174,6 +174,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     },
   })
   ctx.tools.register(skillTool)
+  ctx.skills.registerModelTool(skillTool)
 
   // User-explicit skill invocation: a claimed user message whose first line
   // starts with `/<name>` naming a user-invocable skill is a deterministic
@@ -196,7 +197,9 @@ export function apply(ctx: Context, config: Config = {}): void {
     const decision = await next()
     if (decision.kind === 'reject') return decision
     const explicitNames = invokedSkillNames(messages)
-    const automaticNames = autoLoadedSkillNames(messages, autoLoad)
+    const automaticNames = (ctx.tools.get(skillTool.name, agent) === skillTool
+      ? autoLoadedSkillNames(messages, autoLoad)
+      : [])
       .filter(name => !explicitNames.includes(name))
     const names = [...explicitNames, ...automaticNames]
     if (names.length === 0) return decision
@@ -284,6 +287,7 @@ function renderCatalogMessage(entries: SkillCatalogSource['entries']): UserMessa
         '',
         "If the user names a skill, or the task clearly matches a skill's description, call the `skill` tool with the exact skill name before taking task actions. Load all applicable skills, then follow their full instructions. This catalog contains summaries only; do not infer or follow a skill's instructions until it has been loaded.",
         'A user may also invoke a skill directly; its <skill_content> block then appears in this conversation. Follow it, and do not call the `skill` tool again for that skill.',
+        'This catalog describes the current session only. Files in another preset are not available here merely because they exist. After creating a skill, confirm its discovery in this catalog and load it before claiming it is available; successful execution requires a separate test.',
         '</system-reminder>',
       ].join('\n'),
     }],
@@ -317,6 +321,7 @@ function renderCatalogUpdate(entries: SkillCatalogSource['entries']): UserMessag
         '</available_skills>',
         '',
         ...availability,
+        'This catalog describes the current session only. Files in another preset are not available here merely because they exist. After creating a skill, confirm its discovery in this catalog and load it before claiming it is available; successful execution requires a separate test.',
         '</system-reminder>',
       ].join('\n'),
     }],

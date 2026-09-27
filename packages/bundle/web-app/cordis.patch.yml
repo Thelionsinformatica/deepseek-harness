@@ -477,6 +477,20 @@
           process.env.LEON_VOICE_VOSK_MODEL ?? (process.platform === 'win32' ? 'E:\\Computador\\labs\\Twsman1-JARVIS\\models\\vosk-pt' : '')
         voiceMaxBytes: 10485760
         voiceTimeoutMs: 45000
+        # Restart handoff is opt-in by deployment. The shipped default stays
+        # empty, which registers no route at all; an operator points this at a
+        # reviewed supervisor script and the GUI gains one button.
+        restartScriptPath: !!js >-
+          process.env.LEON_RESTART_SCRIPT ?? ''
+        # Empty runs the supervisor through Node's embedded PowerShell launcher.
+        # A non-empty value is spawned directly with the script as its only
+        # argument, which is what a .cmd wrapper needs.
+        restartProgram: !!js >-
+          process.env.LEON_RESTART_PROGRAM ?? ''
+        # The scrubbed parent environment already carries DSH_HOME and the LEON_*
+        # paths, so nothing is forwarded here by default. List only variables a
+        # supervisor needs that the scrub removes — never a credential value.
+        restartEnvironment: []
 
     # The client-plugin reload chain, always mounted: it is idle until a
     # rebuild watcher (pnpm run dev:web) actually rewrites client bundles. It

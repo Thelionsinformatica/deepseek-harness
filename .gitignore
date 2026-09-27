@@ -48,3 +48,10 @@ worktrees/
 /STATUS_ENVIO.md
 /email_poema.eml
 /poema_amor.txt
+
+# Operator scratch notes and install residue measured at the repository root on
+# 2026-09-27: untracked, regenerable or personal, and one `git add .` would
+# commit them into product history (MODEL_CATALOG.md alone is 167 KB).
+/install_log.txt
+/MODEL_CATALOG.md
+/ARCHITECTURE_REVIEW.md

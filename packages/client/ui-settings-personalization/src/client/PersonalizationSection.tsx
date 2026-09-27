@@ -29,6 +29,8 @@ export interface PersonalizationSectionInjected {
   setToolAssistedMemory: (enabled: boolean) => Promise<void>
   setPersonalMemoryEnabled: (enabled: boolean) => Promise<void>
   clearPersonalMemories: (sessionId: SessionId) => Promise<number>
+  /** Hand the restart off to the host's operator-owned supervisor. */
+  restartHost: () => Promise<void>
   t: (key: PersonalizationKey, params?: Record<string, string>) => string
 }
 
@@ -75,6 +77,7 @@ function Loaded({
   setToolAssistedMemory,
   setPersonalMemoryEnabled,
   clearPersonalMemories,
+  restartHost,
   t,
 }: PersonalizationSectionFace): ReactNode {
   const personalization = usePersonalization(value => value)
@@ -88,6 +91,8 @@ function Loaded({
   const [busy, setBusy] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [restarting, setRestarting] = useState(false)
+  const [confirmRestart, setConfirmRestart] = useState(false)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [error, setError] = useState(false)
 
@@ -131,6 +136,23 @@ function Loaded({
       },
       () => { setError(true) },
     ).finally(() => { setDeleting(false) })
+  }
+
+  const restart = (): void => {
+    setRestarting(true)
+    setError(false)
+    void restartHost().then(
+      () => {
+        // The supervisor stops this host moments after the reply, so the page
+        // keeps the notice visible instead of pretending the action finished.
+        setFeedback(t('restartPending'))
+        setConfirmRestart(false)
+      },
+      () => {
+        setRestarting(false)
+        setError(true)
+      },
+    )
   }
 
   return (
@@ -249,6 +271,23 @@ function Loaded({
         </select>
       </section>
 
+      <section className={css.section}>
+        <div className={css.row}>
+          <div>
+            <strong>{t('restartTitle')}</strong>
+            <p>{t('restartDescription')}</p>
+          </div>
+          <button
+            type="button"
+            className={css.dangerButton}
+            disabled={restarting}
+            onClick={() => { setConfirmRestart(true) }}
+          >
+            {t('restart')}
+          </button>
+        </div>
+      </section>
+
       {feedback !== null ? <p className={css.success} role="status">{feedback}</p> : null}
       {error ? <p className={css.error} role="alert">{t('operationFailed')}</p> : null}
 
@@ -270,6 +309,25 @@ function Loaded({
           </>
         )}
       />
+
+      <Modal
+        open={confirmRestart}
+        onClose={() => { if (!restarting) setConfirmRestart(false) }}
+        title={t('restartDialogTitle')}
+        closeLabel={t('cancel')}
+        description={t('restartDialogDescription')}
+        className={css.deleteDialog as string}
+        footer={(
+          <>
+            <Button variant="outline" autoFocus disabled={restarting} onClick={() => { setConfirmRestart(false) }}>
+              {t('cancel')}
+            </Button>
+            <Button variant="outline" className={css.deleteConfirm} disabled={restarting} onClick={restart}>
+              {restarting ? t('restarting') : t('restartConfirm')}
+            </Button>
+          </>
+        )}
+      />
     </div>
   )
 }
@@ -279,16 +337,17 @@ export function PersonalizationSection(props: PersonalizationSectionProps): Reac
   const {
     usePersonalization, usePersonalMemory, useSessions, saveInstructions,
     setPersonality, setToolAssistedMemory, setPersonalMemoryEnabled,
-    clearPersonalMemories, t,
+    clearPersonalMemories, restartHost, t,
   } = props
   if (
     usePersonalization === undefined || usePersonalMemory === undefined || useSessions === undefined
     || saveInstructions === undefined || setPersonality === undefined || setToolAssistedMemory === undefined
-    || setPersonalMemoryEnabled === undefined || clearPersonalMemories === undefined || t === undefined
+    || setPersonalMemoryEnabled === undefined || clearPersonalMemories === undefined
+    || restartHost === undefined || t === undefined
   ) return null
   return <Loaded {...{
     usePersonalization, usePersonalMemory, useSessions, saveInstructions,
     setPersonality, setToolAssistedMemory, setPersonalMemoryEnabled,
-    clearPersonalMemories, t,
+    clearPersonalMemories, restartHost, t,
   }} />
 }

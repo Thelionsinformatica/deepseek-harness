@@ -59,6 +59,21 @@ async function clearAllPersonalMemories(ctx: ClientContext, sessionId: SessionId
   throw new Error('personal-memory clear exceeded the bounded batch count')
 }
 
+/** Same-origin restart handoff owned by the Web bundle's host side. */
+const LEON_RESTART_PATH = '/api/leon/restart'
+
+/**
+ * Ask the host to detach its operator-owned restart supervisor. The reply only
+ * confirms the handoff: the page loses its connection when the supervisor stops
+ * the listener, so a non-OK answer is the sole reportable failure here.
+ */
+async function requestRestart(): Promise<void> {
+  const response = await fetch(LEON_RESTART_PATH, { method: 'POST', credentials: 'same-origin' })
+  if (!response.ok) {
+    throw new Error(`restart handoff rejected: ${String(response.status)}`)
+  }
+}
+
 export const inject = [
   'slots', 'locale', 'settingsScope', 'sessions', 'remote', 'remote.memoryCandidateReview',
 ]
@@ -85,6 +100,7 @@ export function apply(ctx: ClientContext): void {
     setToolAssistedMemory: enabled => personalization.set('toolAssistedMemory', enabled),
     setPersonalMemoryEnabled: enabled => personalMemory.set('enabled', enabled),
     clearPersonalMemories: sessionId => clearAllPersonalMemories(ctx, sessionId),
+    restartHost: () => requestRestart(),
     t,
   })
 

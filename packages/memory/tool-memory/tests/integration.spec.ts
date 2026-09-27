@@ -1310,7 +1310,7 @@ describe('memory tools through the real agent loop', () => {
   })
 
   it('records a credential candidate without persisting its content', async () => {
-    const secret = 'sk-proj-1234567890abcdefghijklmnop'
+    const secret = 'sk-proj-1234567890abcdefghijklmnop' // verify-secrets: allow synthetic test fixture, asserted redacted
     const adapter = new MockAdapter([textResponse('Não vou guardar a credencial.')])
     const { ctx, cwd } = await harness(adapter, {
       shadowExtraction: true,
@@ -1431,17 +1431,21 @@ describe('memory tools through the real agent loop', () => {
     await ctx.fiber.dispose()
   })
 
-  it('retains personal preferences across workspaces and recalls them automatically', async () => {
+  it('keeps model proposals unconfirmed until a human selects the exact revision for the profile', async () => {
     const adapter = new MockAdapter([
       toolCallResponse('personal-remember', 'personal_memory_remember', {
         content: 'O usuário prefere respostas diretas em português brasileiro.',
       }),
       textResponse('Preferência pessoal registrada.'),
       textResponse('Vou manter a resposta direta.'),
+      textResponse('Perfil confirmado.'),
+      textResponse('Perfil removido.'),
     ])
     const { ctx, cwd } = await harness(adapter, {
       personalOwnerId: 'test-local-owner',
       personalAutomaticRecall: true,
+    }, {
+      reviewedBy: 'test-local-reviewer', administrationMode: 'full', personalOwnerId: 'test-local-owner',
     })
     const first = ctx.agentLoop.create(
       SessionId('leon-personal-memory-source'),
@@ -1453,6 +1457,14 @@ describe('memory tools through the real agent loop', () => {
       source: { kind: 'user' },
     }))
     await first.whenIdle()
+    const scope = { ownerId: PersonalMemoryOwnerId('test-local-owner') }
+    const pending = (await ctx.personalMemory.list({ scope, limit: 10 })).items[0]?.record
+    expect(pending).toBeDefined()
+    if (pending === undefined) throw new Error('Expected the proposed personal fact.')
+    expect(pending.validation).toBeUndefined()
+    expect(pending.confidence).toBeUndefined()
+    expect(pending.core).toBeUndefined()
+    expect(JSON.stringify(first.session.events)).toContain('confirmationRequired')
 
     const secondCwd = await realpath(await mkdtemp(join(tmpdir(), 'dsh-personal-memory-other-workspace-')))
     tempDirs.push(secondCwd)
@@ -1475,9 +1487,38 @@ describe('memory tools through the real agent loop', () => {
         'personal_memory_search',
         'personal_memory_update',
       ])
-    expect(JSON.stringify(adapter.requests[2]?.messages)).toContain('personal-memory-context')
-    expect(JSON.stringify(adapter.requests[2]?.messages)).toContain('respostas diretas em português brasileiro')
+    expect(JSON.stringify(adapter.requests[2]?.messages)).not.toContain('personal-memory-context')
+    expect(JSON.stringify(adapter.requests[2]?.messages)).not.toContain(pending.content)
     expect(adapter.requests[2]?.system).toContain('Personal memory is local and separate')
+    const request = {
+      sessionId: second.session.header.id, id: pending.id, revision: pending.revision,
+      content: pending.content, core: true,
+    }
+    expect(await ctx.memoryCandidateReview.correctPersonalMemory({ ...request, confirmed: false }))
+      .toMatchObject({ ok: false, error: { code: 'memory-admin-confirmation-required' } })
+    const confirmed = await ctx.memoryCandidateReview.correctPersonalMemory({ ...request, confirmed: true })
+    expect(confirmed).toMatchObject({ ok: true, value: { item: {
+      revision: 2, core: true, validation: 'explicit', confidence: 1, content: pending.content,
+    } } })
+    expect(await ctx.memoryCandidateReview.correctPersonalMemory({ ...request, confirmed: true }))
+      .toMatchObject({ ok: false, error: { code: 'memory-admin-operation-failed' } })
+    second.followup(createUserMessage({ content: [{ type: 'text', text: 'oi' }], source: { kind: 'user' } }))
+    await second.whenIdle()
+    expect(JSON.stringify(adapter.requests[3]?.messages)).toContain('personal-core-profile')
+    expect(JSON.stringify(adapter.requests[3]?.messages)).toContain(pending.content)
+    expect(await ctx.memoryCandidateReview.correctPersonalMemory({
+      ...request, revision: 2, core: false, confirmed: true,
+    })).toMatchObject({ ok: true, value: { item: { revision: 3, core: false, content: pending.content } } })
+    second.followup(createUserMessage({ content: [{ type: 'text', text: 'oi' }], source: { kind: 'user' } }))
+    await second.whenIdle()
+    expect(JSON.stringify(adapter.requests[4]?.messages)).not.toContain('personal-core-profile')
+    const history = await ctx.personalMemory.list({ scope, statuses: ['active', 'superseded'], limit: 10 })
+    expect(history.items.map(item => item.record.revision).sort()).toEqual([1, 2, 3])
+    expect(history.items.every(item => item.record.content === pending.content)).toBe(true)
+    expect(readPersonalAdminActions(ctx)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ desiredCore: true, expectedRevision: 1, resultRevision: 2, status: 'succeeded' }),
+      expect.objectContaining({ desiredCore: false, expectedRevision: 2, resultRevision: 3, status: 'succeeded' }),
+    ]))
     await ctx.fiber.dispose()
   })
 
@@ -1704,6 +1745,72 @@ describe('memory tools through the real agent loop', () => {
     await ctx.fiber.dispose()
   })
 
+  it('replaces the workspace snapshot across turns instead of stacking stale ones', async () => {
+    const adapter = new MockAdapter([textResponse('Primeira resposta.'), textResponse('Segunda resposta.')])
+    const { ctx, cwd, workspace } = await harness(adapter, { automaticRecall: true })
+    await ctx.memory.create({
+      scope: { workspaceId: workspace.id },
+      content: 'O painel local usa a porta 3080.',
+      source: { kind: 'session', sessionId: SessionId('memory-seed-multi-turn') },
+    })
+    const agent = ctx.agentLoop.create(
+      SessionId('leon-memory-multi-turn'),
+      { provider: 'mock', model: 'mock' },
+      { cwd },
+    )
+
+    agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Qual é a porta do painel local?' }],
+      source: { kind: 'user' },
+    }))
+    await agent.whenIdle()
+    agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Repita: qual é a porta do painel local?' }],
+      source: { kind: 'user' },
+    }))
+    await agent.whenIdle()
+
+    const owned = (event: (typeof agent.session.events)[number]): boolean =>
+      event.type === 'user/message'
+      && event.data.source.kind === 'plugin'
+      && event.data.source.plugin === 'tool-memory'
+      && event.data.source.form === 'snapshot'
+      && event.data.source.sections[0]?.name === 'memory:recall'
+
+    // The append-only log keeps every recalled version for audit.
+    expect(agent.session.events.filter(owned).length).toBeGreaterThan(1)
+
+    // Active context carries exactly one live value beside the retired marker.
+    const activeTexts = agent.session.surface.nodes
+      .map(seq => agent.session.events[seq])
+      .filter(event => event !== undefined && owned(event))
+      .map((event) => {
+        if (event?.type !== 'user/message') throw new Error('expected an owned recall snapshot')
+        const block = event.data.content[0]
+        if (block?.type !== 'text') throw new Error('expected text in an owned recall snapshot')
+        return block.text
+      })
+    expect(activeTexts.filter(text => text.includes('porta 3080'))).toHaveLength(1)
+    expect(activeTexts.filter(text => text.includes('Workspace memory context cleared'))).toHaveLength(1)
+
+    // The model receives one live envelope, adjacent to the current human
+    // message, and never two competing current values.
+    const delivered = (adapter.requests[1]?.messages ?? []).map((message) => {
+      const source = (message as {
+        source?: { kind?: string; plugin?: string; form?: string; sections?: readonly { name: string }[] }
+      }).source
+      return {
+        snapshot: source?.kind === 'plugin' && source.plugin === 'tool-memory'
+          && source.form === 'snapshot' && source.sections?.[0]?.name === 'memory:recall',
+        live: JSON.stringify(message).includes('porta 3080'),
+      }
+    })
+    expect(delivered.filter(entry => entry.snapshot)).toHaveLength(2)
+    expect(delivered.filter(entry => entry.live)).toHaveLength(1)
+    expect(delivered.findIndex(entry => entry.live)).toBe(delivered.length - 2)
+    await ctx.fiber.dispose()
+  })
+
   it('does not inject unrelated memory for an irrelevant PT-BR message', async () => {
     const adapter = new MockAdapter([textResponse('Aqui está uma resposta sem memória do projeto.')])
     const { ctx, cwd, workspace } = await harness(adapter, { automaticRecall: true })
@@ -1835,7 +1942,7 @@ describe('memory tools through the real agent loop', () => {
   })
 
   it('never emits or persists raw text from a credential-like search query', async () => {
-    const secret = 'sk-proj-abcdef1234567890abcdef'
+    const secret = 'sk-proj-abcdef1234567890abcdef' // verify-secrets: allow synthetic test fixture, asserted redacted
     const query = `painel ${secret}`
     const adapter = new MockAdapter([
       toolCallResponse('search-secret', 'memory_search', { query, limit: 8 }),
@@ -1877,7 +1984,7 @@ describe('memory tools through the real agent loop', () => {
   })
 
   it('rejects a credential-like value before a memory write reaches the provider', async () => {
-    const secret = 'sk-proj-1234567890abcdefghijklmnop'
+    const secret = 'sk-proj-1234567890abcdefghijklmnop' // verify-secrets: allow synthetic test fixture, asserted redacted
     const adapter = new MockAdapter([
       toolCallResponse('remember-secret', 'memory_remember', { content: `Chave privada: ${secret}` }),
       textResponse('Não armazenei a credencial.'),

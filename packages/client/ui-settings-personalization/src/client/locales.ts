@@ -38,6 +38,14 @@ export const pt = {
   personalityProfessional: 'Profissional',
   personalityDirect: 'Direto',
   personalityCreative: 'Criativo',
+  restartTitle: 'Reiniciar o Leon',
+  restartDescription: 'Encerra este processo e sobe outro com os artefatos compilados mais recentes. Conversas e arquivos não são alterados.',
+  restart: 'Reiniciar agora',
+  restartDialogTitle: 'Reiniciar o Leon agora?',
+  restartDialogDescription: 'Esta janela perde a conexão por alguns segundos e o chat em andamento é interrompido. Use quando nenhum trabalho estiver em execução.',
+  restartConfirm: 'Confirmar reinício',
+  restarting: 'Reiniciando…',
+  restartPending: 'Handoff aceito. Aguarde a página responder de novo em http://127.0.0.1:3080/.',
   operationFailed: 'Não foi possível concluir a alteração. Tente novamente.',
 } satisfies Record<string, string>
 
@@ -83,6 +91,14 @@ export const en: Record<PersonalizationKey, string> = {
   personalityProfessional: 'Professional',
   personalityDirect: 'Direct',
   personalityCreative: 'Creative',
+  restartTitle: 'Restart Leon',
+  restartDescription: 'Stops this process and starts a fresh one with the newest compiled artifacts. Conversations and files are not changed.',
+  restart: 'Restart now',
+  restartDialogTitle: 'Restart Leon now?',
+  restartDialogDescription: 'This page loses its connection for a few seconds and any running chat is interrupted. Use it when no work is in flight.',
+  restartConfirm: 'Confirm restart',
+  restarting: 'Restarting…',
+  restartPending: 'Handoff accepted. Wait for the page to answer again at http://127.0.0.1:3080/.',
   operationFailed: 'The change could not be completed. Please try again.',
 }
 
@@ -125,5 +141,13 @@ export const zh: Record<PersonalizationKey, string> = {
   personalityProfessional: '专业',
   personalityDirect: '直接',
   personalityCreative: '创意',
+  restartTitle: '重启 Leon',
+  restartDescription: '结束此进程，并使用最新编译产物启动新进程；对话和文件不会受到影响。',
+  restart: '立即重启',
+  restartDialogTitle: '立即重启 Leon？',
+  restartDialogDescription: '本页会断开连接数秒，正在运行的聊天将被中断。请在没有任务执行时使用。',
+  restartConfirm: '确认重启',
+  restarting: '正在重启…',
+  restartPending: '交接已接受，请等待页面在 http://127.0.0.1:3080/ 重新响应。',
   operationFailed: '无法完成更改，请重试。',
 }

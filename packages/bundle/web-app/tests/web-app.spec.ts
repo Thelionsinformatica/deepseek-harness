@@ -70,20 +70,28 @@ function stageDist(): string {
   return index
 }
 
-/** A fake webServer capturing the fallback seat and index taps. */
-function fakeHttpServer(host: '127.0.0.1' | '0.0.0.0' = '127.0.0.1'): { server: WebServer; seat: () => unknown } {
+/** A fake webServer capturing the fallback seat, exact routes, and index taps. */
+function fakeHttpServer(host: '127.0.0.1' | '0.0.0.0' = '127.0.0.1'): {
+  server: WebServer
+  seat: () => unknown
+  routes: Map<string, (req: never, res: never) => Promise<void> | void>
+} {
   let fallback: unknown
+  const routes = new Map<string, (req: never, res: never) => Promise<void> | void>()
   const server = {
     host,
     port: 4567,
-    register: () => () => {},
+    register: (route: { path: string; handler: (req: never, res: never) => Promise<void> | void }) => {
+      routes.set(route.path, route.handler)
+      return () => { routes.delete(route.path) }
+    },
     registerFallback: (handler: unknown) => {
       fallback = handler
       return () => { fallback = undefined }
     },
     renderIndex: (html: string) => html,
   } as unknown as WebServer
-  return { server, seat: () => fallback }
+  return { server, seat: () => fallback, routes }
 }
 
 /** A fake Loader whose settlement the test controls (the URL line waits on it). */

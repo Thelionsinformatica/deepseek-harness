@@ -45,6 +45,7 @@ function props(overrides: Partial<PersonalizationSectionProps> = {}): Personaliz
     setToolAssistedMemory: vi.fn(() => Promise.resolve()),
     setPersonalMemoryEnabled: vi.fn(() => Promise.resolve()),
     clearPersonalMemories: vi.fn(() => Promise.resolve(2)),
+    restartHost: vi.fn(() => Promise.resolve()),
     t: translate,
     ...overrides,
   }
@@ -92,5 +93,36 @@ describe('PersonalizationSection', () => {
     render(<PersonalizationSection {...input} />)
     expect(screen.getByRole('button', { name: pt.delete }).hasAttribute('disabled')).toBe(true)
     expect(screen.getByText(pt.deleteNeedsSession)).toBeTruthy()
+  })
+
+  it('hands the restart off only after a visible confirmation and keeps the notice', async () => {
+    const input = props()
+    render(<PersonalizationSection {...input} />)
+
+    fireEvent.click(screen.getByRole('button', { name: pt.restart }))
+    expect(screen.getByRole('dialog', { name: pt.restartDialogTitle })).toBeTruthy()
+    expect(input.restartHost).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: pt.restartConfirm }))
+    expect(await screen.findByText(pt.restartPending)).toBeTruthy()
+    expect(input.restartHost).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports a rejected restart handoff instead of pretending it happened', async () => {
+    const input = props({ restartHost: vi.fn(() => Promise.reject(new Error('403'))) })
+    render(<PersonalizationSection {...input} />)
+
+    fireEvent.click(screen.getByRole('button', { name: pt.restart }))
+    fireEvent.click(screen.getByRole('button', { name: pt.restartConfirm }))
+    await screen.findByText(pt.operationFailed)
+    expect(screen.queryByText(pt.restartPending)).toBeNull()
+  })
+
+  it('renders nothing when the restart operation is unavailable on this connection', () => {
+    const input = props()
+    const { restartHost: _omitted, ...withoutRestart } = input
+    render(<PersonalizationSection {...withoutRestart} />)
+    expect(screen.queryByRole('button', { name: pt.restart })).toBeNull()
+    expect(screen.queryByLabelText(pt.instructionsLabel)).toBeNull()
   })
 })

@@ -37,6 +37,15 @@ pre-commit:
     - name: vendor manifest guard
       run: scripts/check-vendor-manifest.sh
 
+    # Whole-tree scan (~2s measured 2026-09-27), not staged-only: the commit
+    # that leaks a key adds the file in the same change, so a staged-only check
+    # would miss it entirely. Skipped when no source file is touched at all.
+    - name: secret boundary
+      glob: '*.{ts,tsx,js,mjs,cjs,json,yaml,yml,env,ps1,md}'
+      exclude:
+        - 'vendor/**'
+      run: node_modules/.bin/tsx scripts/verify-secrets.ts
+
 pre-merge-commit:
   jobs:
     - name: translation pairing (staged records)

@@ -26,6 +26,7 @@ import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-shell-env'
+import { registerLeonRestart } from './leon-restart.ts'
 import { registerVoiceTranscription } from './voice-transcription.ts'
 
 /** Stable Cordis plugin name. */
@@ -63,6 +64,20 @@ export interface Config {
   voiceMaxBytes?: number
   /** Maximum local transcription process lifetime in milliseconds. */
   voiceTimeoutMs?: number
+  /**
+   * Absolute path to the operator-owned restart supervisor script. Empty — the
+   * shipped default — registers no restart route at all, so a product install
+   * never gains a remote stop path without a deliberate deployment decision.
+   */
+  restartScriptPath?: string
+  /**
+   * Executable that interprets the supervisor script. Empty — the shipped
+   * default — runs it through Node's embedded PowerShell launcher; a non-empty
+   * value is spawned directly with the script as its only argument.
+   */
+  restartProgram?: string
+  /** Complete `NAME=VALUE` pairs forwarded verbatim to the restart supervisor. */
+  restartEnvironment?: string[]
 }
 
 export const Config: z<Config> = z.object({
@@ -74,6 +89,9 @@ export const Config: z<Config> = z.object({
   voiceModelPath: z.string().default(''),
   voiceMaxBytes: z.natural().min(1).default(10 * 1024 * 1024),
   voiceTimeoutMs: z.natural().min(1).default(45_000),
+  restartScriptPath: z.string().default(''),
+  restartProgram: z.string().default(''),
+  restartEnvironment: z.array(String).default([]),
 })
 
 /** Bind-dependent Web values shared by the trust fence and URL display. */
@@ -261,6 +279,11 @@ export function apply(ctx: Context, config: Config): void {
     scriptPath: fileURLToPath(new URL('../runtime/transcribe-local.py', import.meta.url)),
     maxBytes: config.voiceMaxBytes ?? 10 * 1024 * 1024,
     timeoutMs: config.voiceTimeoutMs ?? 45_000,
+  }, runtime.trustedHosts)
+  registerLeonRestart(ctx, {
+    scriptPath: config.restartScriptPath ?? '',
+    program: config.restartProgram ?? '',
+    environment: config.restartEnvironment ?? [],
   }, runtime.trustedHosts)
   if (config.surfaceContext) {
     const playwrightCli = resolvePlaywrightCli()

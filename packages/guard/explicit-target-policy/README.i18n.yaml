@@ -1,0 +1,49 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/guard/explicit-target-policy/README.md
+/:
+  en: 4b7f4864b724e8f1
+  zh: cd8a518b40a176a9
+/deepseek-ai-dsh-explicit-target-policy:
+  en: f5861854261f7cc8
+  zh: 3967991d770c6b8e
+/deepseek-ai-dsh-explicit-target-policy/summary:
+  en: 64d62b1d008739bc
+  zh: 8746ea44ac9baa41
+/deepseek-ai-dsh-explicit-target-policy/table-of-contents:
+  en: 011e0029c6afc497
+  zh: da5abd22dd51d382
+/deepseek-ai-dsh-explicit-target-policy/plugin-namespace-explicit-target-policy:
+  en: 41d9141f4874e4ed
+  zh: cd8f099fe77edf88
+/deepseek-ai-dsh-explicit-target-policy/target-capture:
+  en: 7087c7bbb86e45fe
+  zh: 9729e93ced920cf1
+/deepseek-ai-dsh-explicit-target-policy/enforcement:
+  en: d8be3926f0c305b5
+  zh: 2a81ef2d81412acd
+/deepseek-ai-dsh-explicit-target-policy/security-boundary:
+  en: 2e669eaa519edafb
+  zh: 9e44b69d73d14b71
+/deepseek-ai-dsh-explicit-target-policy/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-explicit-target-policy/model-experience/target-policy:
+  en: f074bb67f7406b14
+  zh: 2691bac878fb123d
+/deepseek-ai-dsh-explicit-target-policy/model-experience/target-policy/what-the-model-sees:
+  en: c7d182fbda543032
+  zh: 2123a602c0a02060
+/deepseek-ai-dsh-explicit-target-policy/model-experience/target-policy/token-effect:
+  en: 5ed4e45532daffae
+  zh: 1ab18bfda6990168
+/deepseek-ai-dsh-explicit-target-policy/model-experience/target-policy/kv-cache-effect:
+  en: ec1a19c23e789fd9
+  zh: 03eb9fc7e0988763
+/deepseek-ai-dsh-explicit-target-policy/known-limitations-and-deferred-work:
+  en: ce99ec969a6390af
+  zh: a3e9628d8d3e1625
+/deepseek-ai-dsh-explicit-target-policy/known-limitations-and-deferred-work/dev-note:
+  en: 431c9855c3df12a1
+  zh: c4cab1f96c7bb949

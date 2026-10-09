@@ -1331,6 +1331,43 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-worktree -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-explicit-target-policy -->
+<a id="deepseek-aidsh-explicit-target-policy"></a>
+
+## `@deepseek-ai/dsh-explicit-target-policy`
+
+- `inject`: `tools` · `sessionProjections`
+- `source`: [`packages/guard/explicit-target-policy/src/index.ts:39`](../packages/guard/explicit-target-policy/src/index.ts)
+
+```ts config-catalog
+/** Configuration for recognizing explicit target suffixes in direct user text. */
+export interface Config {
+  /** Case- and separator-insensitive suffixes such as `.leon/knowledge`. */
+  markers: string[]
+  /** Additional model tools whose path argument participates in the lock. */
+  additionalToolRules?: AdditionalToolRule[]
+  /** Root model tools denied while a direct-human target lock is active. */
+  blockedToolsWhileLocked?: string[]
+  /** Successful root tools required before a locked turn may stop. */
+  requiredToolsWhileLocked?: string[]
+  /** Same-turn continuations used to obtain missing required tools. */
+  maxRequiredToolRecoveries?: number
+}
+
+/** Deployment-owned path rule for a model tool not built into this policy. */
+export interface AdditionalToolRule {
+  /** Exact model-facing tool name. */
+  name: string
+  /** Argument that carries the absolute path. */
+  argument: string
+  /** Deny the tool unless the latest direct human message established a lock. */
+  requireLock?: boolean
+  /** Permit only the exact locked target, not descendants. */
+  exact?: boolean
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-explicit-target-policy -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-file-reference-local -->
 <a id="deepseek-aidsh-file-reference-local"></a>
 

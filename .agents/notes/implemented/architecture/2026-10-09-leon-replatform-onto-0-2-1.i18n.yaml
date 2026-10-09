@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-10-09-leon-replatform-onto-0-2-1.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-09-leon-replatform-onto-0-2-1.md
+/agent-note-leon-replatforms-onto-deepseek-harness-0-2-1:
+  en: 00a43c32694f272e
+  zh: 3f87f4ce10b42e51
+/agent-note-leon-replatforms-onto-deepseek-harness-0-2-1/problem:
+  en: c56f75c522df5e7d
+  zh: 5a28e0cd9a2d90f1
+/agent-note-leon-replatforms-onto-deepseek-harness-0-2-1/decision:
+  en: 8a979f250b2022ff
+  zh: 2be3e8d5c15a6d0b
+/agent-note-leon-replatforms-onto-deepseek-harness-0-2-1/alternatives-considered:
+  en: ddb34f8dee15e846
+  zh: 1ce0b6d053c0be73
+/agent-note-leon-replatforms-onto-deepseek-harness-0-2-1/consequences:
+  en: 0f9f507304201849
+  zh: a98a3a20cc71d69c
+/agent-note-leon-replatforms-onto-deepseek-harness-0-2-1/verification:
+  en: 537b49d993916ef1
+  zh: 2dfd6c4ca0e34eb0

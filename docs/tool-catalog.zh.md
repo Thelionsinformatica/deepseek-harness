@@ -19,6 +19,7 @@
 
 | 工具包 | 模型可见名称 | 依赖 | 写入／影响 | 随产品发布的别名 | 部署说明 |
 | --- | --- | --- | --- | --- | --- |
+| `@deepseek-ai/dsh-tool-knowledge-base` | `knowledge_search`、`knowledge_status` | `ctx.tools`、`ctx.systemPrompt`、`ctx.subprocess`、`an exact authorized .leon/knowledge root` | `tool/call`、`tool/result` | - | 两个工具都是受信任的本地 JSON 辅助程序的只读封装，使用固定 argv 并限制输出。外部根目录部署必须配合授权守卫，例如 dsh-explicit-target-policy。 |
 | `@deepseek-ai/dsh-plugin-manager` | `plugin_manager` | `ctx.tools`, `ctx.pluginManager`, `ctx.sandboxPolicy` | `tool/call`, `tool/result`, `user/message` | - | - |
 | `@deepseek-ai/dsh-mcp-resources` | `list_mcp_resource_templates`, `list_mcp_resources`, `read_mcp_resource` | `ctx.tools`, `ctx.mcpResources` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-experimental-browser-use-stagehand-native` | `stagehand_act`、`stagehand_extract`、`stagehand_navigate`、`stagehand_observe`、`stagehand_screenshot`、`stagehand_tabs` | `ctx.browserUse`、`ctx.agents`、`ctx.tools`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | - |
@@ -51,6 +52,63 @@
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`、`ctx.workflowEngine`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents the script children)` | `tool/call`、`tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-workspace-dependencies` | `load_workspace_dependencies` | `ctx.tools` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`、`web_search` | `ctx.tools`、`ctx.web`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可见 schema 在更换后端时保持稳定。 |
+
+<a id="deepseek-aidsh-tool-knowledge-base"></a>
+
+## `@deepseek-ai/dsh-tool-knowledge-base`
+
+### `knowledge_search`
+
+搜索一个精确的本地 .leon/knowledge 根目录中已索引的 wiki。用它代替递归 glob/grep；从不枚举或返回原始来源目录。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "knowledge_root": {
+      "type": "string",
+      "description": "Exact absolute path ending in .leon/knowledge from the current direct user request."
+    },
+    "query": {
+      "type": "string",
+      "description": "Focused search phrase, 1-512 characters."
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Maximum results from 1-20. Defaults to 8."
+    }
+  },
+  "required": [
+    "knowledge_root",
+    "query"
+  ]
+}
+```
+
+来源： [`packages/knowledge/tool-knowledge-base/src/index.ts`](../packages/knowledge/tool-knowledge-base/src/index.ts)
+
+### `knowledge_status`
+
+确定性地检查一个精确的本地 .leon/knowledge 根目录。在枚举文件系统之前使用；返回已验证的来源数量、状态和完整性问题，不会把原始来源读入模型上下文。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "knowledge_root": {
+      "type": "string",
+      "description": "Exact absolute path ending in .leon/knowledge from the current direct user request."
+    }
+  },
+  "required": [
+    "knowledge_root"
+  ]
+}
+```
+
+来源： [`packages/knowledge/tool-knowledge-base/src/index.ts`](../packages/knowledge/tool-knowledge-base/src/index.ts)
+
+两个工具都是受信任的本地 JSON 辅助程序的只读封装，使用固定 argv 并限制输出。外部根目录部署必须配合授权守卫，例如 dsh-explicit-target-policy。
 
 <a id="deepseek-aidsh-plugin-manager"></a>
 

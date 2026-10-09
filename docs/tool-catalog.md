@@ -15,6 +15,7 @@ This table connects model-visible tool names to the plugin package and service s
 
 | Tool package | Model-visible names | Requires | Writes / affects | Shipped aliases | Deployment note |
 | --- | --- | --- | --- | --- | --- |
+| `@deepseek-ai/dsh-tool-knowledge-base` | `knowledge_search`, `knowledge_status` | `ctx.tools`, `ctx.systemPrompt`, `ctx.subprocess`, `an exact authorized .leon/knowledge root` | `tool/call`, `tool/result` | - | Both tools are read-only wrappers over a trusted local JSON helper with fixed argv and bounded output. An external-root deployment must pair them with an authorization guard such as dsh-explicit-target-policy. |
 | `@deepseek-ai/dsh-plugin-manager` | `plugin_manager` | `ctx.tools`, `ctx.pluginManager`, `ctx.sandboxPolicy` | `tool/call`, `tool/result`, `user/message` | - | - |
 | `@deepseek-ai/dsh-mcp-resources` | `list_mcp_resource_templates`, `list_mcp_resources`, `read_mcp_resource` | `ctx.tools`, `ctx.mcpResources` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-experimental-browser-use-stagehand-native` | `stagehand_act`, `stagehand_extract`, `stagehand_navigate`, `stagehand_observe`, `stagehand_screenshot`, `stagehand_tabs` | `ctx.browserUse`, `ctx.agents`, `ctx.tools`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | - |
@@ -47,6 +48,63 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-workspace-dependencies` | `load_workspace_dependencies` | `ctx.tools` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`, `web_search` | `ctx.tools`, `ctx.web`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps. |
+
+<a id="deepseek-aidsh-tool-knowledge-base"></a>
+
+## `@deepseek-ai/dsh-tool-knowledge-base`
+
+### `knowledge_search`
+
+Search the indexed wiki of one exact local .leon/knowledge root. Use instead of recursive glob/grep; never enumerates or returns the raw source directory.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "knowledge_root": {
+      "type": "string",
+      "description": "Exact absolute path ending in .leon/knowledge from the current direct user request."
+    },
+    "query": {
+      "type": "string",
+      "description": "Focused search phrase, 1-512 characters."
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Maximum results from 1-20. Defaults to 8."
+    }
+  },
+  "required": [
+    "knowledge_root",
+    "query"
+  ]
+}
+```
+
+Source: [`packages/knowledge/tool-knowledge-base/src/index.ts`](../packages/knowledge/tool-knowledge-base/src/index.ts)
+
+### `knowledge_status`
+
+Inspect one exact local .leon/knowledge root deterministically. Use before filesystem enumeration; returns verified source counts, states, and integrity issues without reading raw sources into model context.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "knowledge_root": {
+      "type": "string",
+      "description": "Exact absolute path ending in .leon/knowledge from the current direct user request."
+    }
+  },
+  "required": [
+    "knowledge_root"
+  ]
+}
+```
+
+Source: [`packages/knowledge/tool-knowledge-base/src/index.ts`](../packages/knowledge/tool-knowledge-base/src/index.ts)
+
+Both tools are read-only wrappers over a trusted local JSON helper with fixed argv and bounded output. An external-root deployment must pair them with an authorization guard such as dsh-explicit-target-policy.
 
 <a id="deepseek-aidsh-plugin-manager"></a>
 

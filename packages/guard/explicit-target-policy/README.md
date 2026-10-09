@@ -56,7 +56,7 @@ This package is a function/namespace Cordis plugin (`name` / `inject` / `apply`)
 <a id="target-capture"></a>
 ## Target capture
 
-On an accepted `agent/pre-step`, the plugin examines only messages whose provenance is exactly `source.kind: user`. Plugin, system, assistant, memory, and tool content cannot establish or replace a target lock.
+On an accepted `agent/pre-step`, the plugin examines only messages whose `source.kind` is exactly `user`. Plugin, system, assistant, memory, and tool content cannot establish or replace a target lock.
 
 For every configured marker, capture:
 

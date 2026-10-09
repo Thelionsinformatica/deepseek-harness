@@ -166,7 +166,7 @@ async function turnStopping(ctx: Context, agent: Agent, turn = 1): Promise<void>
   await agentEvents(ctx, agent).serial('agent/turn-stopping', { turn, signal })
 }
 
-/** Build a user-role message with controllable provenance. */
+/** Build a user-role message with a caller-chosen `source`. */
 function message(text: string, source: MessageSource = { kind: 'user' }): UserMessage {
   return createUserMessage({ content: [{ type: 'text', text }], source })
 }

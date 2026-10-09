@@ -3836,6 +3836,31 @@ export type CompletionDelivery = 'quiet' | 'wakeup'
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-tool-jobs -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-tool-knowledge-base -->
+<a id="deepseek-aidsh-tool-knowledge-base"></a>
+
+## `@deepseek-ai/dsh-tool-knowledge-base`
+
+- `inject`: `tools` · `systemPrompt` · `subprocess`
+- `source`: [`packages/knowledge/tool-knowledge-base/src/index.ts:34`](../packages/knowledge/tool-knowledge-base/src/index.ts)
+
+```ts config-catalog
+/** Trusted deployment configuration; none of these values comes from the model. */
+export interface Config {
+  /** Absolute path to the packaged `knowledge.mjs` compatible helper. */
+  scriptPath: string
+  /** Cooperative tool-call deadline in milliseconds. */
+  timeoutMs?: number
+  /** Maximum complete stdout bytes accepted from the helper. */
+  maxOutputBytes?: number
+  /** Maximum retained stderr bytes used for diagnostics. */
+  stderrMaxBytes?: number
+  /** Process-tree termination grace in milliseconds. */
+  graceMs?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-tool-knowledge-base -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-tool-lsp -->
 <a id="deepseek-aidsh-tool-lsp"></a>
 

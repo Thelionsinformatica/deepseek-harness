@@ -56,7 +56,7 @@ kind: "package-reference"
 <a id="target-capture"></a>
 ## 目标捕获
 
-在已接受的 `agent/pre-step` 中，插件只检查来源严格为 `source.kind: user` 的消息。插件、系统、助手、记忆和工具内容都不能建立或替换目标锁。
+在已接受的 `agent/pre-step` 中，插件只检查 `source.kind` 严格为 `user` 的消息。插件、系统、助手、记忆和工具内容都不能建立或替换目标锁。
 
 对于每个已配置的标记，捕获过程会：
 

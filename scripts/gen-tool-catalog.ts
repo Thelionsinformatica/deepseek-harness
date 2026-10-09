@@ -43,6 +43,7 @@ import SkillRegistry from '@deepseek-ai/dsh-skill'
 import * as SkillFileSystem from '@deepseek-ai/dsh-skill-filesystem'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import * as ToolAskUser from '@deepseek-ai/dsh-tool-ask-user'
+import * as ToolKnowledgeBase from '@deepseek-ai/dsh-tool-knowledge-base'
 import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
 import * as ToolPwsh from '@deepseek-ai/dsh-tool-pwsh'
 import * as ToolBashPersistent from '@deepseek-ai/dsh-tool-bash-persistent'
@@ -187,6 +188,22 @@ export interface ToolPackage {
  * guard proves it is exhaustive against the on-disk glob.
  */
 const TOOL_PACKAGES: ToolPackage[] = [
+  {
+    pkg: '@deepseek-ai/dsh-tool-knowledge-base',
+    dir: 'tool-knowledge-base',
+    source: 'packages/knowledge/tool-knowledge-base/src/index.ts',
+    requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.subprocess', 'an exact authorized .leon/knowledge root'],
+    writes: ['tool/call', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(LocalSubprocessRuntime)
+      await ctx.plugin(ToolKnowledgeBase, {
+        scriptPath: resolve(root, 'packages/knowledge/tool-knowledge-base/helper/knowledge.mjs'),
+      })
+    },
+    note:
+      'Both tools are read-only wrappers over a trusted local JSON helper with fixed argv and bounded output. '
+      + 'An external-root deployment must pair them with an authorization guard such as dsh-explicit-target-policy.',
+  },
   {
     pkg: '@deepseek-ai/dsh-plugin-manager',
     dir: 'plugin-manager',

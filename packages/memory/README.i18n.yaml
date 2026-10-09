@@ -1,0 +1,25 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/memory/README.md
+/:
+  en: 57890a5ac146dbd0
+  zh: af10e16369eaa793
+/memory-leon-long-term-memory:
+  en: 3bc00ff393b894c0
+  zh: f021699ae6c25587
+/memory-leon-long-term-memory/summary:
+  en: c8af6bed2f454679
+  zh: 86b50ad6778a6277
+/memory-leon-long-term-memory/table-of-contents:
+  en: 1eb35b015a6c423f
+  zh: a8a3dceee2c9e943
+/memory-leon-long-term-memory/packages:
+  en: eae939ff278f2f3b
+  zh: 8eaac44f4ba488ab
+/memory-leon-long-term-memory/related-documentation:
+  en: cd6fca7592b5d4fa
+  zh: 7e71fe6516b546fe
+/memory-leon-long-term-memory/dev-note:
+  en: 5de1d6304e00c58f
+  zh: 8d8225361cfa29e5

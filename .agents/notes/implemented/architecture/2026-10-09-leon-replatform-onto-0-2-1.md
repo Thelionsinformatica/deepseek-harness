@@ -14,6 +14,8 @@ Leon is rebuilt on the release tag instead of merged into it. The branch `leon/r
 
 A ported package drops its `invariant.ts` entry, since upstream removed that plugin family, and adopts upstream workspace conventions. A ported plugin that read Session history synchronously moves that state into a Session projection, following the [synchronous-read deprecation](2026-09-09-deprecate-synchronous-session-event-reads.md). The first package ported this way is [`dsh-explicit-target-policy`](../../../../packages/guard/explicit-target-policy/README.md): the `explicitTargetTurn` projection folds the open turn's direct-human text, its own recovery notices, and the absolute path arguments of its tool calls. A plugin-injected message declares its own `MessageSourceMap` kind instead of the removed generic `plugin` kind.
 
+The memory packages keep their behavior. `dsh-tool-memory` reads Session facts through two projections: `toolMemoryRecall` holds the snapshots it injected and the latest direct-human text, and `toolMemoryProcedureEvidence` holds open-turn human text plus the latest 128 tool calls, without arguments longer than 65,536 characters. Procedure proposals can therefore cite only recent calls. The personal-memory enablement preference, previously a settings namespace, is the volatile `personalMemoryEnabled` field of the review service entry. Leon logs written before 0.2.1 migrate the old `plugin` source to the runtime-only kinds `plugin:tool-memory` and `plugin:explicit-target-policy`, which both projections accept. `dsh-storage-domain` regains the fork's atomic `KvTable.mutate()` that memory writes depend on.
+
 ## Alternatives considered
 
 **Merge upstream and resolve every conflict.** Most conflicts sit in code upstream has since deleted or restructured. Resolving them would preserve edits against APIs that no longer exist and would take longer than porting.
@@ -25,9 +27,10 @@ A ported package drops its `invariant.ts` entry, since upstream removed that plu
 ## Consequences
 
 - The Leon deployment keeps running the old build until the ported branch passes validation; nothing switches automatically.
-- Until every layer is ported, the ported branch lacks Leon features such as memory, the knowledge base, and the completion-claim and failure-recovery policies.
+- Until every layer is ported, the ported branch lacks Leon features such as the completion-claim and failure-recovery policies and the Leon preset.
 - Each ported plugin with a projection owns a `stateVersion` that must change whenever its folded fields or fold semantics change.
 
 ## Verification
 
 - `dsh-explicit-target-policy`: `vitest run packages/guard/explicit-target-policy` passes 48 tests, including same-turn reconstruction and recovery-count tests that now read the projection; `tsc -b packages/guard/explicit-target-policy` and the staged oxlint configuration report no errors.
+- Memory: `vitest run packages/memory packages/guard packages/storage/storage-domain` passes 478 tests, including projection tests for legacy kinds and the evidence window.

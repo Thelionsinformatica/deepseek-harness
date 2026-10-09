@@ -318,6 +318,17 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | `@deepseek-ai/dsh-mcp-client` | yes | MCP client bridge: connects to MCP servers and registers their tools on ctx.tools |
 | `@deepseek-ai/dsh-mcp-resources` | no | Scoped MCP resource discovery and reading through shared model tools |
 
+## memory
+
+| Package | Config | Description |
+|---|---|---|
+| `@deepseek-ai/dsh-memory` | yes | Provider-neutral durable workspace memory capability for the DeepSeek Harness |
+| `@deepseek-ai/dsh-memory-continuity` | no | Portable export, import, journal, and restore validation for DSH local memory |
+| `@deepseek-ai/dsh-memory-local` | yes | Local durable storage-domain provider for the DeepSeek Harness memory capability |
+| `@deepseek-ai/dsh-personal-memory` | yes | Provider-neutral durable personal memory isolated from project workspaces |
+| `@deepseek-ai/dsh-personal-memory-local` | yes | Local durable provider for personal memory in an isolated storage domain |
+| `@deepseek-ai/dsh-tool-memory` | yes | Model-facing explicit workspace memory tools for the DeepSeek Harness |
+
 ## plan
 
 | Package | Config | Description |

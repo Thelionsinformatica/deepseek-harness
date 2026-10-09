@@ -2266,6 +2266,103 @@ export interface ReconnectConfig {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-mcp-client -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-memory -->
+<a id="deepseek-aidsh-memory"></a>
+
+## `@deepseek-ai/dsh-memory`
+
+- `source`: [`packages/memory/memory/src/index.ts:102`](../packages/memory/memory/src/index.ts)
+
+```ts config-catalog
+/** Provider selection config for the memory capability. */
+export interface MemoryRuntimeConfig {
+  /** Explicit provider id. Omitted auto-selects when exactly one provider is usable. */
+  readonly provider?: string
+  /** Emit memory observability events and enable audit hooks. */
+  readonly telemetryEnabled?: boolean
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-memory -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-memory-local -->
+<a id="deepseek-aidsh-memory-local"></a>
+
+## `@deepseek-ai/dsh-memory-local`
+
+- `inject`: `memory` · `storageDomain`
+- `source`: [`packages/memory/memory-local/src/index.ts:95`](../packages/memory/memory-local/src/index.ts)
+
+```ts config-catalog
+/** Local provider configuration. */
+export interface Config {
+  /** Revision-history policy; `v1` overwrites in place as an emergency rollback. */
+  readonly historyMode?: 'v1' | 'temporal-v2'
+  /** Optional semantic layer over the durable lexical provider. */
+  readonly semanticSearch?: SemanticSearchConfig
+  /** Derived similarity-graph computation; requires `semanticSearch.enabled`. */
+  readonly linking?: MemoryGraphLinkingConfig
+}
+
+/** Optional local semantic retrieval policy; lexical ranking always remains available. */
+export interface SemanticSearchConfig {
+  /** Enable local Ollama embeddings. Disabled by default. */
+  readonly enabled?: boolean
+  /** Loopback Ollama origin; non-loopback endpoints are rejected. */
+  readonly baseUrl?: string
+  /** Installed Ollama embedding model. */
+  readonly model?: string
+  /** Matryoshka output dimensions from 64 through 768. */
+  readonly dimensions?: number
+  /** Total embedding request deadline in milliseconds. */
+  readonly timeoutMs?: number
+  /** Maximum workspace records considered by one semantic query. */
+  readonly maxCandidates?: number
+  /** Maximum document vectors retained in the process-local LRU index. */
+  readonly maxCacheEntries?: number
+  /** Maximum accepted Ollama response body size in bytes. */
+  readonly maxResponseBytes?: number
+  /** Embedding endpoint dialect; `openai-compatible` targets `/v1/embeddings`. */
+  readonly api?: 'ollama' | 'openai-compatible'
+  /** Maximum graph chunk characters before the task prefix; complete documents are segmented. */
+  readonly graphInputCharacters?: number
+  /** Maximum graph chunks submitted together. */
+  readonly graphBatchInputs?: number
+  /** Maximum binary subdivisions after a singleton input-size rejection. */
+  readonly graphInputSplitDepth?: number
+  /** Total deadline in milliseconds for one graph embedding pass, including subdivisions. */
+  readonly graphTimeoutMs?: number
+  /** Minimum cosine score for a semantic-only result. */
+  readonly minimumScore?: number
+  /** Semantic contribution to the final hybrid score. */
+  readonly semanticWeight?: number
+  /** Lexical contribution to the final hybrid score. */
+  readonly lexicalWeight?: number
+}
+
+/** Deployment-owned derived similarity-graph policy; lexical and semantic retrieval stay independent. */
+export interface MemoryGraphLinkingConfig {
+  /** Enable scheduled edge computation after memory commits. */
+  readonly enabled?: boolean
+  /** Inclusive cosine threshold for one derived edge. */
+  readonly minScore?: number
+  /** Maximum edges retained per node. */
+  readonly maxEdgesPerNode?: number
+  /** Maximum active records per workspace eligible for edge computation. */
+  readonly maxGraphNodes?: number
+  /** Maximum edge-neighbors appended to one search result inside its remaining limit. */
+  readonly maxExpandedHits?: number
+  /** Debounce between a commit burst and one graph rebuild. */
+  readonly debounceMs?: number
+  /** Additional attempts after transient failures in one generation; 0 disables retries. */
+  readonly retryAttempts?: number
+  /** First retry delay in milliseconds, doubled for subsequent retries. */
+  readonly retryDelayMs?: number
+  /** Maximum retry delay in milliseconds. */
+  readonly retryMaxDelayMs?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-memory-local -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-message-feedback -->
 <a id="deepseek-aidsh-message-feedback"></a>
 
@@ -2404,6 +2501,96 @@ export interface Config {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-persona -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-personal-memory -->
+<a id="deepseek-aidsh-personal-memory"></a>
+
+## `@deepseek-ai/dsh-personal-memory`
+
+- `source`: [`packages/memory/personal-memory/src/index.ts:76`](../packages/memory/personal-memory/src/index.ts)
+
+```ts config-catalog
+/** Provider selection and audit configuration. */
+export interface Config {
+  /** Explicit provider id; omitted auto-selects exactly one usable provider. */
+  readonly provider?: string
+  /** Emit content-free operation and blocked events. */
+  readonly telemetryEnabled?: boolean
+  /** Initial operation state before an optional settings Consumer applies a durable preference. */
+  readonly enabled?: boolean
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-personal-memory -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-personal-memory-local -->
+<a id="deepseek-aidsh-personal-memory-local"></a>
+
+## `@deepseek-ai/dsh-personal-memory-local`
+
+- `inject`: `personalMemory` · `storageDomain`
+- `refs`: [`SemanticEmbeddingApi`](../packages/memory/memory-local/src/index.ts)
+- `source`: [`packages/memory/personal-memory-local/src/index.ts:51`](../packages/memory/personal-memory-local/src/index.ts)
+
+```ts config-catalog
+/** Local history policy. Personal and workspace domains remain independent. */
+export interface Config {
+  /** Revision policy; `v1` is the emergency in-place overwrite rollback. */
+  readonly historyMode?: 'v1' | 'temporal-v2'
+  /** Loopback embedding endpoint used only for derived graph edges. */
+  readonly embeddings?: PersonalEmbeddingsConfig
+  /** Derived similarity-graph policy for owner partitions. */
+  readonly linking?: PersonalLinkingConfig
+}
+
+/** Loopback embedding transport; deployments must ensure the local endpoint does not proxy remotely. */
+export interface PersonalEmbeddingsConfig {
+  /** Absolute credential-free loopback HTTP origin of the embedding server. */
+  readonly baseUrl?: string
+  /** Embedding model name sent to the endpoint. */
+  readonly model?: string
+  /** Expected vector width; mismatched responses are rejected. */
+  readonly dimensions?: number
+  /** Per-request timeout in milliseconds. */
+  readonly timeoutMs?: number
+  /** Maximum cached revision embeddings retained in memory. */
+  readonly maxCacheEntries?: number
+  /** Maximum embedding response body bytes accepted. */
+  readonly maxResponseBytes?: number
+  /** Wire dialect: Ollama `/api/embed` or OpenAI-compatible `/v1/embeddings`. */
+  readonly api?: SemanticEmbeddingApi
+  /** Maximum graph input characters per chunk; source facts remain complete. */
+  readonly graphInputCharacters?: number
+  /** Maximum graph input chunks in one embedding request. */
+  readonly graphBatchInputs?: number
+  /** Maximum subdivisions of an oversized singleton graph chunk. */
+  readonly graphInputSplitDepth?: number
+  /** Total deadline in milliseconds for one complete graph embedding pass. */
+  readonly graphTimeoutMs?: number
+}
+
+/** Bounded edge-derivation policy; owner partitions are computed independently. */
+export interface PersonalLinkingConfig {
+  /** Master switch; derived edges exist only while enabled. */
+  readonly enabled?: boolean
+  /** Minimum cosine similarity an edge must reach to be published. */
+  readonly minScore?: number
+  /** Maximum edges retained per memory node, highest score first. */
+  readonly maxEdgesPerNode?: number
+  /** Maximum active memories embedded per rebuild; excess is skipped. */
+  readonly maxGraphNodes?: number
+  /** Maximum edge-expansion hits appended to lexical search results. */
+  readonly maxExpandedHits?: number
+  /** Quiet period after a committed mutation before a rebuild starts. */
+  readonly debounceMs?: number
+  /** Additional attempts for transient failures in one graph generation. */
+  readonly retryAttempts?: number
+  /** Initial exponential retry delay in milliseconds. */
+  readonly retryDelayMs?: number
+  /** Maximum retry delay in milliseconds. */
+  readonly retryMaxDelayMs?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-personal-memory-local -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-plan-mode -->
 <a id="deepseek-aidsh-plan-mode"></a>
@@ -3884,6 +4071,57 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-tool-lsp -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-tool-memory -->
+<a id="deepseek-aidsh-tool-memory"></a>
+
+## `@deepseek-ai/dsh-tool-memory`
+
+- `inject`: `tools` · `systemPrompt` · `sessionProjections`
+- `source`: [`packages/memory/tool-memory/src/index.ts:109`](../packages/memory/tool-memory/src/index.ts)
+
+```ts config-catalog
+/** Optional, bounded automatic recall. Explicit memory tools remain available when disabled. */
+export interface Config {
+  /** Search the current workspace before the first model request of each turn. */
+  automaticRecall?: boolean
+  /** Maximum safe records included in one automatic recall snapshot. */
+  recallLimit?: number
+  /** Maximum characters in one automatic recall snapshot. Records are skipped, never truncated. */
+  recallMaxChars?: number
+  /** Extract conservative local candidates into the review queue without writing durable memory. */
+  shadowExtraction?: boolean
+  /** Stable local owner label for extracted candidates; required when shadow extraction is enabled. */
+  shadowOwnerId?: string
+  /** Stable local owner partition that enables cross-workspace personal-memory tools. */
+  personalOwnerId?: string
+  /** Recall safe personal memories automatically on the first step of each turn. */
+  personalAutomaticRecall?: boolean
+  /** Maximum always-present core-profile facts injected each turn, independent of the query. */
+  coreRecallLimit?: number
+  /** Maximum characters in one always-present core-profile snapshot. */
+  coreRecallMaxChars?: number
+  /** Deterministic final ranking shared by explicit search and automatic recall. */
+  ranking?: MemoryRankingConfig
+}
+
+/** Optional final-ranking policy shared by explicit and automatic recall. */
+export interface MemoryRankingConfig {
+  /** Apply metadata-aware final scoring; false retains validated provider-score order. */
+  readonly enabled?: boolean
+  /** Exponential recency half-life in days; must be greater than zero and at most 3,650. */
+  readonly halfLifeDays?: number
+  /** Non-negative weight for provider relevance normalized within one candidate set. */
+  readonly relevanceWeight?: number
+  /** Non-negative weight for exponential recency. */
+  readonly recencyWeight?: number
+  /** Non-negative weight for the record's normalized importance. */
+  readonly importanceWeight?: number
+  /** Non-negative weight for confirmation class multiplied by source confidence. */
+  readonly validationWeight?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-tool-memory -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-tool-present -->
 <a id="deepseek-aidsh-tool-present"></a>
 
@@ -4642,6 +4880,7 @@ export interface Config {
 | `@deepseek-ai/dsh-llm` | — | [`packages/llm/llm/src/index.ts`](../packages/llm/llm/src/index.ts) |
 | `@deepseek-ai/dsh-lsp` | — | [`packages/lsp/lsp/src/index.ts`](../packages/lsp/lsp/src/index.ts) |
 | `@deepseek-ai/dsh-mcp-resources` | `tools` | [`packages/mcp/mcp-resources/src/index.ts`](../packages/mcp/mcp-resources/src/index.ts) |
+| `@deepseek-ai/dsh-memory-continuity` | — | [`packages/memory/memory-continuity/src/index.ts`](../packages/memory/memory-continuity/src/index.ts) |
 | `@deepseek-ai/dsh-otel` | — | [`packages/telemetry/otel/src/index.ts`](../packages/telemetry/otel/src/index.ts) |
 | `@deepseek-ai/dsh-sandbox-ssh` | `ssh` | [`packages/ssh/sandbox-ssh/src/index.ts`](../packages/ssh/sandbox-ssh/src/index.ts) |
 | `@deepseek-ai/dsh-session` | — | [`packages/core/session/src/index.ts`](../packages/core/session/src/index.ts) |

@@ -1,0 +1,178 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/memory/tool-memory/README.md
+/:
+  en: 86d7e2cd56586fde
+  zh: 92d8ef3e5b077c9d
+/deepseek-ai-dsh-tool-memory:
+  en: fd232e28c2effa41
+  zh: 01ae094a31d03f79
+/deepseek-ai-dsh-tool-memory/summary:
+  en: 2f3b9d8d407557ec
+  zh: 9ef74d17ddd27b23
+/deepseek-ai-dsh-tool-memory/table-of-contents:
+  en: a525b67f25090a06
+  zh: 6d408fc13c834fbc
+/deepseek-ai-dsh-tool-memory/activation-and-policy:
+  en: ad79264c8d9b60d6
+  zh: 7b2ae2c2776d6248
+/deepseek-ai-dsh-tool-memory/personal-memory:
+  en: 8499a4e76fd04a5d
+  zh: 5ef3d0d8980b0cec
+/deepseek-ai-dsh-tool-memory/final-ranking:
+  en: 9c0b17f84f75f232
+  zh: aeb6f4db77c5a35b
+/deepseek-ai-dsh-tool-memory/shadow-candidate-telemetry:
+  en: 48008b210f279470
+  zh: 1fbdaeaed612a288
+/deepseek-ai-dsh-tool-memory/local-candidate-review:
+  en: a476c10820695cca
+  zh: e1cef53a149eb51a
+/deepseek-ai-dsh-tool-memory/saved-memory-administration:
+  en: d48de617981122af
+  zh: e643d35e2a9e725b
+/deepseek-ai-dsh-tool-memory/personal-memory-administration:
+  en: 89275a686b932bfe
+  zh: e34dc3fb103f8855
+/deepseek-ai-dsh-tool-memory/structured-procedure-learning:
+  en: f7f33bd9bd859734
+  zh: 2419f4da1544be0b
+/deepseek-ai-dsh-tool-memory/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-tool-memory/model-experience/static-memory-policy:
+  en: 2c1d22dc00acb16f
+  zh: bbbc26244a76153c
+/deepseek-ai-dsh-tool-memory/model-experience/static-memory-policy/what-the-model-sees:
+  en: 15d1dfe85fd3fb38
+  zh: 4d64c23186820114
+/deepseek-ai-dsh-tool-memory/model-experience/static-memory-policy/what-the-model-sees/verbatim-policy:
+  en: fd47ff08bc41b511
+  zh: 19d2879a443589b7
+/deepseek-ai-dsh-tool-memory/model-experience/static-memory-policy/token-effect:
+  en: 7fe69813985295f2
+  zh: 89513abcd808f422
+/deepseek-ai-dsh-tool-memory/model-experience/static-memory-policy/kv-cache-effect:
+  en: 0a0c623aae9d6161
+  zh: 04b8545d87bea303
+/deepseek-ai-dsh-tool-memory/model-experience/optional-automatic-recall-snapshot:
+  en: d6761e1510eb6a55
+  zh: 232736e09bde8ab9
+/deepseek-ai-dsh-tool-memory/model-experience/optional-automatic-recall-snapshot/what-the-model-sees:
+  en: 74af9fadde63fcf9
+  zh: 6e12430d0e5f8848
+/deepseek-ai-dsh-tool-memory/model-experience/optional-automatic-recall-snapshot/what-the-model-sees/example-snapshot:
+  en: 53406f65b8d28b21
+  zh: 198bc5c00bca7823
+/deepseek-ai-dsh-tool-memory/model-experience/optional-automatic-recall-snapshot/token-effect:
+  en: 6140c6c238771816
+  zh: d45b7374618c379f
+/deepseek-ai-dsh-tool-memory/model-experience/optional-automatic-recall-snapshot/kv-cache-effect:
+  en: 11a1f6e9345a7f3a
+  zh: e45fd683c5578942
+/deepseek-ai-dsh-tool-memory/model-experience/personal-core-and-query-projections:
+  en: 0b197826affec824
+  zh: d4f044e7bc85f08e
+/deepseek-ai-dsh-tool-memory/model-experience/personal-core-and-query-projections/what-the-model-sees:
+  en: 0b54ca3d9d89058c
+  zh: dc14e043e96574f6
+/deepseek-ai-dsh-tool-memory/model-experience/personal-core-and-query-projections/token-effect:
+  en: f6507a7da10712fc
+  zh: 12ce60cd1fa005c1
+/deepseek-ai-dsh-tool-memory/model-experience/personal-core-and-query-projections/kv-cache-effect:
+  en: ea2caff26119400c
+  zh: e00d814ad6ed5ad9
+/deepseek-ai-dsh-tool-memory/model-experience/optional-shadow-extraction:
+  en: e7af8b3e67d4996d
+  zh: 977001bae1042109
+/deepseek-ai-dsh-tool-memory/model-experience/optional-shadow-extraction/what-the-model-sees:
+  en: d2e75501c874cbfe
+  zh: 82c9efce07db5cd8
+/deepseek-ai-dsh-tool-memory/model-experience/optional-shadow-extraction/token-effect:
+  en: fef4321f0c13c785
+  zh: 838f9963fcf815d6
+/deepseek-ai-dsh-tool-memory/model-experience/optional-shadow-extraction/kv-cache-effect:
+  en: 3c4e5ff3651affb9
+  zh: 5cd98f90736901c4
+/deepseek-ai-dsh-tool-memory/model-experience/optional-human-review-remote:
+  en: c57aec57ae16e4b3
+  zh: 7b60303d31cbabd3
+/deepseek-ai-dsh-tool-memory/model-experience/optional-human-review-remote/what-the-model-sees:
+  en: ec95e37cec8032ca
+  zh: e032fdd92637ec38
+/deepseek-ai-dsh-tool-memory/model-experience/optional-human-review-remote/token-effect:
+  en: fef4321f0c13c785
+  zh: 838f9963fcf815d6
+/deepseek-ai-dsh-tool-memory/model-experience/optional-human-review-remote/kv-cache-effect:
+  en: 3c4e5ff3651affb9
+  zh: 5cd98f90736901c4
+/deepseek-ai-dsh-tool-memory/model-experience/optional-saved-memory-administration-remote:
+  en: 3070577a85e3ab28
+  zh: ca30db75e44208f3
+/deepseek-ai-dsh-tool-memory/model-experience/optional-saved-memory-administration-remote/what-the-model-sees:
+  en: b9cd58fbfcac4346
+  zh: 75a9cb0aa0cdc407
+/deepseek-ai-dsh-tool-memory/model-experience/optional-saved-memory-administration-remote/token-effect:
+  en: fef4321f0c13c785
+  zh: 838f9963fcf815d6
+/deepseek-ai-dsh-tool-memory/model-experience/optional-saved-memory-administration-remote/kv-cache-effect:
+  en: 3c4e5ff3651affb9
+  zh: 5cd98f90736901c4
+/deepseek-ai-dsh-tool-memory/model-experience/optional-personal-memory-administration-remote:
+  en: 49f3d8ef4258be67
+  zh: 8382aa1f0c510ecf
+/deepseek-ai-dsh-tool-memory/model-experience/optional-personal-memory-administration-remote/what-the-model-sees:
+  en: fbd8dcf8d860e0cb
+  zh: e8055fb3c853022b
+/deepseek-ai-dsh-tool-memory/model-experience/optional-personal-memory-administration-remote/token-effect:
+  en: fef4321f0c13c785
+  zh: 838f9963fcf815d6
+/deepseek-ai-dsh-tool-memory/model-experience/optional-personal-memory-administration-remote/kv-cache-effect:
+  en: 3c4e5ff3651affb9
+  zh: 5cd98f90736901c4
+/deepseek-ai-dsh-tool-memory/model-experience/optional-procedure-learning-host-service:
+  en: ab9f1ba64ab87daf
+  zh: b209487f7e9238a2
+/deepseek-ai-dsh-tool-memory/model-experience/optional-procedure-learning-host-service/what-the-model-sees:
+  en: f2e3bd4645f469d4
+  zh: 420036dd10be7549
+/deepseek-ai-dsh-tool-memory/model-experience/optional-procedure-learning-host-service/what-the-model-sees/procedure-policy:
+  en: 0a7ab8b8ae8f16c0
+  zh: c25716a9434b3933
+/deepseek-ai-dsh-tool-memory/model-experience/optional-procedure-learning-host-service/token-effect:
+  en: 718af0aea681ab8d
+  zh: 20e6857e76e3aa20
+/deepseek-ai-dsh-tool-memory/model-experience/optional-procedure-learning-host-service/kv-cache-effect:
+  en: f5d57fbe2dc1e229
+  zh: 366a8369812c2d16
+/deepseek-ai-dsh-tool-memory/model-experience/tool-schemas:
+  en: 3039bc5e7a796b21
+  zh: 6b7a9eaf69c9ea53
+/deepseek-ai-dsh-tool-memory/model-experience/tool-schemas/what-the-model-sees:
+  en: be3133499b8760aa
+  zh: e52eea64abb0216f
+/deepseek-ai-dsh-tool-memory/model-experience/tool-schemas/token-effect:
+  en: 3331d35fbea0aa9b
+  zh: d2ae17785e041f87
+/deepseek-ai-dsh-tool-memory/model-experience/tool-schemas/kv-cache-effect:
+  en: 9cfeb3ee5de881ce
+  zh: 9245780b3464647b
+/deepseek-ai-dsh-tool-memory/model-experience/tool-results-and-failures:
+  en: b54dd060e53cc422
+  zh: bd8399323ec5e871
+/deepseek-ai-dsh-tool-memory/model-experience/tool-results-and-failures/what-the-model-sees:
+  en: 58f9155ba5aa8c19
+  zh: 4206d69d9347e59e
+/deepseek-ai-dsh-tool-memory/model-experience/tool-results-and-failures/token-effect:
+  en: ff0729d83d0ce19f
+  zh: b7316d5e2dc7ce5d
+/deepseek-ai-dsh-tool-memory/model-experience/tool-results-and-failures/kv-cache-effect:
+  en: 4e3c7aac4d350e2a
+  zh: 9b398d6e3602b7c9
+/deepseek-ai-dsh-tool-memory/known-limitations-and-deferred-work:
+  en: 2f60633cad5e7a60
+  zh: 6ea0eb62e29e0588
+/deepseek-ai-dsh-tool-memory/known-limitations-and-deferred-work/dev-note:
+  en: 9357c0ffcebdac00
+  zh: 4983cfa4f92e1d8e

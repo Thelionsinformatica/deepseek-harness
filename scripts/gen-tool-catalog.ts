@@ -44,6 +44,9 @@ import * as SkillFileSystem from '@deepseek-ai/dsh-skill-filesystem'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import * as ToolAskUser from '@deepseek-ai/dsh-tool-ask-user'
 import * as ToolKnowledgeBase from '@deepseek-ai/dsh-tool-knowledge-base'
+import MemoryRuntime from '@deepseek-ai/dsh-memory'
+import PersonalMemoryRuntime from '@deepseek-ai/dsh-personal-memory'
+import * as ToolMemory from '@deepseek-ai/dsh-tool-memory'
 import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
 import * as ToolPwsh from '@deepseek-ai/dsh-tool-pwsh'
 import * as ToolBashPersistent from '@deepseek-ai/dsh-tool-bash-persistent'
@@ -188,6 +191,21 @@ export interface ToolPackage {
  * guard proves it is exhaustive against the on-disk glob.
  */
 const TOOL_PACKAGES: ToolPackage[] = [
+  {
+    pkg: '@deepseek-ai/dsh-tool-memory',
+    dir: 'tool-memory',
+    source: 'packages/memory/tool-memory/src/index.ts',
+    requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.sessionProjections', 'ctx.memory', 'ctx.personalMemory', 'ctx.workspaceRegistry', 'a calling Agent with a registered workspace'],
+    writes: ['tool/call', 'provider-owned durable workspace or personal memory for mutations', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(MemoryRuntime)
+      await ctx.plugin(PersonalMemoryRuntime, { provider: 'catalog' })
+      ctx.provide('workspaceRegistry', {} as never)
+      await ctx.plugin(ToolMemory, { personalOwnerId: 'tool-catalog-owner' })
+    },
+    note:
+      'Workspace operations resolve the calling session cwd to a stable workspace id. Personal operations use an explicit owner partition independent from workspace identity. Writes require explicit retention policy guidance; corrections and deletion require the exact id and revision returned by search.',
+  },
   {
     pkg: '@deepseek-ai/dsh-tool-knowledge-base',
     dir: 'tool-knowledge-base',

@@ -108,6 +108,46 @@ const GROUP_ORDER = [
 
 const SERVICE_ROLES: ServiceRole[] = [
   {
+    key: 'memory',
+    pkg: 'memory',
+    title: 'Durable workspace memory seam',
+    mode: 'seam',
+    implementations: ['memory-local'],
+    consumers: ['tool-memory'],
+    note: 'Provider-neutral create, search, correct, and forget operations stay scoped by WorkspaceId; the local backend persists through storage-domain while tool-memory owns the model policy.',
+  },
+  {
+    key: 'personalMemory',
+    pkg: 'personal-memory',
+    title: 'Durable personal memory seam',
+    mode: 'seam',
+    implementations: ['personal-memory-local'],
+    consumers: ['tool-memory'],
+    note: 'A separate owner-scoped provider registry and storage domain retain explicit non-sensitive personal facts across workspaces without using telemetry identity.',
+  },
+  {
+    key: 'memoryContinuity',
+    pkg: 'memory-continuity',
+    title: 'Portable local memory restore',
+    mode: 'core',
+    note: 'Exports lineage snapshots and restores missing records to caller-supplied tables; journal persistence remains caller-owned.',
+  },
+  {
+    key: 'memoryCandidateReview',
+    pkg: 'tool-memory',
+    title: 'Workspace-isolated memory candidate review',
+    mode: 'core',
+    note: 'Owns the local shadow queue, derives workspace authority from a live or persisted Session, and records immutable human decisions through a projected Remote without writing final memory.',
+  },
+  {
+    key: 'procedureLearning',
+    pkg: 'tool-memory',
+    title: 'Evidence-gated procedure learning',
+    mode: 'core',
+    consumers: ['tool-memory'],
+    note: 'Turns successful tool calls from a bounded Session projection plus independent verifier evidence into reviewable, revalidatable, and revocable workspace procedures without retaining credentials or raw tool results.',
+  },
+  {
     key: 'cotTranslation',
     pkg: 'experimental-client-ui-cot-translation',
     title: 'Reasoning translation Remote',

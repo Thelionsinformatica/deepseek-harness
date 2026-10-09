@@ -15,6 +15,7 @@ This table connects model-visible tool names to the plugin package and service s
 
 | Tool package | Model-visible names | Requires | Writes / affects | Shipped aliases | Deployment note |
 | --- | --- | --- | --- | --- | --- |
+| `@deepseek-ai/dsh-tool-memory` | `memory_forget`, `memory_remember`, `memory_search`, `memory_update`, `personal_memory_forget`, `personal_memory_remember`, `personal_memory_search`, `personal_memory_update` | `ctx.tools`, `ctx.systemPrompt`, `ctx.sessionProjections`, `ctx.memory`, `ctx.personalMemory`, `ctx.workspaceRegistry`, `a calling Agent with a registered workspace` | `tool/call`, `provider-owned durable workspace or personal memory for mutations`, `tool/result` | - | Workspace operations resolve the calling session cwd to a stable workspace id. Personal operations use an explicit owner partition independent from workspace identity. Writes require explicit retention policy guidance; corrections and deletion require the exact id and revision returned by search. |
 | `@deepseek-ai/dsh-tool-knowledge-base` | `knowledge_search`, `knowledge_status` | `ctx.tools`, `ctx.systemPrompt`, `ctx.subprocess`, `an exact authorized .leon/knowledge root` | `tool/call`, `tool/result` | - | Both tools are read-only wrappers over a trusted local JSON helper with fixed argv and bounded output. An external-root deployment must pair them with an authorization guard such as dsh-explicit-target-policy. |
 | `@deepseek-ai/dsh-plugin-manager` | `plugin_manager` | `ctx.tools`, `ctx.pluginManager`, `ctx.sandboxPolicy` | `tool/call`, `tool/result`, `user/message` | - | - |
 | `@deepseek-ai/dsh-mcp-resources` | `list_mcp_resource_templates`, `list_mcp_resources`, `read_mcp_resource` | `ctx.tools`, `ctx.mcpResources` | `tool/call`, `tool/result` | - | - |
@@ -48,6 +49,234 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-workspace-dependencies` | `load_workspace_dependencies` | `ctx.tools` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`, `web_search` | `ctx.tools`, `ctx.web`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps. |
+
+<a id="deepseek-aidsh-tool-memory"></a>
+
+## `@deepseek-ai/dsh-tool-memory`
+
+### `memory_forget`
+
+Permanently forget one memory in the current workspace using the exact id and revision returned by memory_search. Use only when the user asks to forget it or confirms that the retained fact must be removed.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "memory_id": {
+      "type": "string",
+      "description": "Exact memory id returned by search."
+    },
+    "revision": {
+      "type": "number",
+      "description": "Exact positive revision returned by search."
+    }
+  },
+  "required": [
+    "memory_id",
+    "revision"
+  ]
+}
+```
+
+Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `memory_remember`
+
+Persist one stable fact, preference, decision, or configuration in the current workspace. Use only for explicit remember intent or a clearly confirmed durable fact. Never store credentials or authentication secrets.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "content": {
+      "type": "string",
+      "description": "A self-contained fact to remember."
+    },
+    "valid_from": {
+      "type": "string",
+      "description": "Optional ISO timestamp that schedules activation."
+    },
+    "expires_at": {
+      "type": "string",
+      "description": "Optional ISO timestamp that expires active recall."
+    }
+  },
+  "required": [
+    "content"
+  ]
+}
+```
+
+Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `memory_search`
+
+Search durable memories belonging only to the current workspace. Use this before saying you do not remember a prior project fact, preference, decision, or configuration.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "What to recall."
+    },
+    "limit": {
+      "type": "number",
+      "description": "Maximum results; defaults to 8."
+    },
+    "include_history": {
+      "type": "boolean",
+      "description": "Include superseded, scheduled, and expired revisions for an explicit audit."
+    }
+  },
+  "required": [
+    "query"
+  ]
+}
+```
+
+Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `memory_update`
+
+Correct one memory in the current workspace using the exact id and revision returned by memory_search. A stale revision fails safely.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "memory_id": {
+      "type": "string",
+      "description": "Exact memory id returned by search."
+    },
+    "revision": {
+      "type": "number",
+      "description": "Exact positive revision returned by search."
+    },
+    "content": {
+      "type": "string",
+      "description": "Complete corrected fact."
+    }
+  },
+  "required": [
+    "memory_id",
+    "revision",
+    "content"
+  ]
+}
+```
+
+Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `personal_memory_forget`
+
+Permanently forget one personal memory after the user requests or confirms deletion.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "memory_id": {
+      "type": "string",
+      "description": "Exact memory id returned by search."
+    },
+    "revision": {
+      "type": "number",
+      "description": "Exact positive revision returned by search."
+    }
+  },
+  "required": [
+    "memory_id",
+    "revision"
+  ]
+}
+```
+
+Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `personal_memory_remember`
+
+Propose one stable, non-sensitive personal fact across project workspaces after explicit remember intent. The user must confirm it in the personal-memory panel before automatic recall. Never store credentials.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "content": {
+      "type": "string",
+      "description": "Self-contained personal fact to remember."
+    }
+  },
+  "required": [
+    "content"
+  ]
+}
+```
+
+Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `personal_memory_search`
+
+Search the user-controlled personal memory shared across project workspaces.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "Personal preference or fact to recall."
+    },
+    "limit": {
+      "type": "number",
+      "description": "Maximum results; defaults to 8."
+    },
+    "include_history": {
+      "type": "boolean",
+      "description": "Include superseded, scheduled, and expired revisions."
+    }
+  },
+  "required": [
+    "query"
+  ]
+}
+```
+
+Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `personal_memory_update`
+
+Correct one personal memory using the exact id and revision returned by search.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "memory_id": {
+      "type": "string",
+      "description": "Exact memory id returned by search."
+    },
+    "revision": {
+      "type": "number",
+      "description": "Exact positive revision returned by search."
+    },
+    "content": {
+      "type": "string",
+      "description": "Complete corrected personal fact."
+    }
+  },
+  "required": [
+    "memory_id",
+    "revision",
+    "content"
+  ]
+}
+```
+
+Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+Workspace operations resolve the calling session cwd to a stable workspace id. Personal operations use an explicit owner partition independent from workspace identity. Writes require explicit retention policy guidance; corrections and deletion require the exact id and revision returned by search.
 
 <a id="deepseek-aidsh-tool-knowledge-base"></a>
 

@@ -1,0 +1,31 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/memory/personal-memory/README.md
+/:
+  en: 28a552bf128c9e4d
+  zh: 13a690732adfba7f
+/deepseek-ai-dsh-personal-memory:
+  en: 6d24985f75f1a62b
+  zh: 9a3c4cb5da19578c
+/deepseek-ai-dsh-personal-memory/summary:
+  en: 8d252a6c705247fb
+  zh: 518ca82912890a87
+/deepseek-ai-dsh-personal-memory/table-of-contents:
+  en: 7b877235f36beffb
+  zh: 128492ca802a72c2
+/deepseek-ai-dsh-personal-memory/behavior:
+  en: d29d264163b3ac09
+  zh: 1cbe4e425761b4b1
+/deepseek-ai-dsh-personal-memory/model-experience:
+  en: a497b0a2f910c069
+  zh: cbe5427b5de0af3b
+/deepseek-ai-dsh-personal-memory/model-experience/kv-cache-effect:
+  en: 3d33d7dbceda2dc9
+  zh: 1afa63329e29f593
+/deepseek-ai-dsh-personal-memory/known-limitations-and-deferred-work:
+  en: b9402d5516ee86a7
+  zh: 869b6a2f875b0c3a
+/deepseek-ai-dsh-personal-memory/known-limitations-and-deferred-work/dev-note:
+  en: 9357c0ffcebdac00
+  zh: 4983cfa4f92e1d8e

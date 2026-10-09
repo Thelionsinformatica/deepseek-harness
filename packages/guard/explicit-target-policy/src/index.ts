@@ -162,7 +162,10 @@ function applyTurnEvent(state: ExplicitTargetTurnState, event: SessionEvent): Ex
     case 'user/message': {
       const source = event.data.source
       if (source.kind === 'user') return { ...state, directText: messageText(event.data) }
-      if (source.kind === name && source.form === 'notice' && source.summary === REQUIRED_RECOVERY_SUMMARY) {
+      // Leon logs written before 0.2.1 migrate this producer to the runtime-only kind `plugin:explicit-target-policy`.
+      const notice = source as { readonly kind: string; readonly form?: unknown; readonly summary?: unknown }
+      if ((notice.kind === name || notice.kind === `plugin:${name}`)
+        && notice.form === 'notice' && notice.summary === REQUIRED_RECOVERY_SUMMARY) {
         return { ...state, recoveries: state.recoveries + 1 }
       }
       return state

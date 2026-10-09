@@ -1535,6 +1535,163 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'memory',
+    summary: 'Durable memory service and registration-order-independent provider selector.',
+    description: 'Durable memory service and registration-order-independent provider selector.',
+    methods: [
+      {
+        signature: 'registerProvider(provider: MemoryProvider): () => void',
+        description: 'Register one provider for the lifetime chosen by the caller.',
+        parameters: [{ name: 'provider', description: 'Provider implementation keyed by its stable id.' }],
+        returns: 'disposer that removes this exact registration.',
+      },
+      {
+        signature: 'async create(request: MemoryCreateRequest, signal?: AbortSignal): Promise<MemoryRecord>',
+        description: 'Create one normalized durable memory through the selected provider.',
+        parameters: [{ name: 'request', description: 'Workspace scope, durable content, and session source.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'the created normalized record after durability.',
+      },
+      {
+        signature: 'async search(request: MemorySearchRequest, signal?: AbortSignal): Promise<readonly MemorySearchHit[]>',
+        description: 'Search only inside the request\'s workspace scope.',
+        parameters: [{ name: 'request', description: 'Workspace scope, query, and bounded result limit.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'ranked hits capped to the requested limit.',
+      },
+      {
+        signature: 'async list(request: MemoryListRequest, signal?: AbortSignal): Promise<MemoryListPage>',
+        description: 'Enumerate one bounded workspace partition for an authorized administrative surface.',
+        parameters: [{ name: 'request', description: 'Workspace scope, optional filters, and page coordinates.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'a stable page of provider-projected memory revisions.',
+      },
+      {
+        signature: 'async update(request: MemoryUpdateRequest, signal?: AbortSignal): Promise<MemoryRecord>',
+        description: 'Correct one exact memory revision through the selected provider.',
+        parameters: [{ name: 'request', description: 'Workspace scope, compare-and-set reference, and replacement content.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'the corrected record with its incremented revision.',
+      },
+      {
+        signature: 'async forget(request: MemoryForgetRequest, signal?: AbortSignal): Promise<void>',
+        description: 'Forget one exact memory revision through the selected provider.',
+        parameters: [{ name: 'request', description: 'Workspace scope and compare-and-set reference to delete.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'resolution after durable deletion.',
+      },
+      {
+        signature: 'async graph(request: MemoryGraphRequest, signal?: AbortSignal): Promise<MemoryGraphSnapshot>',
+        description: 'Read the derived similarity graph for one workspace through the selected provider.',
+        parameters: [{ name: 'request', description: 'Workspace scope whose graph is requested.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'the provider-published snapshot, or `unavailable` when the provider computes no graph.',
+      },
+    ],
+  },
+  {
+    key: 'memoryCandidateReview',
+    summary: 'Host service exposing only projected candidate rows through the generated Remote.',
+    description: 'Host service exposing only projected candidate rows through the generated Remote.',
+    methods: [
+      {
+        signature: 'async recordCandidate(record: MemoryCandidateRecord): Promise<void>',
+        description: 'Append one producer-owned candidate into the canonical queue. This host-only method is intentionally not exposed as a browser Remote.',
+        parameters: [{ name: 'record', description: 'complete validated candidate row with a unique id.' }],
+      },
+      {
+        signature: '@Remote(\'list\') async list(request: MemoryCandidateReviewListRequest): Promise<MemoryCandidateReviewListResult>',
+        description: 'List one workspace partition, using the addressed Session as authorization anchor.',
+        parameters: [{ name: 'request', description: 'session anchor, filters, and bounded page coordinates.' }],
+        returns: 'projected rows or an explicit ownership failure.',
+      },
+      {
+        signature: '@Remote(\'listMemories\') async listMemories(request: MemoryAdminListRequest): Promise<MemoryAdminListResult>',
+        description: 'List durable memories for the addressed Session\'s exact workspace partition.',
+        parameters: [{ name: 'request', description: 'Session authorization anchor, lifecycle filters, and bounded page coordinates.' }],
+        returns: 'Browser-safe workspace rows or an explicit administrative failure.',
+      },
+      {
+        signature: '@Remote(\'correctMemory\') correctMemory(request: MemoryAdminCorrectRequest): Promise<MemoryAdminCorrectResult>',
+        description: 'Correct one exact memory revision after explicit operator confirmation.',
+        parameters: [{ name: 'request', description: 'Session anchor, exact memory revision, replacement content, and confirmation.' }],
+        returns: 'The corrected browser-safe row and audit id, or an explicit failure.',
+      },
+      {
+        signature: '@Remote(\'forgetMemory\') forgetMemory(request: MemoryAdminForgetRequest): Promise<MemoryAdminForgetResult>',
+        description: 'Forget one exact memory lineage after explicit operator confirmation.',
+        parameters: [{ name: 'request', description: 'Session anchor, exact memory revision, and confirmation.' }],
+        returns: 'The forgotten reference and audit id, or an explicit failure.',
+      },
+      {
+        signature: '@Remote(\'listPersonalMemories\') async listPersonalMemories(request: MemoryAdminListRequest): Promise<PersonalMemoryAdminListResult>',
+        description: 'List the configured local owner\'s personal memories without exposing the owner id.',
+        parameters: [{ name: 'request', description: 'Session authorization anchor and bounded list filters.' }],
+        returns: 'Browser-safe personal rows plus the current enablement state, or an explicit failure.',
+      },
+      {
+        signature: '@Remote(\'memoryGraph\') async memoryGraph(request: MemoryAdminGraphRequest): Promise<MemoryAdminGraphResult>',
+        description: 'Read the derived workspace similarity graph without triggering computation or mutation.',
+        parameters: [{ name: 'request', description: 'Session authorization anchor resolving the workspace partition.' }],
+        returns: 'The provider-published edge projection or an explicit failure.',
+      },
+      {
+        signature: '@Remote(\'personalMemoryGraph\') async personalMemoryGraph(request: MemoryAdminGraphRequest): Promise<PersonalMemoryAdminGraphResult>',
+        description: 'Read the derived personal-memory similarity graph without exposing the owner id.',
+        parameters: [{ name: 'request', description: 'Session authorization anchor.' }],
+        returns: 'The provider-published edge projection or an explicit failure.',
+      },
+      {
+        signature: '@Remote(\'rememberPersonalMemory\') rememberPersonalMemory(request: PersonalMemoryAdminRememberRequest): Promise<PersonalMemoryAdminRememberResult>',
+        description: 'Add one explicit personal fact after a visible confirmation.',
+        parameters: [{ name: 'request', description: 'Session source, complete fact, and explicit confirmation.' }],
+        returns: 'The created browser-safe row and content-free audit id, or an explicit failure.',
+      },
+      {
+        signature: '@Remote(\'correctPersonalMemory\') correctPersonalMemory(request: PersonalMemoryAdminCorrectRequest): Promise<MemoryAdminCorrectResult>',
+        description: 'Correct or reconfirm one exact personal-memory revision after explicit operator confirmation.',
+        parameters: [{ name: 'request', description: 'Session anchor, exact revision, complete confirmed text, and confirmation.' }],
+        returns: 'The explicitly validated browser-safe row and content-free audit id, or an explicit failure.',
+      },
+      {
+        signature: '@Remote(\'forgetPersonalMemory\') forgetPersonalMemory(request: MemoryAdminForgetRequest): Promise<MemoryAdminForgetResult>',
+        description: 'Permanently remove one personal-memory lineage after confirmation.',
+        parameters: [{ name: 'request', description: 'Session anchor, exact personal-memory revision, and confirmation.' }],
+        returns: 'The forgotten reference and content-free audit id, or an explicit failure.',
+      },
+      {
+        signature: '@Remote(\'setPersonalMemoryEnabled\') setPersonalMemoryEnabled(request: PersonalMemoryAdminToggleRequest): Promise<PersonalMemoryAdminToggleResult>',
+        description: 'Persist the user\'s personal-memory enablement preference after confirmation.',
+        parameters: [{ name: 'request', description: 'Session anchor, desired state, and explicit confirmation.' }],
+        returns: 'The applied enablement state and content-free audit id, or an explicit failure.',
+      },
+      {
+        signature: '@Remote(\'markReviewed\') markReviewed(request: MemoryCandidateReviewMarkRequest): Promise<MemoryCandidateReviewMarkResult>',
+        description: 'Record one immutable human decision and optionally persist an authorized candidate.',
+        parameters: [{ name: 'request', description: 'session authorization anchor, candidate id, and decision.' }],
+        returns: 'the reviewed projection or an explicit business failure.',
+      },
+    ],
+  },
+  {
+    key: 'memoryContinuity',
+    summary: 'Provider-neutral exporter for local memory lineage.',
+    description: 'Provider-neutral exporter for local memory lineage.',
+    methods: [
+      {
+        signature: 'readonly id: string = \'memory-continuity\'',
+        description: 'Stable provider identifier for caller-owned registries.',
+        parameters: [],
+      },
+      {
+        signature: 'export(domains: readonly MemoryContinuityDomainSource[], options: { readonly exportedAt?: string } = {}): MemoryContinuitySnapshot',
+        description: 'Build a snapshot without mutating the source tables; invalid records throw.',
+        parameters: [{ name: 'domains', description: 'Caller-selected domains and their complete records.' }, { name: 'options', description: 'Optional timestamp; defaults to the current time.' }],
+        returns: 'A checksummed snapshot; journal persistence remains caller-owned.',
+      },
+      {
+        signature: 'async import( snapshot: MemoryContinuitySnapshot, targets: readonly MemoryContinuityDomainTarget[], ): Promise<MemoryContinuityImportResult>',
+        description: 'Validate every destination before writing, then atomically insert only missing ids. Storage failures may leave earlier writes committed; repeating the same import skips them.',
+        parameters: [{ name: 'snapshot', description: 'Snapshot with valid checksums and local memory records.' }, { name: 'targets', description: 'Destination tables with matching domain names and versions.' }],
+        returns: 'Import counters and a journal entry that the caller must persist.',
+      },
+    ],
+  },
+  {
     key: 'messageFeedback',
     summary: 'Session-log service; cold operations never construct a Session or Agent.',
     description: 'Session-log service; cold operations never construct a Session or Agent.',
@@ -1654,6 +1811,66 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'personalMemory',
+    summary: 'Personal-memory service with an independent provider registry and lifecycle.',
+    description: 'Personal-memory service with an independent provider registry and lifecycle.',
+    methods: [
+      {
+        signature: 'registerProvider(provider: PersonalMemoryProvider): () => void',
+        description: 'Register one personal-memory provider for the caller-controlled fiber lifetime.',
+        parameters: [{ name: 'provider', description: 'Provider implementation keyed by its stable id.' }],
+        returns: 'disposer that removes this exact registration.',
+      },
+      {
+        signature: 'isEnabled(): boolean',
+        description: 'Read whether model and mutation operations may use personal memory. Administrative listing and forgetting remain available while disabled so the user can inspect or delete data.',
+        parameters: [],
+        returns: 'the current process-local operation state.',
+      },
+      {
+        signature: 'setEnabled(enabled: boolean): void',
+        description: 'Apply a deployment or durable-settings preference to all personal-memory Consumers.',
+        parameters: [{ name: 'enabled', description: 'Whether create, search, and correction operations may reach a provider.' }],
+      },
+      {
+        signature: 'async create( request: PersonalMemoryCreateRequest, signal?: AbortSignal, ): Promise<PersonalMemoryRecord>',
+        description: 'Create one normalized personal fact in an explicit local-owner partition.',
+        parameters: [{ name: 'request', description: 'Owner scope, durable content, and session source.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'the durable normalized record.',
+      },
+      {
+        signature: 'async search( request: PersonalMemorySearchRequest, signal?: AbortSignal, ): Promise<readonly PersonalMemorySearchHit[]>',
+        description: 'Search one local-owner partition for relevant personal facts.',
+        parameters: [{ name: 'request', description: 'Owner scope, bounded query, and result limit.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'provider-ranked hits capped to the requested limit.',
+      },
+      {
+        signature: 'async list( request: PersonalMemoryListRequest, signal?: AbortSignal, ): Promise<PersonalMemoryListPage>',
+        description: 'Enumerate one bounded personal-memory partition for administration.',
+        parameters: [{ name: 'request', description: 'Owner scope, optional filters, and page coordinates.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'a stable page of personal-memory revisions.',
+      },
+      {
+        signature: 'async update( request: PersonalMemoryUpdateRequest, signal?: AbortSignal, ): Promise<PersonalMemoryRecord>',
+        description: 'Correct one exact personal-memory revision.',
+        parameters: [{ name: 'request', description: 'Owner scope, compare-and-set reference, and replacement content.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'the corrected record with an incremented revision.',
+      },
+      {
+        signature: 'async forget(request: PersonalMemoryForgetRequest, signal?: AbortSignal): Promise<void>',
+        description: 'Forget one exact personal-memory revision.',
+        parameters: [{ name: 'request', description: 'Owner scope and compare-and-set reference to delete.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'resolution after durable deletion.',
+      },
+      {
+        signature: 'async graph( request: PersonalMemoryGraphRequest, signal?: AbortSignal, ): Promise<PersonalMemoryGraphSnapshot>',
+        description: 'Read the derived similarity graph for one owner partition through the selected provider.',
+        parameters: [{ name: 'request', description: 'Owner scope whose graph is requested.' }, { name: 'signal', description: 'Optional cancellation forwarded to the selected provider.' }],
+        returns: 'the provider-published snapshot, or `unavailable` when the provider computes no graph.',
+      },
+    ],
+  },
+  {
     key: 'planMode',
     summary: '`ctx.planMode`: owns logged plan state, applies and narrates selected state at step start, the `plan:policy` section, the `/plan` command, and the stable exit tool.',
     description: '`ctx.planMode`: owns logged plan state, applies and narrates selected state at step start, the `plan:policy` section, the `/plan` command, and the stable exit tool. Client carriers expose the projection\'s cropped `{ active, pending }` view.',
@@ -1762,6 +1979,55 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
         returns: 'the first registry with a successful response, or null when disabled or neither responds successfully; results are cached.',
         throws: ['rejects when the service has been unloaded.'],
+      },
+    ],
+  },
+  {
+    key: 'procedureLearning',
+    summary: 'Durable service that promotes only verified trajectories after explicit host review.',
+    description: 'Durable service that promotes only verified trajectories after explicit host review.',
+    methods: [
+      {
+        signature: 'async propose(request: ProcedureProposalRequest): Promise<ProcedureLearningResult>',
+        description: 'Persist a review candidate derived only from successful host-observed tool calls. Failed observations, credential-like arguments, duplicate call ids, and invalid validity windows are rejected before durable state changes.',
+        parameters: [{ name: 'request', description: 'Complete successful trajectory plus independent verification.' }],
+        returns: 'The candidate record or a stable validation failure.',
+      },
+      {
+        signature: 'inspect(request: ProcedureInspectRequest): ProcedureLearningResult',
+        description: 'Return one exact same-workspace record for operator inspection in any lifecycle state. Cross-workspace and missing ids share the same not-found result.',
+        parameters: [{ name: 'request', description: 'Workspace boundary and opaque procedure id.' }],
+        returns: 'A detached record or the stable not-found branch.',
+      },
+      {
+        signature: 'listCandidates(workspaceId: ProcedureRecord[\'workspaceId\']): readonly ProcedureRecord[]',
+        description: 'List pending review candidates for one exact workspace.',
+        parameters: [{ name: 'workspaceId', description: 'Workspace whose candidates may be disclosed.' }],
+        returns: 'Detached candidates ordered newest first.',
+      },
+      {
+        signature: 'review(request: ProcedureReviewRequest): Promise<ProcedureLearningResult>',
+        description: 'Promote or reject one exact candidate revision after explicit operator review. Acceptance fails once revalidation is due or the validity window has expired.',
+        parameters: [{ name: 'request', description: 'Workspace, exact revision, and immutable review decision.' }],
+        returns: 'The committed next revision or a stable business failure.',
+      },
+      {
+        signature: 'findReusable(request: ProcedureReuseRequest): ProcedureReuseResult',
+        description: 'Return relevant validated procedures only when their exact preconditions and validity windows admit reuse. Candidate, rejected, and revoked rows stay hidden.',
+        parameters: [{ name: 'request', description: 'Workspace query, current environment facts, and result bound.' }],
+        returns: 'Reusable rows plus relevant rows withheld for an actionable reason.',
+      },
+      {
+        signature: 'revalidate(request: ProcedureRevalidationRequest): Promise<ProcedureLearningResult>',
+        description: 'Commit one verifier outcome for an exact validated or stale revision. A failed verifier marks the procedure stale; a successful verifier requires a fresh validity window and can reactivate a stale procedure.',
+        parameters: [{ name: 'request', description: 'Exact revision, current preconditions, verifier observation, and optional new validity.' }],
+        returns: 'The committed next revision or a stable business failure.',
+      },
+      {
+        signature: 'revoke(request: ProcedureRevokeRequest): Promise<ProcedureLearningResult>',
+        description: 'Revoke one exact candidate, validated, or stale revision. Rejected and already revoked rows are immutable terminal states.',
+        parameters: [{ name: 'request', description: 'Workspace and exact procedure revision.' }],
+        returns: 'The committed revoked revision or a stable business failure.',
       },
     ],
   },
@@ -4258,12 +4524,76 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'options', description: 'the full request. A LOOP-built request carries the process-local {@link markAgentLoopRequest} identity and arrives deep-frozen (mutation throws): its content is a pure function of the session log (the reconstructability Agent Note), so listeners read it, never rewrite it. Hand-built calls do not carry that marker; callers own their request inputs and must keep them unchanged until the stream settles.' }],
   },
   {
+    name: 'memory/blocked',
+    mode: 'emit',
+    signature: '\'memory/blocked\'(event: MemoryBlockedEvent): void',
+    summary: 'A memory action was rejected before durable state could be mutated.',
+    description: 'A memory action was rejected before durable state could be mutated. Observers may surface the sanitized reason in security and integrity dashboards.',
+    parameters: [{ name: 'event', description: 'Block reason, source, workspace boundary, and optional safe detail.' }],
+  },
+  {
+    name: 'memory/candidate',
+    mode: 'emit',
+    signature: '\'memory/candidate\'(event: MemoryCandidateEvent): void',
+    summary: 'Candidate retrieval was screened and assigned a deterministic policy outcome.',
+    description: 'Candidate retrieval was screened and assigned a deterministic policy outcome. Observers may persist or aggregate this non-model-facing audit telemetry.',
+    parameters: [{ name: 'event', description: 'Candidate counts, operation source, and policy decision metadata.' }],
+  },
+  {
+    name: 'memory/graph',
+    mode: 'emit',
+    signature: '\'memory/graph\'(event: MemoryGraphEvent): void',
+    summary: 'Derived similarity-graph computation completed or failed without memory text.',
+    description: 'Derived similarity-graph computation completed or failed without memory text.',
+    parameters: [{ name: 'event', description: 'Snapshot status, bounded counters, and sanitized failure class.' }],
+  },
+  {
+    name: 'memory/operation',
+    mode: 'emit',
+    signature: '\'memory/operation\'(event: MemoryOperationEvent): void',
+    summary: 'A durable memory operation completed or failed after provider selection.',
+    description: 'A durable memory operation completed or failed after provider selection. Observers may record operational health without changing the operation result.',
+    parameters: [{ name: 'event', description: 'Operation outcome, workspace boundary, provider, and optional result metadata.' }],
+  },
+  {
+    name: 'memory/semantic-search',
+    mode: 'emit',
+    signature: '\'memory/semantic-search\'(event: LocalSemanticSearchEvent): void',
+    summary: 'Optional semantic retrieval completed or fell back without exposing query or memory text.',
+    description: 'Optional semantic retrieval completed or fell back without exposing query or memory text.',
+    parameters: [{ name: 'event', description: 'Retrieval mode, bounded cost counters, and sanitized failure class.' }],
+  },
+  {
     name: 'permission-presets/catalog-changed',
     mode: 'emit',
     signature: '\'permission-presets/catalog-changed\'(): void',
     summary: 'The selectable process catalog changed.',
     description: 'The selectable process catalog changed. Payload-free by design: consumers subscribe first, then re-read the complete catalog.',
     parameters: [],
+  },
+  {
+    name: 'personal-memory/blocked',
+    mode: 'emit',
+    signature: '\'personal-memory/blocked\'(event: PersonalMemoryBlockedEvent): void',
+    summary: 'A personal-memory operation was rejected before durable mutation.',
+    description: 'A personal-memory operation was rejected before durable mutation.',
+    parameters: [{ name: 'event', description: 'Sanitized operation, owner, reason, and error code.' }],
+  },
+  {
+    name: 'personal-memory/enabled',
+    mode: 'emit',
+    signature: '\'personal-memory/enabled\'(event: { readonly enabled: boolean }): void',
+    summary: 'Host preference changed; background consumers must suspend while disabled.',
+    description: 'Host preference changed; background consumers must suspend while disabled.',
+    parameters: [{ name: 'event', description: 'The new content-free operation state.' }],
+  },
+  {
+    name: 'personal-memory/operation',
+    mode: 'emit',
+    signature: '\'personal-memory/operation\'(event: PersonalMemoryOperationEvent): void',
+    summary: 'A personal-memory operation completed or failed without exposing its content.',
+    description: 'A personal-memory operation completed or failed without exposing its content.',
+    parameters: [{ name: 'event', description: 'Content-free operation, provider, owner, and result metadata.' }],
   },
   {
     name: 'plugin-manager/changed',
@@ -4836,6 +5166,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'BashEnvVariableInfo',
     declaration: 'export interface BashEnvVariableInfo extends BashEnvVariable {\n    contributor: string;\n    key: DshEnvironmentKey;\n}',
+  },
+  {
+    name: 'BlockedProcedureReuse',
+    declaration: 'export interface BlockedProcedureReuse {\n    readonly id: ProcedureId;\n    readonly revision: number;\n    readonly reason: ProcedureReuseBlockReason;\n    readonly verifier: ProcedureVerifier;\n}',
   },
   {
     name: 'BoxProps',
@@ -5754,8 +6088,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface KvFacet {\n    open(descriptor: KvUnitDescriptor): Promise<KvUnit>;\n}',
   },
   {
+    name: 'KvRecordMutation',
+    declaration: 'export type KvRecordMutation<V, R> = {\n    readonly kind: \'keep\';\n    readonly result: R;\n} | {\n    readonly kind: \'put\';\n    readonly value: V;\n    readonly result: R;\n};',
+  },
+  {
     name: 'KvTable',
-    declaration: 'export interface KvTable<K extends string, V> {\n    get(key: K): V | undefined;\n    entries(): IterableIterator<[\n        K,\n        V\n    ]>;\n    keys(): IterableIterator<K>;\n    readonly size: number;\n    put(key: K, value: V): Promise<void>;\n    delete(key: K): Promise<boolean>;\n    update(key: K, fn: (current: V) => V): Promise<V>;\n}',
+    declaration: 'export interface KvTable<K extends string, V> {\n    get(key: K): V | undefined;\n    entries(): IterableIterator<[\n        K,\n        V\n    ]>;\n    keys(): IterableIterator<K>;\n    readonly size: number;\n    put(key: K, value: V): Promise<void>;\n    delete(key: K): Promise<boolean>;\n    update(key: K, fn: (current: V) => V): Promise<V>;\n    mutate<R>(key: K, fn: (current: V | undefined) => KvRecordMutation<V, R>): Promise<R>;\n}',
   },
   {
     name: 'KvUnit',
@@ -5846,6 +6184,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type LocalizedText = string | {\n    readonly en: string;\n    readonly [locale: string]: string;\n};',
   },
   {
+    name: 'LocalMemoryRecord',
+    declaration: 'export interface LocalMemoryRecord extends LocalMemoryVersion {\n    readonly workspaceId: WorkspaceIdentity;\n    readonly history?: readonly LocalMemoryVersion[];\n}',
+  },
+  {
+    name: 'LocalMemoryVersion',
+    declaration: 'export interface LocalMemoryVersion {\n    readonly content: string;\n    readonly revision: number;\n    readonly source: {\n        readonly kind: \'session\';\n        readonly sessionId: SessionIdentity;\n    };\n    readonly importance?: number;\n    readonly confidence?: number;\n    readonly validation?: MemoryValidation;\n    readonly core?: boolean;\n    readonly schemaVersion: MemoryRecordSchemaVersion;\n    readonly validFrom?: string;\n    readonly validUntil?: string;\n    readonly expiresAt?: string;\n    readonly supersedes?: MemoryRef;\n    readonly supersededBy?: MemoryRef;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'LocalSemanticSearchEvent',
+    declaration: 'export interface LocalSemanticSearchEvent {\n    readonly schemaVersion: 1;\n    readonly workspaceId: MemorySearchRequest[\'scope\'][\'workspaceId\'];\n    readonly mode: \'hybrid\' | \'lexical-fallback\';\n    readonly model: string;\n    readonly candidateCount: number;\n    readonly embeddedCount: number;\n    readonly cacheHitCount: number;\n    readonly resultCount: number;\n    readonly durationMs: number;\n    readonly fallbackCode?: SemanticFallbackCode;\n}',
+  },
+  {
     name: 'LogExporterOptions',
     declaration: 'export type LogExporterOptions = Omit<OTLPExporterNodeConfigBase, \'selfObsMeterProvider\'> & {\n    url: string;\n};',
   },
@@ -5908,6 +6258,330 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'McpResourceRequest',
     declaration: 'export type McpResourceRequest = {\n    method: \'resources/list\' | \'resources/templates/list\';\n    cursor?: string;\n} | {\n    method: \'resources/read\';\n    uri: string;\n};',
+  },
+  {
+    name: 'MemoryAdminActionId',
+    declaration: 'export type MemoryAdminActionId = Branded<\'MemoryAdminActionId\'>;',
+  },
+  {
+    name: 'MemoryAdminConfirmationRequired',
+    declaration: 'export interface MemoryAdminConfirmationRequired {\n    readonly code: \'memory-admin-confirmation-required\';\n}',
+  },
+  {
+    name: 'MemoryAdminCorrectRequest',
+    declaration: 'export interface MemoryAdminCorrectRequest {\n    readonly sessionId: SessionId;\n    readonly id: MemoryAdminId;\n    readonly revision: number;\n    readonly content: string;\n    readonly confirmed: boolean;\n}',
+  },
+  {
+    name: 'MemoryAdminCorrectResult',
+    declaration: 'export type MemoryAdminCorrectResult = {\n    readonly ok: true;\n    readonly value: MemoryAdminCorrectValue;\n} | {\n    readonly ok: false;\n    readonly error: MemoryAdminFailure;\n};',
+  },
+  {
+    name: 'MemoryAdminCorrectValue',
+    declaration: 'export interface MemoryAdminCorrectValue {\n    readonly item: MemoryAdminItem;\n    readonly auditId: MemoryAdminActionId;\n}',
+  },
+  {
+    name: 'MemoryAdminFailure',
+    declaration: 'export type MemoryAdminFailure = MemoryCandidateReviewSessionNotFound | MemoryCandidateReviewWorkspaceUnavailable | MemoryAdminReadOnly | MemoryAdminConfirmationRequired | MemoryAdminSensitiveContent | MemoryAdminOperationFailed | PersonalMemoryAdminUnavailable;',
+  },
+  {
+    name: 'MemoryAdminForgetRequest',
+    declaration: 'export interface MemoryAdminForgetRequest {\n    readonly sessionId: SessionId;\n    readonly id: MemoryAdminId;\n    readonly revision: number;\n    readonly confirmed: boolean;\n}',
+  },
+  {
+    name: 'MemoryAdminForgetResult',
+    declaration: 'export type MemoryAdminForgetResult = {\n    readonly ok: true;\n    readonly value: MemoryAdminForgetValue;\n} | {\n    readonly ok: false;\n    readonly error: MemoryAdminFailure;\n};',
+  },
+  {
+    name: 'MemoryAdminForgetValue',
+    declaration: 'export interface MemoryAdminForgetValue {\n    readonly id: MemoryAdminId;\n    readonly revision: number;\n    readonly auditId: MemoryAdminActionId;\n}',
+  },
+  {
+    name: 'MemoryAdminGraphEdge',
+    declaration: 'export interface MemoryAdminGraphEdge {\n    readonly a: MemoryAdminId;\n    readonly aRevision: number;\n    readonly b: MemoryAdminId;\n    readonly bRevision: number;\n    readonly score: number;\n}',
+  },
+  {
+    name: 'MemoryAdminGraphRequest',
+    declaration: 'export interface MemoryAdminGraphRequest {\n    readonly sessionId: SessionId;\n}',
+  },
+  {
+    name: 'MemoryAdminGraphResult',
+    declaration: 'export type MemoryAdminGraphResult = {\n    readonly ok: true;\n    readonly value: MemoryAdminGraphValue;\n} | {\n    readonly ok: false;\n    readonly error: MemoryAdminFailure;\n};',
+  },
+  {
+    name: 'MemoryAdminGraphStatus',
+    declaration: 'export type MemoryAdminGraphStatus = \'pending\' | \'computed\' | \'empty\' | \'stale\' | \'failed\' | \'unavailable\';',
+  },
+  {
+    name: 'MemoryAdminGraphValue',
+    declaration: 'export interface MemoryAdminGraphValue {\n    readonly status: MemoryAdminGraphStatus;\n    readonly generation: number;\n    readonly computedAt?: string;\n    readonly edges: readonly MemoryAdminGraphEdge[];\n    readonly failureCode?: string;\n}',
+  },
+  {
+    name: 'MemoryAdminId',
+    declaration: 'export type MemoryAdminId = Branded<\'MemoryId\'>;',
+  },
+  {
+    name: 'MemoryAdminItem',
+    declaration: 'export interface MemoryAdminItem {\n    readonly id: MemoryAdminId;\n    readonly revision: number;\n    readonly content?: string;\n    readonly redacted: boolean;\n    readonly status: MemoryAdminStatus;\n    readonly sourceSessionId: SessionId;\n    readonly importance?: number;\n    readonly confidence?: number;\n    readonly validation?: MemoryAdminValidation;\n    readonly core?: boolean;\n    readonly validFrom?: string;\n    readonly validUntil?: string;\n    readonly expiresAt?: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'MemoryAdminListRequest',
+    declaration: 'export interface MemoryAdminListRequest {\n    readonly sessionId: SessionId;\n    readonly query?: string;\n    readonly statuses?: readonly MemoryAdminStatus[];\n    readonly offset?: number;\n    readonly limit?: number;\n}',
+  },
+  {
+    name: 'MemoryAdminListResult',
+    declaration: 'export type MemoryAdminListResult = {\n    readonly ok: true;\n    readonly value: MemoryAdminListValue;\n} | {\n    readonly ok: false;\n    readonly error: MemoryAdminFailure;\n};',
+  },
+  {
+    name: 'MemoryAdminListValue',
+    declaration: 'export interface MemoryAdminListValue {\n    readonly items: readonly MemoryAdminItem[];\n    readonly hasMore: boolean;\n    readonly nextOffset: number;\n    readonly readOnly: boolean;\n}',
+  },
+  {
+    name: 'MemoryAdminOperationFailed',
+    declaration: 'export interface MemoryAdminOperationFailed {\n    readonly code: \'memory-admin-operation-failed\';\n    readonly action: \'list\' | \'remember\' | \'correct\' | \'forget\' | \'toggle\';\n    readonly auditId?: MemoryAdminActionId;\n}',
+  },
+  {
+    name: 'MemoryAdminReadOnly',
+    declaration: 'export interface MemoryAdminReadOnly {\n    readonly code: \'memory-admin-read-only\';\n}',
+  },
+  {
+    name: 'MemoryAdminSensitiveContent',
+    declaration: 'export interface MemoryAdminSensitiveContent {\n    readonly code: \'memory-admin-sensitive-content\';\n}',
+  },
+  {
+    name: 'MemoryAdminStatus',
+    declaration: 'export type MemoryAdminStatus = \'active\' | \'scheduled\' | \'expired\' | \'superseded\';',
+  },
+  {
+    name: 'MemoryAdminValidation',
+    declaration: 'export type MemoryAdminValidation = \'explicit\' | \'reviewed\';',
+  },
+  {
+    name: 'MemoryBlockedEvent',
+    declaration: 'export interface MemoryBlockedEvent {\n    readonly schemaVersion: MemoryEventSchemaVersion;\n    readonly reason: \'cross-scope-write\' | \'sensitive-content\' | \'provider-invalid\' | \'provider-unavailable\' | \'provider-missing\' | \'validation\';\n    readonly workspaceId: WorkspaceId;\n    readonly source: \'memory-tool\' | \'memory-runtime\' | \'memory-local\';\n    readonly memoryId?: MemoryId;\n    readonly detail?: string;\n}',
+  },
+  {
+    name: 'MemoryCandidateAutoWriteFailed',
+    declaration: 'export interface MemoryCandidateAutoWriteFailed {\n    readonly code: \'memory-candidate-auto-write-failed\';\n    readonly id: MemoryCandidateId;\n}',
+  },
+  {
+    name: 'MemoryCandidateAutoWriteReason',
+    declaration: 'export type MemoryCandidateAutoWriteReason = \'feature-disabled\' | \'workspace-not-enabled\' | \'user-not-enabled\' | \'policy-not-eligible\' | \'human-ignored\' | \'human-rejected\' | \'write-started\' | \'approved-and-authorized\' | \'provider-failed\';',
+  },
+  {
+    name: 'MemoryCandidateAutoWriteStatus',
+    declaration: 'export type MemoryCandidateAutoWriteStatus = \'skipped\' | \'writing\' | \'stored\' | \'failed\';',
+  },
+  {
+    name: 'MemoryCandidateAutoWriteTrace',
+    declaration: 'export interface MemoryCandidateAutoWriteTrace {\n    readonly status: MemoryCandidateAutoWriteStatus;\n    readonly reason: MemoryCandidateAutoWriteReason;\n    readonly recordedAt: string;\n    readonly memoryId?: string;\n    readonly revision?: number;\n}',
+  },
+  {
+    name: 'MemoryCandidateCategory',
+    declaration: 'export type MemoryCandidateCategory = \'preference\' | \'decision\' | \'configuration\' | \'procedure\' | \'fact\';',
+  },
+  {
+    name: 'MemoryCandidateEvent',
+    declaration: 'export interface MemoryCandidateEvent {\n    readonly schemaVersion: MemoryEventSchemaVersion;\n    readonly source: \'tool-memory\';\n    readonly queryLength: number;\n    readonly total: number;\n    readonly omittedSensitive: number;\n    readonly inserted: number;\n    readonly operation: \'message_candidate\' | \'memory_recall\' | \'tool_call_memory_search\';\n    readonly category?: \'preference\' | \'decision\' | \'configuration\' | \'procedure\' | \'fact\';\n    readonly confidence?: number;\n    readonly importance?: number;\n    readonly sensitivity?: \'none\' | \'review\' | \'blocked\';\n    readonly policyDecision?: MemoryPolicyDecision;\n    readonly policyReason?: MemoryPolicyReason;\n    readonly policyVersion?: MemoryPolicyVersion;\n}',
+  },
+  {
+    name: 'MemoryCandidateId',
+    declaration: 'export type MemoryCandidateId = Branded<\'MemoryCandidateId\'>;',
+  },
+  {
+    name: 'MemoryCandidateOperation',
+    declaration: 'export type MemoryCandidateOperation = \'message_candidate\' | \'memory_recall\' | \'tool_call_memory_search\';',
+  },
+  {
+    name: 'MemoryCandidateRecord',
+    declaration: 'export interface MemoryCandidateRecord {\n    readonly id: MemoryCandidateId;\n    readonly workspaceId: WorkspaceIdentity;\n    readonly sessionId: SessionIdentity;\n    readonly userId?: string;\n    readonly source: \'tool-memory\';\n    readonly operation: MemoryCandidateOperation;\n    readonly queryLength: number;\n    readonly confidence: number;\n    readonly total: number;\n    readonly omittedSensitive: number;\n    readonly inserted: number;\n    readonly topScore: number;\n    readonly candidateContent?: string;\n    readonly category?: MemoryCandidateCategory;\n    readonly importance?: number;\n    readonly scopeCandidate?: \'workspace\';\n    readonly sensitivity?: MemoryCandidateSensitivity;\n    readonly policyVersion: MemoryPolicyVersion;\n    readonly policyDecision: MemoryPolicyDecision;\n    readonly policyReason: MemoryPolicyReason;\n    readonly reviewed: boolean;\n    readonly reviewDecision?: MemoryCandidateReviewDecision;\n    readonly reviewedAt?: string;\n    readonly reviewedBy?: string;\n    readonly autoWrite?: MemoryCandidateAutoWriteTrace;\n    readonly createdAt: string;\n    readonly schemaVersion: MemoryCandidateSchemaVersion;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewAlreadyReviewed',
+    declaration: 'export interface MemoryCandidateReviewAlreadyReviewed {\n    readonly code: \'memory-candidate-already-reviewed\';\n    readonly current: MemoryCandidateReviewItem;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewDecision',
+    declaration: 'export type MemoryCandidateReviewDecision = \'accept\' | \'ignore\' | \'reject\';',
+  },
+  {
+    name: 'MemoryCandidateReviewFailure',
+    declaration: 'export type MemoryCandidateReviewFailure = MemoryCandidateReviewSessionNotFound | MemoryCandidateReviewWorkspaceUnavailable | MemoryCandidateReviewNotFound | MemoryCandidateReviewWorkspaceMismatch | MemoryCandidateReviewAlreadyReviewed | MemoryCandidateReviewNotAcceptable | MemoryCandidateAutoWriteFailed;',
+  },
+  {
+    name: 'MemoryCandidateReviewItem',
+    declaration: 'export interface MemoryCandidateReviewItem {\n    readonly id: MemoryCandidateId;\n    readonly sessionId: SessionId;\n    readonly operation: MemoryCandidateOperation;\n    readonly candidateContent?: string;\n    readonly category?: MemoryCandidateCategory;\n    readonly confidence: number;\n    readonly importance?: number;\n    readonly sensitivity?: MemoryCandidateSensitivity;\n    readonly policyVersion: MemoryPolicyVersion;\n    readonly policyDecision: MemoryPolicyDecision;\n    readonly policyReason: MemoryPolicyReason;\n    readonly reviewed: boolean;\n    readonly reviewDecision?: MemoryCandidateReviewDecision;\n    readonly reviewedAt?: string;\n    readonly reviewedBy?: string;\n    readonly autoWrite?: MemoryCandidateAutoWriteTrace;\n    readonly createdAt: string;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewListRequest',
+    declaration: 'export interface MemoryCandidateReviewListRequest {\n    readonly sessionId: SessionId;\n    readonly reviewed?: boolean;\n    readonly reviewDecision?: MemoryCandidateReviewDecision;\n    readonly offset?: number;\n    readonly limit?: number;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewListResult',
+    declaration: 'export type MemoryCandidateReviewListResult = {\n    readonly ok: true;\n    readonly value: MemoryCandidateReviewListValue;\n} | {\n    readonly ok: false;\n    readonly error: MemoryCandidateReviewFailure;\n};',
+  },
+  {
+    name: 'MemoryCandidateReviewListValue',
+    declaration: 'export interface MemoryCandidateReviewListValue {\n    readonly items: readonly MemoryCandidateReviewItem[];\n    readonly hasMore: boolean;\n    readonly nextOffset: number;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewMarkRequest',
+    declaration: 'export interface MemoryCandidateReviewMarkRequest {\n    readonly sessionId: SessionId;\n    readonly id: MemoryCandidateId;\n    readonly decision: MemoryCandidateReviewDecision;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewMarkResult',
+    declaration: 'export type MemoryCandidateReviewMarkResult = {\n    readonly ok: true;\n    readonly value: MemoryCandidateReviewMarkValue;\n} | {\n    readonly ok: false;\n    readonly error: MemoryCandidateReviewFailure;\n};',
+  },
+  {
+    name: 'MemoryCandidateReviewMarkValue',
+    declaration: 'export interface MemoryCandidateReviewMarkValue {\n    readonly item: MemoryCandidateReviewItem;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewNotAcceptable',
+    declaration: 'export interface MemoryCandidateReviewNotAcceptable {\n    readonly code: \'memory-candidate-not-acceptable\';\n    readonly id: MemoryCandidateId;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewNotFound',
+    declaration: 'export interface MemoryCandidateReviewNotFound {\n    readonly code: \'memory-candidate-not-found\';\n    readonly id: MemoryCandidateId;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewSessionNotFound',
+    declaration: 'export interface MemoryCandidateReviewSessionNotFound {\n    readonly code: \'memory-review-session-not-found\';\n    readonly sessionId: SessionId;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewWorkspaceMismatch',
+    declaration: 'export interface MemoryCandidateReviewWorkspaceMismatch {\n    readonly code: \'memory-candidate-workspace-mismatch\';\n    readonly id: MemoryCandidateId;\n}',
+  },
+  {
+    name: 'MemoryCandidateReviewWorkspaceUnavailable',
+    declaration: 'export interface MemoryCandidateReviewWorkspaceUnavailable {\n    readonly code: \'memory-review-workspace-unavailable\';\n    readonly sessionId: SessionId;\n}',
+  },
+  {
+    name: 'MemoryCandidateSchemaVersion',
+    declaration: 'export type MemoryCandidateSchemaVersion = 2 | typeof MEMORY_CANDIDATE_SCHEMA_VERSION;',
+  },
+  {
+    name: 'MemoryCandidateSensitivity',
+    declaration: 'export type MemoryCandidateSensitivity = \'none\' | \'review\' | \'blocked\';',
+  },
+  {
+    name: 'MemoryContinuityDomainSnapshot',
+    declaration: 'export interface MemoryContinuityDomainSnapshot {\n    readonly name: string;\n    readonly version: number;\n    readonly table: string;\n    readonly records: ReadonlyArray<readonly [\n        MemoryIdentity,\n        LocalMemoryRecord\n    ]>;\n    readonly checksum: string;\n}',
+  },
+  {
+    name: 'MemoryContinuityDomainSource',
+    declaration: 'export interface MemoryContinuityDomainSource {\n    readonly name: string;\n    readonly version: number;\n    readonly table: string;\n    readonly records: Iterable<readonly [\n        MemoryIdentity,\n        LocalMemoryRecord\n    ]>;\n}',
+  },
+  {
+    name: 'MemoryContinuityDomainTarget',
+    declaration: 'export interface MemoryContinuityDomainTarget {\n    readonly name: string;\n    readonly version: number;\n    readonly table: KvTable<MemoryIdentity, LocalMemoryRecord>;\n}',
+  },
+  {
+    name: 'MemoryContinuityImportResult',
+    declaration: 'export interface MemoryContinuityImportResult {\n    readonly imported: number;\n    readonly skippedExisting: number;\n    readonly journalEntry: MemoryContinuityJournalEntry;\n}',
+  },
+  {
+    name: 'MemoryContinuityJournalEntry',
+    declaration: 'export interface MemoryContinuityJournalEntry {\n    readonly journalId: string;\n    readonly schemaVersion: typeof MEMORY_CONTINUITY_SCHEMA_VERSION;\n    readonly recordedAt: string;\n    readonly operation: \'export\' | \'import\';\n    readonly domains: readonly string[];\n    readonly recordCount: number;\n    readonly checksum: string;\n    readonly origin: {\n        readonly reason?: string;\n        readonly source?: string;\n    };\n}',
+  },
+  {
+    name: 'MemoryContinuitySnapshot',
+    declaration: 'export interface MemoryContinuitySnapshot {\n    readonly schemaVersion: typeof MEMORY_CONTINUITY_SCHEMA_VERSION;\n    readonly exportedAt: string;\n    readonly format: \'dsh-memory-continuity/json\';\n    readonly domains: readonly MemoryContinuityDomainSnapshot[];\n    readonly checksum: string;\n}',
+  },
+  {
+    name: 'MemoryCreateRequest',
+    declaration: 'export interface MemoryCreateRequest {\n    readonly scope: MemoryScope;\n    readonly content: string;\n    readonly source: MemorySource;\n    readonly importance?: number;\n    readonly confidence?: number;\n    readonly validation?: MemoryValidation;\n    readonly core?: boolean;\n    readonly validFrom?: string;\n    readonly expiresAt?: string;\n}',
+  },
+  {
+    name: 'MemoryEventSchemaVersion',
+    declaration: 'export type MemoryEventSchemaVersion = typeof MEMORY_EVENT_SCHEMA_VERSION;',
+  },
+  {
+    name: 'MemoryForgetRequest',
+    declaration: 'export interface MemoryForgetRequest {\n    readonly scope: MemoryScope;\n    readonly ref: MemoryRef;\n}',
+  },
+  {
+    name: 'MemoryGraphEdge',
+    declaration: 'export interface MemoryGraphEdge {\n    readonly a: MemoryRef;\n    readonly b: MemoryRef;\n    readonly score: number;\n    readonly kind: \'semantic\';\n}',
+  },
+  {
+    name: 'MemoryGraphEvent',
+    declaration: 'export interface MemoryGraphEvent {\n    readonly schemaVersion: 1;\n    readonly workspaceId: WorkspaceId;\n    readonly status: \'computed\' | \'empty\' | \'failed\';\n    readonly generation: number;\n    readonly nodeCount: number;\n    readonly edgeCount: number;\n    readonly embeddedCount: number;\n    readonly cacheHitCount: number;\n    readonly durationMs: number;\n    readonly failureCode?: string;\n}',
+  },
+  {
+    name: 'MemoryGraphRequest',
+    declaration: 'export interface MemoryGraphRequest {\n    readonly scope: MemoryScope;\n}',
+  },
+  {
+    name: 'MemoryGraphSnapshot',
+    declaration: 'export interface MemoryGraphSnapshot {\n    readonly workspaceId: WorkspaceId;\n    readonly status: MemoryGraphStatus;\n    readonly generation: number;\n    readonly algorithmVersion: number;\n    readonly model?: string;\n    readonly computedAt?: string;\n    readonly recordRevisions: Readonly<Record<string, number>>;\n    readonly edges: readonly MemoryGraphEdge[];\n    readonly failureCode?: string;\n}',
+  },
+  {
+    name: 'MemoryGraphStatus',
+    declaration: 'export type MemoryGraphStatus = \'pending\' | \'computed\' | \'empty\' | \'stale\' | \'failed\' | \'unavailable\';',
+  },
+  {
+    name: 'MemoryId',
+    declaration: 'export type MemoryId = Branded<\'MemoryId\'>;',
+  },
+  {
+    name: 'MemoryListItem',
+    declaration: 'export interface MemoryListItem {\n    readonly record: MemoryRecord;\n    readonly status: MemoryStatus;\n}',
+  },
+  {
+    name: 'MemoryListPage',
+    declaration: 'export interface MemoryListPage {\n    readonly items: readonly MemoryListItem[];\n    readonly hasMore: boolean;\n    readonly nextOffset: number;\n}',
+  },
+  {
+    name: 'MemoryListRequest',
+    declaration: 'export interface MemoryListRequest {\n    readonly scope: MemoryScope;\n    readonly query?: string;\n    readonly statuses?: readonly MemoryStatus[];\n    readonly offset?: number;\n    readonly limit: number;\n}',
+  },
+  {
+    name: 'MemoryOperationEvent',
+    declaration: 'export interface MemoryOperationEvent {\n    readonly schemaVersion: MemoryEventSchemaVersion;\n    readonly operation: \'create\' | \'search\' | \'list\' | \'update\' | \'forget\';\n    readonly provider: string;\n    readonly success: boolean;\n    readonly workspaceId: WorkspaceId;\n    readonly resultCount?: number;\n    readonly memoryId?: MemoryId;\n    readonly revision?: number;\n    readonly errorCode?: string;\n    readonly durationMs?: number;\n}',
+  },
+  {
+    name: 'MemoryProvider',
+    declaration: 'export interface MemoryProvider {\n    readonly id: string;\n    available(): boolean;\n    create(request: MemoryCreateRequest, signal?: AbortSignal): Promise<MemoryRecord>;\n    search(request: MemorySearchRequest, signal?: AbortSignal): Promise<readonly MemorySearchHit[]>;\n    list(request: MemoryListRequest, signal?: AbortSignal): Promise<MemoryListPage>;\n    update(request: MemoryUpdateRequest, signal?: AbortSignal): Promise<MemoryRecord>;\n    forget(request: MemoryForgetRequest, signal?: AbortSignal): Promise<void>;\n    graph?(request: MemoryGraphRequest, signal?: AbortSignal): Promise<MemoryGraphSnapshot>;\n}',
+  },
+  {
+    name: 'MemoryRecord',
+    declaration: 'export interface MemoryRecord {\n    readonly id: MemoryId;\n    readonly scope: MemoryScope;\n    readonly content: string;\n    readonly revision: number;\n    readonly source: MemorySource;\n    readonly importance?: number;\n    readonly confidence?: number;\n    readonly validation?: MemoryValidation;\n    readonly core?: boolean;\n    readonly schemaVersion?: MemoryRecordSchemaVersion;\n    readonly validFrom?: string;\n    readonly validUntil?: string;\n    readonly expiresAt?: string;\n    readonly supersedes?: MemoryRef;\n    readonly supersededBy?: MemoryRef;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'MemoryRecordSchemaVersion',
+    declaration: 'export type MemoryRecordSchemaVersion = 1 | typeof MEMORY_RECORD_SCHEMA_VERSION;',
+  },
+  {
+    name: 'MemoryRef',
+    declaration: 'export interface MemoryRef {\n    readonly id: MemoryId;\n    readonly revision: number;\n}',
+  },
+  {
+    name: 'MemoryScope',
+    declaration: 'export interface MemoryScope {\n    readonly workspaceId: WorkspaceId;\n}',
+  },
+  {
+    name: 'MemorySearchHit',
+    declaration: 'export interface MemorySearchHit {\n    readonly record: MemoryRecord;\n    readonly score: number;\n}',
+  },
+  {
+    name: 'MemorySearchRequest',
+    declaration: 'export interface MemorySearchRequest {\n    readonly scope: MemoryScope;\n    readonly query: string;\n    readonly limit: number;\n    readonly includeHistory?: boolean;\n}',
+  },
+  {
+    name: 'MemorySource',
+    declaration: 'export interface MemorySource {\n    readonly kind: \'session\';\n    readonly sessionId: SessionId;\n}',
+  },
+  {
+    name: 'MemoryStatus',
+    declaration: 'export type MemoryStatus = \'active\' | \'scheduled\' | \'expired\' | \'superseded\';',
+  },
+  {
+    name: 'MemoryUpdateRequest',
+    declaration: 'export interface MemoryUpdateRequest {\n    readonly scope: MemoryScope;\n    readonly ref: MemoryRef;\n    readonly content: string;\n    readonly confidence?: number;\n    readonly validation?: MemoryValidation;\n    readonly core?: boolean;\n    readonly source?: MemorySource;\n    readonly validFrom?: string;\n    readonly expiresAt?: string | null;\n}',
+  },
+  {
+    name: 'MemoryValidation',
+    declaration: 'export type MemoryValidation = \'explicit\' | \'reviewed\';',
   },
   {
     name: 'Message',
@@ -6162,6 +6836,114 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PermissionCatalog {\n    options: PresetOption[];\n    defaultOptions: PresetOption[];\n    defaultPreset: string;\n}',
   },
   {
+    name: 'PersonalMemoryAdminCorrectRequest',
+    declaration: 'export interface PersonalMemoryAdminCorrectRequest extends MemoryAdminCorrectRequest {\n    readonly core?: boolean;\n}',
+  },
+  {
+    name: 'PersonalMemoryAdminGraphResult',
+    declaration: 'export type PersonalMemoryAdminGraphResult = {\n    readonly ok: true;\n    readonly value: MemoryAdminGraphValue;\n} | {\n    readonly ok: false;\n    readonly error: MemoryAdminFailure;\n};',
+  },
+  {
+    name: 'PersonalMemoryAdminListResult',
+    declaration: 'export type PersonalMemoryAdminListResult = {\n    readonly ok: true;\n    readonly value: PersonalMemoryAdminListValue;\n} | {\n    readonly ok: false;\n    readonly error: MemoryAdminFailure;\n};',
+  },
+  {
+    name: 'PersonalMemoryAdminListValue',
+    declaration: 'export interface PersonalMemoryAdminListValue extends MemoryAdminListValue {\n    readonly enabled: boolean;\n}',
+  },
+  {
+    name: 'PersonalMemoryAdminRememberRequest',
+    declaration: 'export interface PersonalMemoryAdminRememberRequest {\n    readonly sessionId: SessionId;\n    readonly content: string;\n    readonly confirmed: boolean;\n}',
+  },
+  {
+    name: 'PersonalMemoryAdminRememberResult',
+    declaration: 'export type PersonalMemoryAdminRememberResult = {\n    readonly ok: true;\n    readonly value: PersonalMemoryAdminRememberValue;\n} | {\n    readonly ok: false;\n    readonly error: MemoryAdminFailure;\n};',
+  },
+  {
+    name: 'PersonalMemoryAdminRememberValue',
+    declaration: 'export interface PersonalMemoryAdminRememberValue {\n    readonly item: MemoryAdminItem;\n    readonly auditId: MemoryAdminActionId;\n}',
+  },
+  {
+    name: 'PersonalMemoryAdminToggleRequest',
+    declaration: 'export interface PersonalMemoryAdminToggleRequest {\n    readonly sessionId: SessionId;\n    readonly enabled: boolean;\n    readonly confirmed: boolean;\n}',
+  },
+  {
+    name: 'PersonalMemoryAdminToggleResult',
+    declaration: 'export type PersonalMemoryAdminToggleResult = {\n    readonly ok: true;\n    readonly value: PersonalMemoryAdminToggleValue;\n} | {\n    readonly ok: false;\n    readonly error: MemoryAdminFailure;\n};',
+  },
+  {
+    name: 'PersonalMemoryAdminToggleValue',
+    declaration: 'export interface PersonalMemoryAdminToggleValue {\n    readonly enabled: boolean;\n    readonly auditId: MemoryAdminActionId;\n}',
+  },
+  {
+    name: 'PersonalMemoryAdminUnavailable',
+    declaration: 'export interface PersonalMemoryAdminUnavailable {\n    readonly code: \'memory-admin-personal-unavailable\';\n}',
+  },
+  {
+    name: 'PersonalMemoryBlockedEvent',
+    declaration: 'export interface PersonalMemoryBlockedEvent {\n    readonly schemaVersion: 1;\n    readonly operation: PersonalMemoryOperationEvent[\'operation\'];\n    readonly ownerId: PersonalMemoryOwnerId;\n    readonly reason: \'credential-like\' | \'disabled\' | \'validation\' | \'provider\';\n    readonly errorCode: string;\n}',
+  },
+  {
+    name: 'PersonalMemoryCreateRequest',
+    declaration: 'export type PersonalMemoryCreateRequest = Omit<MemoryCreateRequest, \'scope\'> & {\n    readonly scope: PersonalMemoryScope;\n};',
+  },
+  {
+    name: 'PersonalMemoryForgetRequest',
+    declaration: 'export type PersonalMemoryForgetRequest = Omit<MemoryForgetRequest, \'scope\'> & {\n    readonly scope: PersonalMemoryScope;\n};',
+  },
+  {
+    name: 'PersonalMemoryGraphRequest',
+    declaration: 'export type PersonalMemoryGraphRequest = Omit<MemoryGraphRequest, \'scope\'> & {\n    readonly scope: PersonalMemoryScope;\n};',
+  },
+  {
+    name: 'PersonalMemoryGraphSnapshot',
+    declaration: 'export type PersonalMemoryGraphSnapshot = Omit<MemoryGraphSnapshot, \'workspaceId\'> & {\n    readonly ownerId: PersonalMemoryOwnerId;\n};',
+  },
+  {
+    name: 'PersonalMemoryListItem',
+    declaration: 'export interface PersonalMemoryListItem extends Omit<MemoryListItem, \'record\'> {\n    readonly record: PersonalMemoryRecord;\n}',
+  },
+  {
+    name: 'PersonalMemoryListPage',
+    declaration: 'export interface PersonalMemoryListPage extends Omit<MemoryListPage, \'items\'> {\n    readonly items: readonly PersonalMemoryListItem[];\n}',
+  },
+  {
+    name: 'PersonalMemoryListRequest',
+    declaration: 'export type PersonalMemoryListRequest = Omit<MemoryListRequest, \'scope\'> & {\n    readonly scope: PersonalMemoryScope;\n};',
+  },
+  {
+    name: 'PersonalMemoryOperationEvent',
+    declaration: 'export interface PersonalMemoryOperationEvent {\n    readonly schemaVersion: 1;\n    readonly operation: \'create\' | \'search\' | \'list\' | \'update\' | \'forget\';\n    readonly provider: string;\n    readonly success: boolean;\n    readonly ownerId: PersonalMemoryOwnerId;\n    readonly resultCount?: number;\n    readonly memoryId?: MemoryRecord[\'id\'];\n    readonly revision?: number;\n    readonly errorCode?: string;\n    readonly durationMs?: number;\n}',
+  },
+  {
+    name: 'PersonalMemoryOwnerId',
+    declaration: 'export type PersonalMemoryOwnerId = Branded<\'PersonalMemoryOwnerId\'>;',
+  },
+  {
+    name: 'PersonalMemoryProvider',
+    declaration: 'export interface PersonalMemoryProvider {\n    readonly id: string;\n    available(): boolean;\n    create(request: PersonalMemoryCreateRequest, signal?: AbortSignal): Promise<PersonalMemoryRecord>;\n    search(request: PersonalMemorySearchRequest, signal?: AbortSignal): Promise<readonly PersonalMemorySearchHit[]>;\n    list(request: PersonalMemoryListRequest, signal?: AbortSignal): Promise<PersonalMemoryListPage>;\n    update(request: PersonalMemoryUpdateRequest, signal?: AbortSignal): Promise<PersonalMemoryRecord>;\n    forget(request: PersonalMemoryForgetRequest, signal?: AbortSignal): Promise<void>;\n    graph?(request: PersonalMemoryGraphRequest, signal?: AbortSignal): Promise<PersonalMemoryGraphSnapshot>;\n}',
+  },
+  {
+    name: 'PersonalMemoryRecord',
+    declaration: 'export type PersonalMemoryRecord = Omit<MemoryRecord, \'scope\'> & {\n    readonly scope: PersonalMemoryScope;\n};',
+  },
+  {
+    name: 'PersonalMemoryScope',
+    declaration: 'export interface PersonalMemoryScope {\n    readonly ownerId: PersonalMemoryOwnerId;\n}',
+  },
+  {
+    name: 'PersonalMemorySearchHit',
+    declaration: 'export interface PersonalMemorySearchHit extends Omit<MemorySearchHit, \'record\'> {\n    readonly record: PersonalMemoryRecord;\n}',
+  },
+  {
+    name: 'PersonalMemorySearchRequest',
+    declaration: 'export type PersonalMemorySearchRequest = Omit<MemorySearchRequest, \'scope\'> & {\n    readonly scope: PersonalMemoryScope;\n};',
+  },
+  {
+    name: 'PersonalMemoryUpdateRequest',
+    declaration: 'export type PersonalMemoryUpdateRequest = Omit<MemoryUpdateRequest, \'scope\'> & {\n    readonly scope: PersonalMemoryScope;\n};',
+  },
+  {
     name: 'PlatformSession',
     declaration: 'export interface PlatformSession {\n    readonly origin: string;\n    readonly token: string;\n    readonly userId: AccountUserId | null;\n    readonly embeddedPageDist?: string;\n    readonly requestHeaders?: Readonly<Record<string, string>>;\n}',
   },
@@ -6276,6 +7058,82 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PreToolDecision',
     declaration: 'export type PreToolDecision = {\n    kind: \'allow\';\n} | {\n    kind: \'deny\';\n    reason: string;\n    info?: ToolErrorInfo;\n} | {\n    kind: \'cancel\';\n} | {\n    kind: \'ask\';\n    reason?: string;\n    displayReason?: {\n        readonly en: string;\n        readonly [locale: string]: string;\n    };\n};',
+  },
+  {
+    name: 'ProcedureEvidence',
+    declaration: 'export interface ProcedureEvidence {\n    readonly kind: \'initial-validation\' | \'revalidation\';\n    readonly sessionId: SessionId;\n    readonly executionCallIds: readonly CallId[];\n    readonly verificationCallId: CallId;\n    readonly resultDigests: readonly string[];\n    readonly succeeded: boolean;\n    readonly recordedAt: string;\n}',
+  },
+  {
+    name: 'ProcedureId',
+    declaration: 'export type ProcedureId = Branded<\'ProcedureId\'>;',
+  },
+  {
+    name: 'ProcedureInspectRequest',
+    declaration: 'export interface ProcedureInspectRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly id: ProcedureId;\n}',
+  },
+  {
+    name: 'ProcedureLearningFailure',
+    declaration: 'export type ProcedureLearningFailure = {\n    readonly code: \'procedure-invalid-proposal\';\n    readonly reason: string;\n} | {\n    readonly code: \'procedure-sensitive-content\';\n} | {\n    readonly code: \'procedure-not-found\';\n    readonly id: ProcedureId;\n} | {\n    readonly code: \'procedure-revision-conflict\';\n    readonly id: ProcedureId;\n    readonly currentRevision: number;\n} | {\n    readonly code: \'procedure-invalid-state\';\n    readonly id: ProcedureId;\n    readonly status: ProcedureStatus;\n} | {\n    readonly code: \'procedure-validity-expired\';\n    readonly id: ProcedureId;\n} | {\n    readonly code: \'procedure-precondition-mismatch\';\n    readonly id: ProcedureId;\n};',
+  },
+  {
+    name: 'ProcedureLearningResult',
+    declaration: 'export type ProcedureLearningResult = {\n    readonly ok: true;\n    readonly value: ProcedureRecord;\n} | {\n    readonly ok: false;\n    readonly error: ProcedureLearningFailure;\n};',
+  },
+  {
+    name: 'ProcedurePrecondition',
+    declaration: 'export interface ProcedurePrecondition {\n    readonly key: string;\n    readonly expected: string;\n}',
+  },
+  {
+    name: 'ProcedureProposalRequest',
+    declaration: 'export interface ProcedureProposalRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly title: string;\n    readonly trigger: string;\n    readonly preconditions: readonly ProcedurePrecondition[];\n    readonly executions: readonly ProcedureToolObservation[];\n    readonly verification: ProcedureToolObservation;\n    readonly validity: ProcedureValidity;\n}',
+  },
+  {
+    name: 'ProcedureRecord',
+    declaration: 'export interface ProcedureRecord {\n    readonly id: ProcedureId;\n    readonly workspaceId: WorkspaceId;\n    readonly revision: number;\n    readonly title: string;\n    readonly trigger: string;\n    readonly preconditions: readonly ProcedurePrecondition[];\n    readonly steps: readonly ProcedureStep[];\n    readonly verifier: ProcedureVerifier;\n    readonly validity: ProcedureValidity;\n    readonly status: ProcedureStatus;\n    readonly evidence: readonly ProcedureEvidence[];\n    readonly proposedAt: string;\n    readonly updatedAt: string;\n    readonly reviewedAt?: string;\n    readonly reviewedBy?: string;\n    readonly lastValidatedAt?: string;\n    readonly staleAt?: string;\n    readonly revokedAt?: string;\n    readonly schemaVersion: 1;\n}',
+  },
+  {
+    name: 'ProcedureReuseBlockReason',
+    declaration: 'export type ProcedureReuseBlockReason = \'expired\' | \'precondition-mismatch\' | \'revalidation-required\' | \'stale\';',
+  },
+  {
+    name: 'ProcedureReuseRequest',
+    declaration: 'export interface ProcedureReuseRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly query: string;\n    readonly preconditions: Readonly<Record<string, string>>;\n    readonly limit?: number;\n}',
+  },
+  {
+    name: 'ProcedureReuseResult',
+    declaration: 'export interface ProcedureReuseResult {\n    readonly items: readonly ProcedureRecord[];\n    readonly blocked: readonly BlockedProcedureReuse[];\n}',
+  },
+  {
+    name: 'ProcedureRevalidationRequest',
+    declaration: 'export interface ProcedureRevalidationRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly id: ProcedureId;\n    readonly expectedRevision: number;\n    readonly preconditions: Readonly<Record<string, string>>;\n    readonly verification: ProcedureToolObservation;\n    readonly validity?: ProcedureValidity;\n}',
+  },
+  {
+    name: 'ProcedureReviewRequest',
+    declaration: 'export interface ProcedureReviewRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly id: ProcedureId;\n    readonly expectedRevision: number;\n    readonly decision: \'accept\' | \'reject\';\n}',
+  },
+  {
+    name: 'ProcedureRevokeRequest',
+    declaration: 'export interface ProcedureRevokeRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly id: ProcedureId;\n    readonly expectedRevision: number;\n}',
+  },
+  {
+    name: 'ProcedureStatus',
+    declaration: 'export type ProcedureStatus = \'candidate\' | \'validated\' | \'rejected\' | \'stale\' | \'revoked\';',
+  },
+  {
+    name: 'ProcedureStep',
+    declaration: 'export interface ProcedureStep {\n    readonly tool: string;\n    readonly arguments: JsonValue;\n}',
+  },
+  {
+    name: 'ProcedureToolObservation',
+    declaration: 'export interface ProcedureToolObservation {\n    readonly sessionId: SessionId;\n    readonly callId: CallId;\n    readonly tool: string;\n    readonly arguments: JsonValue;\n    readonly succeeded: boolean;\n    readonly resultDigest: string;\n    readonly observedAt: string;\n}',
+  },
+  {
+    name: 'ProcedureValidity',
+    declaration: 'export interface ProcedureValidity {\n    readonly revalidateAfter: string;\n    readonly validUntil: string;\n}',
+  },
+  {
+    name: 'ProcedureVerifier',
+    declaration: 'export interface ProcedureVerifier {\n    readonly tool: string;\n    readonly arguments: JsonValue;\n}',
   },
   {
     name: 'ProductEvent',
@@ -6676,6 +7534,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SearchResultView',
     declaration: 'export type SearchResultView = SearchMatchesResultView | SearchPathsResultView;',
+  },
+  {
+    name: 'SemanticFallbackCode',
+    declaration: 'export type SemanticFallbackCode = \'TIMEOUT\' | \'TRANSPORT\' | \'HTTP_ERROR\' | \'INPUT_TOO_LARGE\' | \'INVALID_RESPONSE\' | \'RESPONSE_TOO_LARGE\';',
   },
   {
     name: 'SendTeamMessageRequest',

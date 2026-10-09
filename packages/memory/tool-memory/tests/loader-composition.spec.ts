@@ -24,6 +24,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { memoryCandidateDomainSpec, type MemoryCandidateRecord } from '../src/spec.ts'
 import { memorySessionPersistence } from './helpers/memory-session-persistence.ts'
 import { createInboxStub } from '@deepseek-ai/dsh-agent-loop-testkit'
+import { moduleLoaderFake } from './module-loader-fake.ts'
 
 let root: string | undefined
 let context: Context | undefined
@@ -57,7 +58,8 @@ function registerAgent(ctx: Context, cwd: string): Agent {
     inject: () => {},
     cancel() { status = 'idle' },
     whenIdle: () => Promise.resolve(),
-  } as unknown as Agent
+    runMaintenance: <T>(job: (signal: AbortSignal) => Promise<T>): Promise<T> => job(new AbortController().signal),
+  } as Agent
   ctx.agents.register(agent)
   return agent
 }
@@ -126,13 +128,7 @@ async function bootMemoryLoader(extraRows: string[]): Promise<string> {
     ['@deepseek-ai/dsh-personal-memory-local', PersonalMemoryLocal],
     ['@deepseek-ai/dsh-tool-memory', ToolMemory],
   ])
-  context.loader.internal = {
-    version: 'v2',
-    async import(specifier: string) {
-      if (!modules.has(specifier)) throw new Error(`unexpected Loader import: ${specifier}`)
-      return modules.get(specifier)
-    },
-  } as unknown as NonNullable<typeof context.loader.internal>
+  context.loader.internal = moduleLoaderFake(modules)
   await context.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(configPath).href } })
   await context.loader.await()
   return workspacePath

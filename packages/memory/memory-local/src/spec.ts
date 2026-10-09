@@ -78,29 +78,29 @@ const localMemoryVersionFields = {
     kind: z.literal('session'),
     sessionId: z.string().transform(SessionId),
   }),
-  importance: z.number().min(0).max(1).optional(),
-  confidence: z.number().min(0).max(1).optional(),
-  validation: z.enum(['explicit', 'reviewed']).optional(),
-  core: z.boolean().optional(),
-  schemaVersion: z.union([z.literal(1), z.literal(MEMORY_RECORD_SCHEMA_VERSION)]).optional().default(1),
-  validFrom: z.string().optional(),
-  validUntil: z.string().optional(),
-  expiresAt: z.string().optional(),
-  supersedes: memoryRef.optional(),
-  supersededBy: memoryRef.optional(),
+  importance: z.number().min(0).max(1).exactOptional(),
+  confidence: z.number().min(0).max(1).exactOptional(),
+  validation: z.enum(['explicit', 'reviewed']).exactOptional(),
+  core: z.boolean().exactOptional(),
+  schemaVersion: z.union([z.literal(1), z.literal(MEMORY_RECORD_SCHEMA_VERSION)]).exactOptional().default(1),
+  validFrom: z.string().exactOptional(),
+  validUntil: z.string().exactOptional(),
+  expiresAt: z.string().exactOptional(),
+  supersedes: memoryRef.exactOptional(),
+  supersededBy: memoryRef.exactOptional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 } as const
 
 /** Boundary validator for one nested historical revision. */
-export const localMemoryVersion = z.object(localMemoryVersionFields) as unknown as z.ZodType<LocalMemoryVersion>
+export const localMemoryVersion: z.ZodType<LocalMemoryVersion> = z.object(localMemoryVersionFields)
 
 /** Boundary validator whose public declaration names only installed package types. */
-export const localMemoryRecord = z.object({
+export const localMemoryRecord: z.ZodType<LocalMemoryRecord> = z.object({
   workspaceId: z.string().transform(WorkspaceId),
   ...localMemoryVersionFields,
-  history: z.array(localMemoryVersion).optional(),
-}) as unknown as z.ZodType<LocalMemoryRecord>
+  history: z.array(localMemoryVersion).exactOptional(),
+})
 
 const localMemoryGraphEdge = z.object({
   a: memoryRef,
@@ -110,7 +110,7 @@ const localMemoryGraphEdge = z.object({
 })
 
 /** Boundary validator for one persisted workspace graph snapshot. */
-export const localMemoryGraph = z.object({
+export const localMemoryGraph: z.ZodType<LocalMemoryGraph> = z.object({
   workspaceId: z.string().transform(WorkspaceId),
   status: z.enum(['computed', 'empty', 'failed']),
   generation: z.number().int().nonnegative(),
@@ -122,8 +122,8 @@ export const localMemoryGraph = z.object({
   computedAt: z.string(),
   recordRevisions: z.record(z.string(), z.number().int().positive()),
   edges: z.array(localMemoryGraphEdge),
-  failureCode: z.string().optional(),
-}) as unknown as z.ZodType<LocalMemoryGraph>
+  failureCode: z.string().exactOptional(),
+})
 
 /** Domain declaration with public key aliases so emitted types never expose private workspace paths. */
 export const localMemoryDomainSpec: {

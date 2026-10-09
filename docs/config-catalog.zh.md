@@ -4642,6 +4642,25 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-web-app -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-web-egress-approval -->
+<a id="deepseek-aidsh-web-egress-approval"></a>
+
+## `@deepseek-ai/dsh-web-egress-approval`
+
+- `inject`: `tools`
+- `source`: [`packages/guard/web-egress-approval/src/index.ts:26`](../packages/guard/web-egress-approval/src/index.ts)
+
+```ts config-catalog
+/** Configuration for the web egress approval guard. */
+export interface Config {
+  /** Tool names whose every call needs a one-shot approval before it runs. */
+  tools: string[]
+  /** Upper bound on the serialized arguments shown in the prompt; longer arguments are truncated with a marker. */
+  maxArgumentChars: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-web-egress-approval -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-web-fetch-http -->
 <a id="deepseek-aidsh-web-fetch-http"></a>
 

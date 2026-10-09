@@ -11,7 +11,7 @@ import {
 
 /** Build a committed event; the fold reads only type, seq, time, data, and surfaceOp. */
 function event(seq: number, type: string, data: unknown, surfaceOp?: unknown): SessionEvent {
-  return { seq, time: 1_000 + seq, type, data, ...surfaceOp === undefined ? {} : { surfaceOp } } as unknown as SessionEvent
+  return { seq, time: 1_000 + seq, type, data, ...surfaceOp === undefined ? {} : { surfaceOp } } as SessionEvent
 }
 
 function snapshot(seq: number, kind: string, section: string, text: string, surfaceOp: unknown = 'append'): SessionEvent {

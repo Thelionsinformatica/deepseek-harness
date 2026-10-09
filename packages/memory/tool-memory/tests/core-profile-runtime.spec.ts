@@ -27,6 +27,7 @@ import type { PersonalMemoryRecord } from '@deepseek-ai/dsh-personal-memory'
 import * as PersonalMemoryLocal from '@deepseek-ai/dsh-personal-memory-local'
 import * as ToolMemory from '@deepseek-ai/dsh-tool-memory'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+import { moduleLoaderFake } from './module-loader-fake.ts'
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
@@ -154,13 +155,7 @@ async function boot(
     ['@deepseek-ai/dsh-token-meter', TokenMeter],
     ['@deepseek-ai/dsh-compaction-basic', BasicCompactionEngine],
   ])
-  ctx.loader.internal = {
-    version: 'v2',
-    async import(specifier: string) {
-      if (!modules.has(specifier)) throw new Error(`unexpected Loader import: ${specifier}`)
-      return modules.get(specifier)
-    },
-  } as unknown as NonNullable<typeof ctx.loader.internal>
+  ctx.loader.internal = moduleLoaderFake(modules)
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(configPath).href } })
   await ctx.loader.await()
   const adapter = new RecordingAdapter()

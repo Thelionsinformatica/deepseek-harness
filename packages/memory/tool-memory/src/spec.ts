@@ -77,11 +77,11 @@ export interface MemoryCandidateRecord {
 }
 
 /** Boundary schema for one shadow candidate row. */
-export const memoryCandidateRecord = z.object({
+export const memoryCandidateRecord: z.ZodType<MemoryCandidateRecord> = z.object({
   id: z.string().transform(MemoryCandidateId),
   workspaceId: z.string().transform(WorkspaceId),
   sessionId: z.string().transform(SessionId),
-  userId: z.string().optional(),
+  userId: z.string().exactOptional(),
   source: z.literal('tool-memory'),
   operation: z.union([
     z.literal('message_candidate'),
@@ -94,12 +94,12 @@ export const memoryCandidateRecord = z.object({
   omittedSensitive: z.number().int().min(0),
   inserted: z.number().int().min(0),
   topScore: z.number(),
-  candidateContent: z.string().optional(),
-  category: z.enum(['preference', 'decision', 'configuration', 'procedure', 'fact']).optional(),
-  importance: z.number().min(0).max(1).optional(),
-  scopeCandidate: z.literal('workspace').optional(),
-  sensitivity: z.enum(['none', 'review', 'blocked']).optional(),
-  policyVersion: z.number().int().positive().default(MEMORY_POLICY_VERSION),
+  candidateContent: z.string().exactOptional(),
+  category: z.enum(['preference', 'decision', 'configuration', 'procedure', 'fact']).exactOptional(),
+  importance: z.number().min(0).max(1).exactOptional(),
+  scopeCandidate: z.literal('workspace').exactOptional(),
+  sensitivity: z.enum(['none', 'review', 'blocked']).exactOptional(),
+  policyVersion: z.literal(MEMORY_POLICY_VERSION).default(MEMORY_POLICY_VERSION),
   policyDecision: z.enum(['block', 'reject', 'shadow', 'confirm', 'store']),
   policyReason: z.enum([
     'no-candidates',
@@ -112,9 +112,9 @@ export const memoryCandidateRecord = z.object({
     'moderate-confidence',
   ]),
   reviewed: z.boolean().default(false),
-  reviewDecision: z.enum(['accept', 'ignore', 'reject']).optional(),
-  reviewedAt: z.string().optional(),
-  reviewedBy: z.string().optional(),
+  reviewDecision: z.enum(['accept', 'ignore', 'reject']).exactOptional(),
+  reviewedAt: z.string().exactOptional(),
+  reviewedBy: z.string().exactOptional(),
   autoWrite: z.object({
     status: z.enum(['skipped', 'writing', 'stored', 'failed']),
     reason: z.enum([
@@ -129,12 +129,12 @@ export const memoryCandidateRecord = z.object({
       'provider-failed',
     ]),
     recordedAt: z.string(),
-    memoryId: z.string().optional(),
-    revision: z.number().int().positive().optional(),
-  }).optional(),
+    memoryId: z.string().exactOptional(),
+    revision: z.number().int().positive().exactOptional(),
+  }).exactOptional(),
   createdAt: z.string(),
-  schemaVersion: z.number().int().positive().default(MEMORY_CANDIDATE_SCHEMA_VERSION),
-}) as unknown as z.ZodType<MemoryCandidateRecord>
+  schemaVersion: z.union([z.literal(2), z.literal(MEMORY_CANDIDATE_SCHEMA_VERSION)]).default(MEMORY_CANDIDATE_SCHEMA_VERSION),
+})
 
 /** Durable shadow store for automatic recall/search candidate traces. */
 export const memoryCandidateDomainSpec = defineDomain({
@@ -159,19 +159,19 @@ export interface MemoryAdminActionRecord {
 }
 
 /** Boundary schema for a content-free administrative mutation trace. */
-export const memoryAdminActionRecord = z.object({
+export const memoryAdminActionRecord: z.ZodType<MemoryAdminActionRecord> = z.object({
   id: z.string().transform(MemoryAdminActionId),
   workspaceId: z.string().transform(WorkspaceId),
   sessionId: z.string().transform(SessionId),
   memoryId: z.string().transform(MemoryId),
   expectedRevision: z.number().int().positive(),
-  resultRevision: z.number().int().positive().optional(),
+  resultRevision: z.number().int().positive().exactOptional(),
   action: z.enum(['correct', 'forget']),
   status: z.enum(['requested', 'succeeded', 'failed']),
-  failureCode: z.string().optional(),
+  failureCode: z.string().exactOptional(),
   createdAt: z.string(),
-  completedAt: z.string().optional(),
-}) as unknown as z.ZodType<MemoryAdminActionRecord>
+  completedAt: z.string().exactOptional(),
+})
 
 /** Separate audit domain so the existing candidate queue remains migration-compatible. */
 export const memoryAdminDomainSpec = defineDomain({
@@ -200,21 +200,21 @@ export interface PersonalMemoryAdminActionRecord {
 }
 
 /** Boundary schema for a content-free personal-memory administrative trace. */
-export const personalMemoryAdminActionRecord = z.object({
+export const personalMemoryAdminActionRecord: z.ZodType<PersonalMemoryAdminActionRecord> = z.object({
   id: z.string().transform(MemoryAdminActionId),
   ownerId: z.string().transform(PersonalMemoryOwnerId),
   sessionId: z.string().transform(SessionId),
-  memoryId: z.string().transform(MemoryId).optional(),
-  expectedRevision: z.number().int().positive().optional(),
-  resultRevision: z.number().int().positive().optional(),
-  desiredEnabled: z.boolean().optional(),
-  desiredCore: z.boolean().optional(),
+  memoryId: z.string().transform(MemoryId).exactOptional(),
+  expectedRevision: z.number().int().positive().exactOptional(),
+  resultRevision: z.number().int().positive().exactOptional(),
+  desiredEnabled: z.boolean().exactOptional(),
+  desiredCore: z.boolean().exactOptional(),
   action: z.enum(['remember', 'correct', 'forget', 'toggle']),
   status: z.enum(['requested', 'succeeded', 'failed']),
-  failureCode: z.string().optional(),
+  failureCode: z.string().exactOptional(),
   createdAt: z.string(),
-  completedAt: z.string().optional(),
-}) as unknown as z.ZodType<PersonalMemoryAdminActionRecord>
+  completedAt: z.string().exactOptional(),
+})
 
 /** Separate personal audit domain so workspace and owner activity never share a partition. */
 export const personalMemoryAdminDomainSpec = defineDomain({
@@ -227,22 +227,22 @@ export const personalMemoryAdminDomainSpec = defineDomain({
   },
 })
 
-const procedurePrecondition = z.object({
+const procedurePrecondition: z.ZodType<ProcedurePrecondition> = z.object({
   key: z.string(),
   expected: z.string(),
-}) as unknown as z.ZodType<ProcedurePrecondition>
+})
 
-const procedureStep = z.object({
+const procedureStep: z.ZodType<ProcedureStep> = z.object({
   tool: z.string(),
   arguments: z.json(),
-}) as unknown as z.ZodType<ProcedureStep>
+})
 
-const procedureVerifier = z.object({
+const procedureVerifier: z.ZodType<ProcedureVerifier> = z.object({
   tool: z.string(),
   arguments: z.json(),
-}) as unknown as z.ZodType<ProcedureVerifier>
+})
 
-const procedureEvidence = z.object({
+const procedureEvidence: z.ZodType<ProcedureEvidence> = z.object({
   kind: z.enum(['initial-validation', 'revalidation']),
   sessionId: z.string().transform(SessionId),
   executionCallIds: z.array(z.string().transform(CallId)),
@@ -250,15 +250,15 @@ const procedureEvidence = z.object({
   resultDigests: z.array(z.string()),
   succeeded: z.boolean(),
   recordedAt: z.string(),
-}) as unknown as z.ZodType<ProcedureEvidence>
+})
 
-const procedureValidity = z.object({
+const procedureValidity: z.ZodType<ProcedureValidity> = z.object({
   revalidateAfter: z.string(),
   validUntil: z.string(),
-}) as unknown as z.ZodType<ProcedureValidity>
+})
 
 /** Boundary schema for one structured learned procedure. */
-export const procedureRecord = z.object({
+export const procedureRecord: z.ZodType<ProcedureRecord> = z.object({
   id: z.string().transform(ProcedureId),
   workspaceId: z.string().transform(WorkspaceId),
   revision: z.number().int().positive(),
@@ -272,13 +272,13 @@ export const procedureRecord = z.object({
   evidence: z.array(procedureEvidence),
   proposedAt: z.string(),
   updatedAt: z.string(),
-  reviewedAt: z.string().optional(),
-  reviewedBy: z.string().optional(),
-  lastValidatedAt: z.string().optional(),
-  staleAt: z.string().optional(),
-  revokedAt: z.string().optional(),
+  reviewedAt: z.string().exactOptional(),
+  reviewedBy: z.string().exactOptional(),
+  lastValidatedAt: z.string().exactOptional(),
+  staleAt: z.string().exactOptional(),
+  revokedAt: z.string().exactOptional(),
   schemaVersion: z.literal(1),
-}) as unknown as z.ZodType<ProcedureRecord>
+})
 
 /** Durable workspace-partitioned store for reviewed procedure learning. */
 export const procedureLearningDomainSpec = defineDomain({

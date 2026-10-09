@@ -15,6 +15,7 @@ import * as StorageJson from '@deepseek-ai/dsh-storage-json'
 import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import * as MemoryLocal from '../src/index.ts'
 import { localMemoryGraph, localMemoryRecord } from '../src/spec.ts'
+import { moduleLoaderFake } from './module-loader-fake.ts'
 
 const scope = { workspaceId: WorkspaceId('durable-graph-workspace') }
 const source = { kind: 'session' as const, sessionId: SessionId('durable-graph-source') }
@@ -84,13 +85,7 @@ async function boot(root: string, debounceMs = 0, options: Pick<MemoryLocal.Conf
     ['@deepseek-ai/dsh-memory', MemoryRuntime],
     ['@deepseek-ai/dsh-memory-local', MemoryLocal],
   ])
-  ctx.loader.internal = {
-    version: 'v2',
-    async import(specifier: string) {
-      if (!modules.has(specifier)) throw new Error(`unexpected Loader import: ${specifier}`)
-      return modules.get(specifier)
-    },
-  } as unknown as NonNullable<typeof ctx.loader.internal>
+  ctx.loader.internal = moduleLoaderFake(modules)
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(configPath).href } })
   await ctx.loader.await()
   return ctx

@@ -2,6 +2,7 @@
   "name": "@deepseek-ai/dsh-leon",
   "description": "Leon profile bundle: memory services, Leon guards, and the leon agent preset over the dsh Web application",
   "version": "0.2.1-alpha.2",
+  "icon": "./icon.svg",
   "publishConfig": {
     "access": "public"
   },
@@ -19,11 +20,14 @@
       "default": "./lib/index.js"
     },
     "./cordis.patch.yml": "./cordis.patch.yml",
-    "./presets/*": "./presets/*",
+    "./presets/leon.patch.yml": "./presets/leon.patch.yml",
+    "./locale/*.json": "./locale/*.json",
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
+    "icon.svg",
+    "locale/*.json",
     "lib/index.js",
     "cordis.patch.yml",
     "presets/leon.patch.yml",
@@ -71,7 +75,9 @@
     "@deepseek-ai/dsh-tool-subagent": "workspace:*",
     "@deepseek-ai/dsh-tool-subagent-control": "workspace:*",
     "@deepseek-ai/dsh-tool-todo": "workspace:*",
+    "@deepseek-ai/dsh-tool-web": "workspace:*",
     "@deepseek-ai/dsh-tool-workflow": "workspace:*",
+    "@deepseek-ai/dsh-web-egress-approval": "workspace:*",
     "@deepseek-ai/dsh-workflow-ptc": "workspace:*"
   },
   "peerDependencies": {

@@ -46,7 +46,7 @@ function table<K extends string, V>(initial: Iterable<readonly [K, V]> = []): Kv
       return decision.result
     },
     delete: async (key: K) => records.delete(key),
-  } as unknown as KvTable<K, V>
+  } as KvTable<K, V>
 }
 
 function graphConfig(overrides: Partial<MemoryGraphConfig> = {}): MemoryGraphConfig {

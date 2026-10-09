@@ -54,6 +54,7 @@ describe('dsh-leon bundle', () => {
     expect(host.inserted.map(row => row.id)).toEqual([
       'memory', 'memory-local', 'personal-memory', 'personal-memory-local',
       'memory-candidate-review', 'procedure-learning', 'failure-recovery-policy',
+      'web-egress-approval',
     ])
     expect(host.inserted.find(row => row.id === 'memory-candidate-review')?.config).toMatchObject({ automaticWrite: false })
   })
@@ -67,8 +68,11 @@ describe('dsh-leon bundle', () => {
     }
   })
 
-  it('keeps web tools out of the preset until per-call egress approval is ported', () => {
-    expect(flatPlugins.map(row => row.name)).not.toContain('@deepseek-ai/dsh-tool-web')
+  it('composes web tools only behind the host egress approval guard, and no MCP yet', () => {
+    expect(flatPlugins.map(row => row.name)).toContain('@deepseek-ai/dsh-tool-web')
+    const guard = patchRows('cordis.patch.yml').inserted.find(row => row.id === 'web-egress-approval')
+    expect(guard?.disabled).toBeUndefined()
+    expect(guard?.config).toMatchObject({ tools: ['web_search', 'web_fetch'] })
     expect(flatPlugins.map(row => row.name)).not.toContain('@deepseek-ai/dsh-mcp-client')
   })
 

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-leon` turns the dsh Web application into Leon, The Lions Informática's local assistant in Brazilian Portuguese. Listed after `dsh-base` and `dsh-web-app` in a profile, it mounts workspace and personal memory, the candidate review and procedure-learning services, and the failure-recovery guard on the host, keeps the base session index on disk, and adds the `leon` agent preset as the default. The preset composes the Leon persona, memory tools, the documentary knowledge base with its target guard, the completion-claim policy, and the Leon skills. Session search comes from the optional `dsh-experimental-session-search` bundle; web tools and MCP are not composed yet.
+`dsh-leon` turns the dsh Web application into Leon, The Lions Informática's local assistant in Brazilian Portuguese. Shipped switched off, it mounts workspace and personal memory, candidate review, procedure learning, the failure-recovery guard, and per-call web egress approval on the host, and makes the `leon` agent preset the default. The preset composes the Leon persona, memory tools, the knowledge base with its target guard, the completion-claim policy, approved web tools, and the Leon skills. Session search comes from the optional `dsh-experimental-session-search` bundle; MCP is not composed yet.
 
 ## Table of Contents
 
@@ -58,7 +58,7 @@ The bundle adds nothing of its own to the request prefix; the composed plugins o
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **No web tools yet** — `web_search` and `web_fetch` stay out of the preset until Leon's per-call egress approval is ported, so the preset never sends queries out without consent.
+- **Web access asks every call** — the fork's revocable session-wide web access switch is not ported, so each `web_search` or `web_fetch` waits for its own approval.
 - **No MCP desktop automation yet** — the Cua driver bridge waits for executor-side approval and a tool allowlist.
 - **Not ported yet** — the read-only audit subagent, the goal completion auditor, and Leon's client pages.
 - **Single local owner** — memory owner ids are fixed for a single-user Windows deployment; multi-user hosts must override them.

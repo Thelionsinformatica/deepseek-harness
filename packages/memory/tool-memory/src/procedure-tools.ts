@@ -231,7 +231,7 @@ function observation(ctx: Context, owner: ProcedureOwner, rawCallId: string): Pr
   }
   let parsed: unknown
   try {
-    parsed = JSON.parse(call.arguments) as unknown
+    parsed = JSON.parse(call.arguments)
   } catch {
     throw new HarnessError(`tool call ${JSON.stringify(rawCallId)} has invalid JSON arguments`, 'PROCEDURE_ARGUMENTS_INVALID')
   }

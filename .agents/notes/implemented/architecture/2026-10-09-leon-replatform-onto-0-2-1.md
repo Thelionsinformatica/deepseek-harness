@@ -20,6 +20,8 @@ The completion-claim and failure-recovery policies follow the same pattern with 
 
 The fork kept the Leon preset as a directory under `apps/cli/config/agent-presets`. In 0.2.1 presets are `@deepseek-ai/dsh-agent-preset` rows inside a bundle, so Leon becomes the [`dsh-leon`](../../../../packages/bundle/leon/README.md) bundle: a host patch for memory services and guards, and a preset patch that makes `leon` the default. The bundle tests validate every literal preset row against its plugin's `Config` schema, because a renamed upstream option otherwise surfaces only as a broken preset at runtime.
 
+The fork asked for web egress approval inside `tool-web`'s executors. The 0.2.1 registry already routes a `tools/pre-execute` `ask` through the approval service, so the [`web-egress-approval`](../../../../packages/guard/web-egress-approval/README.md) guard turns every `web_search` and `web_fetch` call into that ask on the host and leaves the upstream `tool-web` package unmodified. The ported storage schemas now carry their record types through `.exactOptional()` and literal versions instead of casts through `unknown`; every record of the production memory, candidate, and recovery files parses under them.
+
 ## Alternatives considered
 
 **Merge upstream and resolve every conflict.** Most conflicts sit in code upstream has since deleted or restructured. Resolving them would preserve edits against APIs that no longer exist and would take longer than porting.

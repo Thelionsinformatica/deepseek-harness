@@ -50,7 +50,8 @@ function stubAgent(ctx: Context, steers: UserMessage[], id = 'explicit-target-ag
     inject() { throw new Error('explicit-target-policy tests do not inject context') },
     cancel() {},
     whenIdle: () => Promise.resolve(),
-  } as unknown as Agent
+    runMaintenance: <T>(job: (signal: AbortSignal) => Promise<T>): Promise<T> => job(new AbortController().signal),
+  } as Agent
 }
 
 /** Mount the real tool registry, policy, and path-bearing fixture tools. */

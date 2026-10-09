@@ -75,3 +75,11 @@
       config:
         maxEquivalentFailures: 2
         maxNoFinalResponseRecoveries: 1
+
+    # Every web_search and web_fetch call asks the user once, showing the
+    # complete queries or URL, before anything leaves the machine.
+    - id: web-egress-approval
+      name: '@deepseek-ai/dsh-web-egress-approval'
+      config:
+        tools: [web_search, web_fetch]
+        maxArgumentChars: 8192

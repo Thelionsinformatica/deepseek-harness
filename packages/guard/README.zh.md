@@ -31,6 +31,7 @@ kind: "package-group"
 | [`explicit-target-policy/`](explicit-target-policy/README.zh.md) | 将根文件系统调用限制在最新直接人类消息指定的 Windows 目标内；由 Leon 预设挂载，不在基础组合包中 |
 | [`completion-claim-policy/`](completion-claim-policy/README.zh.md) | 依据开放轮次的证据检查强完成声明与精确任务验收；由 Leon 预设挂载 |
 | [`failure-recovery-policy/`](failure-recovery-policy/README.zh.md) | 阻止重复的等价工具失败并恢复空最终响应；由 Leon 预设挂载 |
+| [`web-egress-approval/`](web-egress-approval/README.zh.md) | 每次 `web_search` 或 `web_fetch` 调用在任何数据离开本机之前先询问用户一次；由 Leon 组合包挂载 |
 
 -----
 

@@ -31,6 +31,7 @@ Two small plugins cover the two patterns, and the Leon target guard enforces dir
 | [`explicit-target-policy/`](explicit-target-policy/README.md) | Keeps root filesystem calls inside the Windows target the latest direct human message named; mounted by Leon presets, not by the base bundle |
 | [`completion-claim-policy/`](completion-claim-policy/README.md) | Checks strong completion claims and exact task acceptance against the open turn's evidence; mounted by Leon presets |
 | [`failure-recovery-policy/`](failure-recovery-policy/README.md) | Stops repeated equivalent tool failures and recovers empty final responses; mounted by Leon presets |
+| [`web-egress-approval/`](web-egress-approval/README.md) | Asks the user once per `web_search` or `web_fetch` call before anything leaves the machine; mounted by the Leon bundle |
 
 -----
 

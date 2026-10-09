@@ -14,6 +14,13 @@ import { NO_FINAL_RESPONSE_CODE, type Config } from '@deepseek-ai/dsh-failure-re
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 
+declare module '@deepseek-ai/dsh-llm' {
+  interface FinishReasonMap {
+    /** Extension-defined completion reason exercised by the merge-extensible finish contract. */
+    'provider-complete': { kind: 'provider-complete' }
+  }
+}
+
 const testSignal = new AbortController().signal
 
 /** Script one response containing internal reasoning but no final text or tool call. */
@@ -33,7 +40,7 @@ function futureCompletionResponse(text: string): StreamChunk[] {
   response[response.length - 1] = {
     type: 'finish',
     reason: { kind: 'provider-complete' },
-  } as unknown as StreamChunk
+  }
   return response
 }
 

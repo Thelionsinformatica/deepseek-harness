@@ -29,9 +29,9 @@ const invocationOutcome = z.object({
   phase: z.enum(['pre-dispatch', 'accepted', 'post-dispatch', 'unknown']),
   effect: z.enum(['none', 'reversible', 'external', 'destructive']),
   retrySafe: z.boolean(),
-  idempotencyKey: z.string().optional(),
-  receipt: z.string().optional(),
-  errorCode: z.string().optional(),
+  idempotencyKey: z.string().exactOptional(),
+  receipt: z.string().exactOptional(),
+  errorCode: z.string().exactOptional(),
 })
 
 const recoveryEvent = z.object({
@@ -40,21 +40,21 @@ const recoveryEvent = z.object({
   sequence: z.number().int().positive(),
   type: z.enum(['failure-recorded', 'reset', 'unknown-outcome', 'lease-reserved', 'lease-released']),
   at: z.number().int().nonnegative(),
-  operationId: operationId.optional(),
+  operationId: operationId.exactOptional(),
 })
 
 /** Boundary validator for every persisted recovery cell. */
-export const recoveryRecord = z.object({
+export const recoveryRecord: z.ZodType<RecoveryRecord> = z.object({
   scopeKey,
   version: z.number().int().positive(),
   status: z.enum(['open', 'warned', 'blocked', 'unknown-outcome']),
-  failure: failure.optional(),
-  unknownOutcome: invocationOutcome.optional(),
-  lease: lease.optional(),
+  failure: failure.exactOptional(),
+  unknownOutcome: invocationOutcome.exactOptional(),
+  lease: lease.exactOptional(),
   lastFencingToken: z.number().int().nonnegative(),
   events: z.array(recoveryEvent),
   updatedAt: z.number().int().nonnegative(),
-}) as unknown as z.ZodType<RecoveryRecord>
+})
 
 /** Durable table routed through the deployment's configured storage backend. */
 export const failureRecoveryDomainSpec = defineDomain({

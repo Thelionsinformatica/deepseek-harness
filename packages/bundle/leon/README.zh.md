@@ -9,7 +9,7 @@ kind: "package-bundle"
 
 ## 概述
 
-`dsh-leon` 把 dsh Web 应用变为 Leon，即 The Lions Informática 的巴西葡萄牙语本地助手。在 profile 中列在 `dsh-base` 与 `dsh-web-app` 之后时，它在宿主上挂载工作区与个人记忆、候选审核与流程学习服务以及失败恢复守卫，把基础会话索引保存在磁盘上，并把 `leon` agent 预设设为默认。该预设组合 Leon persona、记忆工具、带目标守卫的文档知识库、完成声明策略以及 Leon skills。会话搜索来自可选的 `dsh-experimental-session-search` 组合包；Web 工具与 MCP 尚未组合。
+`dsh-leon` 把 dsh Web 应用变为 Leon，即 The Lions Informática 的巴西葡萄牙语本地助手。它默认关闭发布，在宿主上挂载工作区与个人记忆、候选审核、流程学习、失败恢复守卫以及逐次 Web 出站审批，并把 `leon` agent 预设设为默认。该预设组合 Leon persona、记忆工具、带目标守卫的知识库、完成声明策略、需审批的 Web 工具以及 Leon skills。会话搜索来自可选的 `dsh-experimental-session-search` 组合包；MCP 尚未组合。
 
 ## 目录
 
@@ -58,7 +58,7 @@ kind: "package-bundle"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **暂无 Web 工具** — 在 Leon 的逐次出站审批移植之前，`web_search` 与 `web_fetch` 不在预设中，因此预设从不在未经同意的情况下向外发送查询。
+- **每次 Web 访问都询问** — 分支中可撤销的会话级 Web 访问开关尚未移植，因此每次 `web_search` 或 `web_fetch` 都等待各自的批准。
 - **暂无 MCP 桌面自动化** — Cua 驱动桥接需要等待执行端审批与工具允许列表。
 - **尚未移植** — 只读审计子代理、目标完成审计器以及 Leon 的客户端页面。
 - **单一本地所有者** — 记忆所有者 id 针对单用户 Windows 部署固定；多用户宿主必须覆盖它们。

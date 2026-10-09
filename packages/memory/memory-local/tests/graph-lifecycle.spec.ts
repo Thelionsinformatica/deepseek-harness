@@ -37,7 +37,7 @@ function table<K extends string, V>(entries: readonly (readonly [K, V])[] = []):
       return decision.result
     },
   }
-  return result as unknown as KvTable<K, V>
+  return result as KvTable<K, V>
 }
 
 function deferred() {

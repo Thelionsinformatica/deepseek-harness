@@ -20,6 +20,8 @@ Leon 基于发布标签重建，而不是把上游合并进来。分支 `leon/re
 
 分支把 Leon 预设保存在 `apps/cli/config/agent-presets` 下的目录中。0.2.1 中预设是组合包内的 `@deepseek-ai/dsh-agent-preset` 行，因此 Leon 变为 [`dsh-leon`](../../../../packages/bundle/leon/README.zh.md) 组合包：一个用于记忆服务与守卫的宿主 patch，以及一个把 `leon` 设为默认的预设 patch。组合包测试会用各插件自己的 `Config` schema 校验每个字面量预设行，否则上游重命名的选项只会在运行时表现为损坏的预设。
 
+分支在 `tool-web` 的执行器内部请求 Web 出站审批。0.2.1 的注册表已经会通过审批服务处理 `tools/pre-execute` 的 `ask`，因此 [`web-egress-approval`](../../../../packages/guard/web-egress-approval/README.zh.md) 守卫在宿主上把每次 `web_search` 与 `web_fetch` 调用变为该 ask，上游 `tool-web` 包保持不变。移植的存储 schema 现在通过 `.exactOptional()` 与字面量版本携带记录类型，而不是经由 `unknown` 的类型断言；生产环境记忆、候选与恢复文件中的每条记录都能在其下解析。
+
 ## 考虑过的替代方案
 
 **合并上游并解决所有冲突。** 大多数冲突位于上游已删除或重构的代码中。解决它们会保留针对已不存在 API 的修改，所需时间也比移植更长。

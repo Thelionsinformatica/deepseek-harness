@@ -255,6 +255,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | `@deepseek-ai/dsh-failure-recovery-policy` | yes | Tool failure recovery policy: guides strategy changes and blocks an exact call after repeated equivalent failures |
 | `@deepseek-ai/dsh-repeat-tool-reminder` | yes | Repeat-tool-call guard plugin: advisory reminders when an agent loops on identical tool calls |
 | `@deepseek-ai/dsh-tool-call-timeout-policy` | no | Tool-call timeout policy: a tools/execute wrapper that arms a per-tool deadline on exec.signal and returns TOOL_TIMEOUT when it wins |
+| `@deepseek-ai/dsh-web-egress-approval` | yes | Web egress approval: a tools/pre-execute listener that asks the user once per web_search or web_fetch call before anything leaves the machine |
 
 ## host
 

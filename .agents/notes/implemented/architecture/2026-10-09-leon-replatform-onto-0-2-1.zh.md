@@ -16,6 +16,8 @@ Leon 基于发布标签重建，而不是把上游合并进来。分支 `leon/re
 
 记忆包保持原有行为。`dsh-tool-memory` 通过两个投影读取 Session 事实：`toolMemoryRecall` 保存它注入的快照和最新的直接人类文本，`toolMemoryProcedureEvidence` 保存开放轮次的人类文本以及最近 128 次工具调用，不保存长度超过 65,536 个字符的参数。因此流程提议只能引用最近的调用。个人记忆启用偏好以前是 settings namespace，现在是审核服务条目的 volatile 字段 `personalMemoryEnabled`。0.2.1 之前写入的 Leon 日志会把旧的 `plugin` 来源迁移为仅运行时存在的 `plugin:tool-memory` 和 `plugin:explicit-target-policy` 类型，两个投影都接受。`dsh-storage-domain` 恢复了记忆写入依赖的分支原子操作 `KvTable.mutate()`。
 
+完成声明策略与失败恢复策略采用同样的模式，使用 `completionClaimTurn`、`taskAcceptanceTurn` 和 `failureRecoveryTurn` 投影。完成声明的纠正从分支独有的 `evidence-recovery` form 改为上游的 `notice` form，以便客户端渲染；旧的纠正仍会计数。操作标识对工具参数取哈希，因此文件载荷不会进入投影。
+
 ## 考虑过的替代方案
 
 **合并上游并解决所有冲突。** 大多数冲突位于上游已删除或重构的代码中。解决它们会保留针对已不存在 API 的修改，所需时间也比移植更长。
@@ -27,10 +29,11 @@ Leon 基于发布标签重建，而不是把上游合并进来。分支 `leon/re
 ## 影响
 
 - 在移植分支通过验证之前，Leon 部署继续运行旧构建；不会自动切换。
-- 在所有层移植完成之前，移植分支缺少 Leon 的部分功能，例如完成声明和失败恢复策略以及 Leon 预设。
+- 在所有层移植完成之前，移植分支缺少 Leon 的部分功能，例如 Leon 预设。
 - 每个带投影的移植插件都拥有一个 `stateVersion`，当其折叠字段或折叠语义改变时必须更新。
 
 ## 验证
 
 - `dsh-explicit-target-policy`：`vitest run packages/guard/explicit-target-policy` 通过 48 个测试，包括现在读取投影的同轮次重建和恢复计数测试；`tsc -b packages/guard/explicit-target-policy` 和暂存区 oxlint 配置均未报告错误。
 - 记忆：`vitest run packages/memory packages/guard packages/storage/storage-domain` 通过 478 个测试，包括针对旧类型和证据窗口的投影测试。
+- 守卫：`vitest run packages/guard` 通过 205 个测试，涵盖三个 Leon 守卫和上游守卫。

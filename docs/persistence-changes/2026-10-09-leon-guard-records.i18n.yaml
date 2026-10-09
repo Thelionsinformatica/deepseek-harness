@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-10-09-leon-guard-records.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/persistence-changes/2026-10-09-leon-guard-records.md
+/:
+  en: 3d5a424ae7d7e46b
+  zh: c22a8e4a62d8cc1a
+/2026-10-09-leon-guard-records:
+  en: 46eb4c7f7ab40d27
+  zh: 920cd382329845ec
+/2026-10-09-leon-guard-records/summary:
+  en: e5db6dc68dd07b4d
+  zh: 818d71d8626b885f
+/2026-10-09-leon-guard-records/table-of-contents:
+  en: 6cf314a069ceb451
+  zh: 9adff678e9ecab3b
+/2026-10-09-leon-guard-records/declaration:
+  en: 6907136f28e48c90
+  zh: 02f8298485f3d8e7
+/2026-10-09-leon-guard-records/compatibility:
+  en: 653f50ebb7d6dd41
+  zh: 6d002a584822c3d4
+/2026-10-09-leon-guard-records/verification:
+  en: 62142390669d79a8
+  zh: 35fe49117997d5fb
+/2026-10-09-leon-guard-records/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269

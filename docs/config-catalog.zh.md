@@ -751,6 +751,31 @@ export interface ToolResultPruneConfig {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-compaction-tool-result-pruner -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-completion-claim-policy -->
+<a id="deepseek-aidsh-completion-claim-policy"></a>
+
+## `@deepseek-ai/dsh-completion-claim-policy`
+
+- `inject`: `tools` · `sessionProjections`
+- `source`: [`packages/guard/completion-claim-policy/src/index.ts:49`](../packages/guard/completion-claim-policy/src/index.ts)
+
+```ts config-catalog
+/** Deployment policy for evidence recovery at the final turn boundary. */
+export interface Config {
+  /** Same-turn corrections allowed before the policy rejects the claim (default 0, maximum 3). */
+  maxEvidenceRecoveries?: number
+  /** Maximum UTF-8 bytes retained in one recovery message (default 4096). */
+  maxRecoveryMessageBytes?: number
+  /** Maximum quoted absolute artifact paths checked per claim (default 32). */
+  maxArtifactClaims?: number
+  /** Verify absolute filesystem paths quoted in backticks by the final claim (default false). */
+  verifyAbsoluteArtifactClaims?: boolean
+  /** Require at least one successful tool result in the current turn (default false). */
+  requireCurrentTurnEvidence?: boolean
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-completion-claim-policy -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-cordis-host-runner -->
 <a id="deepseek-aidsh-cordis-host-runner"></a>
 
@@ -1367,6 +1392,29 @@ export interface AdditionalToolRule {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-explicit-target-policy -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-failure-recovery-policy -->
+<a id="deepseek-aidsh-failure-recovery-policy"></a>
+
+## `@deepseek-ai/dsh-failure-recovery-policy`
+
+- `inject`: `tools` · `storageDomain` · `sessionProjections`
+- `source`: [`packages/guard/failure-recovery-policy/src/index.ts:68`](../packages/guard/failure-recovery-policy/src/index.ts)
+
+```ts config-catalog
+/** Deployment policy for equivalent failures of one exact model-requested tool call. */
+export interface Config {
+  /** Failures permitted before the recovery notice and later denial (default 2). */
+  maxEquivalentFailures?: number
+  /** Same-turn steering attempts after a terminal response without final output (default 0, maximum 3). */
+  maxNoFinalResponseRecoveries?: number
+  /** Tool-name wildcard patterns eligible for recovery; empty tracks every tool. */
+  include?: string[]
+  /** Tool-name wildcard patterns omitted from recovery tracking. */
+  exclude?: string[]
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-failure-recovery-policy -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-file-reference-local -->
 <a id="deepseek-aidsh-file-reference-local"></a>

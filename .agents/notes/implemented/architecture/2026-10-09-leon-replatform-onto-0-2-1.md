@@ -16,6 +16,8 @@ A ported package drops its `invariant.ts` entry, since upstream removed that plu
 
 The memory packages keep their behavior. `dsh-tool-memory` reads Session facts through two projections: `toolMemoryRecall` holds the snapshots it injected and the latest direct-human text, and `toolMemoryProcedureEvidence` holds open-turn human text plus the latest 128 tool calls, without arguments longer than 65,536 characters. Procedure proposals can therefore cite only recent calls. The personal-memory enablement preference, previously a settings namespace, is the volatile `personalMemoryEnabled` field of the review service entry. Leon logs written before 0.2.1 migrate the old `plugin` source to the runtime-only kinds `plugin:tool-memory` and `plugin:explicit-target-policy`, which both projections accept. `dsh-storage-domain` regains the fork's atomic `KvTable.mutate()` that memory writes depend on.
 
+The completion-claim and failure-recovery policies follow the same pattern with the `completionClaimTurn`, `taskAcceptanceTurn`, and `failureRecoveryTurn` projections. The completion-claim correction moves from the fork-only form `evidence-recovery` to the upstream `notice` form so clients render it; legacy corrections still count. Operation identity hashes tool arguments, so file payloads never enter a projection.
+
 ## Alternatives considered
 
 **Merge upstream and resolve every conflict.** Most conflicts sit in code upstream has since deleted or restructured. Resolving them would preserve edits against APIs that no longer exist and would take longer than porting.
@@ -27,10 +29,11 @@ The memory packages keep their behavior. `dsh-tool-memory` reads Session facts t
 ## Consequences
 
 - The Leon deployment keeps running the old build until the ported branch passes validation; nothing switches automatically.
-- Until every layer is ported, the ported branch lacks Leon features such as the completion-claim and failure-recovery policies and the Leon preset.
+- Until every layer is ported, the ported branch lacks Leon features such as the Leon preset.
 - Each ported plugin with a projection owns a `stateVersion` that must change whenever its folded fields or fold semantics change.
 
 ## Verification
 
 - `dsh-explicit-target-policy`: `vitest run packages/guard/explicit-target-policy` passes 48 tests, including same-turn reconstruction and recovery-count tests that now read the projection; `tsc -b packages/guard/explicit-target-policy` and the staged oxlint configuration report no errors.
 - Memory: `vitest run packages/memory packages/guard packages/storage/storage-domain` passes 478 tests, including projection tests for legacy kinds and the evidence window.
+- Guards: `vitest run packages/guard` passes 205 tests across the three Leon guards and the upstream ones.

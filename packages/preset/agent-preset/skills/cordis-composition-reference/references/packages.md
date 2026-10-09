@@ -250,7 +250,9 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 
 | Package | Config | Description |
 |---|---|---|
+| `@deepseek-ai/dsh-completion-claim-policy` | yes | Evidence policy for strong global completion claims at the end of an agent turn |
 | `@deepseek-ai/dsh-explicit-target-policy` | yes | Tool guard that preserves an explicit Windows target selected by the latest direct user message in a turn |
+| `@deepseek-ai/dsh-failure-recovery-policy` | yes | Tool failure recovery policy: guides strategy changes and blocks an exact call after repeated equivalent failures |
 | `@deepseek-ai/dsh-repeat-tool-reminder` | yes | Repeat-tool-call guard plugin: advisory reminders when an agent loops on identical tool calls |
 | `@deepseek-ai/dsh-tool-call-timeout-policy` | no | Tool-call timeout policy: a tools/execute wrapper that arms a per-tool deadline on exec.signal and returns TOOL_TIMEOUT when it wins |
 

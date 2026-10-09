@@ -18,6 +18,8 @@ Leon 基于发布标签重建，而不是把上游合并进来。分支 `leon/re
 
 完成声明策略与失败恢复策略采用同样的模式，使用 `completionClaimTurn`、`taskAcceptanceTurn` 和 `failureRecoveryTurn` 投影。完成声明的纠正从分支独有的 `evidence-recovery` form 改为上游的 `notice` form，以便客户端渲染；旧的纠正仍会计数。操作标识对工具参数取哈希，因此文件载荷不会进入投影。
 
+分支把 Leon 预设保存在 `apps/cli/config/agent-presets` 下的目录中。0.2.1 中预设是组合包内的 `@deepseek-ai/dsh-agent-preset` 行，因此 Leon 变为 [`dsh-leon`](../../../../packages/bundle/leon/README.zh.md) 组合包：一个用于记忆服务与守卫的宿主 patch，以及一个把 `leon` 设为默认的预设 patch。组合包测试会用各插件自己的 `Config` schema 校验每个字面量预设行，否则上游重命名的选项只会在运行时表现为损坏的预设。
+
 ## 考虑过的替代方案
 
 **合并上游并解决所有冲突。** 大多数冲突位于上游已删除或重构的代码中。解决它们会保留针对已不存在 API 的修改，所需时间也比移植更长。

@@ -45,6 +45,7 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
  * blocks. A package moves on or off this list with its context behavior.
  */
 const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
+  'packages/bundle/leon': { kind: 'indirect', reason: 'The bundle is a patch-list carrier; mounted packages own model-facing text and the Leon persona reaches the model through dsh-persona.' },
   'packages/memory/memory': { kind: 'indirect', reason: 'The provider registry delegates model rendering to dsh-tool-memory.' },
   'packages/memory/memory-local': { kind: 'indirect', reason: 'The local provider delegates model rendering to dsh-tool-memory.' },
   'packages/memory/memory-continuity': { kind: 'none', reason: 'Snapshot export and restore register no model tools or prompt sections; consumers own retrieval.' },

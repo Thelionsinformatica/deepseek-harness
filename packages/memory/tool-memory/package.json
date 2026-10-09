@@ -20,11 +20,11 @@
     },
     "./review": {
       "types": "./lib/types/review.d.ts",
-      "default": "./lib/review.js"
+      "default": "./lib/types/review.js"
     },
     "./procedure-learning": {
       "types": "./lib/types/procedure-learning.d.ts",
-      "default": "./lib/procedure-learning.js"
+      "default": "./lib/types/procedure-learning.js"
     },
     "./types": {
       "types": "./lib/types/types.d.ts",
@@ -43,9 +43,6 @@
   },
   "files": [
     "lib/index.js",
-    "lib/review.js",
-    "lib/procedure-learning.js",
-    "lib/spec-*.js",
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts",
     "lib/typert.host.js",

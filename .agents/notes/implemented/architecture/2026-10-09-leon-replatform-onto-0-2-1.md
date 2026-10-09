@@ -18,6 +18,8 @@ The memory packages keep their behavior. `dsh-tool-memory` reads Session facts t
 
 The completion-claim and failure-recovery policies follow the same pattern with the `completionClaimTurn`, `taskAcceptanceTurn`, and `failureRecoveryTurn` projections. The completion-claim correction moves from the fork-only form `evidence-recovery` to the upstream `notice` form so clients render it; legacy corrections still count. Operation identity hashes tool arguments, so file payloads never enter a projection.
 
+The fork kept the Leon preset as a directory under `apps/cli/config/agent-presets`. In 0.2.1 presets are `@deepseek-ai/dsh-agent-preset` rows inside a bundle, so Leon becomes the [`dsh-leon`](../../../../packages/bundle/leon/README.md) bundle: a host patch for memory services and guards, and a preset patch that makes `leon` the default. The bundle tests validate every literal preset row against its plugin's `Config` schema, because a renamed upstream option otherwise surfaces only as a broken preset at runtime.
+
 ## Alternatives considered
 
 **Merge upstream and resolve every conflict.** Most conflicts sit in code upstream has since deleted or restructured. Resolving them would preserve edits against APIs that no longer exist and would take longer than porting.

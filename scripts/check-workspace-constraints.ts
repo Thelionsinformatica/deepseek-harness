@@ -195,6 +195,10 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-experimental-inspector': ['lib/client.*.js', 'lib/worker.js', 'lib/devtools/**'],
   // Creator's composition guidance travels with the declaration package.
   '@deepseek-ai/dsh-agent-preset': ['skills'],
+  // Leon's skills ship with the bundle that adds them to the leon preset's roots.
+  '@deepseek-ai/dsh-leon': ['skills'],
+  // The knowledge tool runs this helper as a subprocess; it is not a module entry.
+  '@deepseek-ai/dsh-tool-knowledge-base': ['helper/knowledge.mjs'],
   // The Web Host mounts the default-off settings owner independently of each
   // Agent-scoped delegation-tool instance.
   '@deepseek-ai/dsh-tool-subagent': ['lib/model-selection-settings.js'],

@@ -485,6 +485,7 @@
     { "path": "./packages/preset/persona" },
     { "path": "./packages/guard/repeat-tool-reminder" },
     { "path": "./packages/guard/explicit-target-policy" },
+    { "path": "./packages/bundle/leon" },
     { "path": "./packages/guard/failure-recovery-policy" },
     { "path": "./packages/guard/completion-claim-policy" },
     { "path": "./packages/knowledge/tool-knowledge-base" },

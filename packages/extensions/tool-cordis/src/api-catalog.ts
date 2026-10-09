@@ -214,6 +214,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the standing scope key readers pass as a registry view scope.',
         throws: ['when the preset is unknown or its composition is unusable.'],
       },
+      {
+        signature: 'async serviceForPreset<K extends string & keyof Context>(id: string, name: K): Promise<Context[K] | undefined>',
+        description: 'Inspect a preset\'s services without creating or resuming an agent.',
+        parameters: [{ name: 'id', description: 'stable preset identifier.' }, { name: 'name', description: 'service name to resolve.' }],
+        returns: 'the preset-owned service or inherited host service.',
+      },
     ],
   },
   {
@@ -1173,7 +1179,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'The created browser-safe row and content-free audit id, or an explicit failure.',
       },
       {
-        signature: '@Remote(\'correctPersonalMemory\') correctPersonalMemory(request: MemoryAdminCorrectRequest): Promise<MemoryAdminCorrectResult>',
+        signature: '@Remote(\'correctPersonalMemory\') correctPersonalMemory(request: PersonalMemoryAdminCorrectRequest): Promise<MemoryAdminCorrectResult>',
         description: 'Correct or reconfirm one exact personal-memory revision after explicit operator confirmation.',
         parameters: [{ name: 'request', description: 'Session anchor, exact revision, complete confirmed text, and confirmation.' }],
         returns: 'The explicitly validated browser-safe row and content-free audit id, or an explicit failure.',
@@ -1994,6 +2000,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'whether this exact object is an active model loader for this registry.',
       },
       {
+        signature: 'registerRestriction(allow: (name: string) => boolean): () => void',
+        description: 'Add a live restriction in the calling context\'s layer. Global and inherited restrictions all apply; a nearer registration cannot override a denial. Predicates run synchronously on every read, must be side-effect-free, and may read current settings. A thrown predicate fails the read instead of allowing access.',
+        parameters: [{ name: 'allow', description: 'whether the skill name is enabled in this registration.' }],
+        returns: 'the exact Cordis disposer removing only this restriction.',
+      },
+      {
+        signature: 'isEnabled(name: string, options: SkillViewOptions = {}): boolean',
+        description: 'Read live restrictions without discovering providers or checking invocation flags. This does not establish that a skill exists or is invocable.',
+        parameters: [{ name: 'name', description: 'kebab-case skill name; invalid names are disabled.' }, { name: 'options', description: 'view options; only `scope` selects applicable restrictions.' }],
+        returns: 'whether every global and scope-chain restriction allows the name.',
+      },
+      {
         signature: 'registerProvider(create: (control: SkillProviderControl) => SkillProvider): () => void',
         description: 'Register a borrowed same-process provider synchronously during plugin apply, into the calling context\'s layer: a scoped context (an agent preset\'s standing mount) registers for that scope alone, an unscoped context registers globally. Duplicate names within one layer and reserved names throw; remote initialization belongs in `list()`. Fiber disposal unregisters the provider and invalidates catalog caches.',
         parameters: [{ name: 'create', description: 'synchronous factory receiving this registration\'s lifecycle and invalidation control.' }],
@@ -2009,19 +2027,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'async list(options: SkillViewOptions = {}): Promise<SkillSummary[]>',
         description: 'List invocation-neutral skill summaries for a workspace. Consumers apply model or user invocation policy at their operational boundary. Lookup options and provider candidates are readonly same-process values borrowed throughout discovery.',
         parameters: [{ name: 'options', description: 'view options; `scope` selects the viewing agent\'s layers, `cwd` selects project roots, and `signal` cancels discovery.' }],
-        returns: 'all sorted winning summaries.',
+        returns: 'sorted winning summaries allowed by live restrictions.',
       },
       {
         signature: 'async snapshot(options: SkillViewOptions = {}): Promise<SkillCatalogSnapshot>',
         description: 'Observe the current invocation-neutral catalog and whether discovery completed within a stable revision. Incomplete observations are never cached, allowing consumers to retain last-good state and retry on their next request boundary.',
         parameters: [{ name: 'options', description: 'view options; `scope` selects the viewing agent\'s layers, `cwd` selects project roots, and `signal` cancels discovery.' }],
-        returns: 'sorted summaries plus discovery-completeness state.',
+        returns: 'sorted summaries allowed by live restrictions plus discovery-completeness state.',
+      },
+      {
+        signature: 'async inventory(options: SkillViewOptions = {}): Promise<SkillCatalogSnapshot>',
+        description: 'Inspect winning metadata including disabled skills, without loading bodies. Consumers must not use this administrative inventory as an invocation catalog.',
+        parameters: [{ name: 'options', description: 'view options; `scope` selects layers, `cwd` selects project roots, and `signal` cancels discovery.' }],
+        returns: 'sorted summaries, including disabled names, plus discovery-completeness state.',
       },
       {
         signature: 'async get(name: string, options: SkillViewOptions = {}): Promise<SkillDefinition | undefined>',
-        description: 'Load and validate the winning candidate, passing its opaque discovery locator back to the provider. Cancellation is rechecked after selection, including cache hits, and raced against loading so an uncooperative provider cannot hang the caller.',
+        description: 'Load and validate the winning candidate, passing its opaque discovery locator back to the provider. Cancellation is rechecked after selection, including cache hits, and raced against loading so an uncooperative provider cannot hang the caller. Live restrictions are checked before provider loading and after it settles; no lookup option bypasses them.',
         parameters: [{ name: 'name', description: 'kebab-case skill name.' }, { name: 'options', description: 'view options; `scope` selects the viewing agent\'s layers, `cwd` selects workspace-sensitive skills, and `signal` cancels work.' }],
-        returns: 'the full skill, including body content, or `undefined`.',
+        returns: 'the full skill, including body content, or `undefined` when absent or disabled.',
       },
     ],
   },
@@ -3182,8 +3206,8 @@ export const EVENT_API: readonly EventApiEntry[] = [
     name: 'skills/change',
     mode: 'emit',
     signature: '\'skills/change\'(): void',
-    summary: 'A skill provider, runtime contribution, or provider-backed catalog may have changed.',
-    description: 'A skill provider, runtime contribution, or provider-backed catalog may have changed. This is an unfiltered invalidation notification; consumers refetch the catalog for their own lookup options. Listener failures are contained and cannot veto the registry mutation.',
+    summary: 'A skill provider, runtime contribution, restriction registration, or provider-backed catalog may have changed.',
+    description: 'A skill provider, runtime contribution, restriction registration, or provider-backed catalog may have changed. This is an unfiltered invalidation notification; consumers refetch the catalog for their own lookup options. Listener failures are contained and cannot veto the registry mutation.',
     parameters: [],
   },
   {
@@ -4288,7 +4312,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MemoryAdminItem',
-    declaration: 'export interface MemoryAdminItem {\n    readonly id: MemoryAdminId;\n    readonly revision: number;\n    readonly content?: string;\n    readonly redacted: boolean;\n    readonly status: MemoryAdminStatus;\n    readonly sourceSessionId: SessionId;\n    readonly importance?: number;\n    readonly confidence?: number;\n    readonly validation?: MemoryAdminValidation;\n    readonly validFrom?: string;\n    readonly validUntil?: string;\n    readonly expiresAt?: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+    declaration: 'export interface MemoryAdminItem {\n    readonly id: MemoryAdminId;\n    readonly revision: number;\n    readonly content?: string;\n    readonly redacted: boolean;\n    readonly status: MemoryAdminStatus;\n    readonly sourceSessionId: SessionId;\n    readonly importance?: number;\n    readonly confidence?: number;\n    readonly validation?: MemoryAdminValidation;\n    readonly core?: boolean;\n    readonly validFrom?: string;\n    readonly validUntil?: string;\n    readonly expiresAt?: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
     name: 'MemoryAdminListRequest',
@@ -4665,6 +4689,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PermissionSelect',
     declaration: 'export interface PermissionSelect {\n    options: PresetOption[];\n    currentValue: string;\n}',
+  },
+  {
+    name: 'PersonalMemoryAdminCorrectRequest',
+    declaration: 'export interface PersonalMemoryAdminCorrectRequest extends MemoryAdminCorrectRequest {\n    readonly core?: boolean;\n}',
   },
   {
     name: 'PersonalMemoryAdminGraphResult',

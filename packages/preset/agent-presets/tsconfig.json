@@ -34,6 +34,9 @@
       "path": "../../settings/settings"
     },
     {
+      "path": "../../skill/skill"
+    },
+    {
       "path": "../../util/atomic-write"
     },
     {

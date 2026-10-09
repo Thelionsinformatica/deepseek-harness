@@ -17,6 +17,8 @@
 
 可选的 `linking` 使用与 `memory-local` 相同的已校验边界、持久发布、时间调度和只读快照，派生绑定修订号的相似边。`embeddings` 选择本地传输；部署必须验证该端点在本机执行，而非代理到远程服务。个人记忆的实时启用偏好也控制后台工作：禁用会取消待执行计算、阻止发布并等待已提交写入；重新启用会安排已知分区而不修改事实。图工作完全停稳后才关闭 domain。
 
+[有界图恢复契约](../memory-local/README.zh.md) 在此同样适用：`linking.retryAttempts`、`retryDelayMs` 和 `retryMaxDelayMs` 控制有限的瞬时故障重试，包括启动后的持久化失败。完整文档分段使用 `embeddings.graphInputCharacters`、`graphBatchInputs`、`graphInputSplitDepth` 和 `graphTimeoutMs`，默认值相同。重建失败保留上一快照的准确覆盖范围，并保持显式失败。分段平均相似度是近似值，不能验证个人事实。
+
 ## 模型体验
 
 通过 `@deepseek-ai/dsh-tool-memory` 间接呈现；本提供方不增加 schema 或提示词文本。

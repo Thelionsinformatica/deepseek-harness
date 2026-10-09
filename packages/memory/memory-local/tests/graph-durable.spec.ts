@@ -49,7 +49,7 @@ async function close(ctx: Context): Promise<void> {
 }
 
 /** Use a real Loader and JSON backend; only the external embedding endpoint is replaced. */
-async function boot(root: string, debounceMs = 0): Promise<Context> {
+async function boot(root: string, debounceMs = 0, options: Pick<MemoryLocal.Config, 'semanticSearch' | 'linking'> = {}): Promise<Context> {
   const configPath = join(root, `cordis-${contexts.size}-${debounceMs}.yml`)
   const entries = [
     { name: '@deepseek-ai/dsh-storage' },
@@ -65,8 +65,9 @@ async function boot(root: string, debounceMs = 0): Promise<Context> {
           api: 'openai-compatible',
           model: 'deterministic-test-embeddings',
           dimensions: 64,
+          ...options.semanticSearch,
         },
-        linking: { enabled: true, debounceMs, minScore: 0.9 },
+        linking: { enabled: true, debounceMs, minScore: 0.9, ...options.linking },
       },
     },
   ]
@@ -123,6 +124,50 @@ async function awaitGraph(ctx: Context, expected: Partial<MemoryGraphSnapshot>):
 }
 
 describe('derived memory graphs through Loader and durable JSON storage', () => {
+  it('recovers a persisted failed graph after restart and a temporary startup outage without changing facts', async () => {
+    const endpoint = stubEmbeddings()
+    endpoint.mockRejectedValue(new TypeError('synthetic endpoint unavailable'))
+    const root = await createRoot()
+    const first = await boot(root, 0, { linking: { retryAttempts: 0 } })
+    await first.memory.create({ scope, content: 'Synthetic first durable fact.', source })
+    await first.memory.create({ scope, content: 'Synthetic second durable fact.', source })
+    await awaitGraph(first, { status: 'failed', failureCode: 'TRANSPORT' })
+    const before = (await readDisk(root)).tables.memories
+    await close(first)
+    const recoveredEndpoint = stubEmbeddings()
+    recoveredEndpoint.mockRejectedValueOnce(new TypeError('synthetic startup delay'))
+    const second = await boot(root, 0, { linking: { retryDelayMs: 10, retryAttempts: 2 } })
+    const graph = await awaitGraph(second, { status: 'computed' })
+    expect(recoveredEndpoint).toHaveBeenCalledTimes(2)
+    expect(graph.failureCode).toBeUndefined()
+    expect(graph.recordRevisions).toEqual(Object.fromEntries(Object.entries(before).map(([id, row]) => [id, row.revision])))
+    expect((await readDisk(root)).tables.memories).toEqual(before)
+  })
+
+  it('publishes full revision coverage for large documents after adaptive batch and input subdivision', async () => {
+    const accepted: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_url: unknown, init?: RequestInit) => {
+      const { input } = z.object({ input: z.array(z.string()) }).parse(JSON.parse(z.string().parse(init?.body)))
+      if (input.length > 1 || input[0]!.length > 100) {
+        return new Response(JSON.stringify({ error: { code: 'context_length_exceeded' } }), { status: 400 })
+      }
+      accepted.push(input[0]!.slice('search_document: '.length))
+      return new Response(JSON.stringify({ data: [{ index: 0,
+        embedding: Array.from({ length: 64 }, (_, axis) => axis === 0 ? 1 : 0) }] }))
+    }))
+    const root = await createRoot()
+    const ctx = await boot(root, 20, { semanticSearch: { graphInputCharacters: 256 } })
+    const content = 'Synthetic complete fact. '.repeat(80)
+    const first = await ctx.memory.create({ scope, content, source })
+    const second = await ctx.memory.create({ scope, content, source })
+    const graph = await awaitGraph(ctx, { status: 'computed', recordRevisions: { [first.id]: 1, [second.id]: 1 } })
+    expect(graph.edges).toHaveLength(1)
+    expect(accepted.join('')).toBe(content.trim() + content.trim())
+    const disk = await readDisk(root)
+    expect(Object.values(disk.tables.memories).map(row => row.content)).toEqual([content.trim(), content.trim()])
+    expect(disk.tables.graph[scope.workspaceId]?.recordRevisions).toEqual(graph.recordRevisions)
+  })
+
   it('persists exact edge revisions and reopens them before a delayed rebuild without inference on reads', async () => {
     const endpoint = stubEmbeddings()
     const root = await createRoot()

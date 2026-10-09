@@ -212,7 +212,7 @@ export type MemoryGraphStatus =
   | 'empty'
   /** Snapshot exists but at least one record changed since computation; edges are returned as-is. */
   | 'stale'
-  /** The last computation failed; no automatic retry occurs until the next commit. */
+  /** The last computation failed; the provider may perform bounded transient retries. */
   | 'failed'
   /** The selected provider does not compute similarity graphs. */
   | 'unavailable'

@@ -17,6 +17,8 @@ This package is the local provider for `ctx.personalMemory`. It opens the versio
 
 Optional `linking` derives revision-pinned similarity edges with the same validated bounds, durable publication, temporal scheduling, and read-only snapshots as `memory-local`. `embeddings` selects its loopback transport; a deployment must verify that endpoint runs locally rather than proxies remotely. The live personal-memory enablement preference also gates background work: disabling cancels pending computation, suppresses publication, and drains submitted writes; re-enabling seeds known partitions without editing their facts. The domain closes only after graph work settles.
 
+The [bounded graph recovery contract](../memory-local/README.md) applies here too: `linking.retryAttempts`, `retryDelayMs`, and `retryMaxDelayMs` govern finite transient retries, including persisted failures after startup. Complete document segmentation uses `embeddings.graphInputCharacters`, `graphBatchInputs`, `graphInputSplitDepth`, and `graphTimeoutMs`, with the same defaults. Failed rebuilds retain the last snapshot's exact coverage and remain explicitly failed. Chunk-mean similarity is approximate and does not validate personal facts.
+
 ## Model Experience
 
 Indirectly, through `@deepseek-ai/dsh-tool-memory`; this provider adds no schema or prompt text.

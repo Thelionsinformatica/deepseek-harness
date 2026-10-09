@@ -3,6 +3,38 @@
 exports[`projects a confirmed profile on greetings and replaces corrected or forgotten injections before the next request 1`] = `
 {
   "activeConfirmedCoreRecords": 0,
+  "confirmationJourney": {
+    "confirmationRequired": true,
+    "confirmedRevision": 2,
+    "profilePresence": [
+      false,
+      false,
+      false,
+      true,
+      false,
+    ],
+    "proposalConfirmed": false,
+    "rememberParameters": {
+      "properties": {
+        "content": {
+          "description": "Self-contained personal fact to remember.",
+          "type": "string",
+        },
+      },
+      "required": [
+        "content",
+      ],
+      "type": "object",
+    },
+    "removedFromProfileRevision": 3,
+    "replayPreservesActiveMessages": true,
+    "revisionsPreserved": [
+      1,
+      2,
+      3,
+    ],
+    "withoutHumanConfirmation": "memory-admin-confirmation-required",
+  },
   "humanMessages": [
     "oi",
     "oi",

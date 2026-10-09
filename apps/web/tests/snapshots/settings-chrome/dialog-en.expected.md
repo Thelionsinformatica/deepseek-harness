@@ -4,6 +4,9 @@
     - button "General":
       - img
       - text: General
+    - button "Personalization":
+      - img
+      - text: Personalization
     - button "Models":
       - img
       - text: Models
@@ -13,6 +16,9 @@
     - button "Agent presets":
       - img
       - text: Agent presets
+    - button "Skills":
+      - img
+      - text: Skills
   - button "Open configuration file"
   - button "Close":
     - img
@@ -42,4 +48,8 @@
   - text: Enter behavior while busy Busy only; Cmd/Ctrl+Enter uses the other behavior
   - button "Queue":
     - text: Queue
+    - img
+  - text: Technical context in chat Show prompt preparation events such as system instructions, skills, and time
+  - button "Hidden":
+    - text: Hidden
     - img

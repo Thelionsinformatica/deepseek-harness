@@ -8,8 +8,8 @@
  * routes — physical carriers wrap `ctx.apiProxy` themselves.
  *
  * The gateway consumes `ctx.agentDefaultModel`, the transport-independent default
- * shared with direct entry points. Switching models persists through that
- * service; sessions that have already logged a selection remain unchanged.
+ * shared with direct entry points. Explicit manual picks affect only their
+ * session; legacy manual requests without a mode also save the global default.
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'

@@ -2,6 +2,10 @@
 # deepseek-official default would be a route nothing serves — which the
 # composer refuses to type into. This scenario declares its own
 # pi-ai routes and starts the default on one of them.
+- id: llm-pi-ai
+  config: { providers: {} }
+- id: api-gateway
+  config: {}
 - id: agent-default-model
   config:
     provider: origin-gateway

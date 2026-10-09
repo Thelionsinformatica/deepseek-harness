@@ -10,6 +10,14 @@ A failed `skill.list` throws from `candidates`, which the slash shell logs and f
 
 The `/client` exports are the plugin body (`apply`/`inject`) only; the source object is internal to the registration effect.
 
+## Installed skill settings
+
+The `Skills` section registers in `ui-settings` through the existing `settings.section` slot. It lists local skills, including disabled entries, from `skills.catalog`. The profile picker reads `agentPresets.list`; choosing a profile only changes what this page inspects, not the default profile or a conversation's profile. The optional workspace picker uses registered workspace IDs from `useWorkspaces`. Without a workspace, the catalog covers profile and user roots; with one, the Host resolves its directory and includes project skills. The page never accepts a filesystem path or installs skills.
+
+Each toggle saves the selected profile's disabled skill names through `settings.mutate` in the `agent-presets` namespace, with the catalog's `revision` as `expectedRevision`. Preferences apply by name across that profile's workspaces. Writes preserve disabled names absent from the current catalog, wait for the RPC result, and re-read the catalog rather than showing an optimistic success. Refused or uncertain writes are not retried automatically. The UI distinguishes incomplete catalogs, confirmed empty catalogs, read-only settings, loading, and errors. A single pending write locks the controls; superseded reads are aborted and cannot replace newer results, and plugin disposal awaits pending operations without publishing late state.
+
+Enabling a skill does not override its model/user invocation restrictions. Changes affect subsequent catalog reads and skill loads; they do not remove instructions already loaded into a conversation. A forwarded `settings/document-updated` event for `agent-presets` clears all slash catalog caches and refreshes the Settings catalog if it has been opened. Reconnect does the same. Copy is available in Brazilian Portuguese, English, and Chinese.
+
 ## Skill tool row
 
 The browser plugin also registers the `skill` wire name in `ui-tool`'s keyed `tool.call.toolview` slot. A collapsed row renders the 14-pixel skill document-and-sparkle glyph, `Skill` title, separator, and requested skill name with the same neutral hierarchy as the Bash row; running calls carry the transcript shimmer, failures replace the name with the first error line, and interrupted calls use the warning state. A settled row expands as one whole-row disclosure into a bounded `Instructions` card containing the exact durable tool output, with the standard trajectory `Inspect` affordance when available. The row derives its name, lifecycle, and body only from the frozen call/result slice supplied by `ui-tool`, never from the current catalog, so replay remains stable when installed skills or their descriptions change.
@@ -24,7 +32,7 @@ The user's message reaches the model verbatim, `/name` literal included. The hos
 
 #### Token effect
 
-One invocation adds the rendered skill body to that turn as injected context — the same cost as the model loading the skill through the tool, paid unconditionally instead of at the model's discretion. Menu browsing and the candidate fetch add zero model tokens.
+One invocation adds the rendered skill body to that turn as injected context — the same cost as the model loading the skill through the tool, paid unconditionally instead of at the model's discretion. Menu browsing, candidate fetches, and Settings catalog reads or preference writes make no model calls and add zero model tokens. Availability changes can affect subsequent Host skill assembly, not already loaded instructions.
 
 #### KV Cache effect
 

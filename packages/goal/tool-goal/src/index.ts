@@ -116,7 +116,7 @@ type GoalToolValue =
       blockedReason?: { code: string; message: string }
     }
     activation: GoalView['activation']
-    review?: { status: 'pass'; sessionId: string; summary: string }
+    review?: { status: 'pass'; sessionId: string; summary: string; nextAction?: string }
   }
 
 const GOAL_VALUE_SCHEMA = {
@@ -160,6 +160,7 @@ const GOAL_VALUE_SCHEMA = {
             status: { type: 'string', required: true, enum: ['pass'] },
             sessionId: { type: 'string', required: true },
             summary: { type: 'string', required: true },
+            nextAction: { type: 'string' },
           },
         },
       },
@@ -181,11 +182,13 @@ function guidance(
     + 'Difficulty, uncertainty, or remaining work are not blockers.'
     + (completionRequiresCompletedTodos
       ? ' Completion needs a non-empty todo_write list with all items done. An incomplete-list rejection returns the '
-        + 'complete canonical list; preserve content/order, update statuses, retain legitimate new items, then retry.'
+        + 'complete canonical list. Do not repeat complete with an unchanged list. Call todo_write to record only '
+        + 'genuinely finished items; preserve content/order and retain legitimate new items before retrying.'
       : '')
     + (completionAuditorEnabled
       ? ' Use action review to request independent review before marking review bookkeeping completed. '
-        + 'A successful review leaves the goal active and never completes todos. Then finish bookkeeping and call complete '
+        + 'A successful review leaves the goal active and never completes todos. After PASS, use todo_write to mark '
+        + 'finished review bookkeeping completed, then call complete '
         + 'in the same turn without other work. Complete reuses that current PASS; otherwise it starts a fresh audit. '
         + 'Never mark a review todo completed before PASS. If rejected, fix findings and revalidate before retrying.'
       : '')
@@ -282,9 +285,12 @@ function requireCompletedTodos(execution: GoalToolExecution, goal: GoalView): vo
   if (remaining.length === 0) return
   throw new HarnessError(
     `complete rejected: ${remaining.length} todo item(s) remain incomplete. `
+      + 'Do not repeat complete with an unchanged list: it will be rejected again. '
       + `Canonical current todo_write list: ${JSON.stringify(todos)}. `
-      + 'Finish the remaining work, then keep this list intact and in order while updating statuses and retaining '
-      + 'any legitimately discovered new items before retrying completion.',
+      + 'Finish the remaining work, then call todo_write with the full list, preserving content/order and recording '
+      + 'only genuinely completed statuses. A review PASS never changes todo statuses; after PASS, explicitly mark '
+      + 'finished review bookkeeping completed with todo_write. Retain any legitimate new items; new work or changed '
+      + 'requirements need fresh review before completion.',
     'GOAL_TOOL_TODOS_INCOMPLETE',
   )
 }
@@ -519,7 +525,13 @@ export function apply(ctx: Context, config: Config): void {
       }
       const withReview = (value: GoalToolValue): GoalToolValue => value.goal === null || acceptedReview === undefined
         ? value : { ...value, review: { status: 'pass', sessionId: acceptedReview.auditor.sessionId,
-          summary: completionAudit?.summary ?? 'Previously recorded PASS reused; no new audit was started.' } }
+          summary: completionAudit?.summary ?? 'Previously recorded PASS reused; no new audit was started.',
+          ...args.action === 'review' ? { nextAction: 'The goal remains active and todo statuses are unchanged. '
+            + 'If review bookkeeping is pending, call todo_write with the full current list, preserving content/order '
+            + 'and marking only genuinely finished items completed. Then call update_goal action complete in this '
+            + 'same turn without other work. Do not repeat complete while any item remains unfinished. New work or '
+            + 'changed requirements need fresh review.' } : {},
+        } }
       if (args.action === 'review') return withReview(goalValue(ctx.goals.get(execution.agent)))
       const goal = args.action === 'complete'
         ? ctx.goals.complete(execution.agent, ref)

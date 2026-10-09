@@ -13,7 +13,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { AgentPresetSection } from '../src/client/AgentPresetSection.tsx'
 import type { AgentPresetSectionProps } from '../src/client/AgentPresetSection.tsx'
 import type { AgentPresetSectionState, CopyDraft } from '../src/client/section-store.ts'
-import { en } from '../src/client/locales.ts'
+import { en, pt } from '../src/client/locales.ts'
 
 afterEach(cleanup)
 
@@ -40,7 +40,7 @@ const READY: AgentPresetSectionState = {
  */
 function renderSection(
   state: Partial<AgentPresetSectionState> = {},
-  options: { creator?: boolean } = {},
+  options: { creator?: boolean; locale?: typeof en } = {},
 ) {
   const store = createSnapshotStore<AgentPresetSectionState>({ ...READY, ...state })
   const actions = {
@@ -63,7 +63,7 @@ function renderSection(
   const props = {
     ...actions,
     useAgentPresetSection: bindSnapshotSelector(store),
-    t: (key: keyof typeof en) => en[key],
+    t: (key: keyof typeof en) => (options.locale ?? en)[key],
   } as unknown as AgentPresetSectionProps
   render(<AgentPresetSection {...props} />)
   return actions
@@ -97,7 +97,7 @@ describe('the preset list', () => {
     expect(within(mine).getByText(en.noDescription)).toBeTruthy()
   })
 
-  it('marks trust and the one in use, and offers no "set default" on it', () => {
+  it('marks trust and the default for new sessions, and offers no "set default" on it', () => {
     renderSection()
 
     const standard = rowFor('standard')
@@ -105,6 +105,14 @@ describe('the preset list', () => {
     expect(within(standard).getByText(en.inUse)).toBeTruthy()
     expect(within(standard).queryByText(en.setDefault)).toBeNull()
     expect(within(rowFor('mine')).getByText(en.userTrust)).toBeTruthy()
+  })
+
+  it('labels the Portuguese default without claiming it is the current session preset', () => {
+    renderSection({}, { locale: pt })
+    const standard = rowFor('standard')
+    expect(within(standard).getByText('Padrão para novas sessões')).toBeTruthy()
+    expect(within(standard).getByRole('button', { name: `Padrão para novas sessões: ${pt.presetStandardName}` }).getAttribute('disabled')).not.toBeNull()
+    expect(screen.queryByText('Em uso')).toBeNull()
   })
 
   it('leads with the default assistant and keeps the other shipped modes collapsed', () => {

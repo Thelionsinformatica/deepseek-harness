@@ -3,6 +3,11 @@
     - button "/user-invoke-demo and confirm the fixtur" [disabled]
   - img
   - text: Standard mode
+  - button "Review memory":
+    - img
+    - text: Review memory
+  - button "Activity"
+  - button "Full screen"
   - button "Session log":
     - text: Session log
     - img
@@ -20,6 +25,10 @@
   - img
   - img
   - text: Context injection user-invoke-demo
+- button "Context injection time-context":
+  - img
+  - img
+  - text: Context injection time-context
 - paragraph: USER_INVOKE_REPLY acknowledged; following the injected skill.
 - button "Copy":
   - img
@@ -31,12 +40,17 @@
   - img
 - text: {{clock}} Ran for {{duration}} TTFT {{duration}} {{throughput}} tok/s
 - textbox "Message the agent"
-- button "Commands":
+- button "Add":
   - img
 - 'button "Access mode, current: Workspace Write"': Workspace Write
+- button "Enable web access for this session": Web
+- button "Start voice"
 - button "Select model, current DeepSeek-V4-Flash":
   - text: DeepSeek-V4-Flash
   - img
 - button "0% of context used"
 - button "Send message" [disabled]
-- text: 1 turns · 1 steps LLM {{duration}} TTFT avg {{duration}} · {{throughput}} tok/s Cache hit 0% Input 256 tok · Output 16 tok
+- status:
+  - strong: Leon ready
+  - text: Ready for a new task.
+- text: 1 turns · 1 steps LLM {{duration}} TTFT avg {{duration}} · {{throughput}} tok/s Cache hit 0% Input 256 tok · Output 16 tok 1 unaccounted call(s)

@@ -3,7 +3,7 @@
 import { z } from 'zod'
 import { SessionId, type SessionId as SessionIdentity } from '@deepseek-ai/dsh-session'
 import { WorkspaceId, type WorkspaceId as WorkspaceIdentity } from '@deepseek-ai/dsh-workspace'
-import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
+import { defineDomain, domainTable, type DomainTableSpec } from '@deepseek-ai/dsh-storage-domain'
 import {
   type MemoryRecordSchemaVersion,
   type MemoryRef,
@@ -60,7 +60,7 @@ export interface LocalMemoryGraph {
   readonly minScore: number
   readonly maxEdgesPerNode: number
   readonly computedAt: string
-  /** Exact record revisions the edges were computed against. */
+  /** Exact revisions covered by the edges; failed rebuilds retain the last published coverage. */
   readonly recordRevisions: Record<string, number>
   readonly edges: readonly LocalMemoryGraphEdge[]
   readonly failureCode?: string
@@ -125,8 +125,15 @@ export const localMemoryGraph = z.object({
   failureCode: z.string().optional(),
 }) as unknown as z.ZodType<LocalMemoryGraph>
 
-/** One versioned table routed through the host's configured storage backend. */
-export const localMemoryDomainSpec = defineDomain({
+/** Domain declaration with public key aliases so emitted types never expose private workspace paths. */
+export const localMemoryDomainSpec: {
+  name: string
+  version: number
+  tables: {
+    memories: DomainTableSpec<ReturnType<typeof MemoryId>, LocalMemoryRecord>
+    graph: DomainTableSpec<WorkspaceIdentity, LocalMemoryGraph>
+  }
+} = defineDomain({
   name: 'memory_local',
   version: 1,
   tables: {

@@ -12,7 +12,9 @@ Source: [`packages/skill/skill/src/index.ts`](../../packages/skill/skill/src/ind
 
 The registry is host+per-scope layered, the shape the [tools registry](tools.md) established over [dsh-scope](../../packages/core/scope): a registration files into the layer of its calling context's scope, so host rows and repository plugins land in the global layer while a plugin mounted by an agent preset's standing composition lands in that preset's layer, and provider names are unique per layer rather than process-wide. A read merges the global layer with the viewing scope's chain — the nearest layer's entry wins a duplicate skill name outright, and the rank order below decides duplicates only within one layer. Discovery caches are keyed by the resolved scope chain, so re-parenting a scope (a blank-session recompose) is visible to the next read without a registry mutation.
 
-Within one layer, duplicate names resolve by rank, provider order, then local order; summaries sort by name. A rejected `list()` is logged and omitted from an incomplete observation, while an explicit incomplete observation contributes usable candidates without making the result cacheable; malformed candidates fail fast. Each provider factory receives a registration-scoped control whose `invalidate()` clears completed catalogs only while that exact registration remains active and whose signal aborts on failed registration or disposal. An in-flight discovery retries once when its provider generation changes; a second change returns the latest candidates incomplete and uncached. Provider and runtime mutations emit the unfiltered `skills/change` invalidation event; it carries no diff, so consumers refetch `snapshot()` with their own lookup options.
+Within one layer, duplicate names resolve by rank, provider order, then local order; summaries sort by name. A rejected `list()` is logged and omitted from an incomplete observation, while an explicit incomplete observation contributes usable candidates without making the result cacheable; malformed candidates fail fast. Each provider factory receives a registration-scoped control whose `invalidate()` clears completed catalogs only while that exact registration remains active and whose signal aborts on failed registration or disposal. An in-flight discovery retries once when its provider generation changes; a second change returns the latest candidates incomplete and uncached. Provider/runtime mutations and restriction registration/disposal emit the unfiltered `skills/change` invalidation event; it carries no diff, so consumers refetch `snapshot()` with their own lookup options.
+
+`registerRestriction(allow)` contributes a live availability predicate to its calling scope. Every global and inherited restriction must permit a name; a nearer scope cannot override a denial. Restrictions apply after duplicate resolution, so disabling a winner does not expose a shadowed skill. `isEnabled(name, options)` reads those predicates without discovery or invocation checks. Predicate answers are not cached; changes to captured state do not themselves emit `skills/change`.
 
 An array returned by `SkillProvider.list()` is complete-discovery shorthand. `SkillProviderObservation` lets a provider expose candidates that remain directly loadable while reporting that the observation is not authoritative.
 
@@ -123,9 +125,9 @@ interface SkillSummary {
 }
 ```
 
-`ctx.skills.list()` preserves all four policy combinations. `isModelInvocable(skill)` and `isUserInvocable(skill)` read the corresponding required field. A model-only skill sets `{ modelInvocable: true, userInvocable: false }`, a user-only skill sets `{ modelInvocable: false, userInvocable: true }`, and setting both fields to `false` keeps the skill available only through trusted `ctx.skills.get()` callers. The local provider reads the exact kebab-case frontmatter keys `disable-model-invocation` and `user-invocable`, defaults omitted fields to `true`, and projects every parsed skill into this normalized policy.
+`ctx.skills.list()` filters availability but preserves all four invocation-policy combinations. `isModelInvocable(skill)` and `isUserInvocable(skill)` read the corresponding required field. A model-only skill sets `{ modelInvocable: true, userInvocable: false }`, a user-only skill sets `{ modelInvocable: false, userInvocable: true }`, and setting both fields to `false` permits only trusted `ctx.skills.get()` callers, still subject to availability restrictions. The local provider reads the exact kebab-case frontmatter keys `disable-model-invocation` and `user-invocable`, defaults omitted fields to `true`, and projects every parsed skill into this normalized policy.
 
-`SkillCatalogSnapshot` distinguishes authoritative absence from transient provider failure or a catalog that kept changing during discovery. `skills` contains the sorted invocation-neutral summaries collected in that observation; `complete` is true only when every registered provider completed without a concurrent catalog revision. Incomplete snapshots are not cached, allowing each consumer to retain its last-good filtered catalog and retry.
+`SkillCatalogSnapshot` distinguishes authoritative absence from transient provider failure or a catalog that kept changing during discovery. `skills` contains sorted invocation-neutral summaries: `inventory()` includes disabled winning metadata without bodies, while `snapshot()` removes names denied by live restrictions. `complete` is true only when every registered provider completed without a concurrent catalog revision. Incomplete snapshots are not cached, allowing each consumer to retain its last-good filtered catalog and retry.
 
 ```ts type-equiv
 /** One catalog observation plus whether discovery completed within a stable catalog revision. */
@@ -191,7 +193,7 @@ type SkillRegistration = Omit<SkillDefinition, 'invocation' | 'provider'> & {
 
 Skill lookup is cwd-sensitive because providers may expose workspace-local skills, and its optional signal cancels provider work for the caller. Registry reads additionally take the viewing scope — consumers pass the calling agent, which is its own scope key — through `SkillViewOptions`; the registry consumes `scope` for layer selection, and providers read only their `SkillLookupOptions` contract from the same borrowed options object. Cancellation is checked before and after catalog selection, including cache hits, and races both discovery and full-definition loading. If no git root is found, the local provider treats the supplied cwd itself as the project root.
 
-Full definitions are not cached by the registry. Each `get()` calls the winning provider with the selected candidate, so the local provider rereads the current body. A definition whose name no longer matches that candidate is rejected and invalidates the exact provider for rediscovery.
+Full definitions are not cached by the registry. `get()` returns `undefined` when live restrictions deny the name before body loading or after the provider settles; no option bypasses these checks. Otherwise it calls the winning provider with the selected candidate, so the local provider rereads the current body. A definition whose name no longer matches that candidate is rejected and invalidates the exact provider for rediscovery.
 
 ```ts type-equiv
 /** Caller context used for cwd-sensitive and abortable provider work. */
@@ -230,7 +232,7 @@ interface Config {
 
 `dsh-tool-skill` injects the initial durable user-role `<system-reminder>` at the first `agent/pre-step` of a live session that observes a non-empty complete view. The catalog contains sorted skill `name` and normalized, XML-escaped `description` only; it omits bodies, paths, sources, providers, and routing hints. Discovery forwards the step's abort signal through `SkillLookupOptions`. `catalogDescriptionMaxLength` is the consumer config for the description bound, with default `500` and integer minimum `3`.
 
-Before each later model step, the consumer applies exact tool visibility and digests the exact rendered entries between the `<available_skills>` tags from a complete snapshot. It derives the comparison baseline from the same entries in the newest recognizable visible catalog message sourced by the plugin. A changed digest appends a durable full replacement through `agent.inject()`; deleting every skill appends an explicit empty replacement. Incomplete snapshots preserve the last-good model view. If compaction hides every historical catalog message, the next complete snapshot re-establishes the current catalog; an empty view with no prior catalog emits nothing. These catalog messages are session history, not World State.
+Before each later model step, the consumer applies exact tool visibility and digests the exact rendered entries between the `<available_skills>` tags from a complete snapshot. It derives the comparison baseline from the same entries in the newest recognizable visible catalog message sourced by the plugin. A changed digest appends a durable full replacement through `agent.inject()`; deleting every skill appends an explicit empty replacement. Incomplete snapshots preserve the last-good model view, which can retain a disabled skill's stale summary; live restrictions still prevent loading its body. If compaction hides every historical catalog message, the next complete snapshot re-establishes the current catalog; an empty view with no prior catalog emits nothing. These catalog messages are session history, not World State.
 
 The model-facing `skill({ name })` tool validates the kebab-case name, finds the summary in the invocation-neutral catalog, rejects it before loading unless `isModelInvocable` permits access, then rereads the complete definition for the calling agent cwd and rechecks the policy before returning content. It reports an unresolved skill as unknown or no longer available and returns a tool result containing `<skill_content name="...">`, `<skill_resources>`, and `<skill_instructions>`. `resourceBase` resolves explicitly referenced scripts, references, and assets only as needed; the loaded result does not enumerate a skill directory. Body-only edits therefore change later tool calls without producing catalog messages or rewriting earlier tool results.
 
@@ -266,6 +268,25 @@ registerModelTool(tool: object): () => void
 isModelTool(tool: object | undefined): boolean
 
 /**
+ * Add a live restriction in the calling context's layer. Global and inherited
+ * restrictions all apply; a nearer registration cannot override a denial.
+ * Predicates run synchronously on every read, must be side-effect-free, and
+ * may read current settings. A thrown predicate fails the read instead of allowing access.
+ * @param allow - whether the skill name is enabled in this registration.
+ * @returns the exact Cordis disposer removing only this restriction.
+ */
+registerRestriction(allow: (name: string) => boolean): () => void
+
+/**
+ * Read live restrictions without discovering providers or checking invocation
+ * flags. This does not establish that a skill exists or is invocable.
+ * @param name - kebab-case skill name; invalid names are disabled.
+ * @param options - view options; only `scope` selects applicable restrictions.
+ * @returns whether every global and scope-chain restriction allows the name.
+ */
+isEnabled(name: string, options: SkillViewOptions = {}): boolean
+
+/**
  * Register a borrowed same-process provider synchronously during plugin
  * apply, into the calling context's layer: a scoped context (an agent
  * preset's standing mount) registers for that scope alone, an unscoped
@@ -295,7 +316,7 @@ register(skill: SkillRegistration): () => void
  * options and provider candidates are readonly same-process values borrowed
  * throughout discovery.
  * @param options - view options; `scope` selects the viewing agent's layers, `cwd` selects project roots, and `signal` cancels discovery.
- * @returns all sorted winning summaries.
+ * @returns sorted winning summaries allowed by live restrictions.
  */
 async list(options: SkillViewOptions = {}): Promise<SkillSummary[]>
 
@@ -304,18 +325,27 @@ async list(options: SkillViewOptions = {}): Promise<SkillSummary[]>
  * Incomplete observations are never cached, allowing consumers to retain last-good state and
  * retry on their next request boundary.
  * @param options - view options; `scope` selects the viewing agent's layers, `cwd` selects project roots, and `signal` cancels discovery.
- * @returns sorted summaries plus discovery-completeness state.
+ * @returns sorted summaries allowed by live restrictions plus discovery-completeness state.
  */
 async snapshot(options: SkillViewOptions = {}): Promise<SkillCatalogSnapshot>
 
 /**
+ * Inspect winning metadata including disabled skills, without loading bodies.
+ * Consumers must not use this administrative inventory as an invocation catalog.
+ * @param options - view options; `scope` selects layers, `cwd` selects project roots, and `signal` cancels discovery.
+ * @returns sorted summaries, including disabled names, plus discovery-completeness state.
+ */
+async inventory(options: SkillViewOptions = {}): Promise<SkillCatalogSnapshot>
+
+/**
  * Load and validate the winning candidate, passing its opaque discovery locator back to the
  * provider. Cancellation is rechecked after selection, including cache hits, and raced against
- * loading so an uncooperative provider cannot hang the caller.
+ * loading so an uncooperative provider cannot hang the caller. Live restrictions
+ * are checked before provider loading and after it settles; no lookup option bypasses them.
  * @param name - kebab-case skill name.
  * @param options - view options; `scope` selects the viewing agent's layers,
  *   `cwd` selects workspace-sensitive skills, and `signal` cancels work.
- * @returns the full skill, including body content, or `undefined`.
+ * @returns the full skill, including body content, or `undefined` when absent or disabled.
  */
 async get(name: string, options: SkillViewOptions = {}): Promise<SkillDefinition | undefined>
 ```
@@ -330,11 +360,11 @@ Source: [`packages/skill/skill/src/index.ts`](../../packages/skill/skill/src/ind
 
 #### `skills/change` — emit
 
-A skill provider, runtime contribution, or provider-backed catalog may have changed. This is an unfiltered invalidation notification; consumers refetch the catalog for their own lookup options. Listener failures are contained and cannot veto the registry mutation.
+A skill provider, runtime contribution, restriction registration, or provider-backed catalog may have changed. This is an unfiltered invalidation notification; consumers refetch the catalog for their own lookup options. Listener failures are contained and cannot veto the registry mutation.
 
 ```ts cordis-catalog
 /**
- * A skill provider, runtime contribution, or provider-backed catalog may
+ * A skill provider, runtime contribution, restriction registration, or provider-backed catalog may
  * have changed. This is an unfiltered invalidation notification; consumers
  * refetch the catalog for their own lookup options. Listener failures are
  * contained and cannot veto the registry mutation.

@@ -10,6 +10,7 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-agent-loop'
 import type {} from '@deepseek-ai/dsh-session-persistence-jsonl'
+import type {} from '@deepseek-ai/dsh-tool-memory/review'
 
 const original = 'O nome de trabalho do usuário é Pessoa Exemplo.'
 const corrected = 'O nome de trabalho do usuário é Pessoa Revisada.'
@@ -44,6 +45,94 @@ function profileMessages(messages: readonly Message[]): string[] {
   return messages.flatMap(message => message.role === 'user' && message.source.kind === 'plugin'
     && message.source.plugin === 'tool-memory'
     ? message.content.flatMap(block => block.type === 'text' ? [block.text] : []) : [])
+}
+
+class ProposalFixtureAdapter extends LlmAdapter {
+  readonly requests: GenerateOptions[] = []
+
+  override async resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+    return { provider, id: model, name: model }
+  }
+
+  override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    this.requests.push(options)
+    assert.ok(this.requests.length <= 5, 'The confirmation fixture has five requests.')
+    if (this.requests.length === 1) {
+      yield { type: 'block-start', index: 0, blockType: 'tool-call' }
+      yield { type: 'block-end', index: 0, block: {
+        type: 'tool-call', id: CallId('fixture-proposal'), name: 'personal_memory_remember',
+        arguments: JSON.stringify({ content: 'A pessoa prefere diagramas sintéticos.' }),
+      } }
+      yield { type: 'finish', reason: { kind: 'tool-calls' } }
+      return
+    }
+    yield { type: 'block-start', index: 0, blockType: 'text' }
+    yield { type: 'block-end', index: 0, block: { type: 'text', text: 'Consulta concluída.' } }
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  }
+}
+
+/** Exercise the model tool and the confirmed Host operation through the shipped composition. */
+async function confirmationJourney(ctx: Context) {
+  const scope = { ownerId: PersonalMemoryOwnerId('fixture-owner') }
+  const sessionId = SessionId('personal-confirmation')
+  const adapter = new ProposalFixtureAdapter()
+  ctx.llm.registerAdapter(['proposal-fixture'], adapter)
+  const agent = ctx.agentLoop.create(sessionId, { provider: 'proposal-fixture', model: 'deterministic' })
+  const turn = async (text: string): Promise<void> => {
+    agent.followup(createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } }))
+    await agent.whenIdle()
+    const end = agent.session.events.at(-1)
+    assert.ok(end?.type === 'turn/end' && end.data.reason.kind !== 'error')
+  }
+  await turn('Lembre a preferência sintética.')
+  const rememberSchema = adapter.requests[0]?.tools?.find(tool => tool.name === 'personal_memory_remember')
+  assert.ok(rememberSchema)
+  assert.deepEqual(rememberSchema.parameters, {
+    type: 'object', properties: {
+      content: { type: 'string', description: 'Self-contained personal fact to remember.' },
+    }, required: ['content'],
+  })
+  const proposed = (await ctx.personalMemory.search({ scope, query: 'diagramas', limit: 10 }))[0]?.record
+  assert.ok(proposed)
+  assert.equal(proposed.validation, undefined)
+  assert.equal(proposed.confidence, undefined)
+  assert.equal(proposed.core, undefined)
+  await turn('Qual é a preferência sobre diagramas?')
+  assert.ok(!profileMessages(adapter.requests[2]!.messages).join('\n').includes(proposed.content))
+  const request = { sessionId, id: proposed.id, revision: proposed.revision, content: proposed.content, core: true }
+  const denied = await ctx.memoryCandidateReview.correctPersonalMemory({ ...request, confirmed: false })
+  assert.ok(!denied.ok && denied.error.code === 'memory-admin-confirmation-required')
+  const confirmed = await ctx.memoryCandidateReview.correctPersonalMemory({ ...request, confirmed: true })
+  assert.ok(confirmed.ok)
+  assert.equal(confirmed.value.item.core, true)
+  assert.equal(confirmed.value.item.validation, 'explicit')
+  await turn('oi')
+  assert.ok(profileMessages(adapter.requests[3]!.messages).join('\n').includes(proposed.content))
+  const removed = await ctx.memoryCandidateReview.correctPersonalMemory({
+    ...request, revision: confirmed.value.item.revision, core: false, confirmed: true,
+  })
+  assert.ok(removed.ok)
+  assert.equal(removed.value.item.content, proposed.content)
+  await turn('oi')
+  assert.ok(!profileMessages(adapter.requests[4]!.messages).join('\n').includes(proposed.content))
+  const history = await ctx.personalMemory.list({ scope, statuses: ['active', 'superseded'], query: 'diagramas', limit: 10 })
+  assert.deepEqual(history.items.map(item => item.record.revision).sort(), [1, 2, 3])
+  await ctx.sessions.flush(agent.session)
+  const persisted = await ctx.sessionPersistence.load(sessionId)
+  const replay = Session.create(sessionId, persisted.events, persisted.meta)
+  assert.deepEqual(replay.deriveMessages(), agent.session.deriveMessages())
+  return {
+    rememberParameters: rememberSchema.parameters,
+    proposalConfirmed: proposed.validation !== undefined,
+    confirmationRequired: JSON.stringify(persisted.events).includes('confirmationRequired'),
+    withoutHumanConfirmation: denied.error.code,
+    confirmedRevision: confirmed.value.item.revision,
+    removedFromProfileRevision: removed.value.item.revision,
+    revisionsPreserved: history.items.map(item => item.record.revision).sort(),
+    profilePresence: adapter.requests.map(request => profileMessages(request.messages).join('\n').includes(proposed.content)),
+    replayPreservesActiveMessages: true,
+  }
 }
 
 async function run(ctx: Context) {
@@ -125,7 +214,8 @@ const uninstallFailLoud = installFailLoud('personal-core-profile-driver')
 let ctx: Context | undefined
 try {
   ctx = await boot('personal-core-profile-driver', configPath)
-  process.stdout.write(`${JSON.stringify(await run(ctx))}\n`)
+  const baseline = await run(ctx)
+  process.stdout.write(`${JSON.stringify({ ...baseline, confirmationJourney: await confirmationJourney(ctx) })}\n`)
 } finally {
   await ctx?.fiber.dispose()
   uninstallFailLoud()

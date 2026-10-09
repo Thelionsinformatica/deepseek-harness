@@ -27,11 +27,12 @@ import z from '@deepseek-ai/schemastery'
 import { bindScopeParent, createScope, scopeOf, type Scope, type ScopeKey, type ScopeParentBinding } from '@deepseek-ai/dsh-scope'
 // Type-only: resolves the `agent/created` lifecycle event this service watches.
 import type {} from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-skill'
 import { settingsNamespace, type SettingsScope, type default as SettingsService } from '@deepseek-ai/dsh-settings'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { discoverPresets, USER_PRESET_DIR } from './discovery.ts'
 import { copyComposition, deleteComposition, readComposition } from './authoring.ts'
-import { mountPreset, serviceForAgent, standingMountFor } from './mount.ts'
+import { mountPreset, serviceForAgent, serviceForStanding, standingMountFor, standingServiceContext } from './mount.ts'
 import { PresetExistsError } from './authoring.ts'
 import { PresetMountError, UnknownPresetError, type AgentPreset, type Config, type PresetRoot } from './preset.ts'
 import type {} from './types.ts'
@@ -43,11 +44,14 @@ export const SETTINGS_NAMESPACE = 'agent-presets'
 export interface AgentPresetSettings {
   /** Preset mounted when a session names none. */
   default?: string
+  /** Disabled skill names by stable preset id; omission preserves discovery defaults. */
+  disabledSkills?: Record<string, string[]>
 }
 
 /** Runtime schema for the user-writable slice. */
 export const AgentPresetSettingsSchema: z<AgentPresetSettings> = z.object({
   default: z.string(),
+  disabledSkills: z.dict(z.array(z.string().pattern(/^[a-z0-9]+(?:-[a-z0-9]+)*$/))),
 })
 
 export { COMPOSITION_FILE, discoverPresets, scanRoot } from './discovery.ts'
@@ -116,6 +120,8 @@ export class AgentPresets extends Service {
    * service makes: clearing a user default it has just deleted.
    */
   private settingsService: SettingsService | undefined
+  /** Last confirmed policy survives settings-provider disposal; teardown cannot enable a skill. */
+  private disabledSkills: Readonly<Record<string, readonly string[]>> = {}
 
   /**
    * The service's own untraced context. Methods invoked through the traceable
@@ -145,6 +151,13 @@ export class AgentPresets extends Service {
         { base: { default: config.default } },
       )
       this.settingsService = settingsCtx.settings
+      const refreshSkillSelection = (): void => {
+        this.disabledSkills = this.settings?.get().disabledSkills ?? {}
+      }
+      refreshSkillSelection()
+      settingsCtx.on('settings/updated', (ns) => {
+        if (ns === SETTINGS_NAMESPACE) refreshSkillSelection()
+      })
       settingsCtx.effect(() => () => {
         this.settings = undefined
         this.settingsService = undefined
@@ -487,6 +500,17 @@ export class AgentPresets extends Service {
     return (await this.ensureStanding(preset)).key
   }
 
+  /**
+   * Inspect a preset's services without creating or resuming an agent.
+   * @param id - stable preset identifier.
+   * @param name - service name to resolve.
+   * @returns the preset-owned service or inherited host service.
+   */
+  async serviceForPreset<K extends string & keyof Context>(id: string, name: K): Promise<Context[K] | undefined> {
+    const key = await this.standingKeyFor(id)
+    return serviceForStanding(this.selfCtx, key, name) ?? this.selfCtx.get(name)
+  }
+
   /** Resolve (or create, single-flight) the standing mount of one preset. */
   private async ensureStanding(preset: AgentPreset): Promise<StandingMount> {
     const pending = this.standing.get(preset.id)
@@ -522,6 +546,16 @@ export class AgentPresets extends Service {
           throw new PresetMountError(preset.id, `composition file is unreadable: ${preset.path}`)
         }
         await mountPreset(scope.ctx, preset)
+        const allowSkill = (name: string): boolean => {
+          const disabled = Object.hasOwn(this.disabledSkills, preset.id) ? this.disabledSkills[preset.id] : undefined
+          return !disabled?.includes(name)
+        }
+        // The standing scope owns the injection even when the registry occupies
+        // an entry-local realm, so replacing that registry reapplies the policy.
+        const skillsCtx = standingServiceContext(scope.ctx, key, 'skills')
+        await skillsCtx.inject(['skills'], (skillCtx) => {
+          skillCtx.skills.registerRestriction(allowSkill)
+        })
         return { key, scope, stamp }
       } catch (error) {
         this.standing.delete(preset.id)

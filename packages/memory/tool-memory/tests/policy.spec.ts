@@ -25,7 +25,7 @@ describe('candidate memory policy', () => {
   it('blocks explicit credential-like queries and marks blocked as decision', () => {
     const blocked = evaluateCandidatePolicy({
       operation: 'tool_call_memory_search',
-      query: 'Use this token sk-proj-abcdef1234567890abcdef',
+      query: 'Use this token sk-proj-abcdef1234567890abcdef', // verify-secrets: allow synthetic test fixture, asserted redacted
       total: 3,
       omittedSensitive: 0,
       inserted: 3,

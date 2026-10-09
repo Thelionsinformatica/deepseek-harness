@@ -1,4 +1,5 @@
 - menu "模型与推理等级":
+  - menuitem "返回模型列表"
   - menuitemradio "Default" [checked]:
     - text: Default
     - img

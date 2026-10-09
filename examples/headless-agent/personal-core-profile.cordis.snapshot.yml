@@ -21,6 +21,15 @@
 - name: '@deepseek-ai/dsh-storage-domain'
   config:
     backend: json
+- name: '@deepseek-ai/dsh-workspace'
+- name: '@deepseek-ai/dsh-memory'
+  config:
+    provider: local
+- name: '../../packages/memory/memory-local/lib/index.js'
+- name: '@deepseek-ai/dsh-settings-file'
+  config:
+    path: !!js process.cwd() + '/settings.yaml'
+    watch: false
 - name: '@deepseek-ai/dsh-personal-memory'
   config:
     provider: local
@@ -34,3 +43,8 @@
     personalAutomaticRecall: true
     coreRecallLimit: 8
     coreRecallMaxChars: 4000
+- name: '@deepseek-ai/dsh-tool-memory/review'
+  config:
+    reviewedBy: fixture-human
+    administrationMode: full
+    personalOwnerId: fixture-owner

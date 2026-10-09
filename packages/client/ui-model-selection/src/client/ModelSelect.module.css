@@ -99,6 +99,144 @@
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
+.catalogMenu {
+  width: min(680px, calc(100vw - 32px));
+  max-width: min(680px, calc(100vw - 32px));
+  max-height: min(480px, calc(100vh - 96px));
+}
+
+.catalogLayout {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.catalogList {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.search {
+  box-sizing: border-box;
+  width: calc(100% - 16px);
+  min-height: 36px;
+  margin: 4px 8px 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: 8px;
+  outline: none;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.search:focus-visible {
+  box-shadow: 0 0 0 2px var(--dsw-alias-border-l3);
+}
+
+.details {
+  min-width: 0;
+  overflow-y: auto;
+  padding: 12px;
+  border-left: 1px solid var(--dsw-alias-border-l3);
+}
+
+.detailDescription,
+.modeWarning,
+.catalogFootnote {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.detailValues,
+.roleValues {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  gap: 8px 12px;
+  margin: 12px 0;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.detailValues dt,
+.roleValues dt {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.detailValues dd,
+.roleValues dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.roleValues,
+.modeWarning {
+  margin: 8px;
+}
+
+.catalogFootnote {
+  flex: 0 0 auto;
+  padding: 8px;
+  border-top: 1px solid var(--dsw-alias-border-l3);
+}
+
+/* A wide catalog cannot be aligned to the chip on a narrow viewport: the
+   chip ends before the send button, so viewport-sized width moves its left
+   edge off screen. Use the composer's containing block instead, preserving
+   the menu above the input without a portal or a second geometry store. */
+@media (max-width: 900px) {
+  .root {
+    position: static;
+  }
+
+  .menu {
+    right: 8px;
+  }
+
+  .catalogMenu {
+    box-sizing: border-box;
+    width: min(680px, calc(100% - 16px));
+    min-width: 0;
+    max-width: min(680px, calc(100% - 16px));
+  }
+}
+
+@media (max-width: 600px) {
+  .catalogLayout {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .catalogList {
+    flex: 0 0 auto;
+  }
+
+  .groups {
+    max-height: 180px;
+  }
+
+  .details {
+    flex: 0 0 auto;
+    border-left: none;
+    border-top: 1px solid var(--dsw-alias-border-l3);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron {
+    transition: none;
+  }
+}
+
 .status,
 .empty {
   padding: 10px;

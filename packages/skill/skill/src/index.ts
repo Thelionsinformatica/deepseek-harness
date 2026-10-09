@@ -12,7 +12,7 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import { assertNever } from '@deepseek-ai/dsh-llm'
-import { NamedEntries, ScopedLayers, scopeChainOf, scopeOf } from '@deepseek-ai/dsh-scope'
+import { AnonymousEntries, NamedEntries, ScopedLayers, scopeChainOf, scopeOf } from '@deepseek-ai/dsh-scope'
 import type { ScopeKey, ScopeLayer } from '@deepseek-ai/dsh-scope'
 import z from '@deepseek-ai/schemastery'
 import type Schema from '@deepseek-ai/schemastery'
@@ -288,7 +288,7 @@ declare module '@deepseek-ai/cordis' {
 
   interface Events {
     /**
-     * A skill provider, runtime contribution, or provider-backed catalog may
+     * A skill provider, runtime contribution, restriction registration, or provider-backed catalog may
      * have changed. This is an unfiltered invalidation notification; consumers
      * refetch the catalog for their own lookup options. Listener failures are
      * contained and cannot veto the registry mutation.
@@ -330,6 +330,8 @@ class SkillLayer implements ScopeLayer {
   readonly providers: NamedEntries<RegisteredProvider>
   /** Runtime skills registered through contexts carrying this scope. */
   readonly runtime = new Map<string, SkillDefinition>()
+  /** Live allow predicates; every applicable registration must permit a name. */
+  readonly restrictions = new AnonymousEntries<(name: string) => boolean>()
 
   constructor(scope: ScopeKey | undefined) {
     this.providers = new NamedEntries(name => new Error(scope === undefined
@@ -339,7 +341,7 @@ class SkillLayer implements ScopeLayer {
 
   /** Whether every contribution table in this aggregate layer is empty. */
   isEmpty(): boolean {
-    return this.providers.isEmpty() && this.runtime.size === 0
+    return this.providers.isEmpty() && this.runtime.size === 0 && this.restrictions.isEmpty()
   }
 }
 
@@ -401,6 +403,39 @@ export class SkillRegistry extends Service {
    */
   isModelTool(tool: object | undefined): boolean {
     return tool !== undefined && this.modelTools.has(tool)
+  }
+
+  /**
+   * Add a live restriction in the calling context's layer. Global and inherited
+   * restrictions all apply; a nearer registration cannot override a denial.
+   * Predicates run synchronously on every read, must be side-effect-free, and
+   * may read current settings. A thrown predicate fails the read instead of allowing access.
+   * @param allow - whether the skill name is enabled in this registration.
+   * @returns the exact Cordis disposer removing only this restriction.
+   */
+  registerRestriction(allow: (name: string) => boolean): () => void {
+    return this.layers.effect(
+      this.ctx,
+      layer => layer.restrictions.append(allow),
+      { label: 'skills.registerRestriction()' },
+    )
+  }
+
+  /**
+   * Read live restrictions without discovering providers or checking invocation
+   * flags. This does not establish that a skill exists or is invocable.
+   * @param name - kebab-case skill name; invalid names are disabled.
+   * @param options - view options; only `scope` selects applicable restrictions.
+   * @returns whether every global and scope-chain restriction allows the name.
+   */
+  isEnabled(name: string, options: SkillViewOptions = {}): boolean {
+    if (!isSkillName(name)) return false
+    for (const layer of [this.layers.global, ...this.layers.chainLayers(options.scope)]) {
+      for (const allow of layer.restrictions.values()) {
+        if (!allow(name)) return false
+      }
+    }
+    return true
   }
 
   /**
@@ -492,7 +527,7 @@ export class SkillRegistry extends Service {
    * options and provider candidates are readonly same-process values borrowed
    * throughout discovery.
    * @param options - view options; `scope` selects the viewing agent's layers, `cwd` selects project roots, and `signal` cancels discovery.
-   * @returns all sorted winning summaries.
+   * @returns sorted winning summaries allowed by live restrictions.
    */
   async list(options: SkillViewOptions = {}): Promise<SkillSummary[]> {
     return (await this.snapshot(options)).skills
@@ -503,9 +538,23 @@ export class SkillRegistry extends Service {
    * Incomplete observations are never cached, allowing consumers to retain last-good state and
    * retry on their next request boundary.
    * @param options - view options; `scope` selects the viewing agent's layers, `cwd` selects project roots, and `signal` cancels discovery.
-   * @returns sorted summaries plus discovery-completeness state.
+   * @returns sorted summaries allowed by live restrictions plus discovery-completeness state.
    */
   async snapshot(options: SkillViewOptions = {}): Promise<SkillCatalogSnapshot> {
+    const inventory = await this.inventory(options)
+    return {
+      skills: inventory.skills.filter(skill => this.isEnabled(skill.name, options)),
+      complete: inventory.complete,
+    }
+  }
+
+  /**
+   * Inspect winning metadata including disabled skills, without loading bodies.
+   * Consumers must not use this administrative inventory as an invocation catalog.
+   * @param options - view options; `scope` selects layers, `cwd` selects project roots, and `signal` cancels discovery.
+   * @returns sorted summaries, including disabled names, plus discovery-completeness state.
+   */
+  async inventory(options: SkillViewOptions = {}): Promise<SkillCatalogSnapshot> {
     const collected = await this.collect(options)
     return {
       skills: [...collected.entries.values()]
@@ -518,23 +567,24 @@ export class SkillRegistry extends Service {
   /**
    * Load and validate the winning candidate, passing its opaque discovery locator back to the
    * provider. Cancellation is rechecked after selection, including cache hits, and raced against
-   * loading so an uncooperative provider cannot hang the caller.
+   * loading so an uncooperative provider cannot hang the caller. Live restrictions
+   * are checked before provider loading and after it settles; no lookup option bypasses them.
    * @param name - kebab-case skill name.
    * @param options - view options; `scope` selects the viewing agent's layers,
    *   `cwd` selects workspace-sensitive skills, and `signal` cancels work.
-   * @returns the full skill, including body content, or `undefined`.
+   * @returns the full skill, including body content, or `undefined` when absent or disabled.
    */
   async get(name: string, options: SkillViewOptions = {}): Promise<SkillDefinition | undefined> {
     if (!isSkillName(name)) return undefined
     const collected = await this.collect(options)
     throwIfAborted(options.signal)
     const match = collected.entries.get(name)
-    if (match === undefined) return undefined
+    if (match === undefined || !this.isEnabled(name, options)) return undefined
     const definition = await waitWithAbort(
       match.provider.get(match.candidate, options),
       options.signal,
     )
-    if (definition === undefined) return undefined
+    if (definition === undefined || !this.isEnabled(name, options)) return undefined
     validateDefinition(definition)
     if (definition.name !== match.candidate.name) {
       this.invalidateEntry(match)

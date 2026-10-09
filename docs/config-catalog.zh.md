@@ -1845,6 +1845,14 @@ export interface SemanticSearchConfig {
   readonly maxResponseBytes?: number
   /** Embedding endpoint dialect; `openai-compatible` targets `/v1/embeddings`. */
   readonly api?: 'ollama' | 'openai-compatible'
+  /** Maximum graph chunk characters before the task prefix; complete documents are segmented. */
+  readonly graphInputCharacters?: number
+  /** Maximum graph chunks submitted together. */
+  readonly graphBatchInputs?: number
+  /** Maximum binary subdivisions after a singleton input-size rejection. */
+  readonly graphInputSplitDepth?: number
+  /** Total deadline in milliseconds for one graph embedding pass, including subdivisions. */
+  readonly graphTimeoutMs?: number
   /** Minimum cosine score for a semantic-only result. */
   readonly minimumScore?: number
   /** Semantic contribution to the final hybrid score. */
@@ -1867,10 +1875,16 @@ export interface MemoryGraphLinkingConfig {
   readonly maxExpandedHits?: number
   /** Debounce between a commit burst and one graph rebuild. */
   readonly debounceMs?: number
+  /** Additional attempts after transient failures in one generation; 0 disables retries. */
+  readonly retryAttempts?: number
+  /** First retry delay in milliseconds, doubled for subsequent retries. */
+  readonly retryDelayMs?: number
+  /** Maximum retry delay in milliseconds. */
+  readonly retryMaxDelayMs?: number
 }
 ```
 
-来源：[`packages/memory/memory-local/src/index.ts:87`](../packages/memory/memory-local/src/index.ts)
+来源：[`packages/memory/memory-local/src/index.ts:95`](../packages/memory/memory-local/src/index.ts)
 
 <a id="deepseek-aidsh-message-feedback"></a>
 
@@ -2002,6 +2016,14 @@ export interface PersonalEmbeddingsConfig {
   readonly maxResponseBytes?: number
   /** Wire dialect: Ollama `/api/embed` or OpenAI-compatible `/v1/embeddings`. */
   readonly api?: SemanticEmbeddingApi
+  /** Maximum graph input characters per chunk; source facts remain complete. */
+  readonly graphInputCharacters?: number
+  /** Maximum graph input chunks in one embedding request. */
+  readonly graphBatchInputs?: number
+  /** Maximum subdivisions of an oversized singleton graph chunk. */
+  readonly graphInputSplitDepth?: number
+  /** Total deadline in milliseconds for one complete graph embedding pass. */
+  readonly graphTimeoutMs?: number
 }
 
 /** Bounded edge-derivation policy; owner partitions are computed independently. */
@@ -2018,6 +2040,12 @@ export interface PersonalLinkingConfig {
   readonly maxExpandedHits?: number
   /** Quiet period after a committed mutation before a rebuild starts. */
   readonly debounceMs?: number
+  /** Additional attempts for transient failures in one graph generation. */
+  readonly retryAttempts?: number
+  /** Initial exponential retry delay in milliseconds. */
+  readonly retryDelayMs?: number
+  /** Maximum retry delay in milliseconds. */
+  readonly retryMaxDelayMs?: number
 }
 ```
 

@@ -52,9 +52,13 @@ Workspace `local` 提供方通过带版本的 `memory_local` 存储 domain 保�
 
 提供方中立边界会在任何提供方写入前拒绝类似凭据的内容。Leon 部署配置一个显式本地所有者标签；它不会复用匿名遥测 id，也不声称拥有经过身份验证的多用户所有权。本子系统不会加密本地文件，文件继承已配置存储后端与操作系统保护。
 
+`PersonalMemoryAdminCorrectRequest` 在精确修订、带确认的 `MemoryAdminCorrectRequest` 上增加可选 `core`：显式值改变画像选择，省略则保留选择。`MemoryAdminItem.core` 独立于 validation 暴露该选择；只有已确认且有效的选择才有资格进入有界核心画像。人工确认可保留未修改的文本、创建新修订，并在不含正文的 `personal_memory_admin` 审计中记录可选选择。[个人记忆管理约定](../../packages/memory/tool-memory/README.zh.md)拥有权限与启用检查规则。
+
 ## 模型策略
 
 当 workspace 服务存在时，`dsh-tool-memory` 始终提供四个 workspace 工具：`memory_remember`、`memory_search`、`memory_update` 和 `memory_forget`。配置个人所有者并存在 `ctx.personalMemory` 时，还会增加 `personal_memory_remember`、`personal_memory_search`、`personal_memory_update` 与 `personal_memory_forget`。模型既不提供 workspace id，也不提供所有者 id。提示词策略只允许在明确记住意图或已经清楚确认的稳定事实时写入，并禁止密码、API key、token、private key、文档正文和其他 secret。
+
+个人模型提案没有确认元数据，也没有核心选择权限。显式搜索以 `confirmationRequired` 标记待确认记录；自动个人回忆会排除它们，直到人工通过 Host 面板确认精确文本。模型正文纠正会使先前确认失效。已有确认元数据被保留，不追溯声称同意，也不迁移。
 
 Leon preset 会在每轮第一次模型请求时为两个作用域启用有界自动回忆。查询只来自人类编写的文本。Workspace 检索留在当前项目，个人检索留在已配置所有者分区；每个快照最多包含 4 个安全命中和 4,000 字符，并作为不可信数据放在当前消息之前。提供方失败对自动回忆采用开放失败，显式变更失败仍会成为可见工具错误。任何路径都不会自动执行持久写入。
 
@@ -210,7 +214,7 @@ async recordCandidate(record: MemoryCandidateRecord): Promise<void>
  * @param request - Session anchor, exact revision, complete confirmed text, and confirmation.
  * @returns The explicitly validated browser-safe row and content-free audit id, or an explicit failure.
  */
-@Remote('correctPersonalMemory') correctPersonalMemory(request: MemoryAdminCorrectRequest): Promise<MemoryAdminCorrectResult>
+@Remote('correctPersonalMemory') correctPersonalMemory(request: PersonalMemoryAdminCorrectRequest): Promise<MemoryAdminCorrectResult>
 
 /**
  * Permanently remove one personal-memory lineage after confirmation.

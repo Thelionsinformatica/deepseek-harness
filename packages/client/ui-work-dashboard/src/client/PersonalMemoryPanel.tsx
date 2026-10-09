@@ -11,7 +11,7 @@ import { GettingToKnowYou } from './GettingToKnowYou.tsx'
 export interface PersonalMemoryInjected {
   listPersonalMemories: (sessionId: SessionId, query?: string) => Promise<PersonalMemoryAdminListValue>
   rememberPersonalMemory: (sessionId: SessionId, content: string) => Promise<MemoryAdminItem>
-  correctPersonalMemory: (sessionId: SessionId, item: MemoryAdminItem, content: string) => Promise<MemoryAdminItem>
+  correctPersonalMemory: (sessionId: SessionId, item: MemoryAdminItem, content: string, core?: boolean) => Promise<MemoryAdminItem>
   forgetPersonalMemory: (sessionId: SessionId, item: MemoryAdminItem) => Promise<void>
   setPersonalMemoryEnabled: (sessionId: SessionId, enabled: boolean) => Promise<boolean>
 }
@@ -34,6 +34,8 @@ type ViewState =
 type Confirmation =
   | { readonly action: 'remember'; readonly content: string }
   | { readonly action: 'correct'; readonly item: MemoryAdminItem; readonly content: string }
+  | { readonly action: 'reconfirm'; readonly item: MemoryAdminItem }
+  | { readonly action: 'profile'; readonly item: MemoryAdminItem; readonly core: boolean }
   | { readonly action: 'forget'; readonly item: MemoryAdminItem }
   | { readonly action: 'toggle'; readonly enabled: boolean }
 
@@ -100,8 +102,11 @@ export function PersonalMemoryPanel({
           : previous)
         setNewContent('')
         setFeedback('remembered')
-      } else if (target.action === 'correct') {
-        const item = await correctPersonalMemory(sessionId, target.item, target.content)
+      } else if (target.action === 'correct' || target.action === 'reconfirm' || target.action === 'profile') {
+        const content = target.action === 'correct' ? target.content : target.item.content ?? ''
+        const item = target.action === 'profile'
+          ? await correctPersonalMemory(sessionId, target.item, content, target.core)
+          : await correctPersonalMemory(sessionId, target.item, content)
         setState(previous => previous.status === 'ready'
           ? {
             ...previous,
@@ -206,6 +211,9 @@ export function PersonalMemoryPanel({
                 <div className={css.meta}>
                   <span className={css.badge}>{t(`memory.status.${item.status}`)}</span>
                   <span>{t('memory.saved.revision', { value: String(item.revision) })}</span>
+                  <span className={css.badge}>{t(item.validation === undefined
+                    ? 'memory.personal.unconfirmed' : 'memory.personal.confirmed')}</span>
+                  {item.core === true && item.validation !== undefined ? <span className={css.badge}>{t('memory.personal.core')}</span> : null}
                   <time dateTime={item.updatedAt}>{new Date(item.updatedAt).toLocaleString()}</time>
                 </div>
                 {isEditing ? (
@@ -222,7 +230,7 @@ export function PersonalMemoryPanel({
                     <>
                       <button
                         type="button"
-                        disabled={!state.enabled || busy || editContent.trim().length === 0 || editContent.trim() === item.content}
+                        disabled={!state.enabled || state.readOnly || busy || editContent.trim().length === 0}
                         onClick={() => { setConfirmation({ action: 'correct', item, content: editContent.trim() }) }}
                       >
                         {t('memory.saved.reviewCorrection')}
@@ -240,6 +248,20 @@ export function PersonalMemoryPanel({
                         }}
                       >
                         {t('memory.saved.correct')}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!state.enabled || state.readOnly || item.redacted || busy}
+                        onClick={() => { setConfirmation({ action: 'reconfirm', item }) }}
+                      >
+                        {t('memory.personal.reconfirm')}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!state.enabled || state.readOnly || item.redacted || busy}
+                        onClick={() => { setConfirmation({ action: 'profile', item, core: item.core !== true }) }}
+                      >
+                        {t(item.core === true ? 'memory.personal.unmarkCore' : 'memory.personal.markCore')}
                       </button>
                       <button
                         className={css.danger}
@@ -261,6 +283,9 @@ export function PersonalMemoryPanel({
       {confirmation !== null ? (
         <div className={css.confirmation} role="alert">
           <p>{confirmationText(confirmation, state.enabled, t)}</p>
+          {'item' in confirmation && confirmation.action !== 'forget'
+            ? <p className={css.content}>{confirmation.action === 'correct'
+              ? confirmation.content : confirmation.item.content}</p> : null}
           <div className={css.actions}>
             <button type="button" disabled={busy} onClick={() => { void confirm(confirmation) }}>
               {t('memory.confirm.action')}
@@ -283,6 +308,9 @@ function confirmationText(
 ): string {
   if (confirmation.action === 'remember') return t('memory.personal.confirm.remember')
   if (confirmation.action === 'correct') return t('memory.confirm.correct')
+  if (confirmation.action === 'reconfirm') return t('memory.personal.confirm.reconfirm')
+  if (confirmation.action === 'profile') return t(confirmation.core
+    ? 'memory.personal.confirm.markCore' : 'memory.personal.confirm.unmarkCore')
   if (confirmation.action === 'forget') return t('memory.personal.confirm.forget')
   return currentlyEnabled ? t('memory.personal.confirm.disable') : t('memory.personal.confirm.enable')
 }

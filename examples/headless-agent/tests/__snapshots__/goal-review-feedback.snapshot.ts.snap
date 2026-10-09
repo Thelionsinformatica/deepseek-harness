@@ -1,0 +1,70 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`goal review feedback snapshot > hides unassigned pages and requires an explicit status-only checklist update after PASS 1`] = `
+{
+  "artifact": "VERIFIED SYNTHETIC RESULT
+",
+  "auditCount": 1,
+  "auditorTools": [
+    "completion_artifact_read",
+    "structured_output",
+  ],
+  "inlineInstruction": true,
+  "nextActionDelivered": true,
+  "retryCorrectionDelivered": true,
+  "transitions": [
+    {
+      "operation": "create",
+      "type": "goal/change",
+    },
+    {
+      "todos": [
+        {
+          "content": "Produce result.txt",
+          "status": "completed",
+        },
+        {
+          "content": "Independent review",
+          "status": "in_progress",
+        },
+      ],
+      "type": "todo/write",
+    },
+    {
+      "completedTodoCount": 1,
+      "type": "goal/completion-audit",
+    },
+    {
+      "error": {
+        "code": "GOAL_TOOL_TODOS_INCOMPLETE",
+        "name": "HarnessError",
+      },
+      "type": "tool/result",
+    },
+    {
+      "error": {
+        "code": "GOAL_TOOL_TODOS_INCOMPLETE",
+        "name": "HarnessError",
+      },
+      "type": "tool/result",
+    },
+    {
+      "todos": [
+        {
+          "content": "Produce result.txt",
+          "status": "completed",
+        },
+        {
+          "content": "Independent review",
+          "status": "completed",
+        },
+      ],
+      "type": "todo/write",
+    },
+    {
+      "operation": "complete",
+      "type": "goal/change",
+    },
+  ],
+}
+`;

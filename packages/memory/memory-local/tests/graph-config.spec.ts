@@ -8,6 +8,7 @@ describe('graph configuration boundary', () => {
     { maxGraphNodes: 0 }, { maxGraphNodes: 1.5 }, { maxEdgesPerNode: -1 },
     { maxExpandedHits: -1 }, { maxExpandedHits: NaN }, { debounceMs: -1 },
     { debounceMs: 2_147_483_648 },
+    { retryAttempts: -1 }, { retryAttempts: 11 }, { retryDelayMs: 0 }, { retryMaxDelayMs: Infinity },
   ])('rejects invalid graph policy %j before opening storage', async (linking) => {
     expect(() => { validateMemoryGraphLinkingConfig(linking) }).toThrow(TypeError)
     const ctx = new Context()
@@ -22,6 +23,8 @@ describe('graph configuration boundary', () => {
   it.each([
     { dimensions: 0 }, { timeoutMs: Infinity }, { maxCacheEntries: -1 },
     { maxResponseBytes: 0 }, { model: ' ' }, { baseUrl: 'http://example.com' },
+    { graphInputCharacters: 1 }, { graphBatchInputs: 0 }, { graphInputSplitDepth: 13 },
+    { graphTimeoutMs: 0 },
   ])('rejects invalid shared embedding bounds %j', (config) => {
     expect(() => resolveSemanticConfig(config)).toThrow(TypeError)
   })

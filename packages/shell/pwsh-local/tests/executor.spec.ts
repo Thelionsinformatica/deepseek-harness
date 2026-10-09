@@ -183,13 +183,91 @@ describe('spawn construction (pure, every platform)', () => {
     expect(subprocess.specs).toHaveLength(1)
     const { argv } = subprocess.specs[0]!
     expect(argv.slice(0, 5)).toEqual([expect.any(String), '-NoLogo', '-NoProfile', '-NonInteractive', '-Command'])
-    expect(argv[5]).toBe(`${ENCODING_PREAMBLE}Write-Output 你好`)
+    expect(argv[5]).toBe(`${ENCODING_PREAMBLE}$ErrorActionPreference = 'Stop'; Write-Output 你好`)
     expect(ENCODING_PREAMBLE).toContain('[Console]::OutputEncoding')
     expect(ENCODING_PREAMBLE).toContain('$OutputEncoding')
   })
 })
 
 describe.skipIf(!hasPwsh)('PwshLocalExecutor.run', () => {
+  it.each([
+    '"sha=$([System.BitConverter]::ToString(\'not-a-byte-array\'))"',
+    'Write-Error "synthetic command failure"',
+    'Get-Item -LiteralPath ./dsh-synthetic-missing-error-target',
+    '& { Write-Error "synthetic nested failure" }',
+  ])('stops an unhandled PowerShell error before later success output: %s', async (failure) => {
+    const { ctx, bash } = await setup()
+    try {
+      const result = await bash.run(bash.resolve({ command: `Write-Output before; ${failure}; Write-Output after` }))
+      expect(result.exitCode).toBe(1)
+      expect(lf(result.stdout.text)).toBe('before\n')
+      expect(result.stderr.text.length).toBeGreaterThan(0)
+      expect(result).toMatchObject({ aborted: false, timedOut: false, signal: null })
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it.each([
+    ['try { [System.BitConverter]::ToString(\'not-a-byte-array\') } catch { Write-Output handled }; Write-Output after', 'handled\nafter\n'],
+    ['Write-Error "handled command error" -ErrorAction SilentlyContinue; Write-Output after', 'after\n'],
+    ['Write-Error "explicit continuation" -ErrorAction Continue; Write-Output after', 'after\n'],
+    ['$ErrorActionPreference = "Continue"; Write-Error "explicit preference override"; Write-Output after', 'after\n'],
+    ['[Console]::Error.WriteLine("MethodException: harmless diagnostic text"); Write-Output after', 'after\n'],
+  ])('preserves handled errors and diagnostic streams: %s', async (command, output) => {
+    const { ctx, bash } = await setup()
+    try {
+      const result = await bash.run(bash.resolve({ command }))
+      expect(result.exitCode).toBe(0)
+      expect(lf(result.stdout.text)).toBe(output)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it.each([
+    ['exit $LASTEXITCODE', 7, ''],
+    ['Write-Output after', 0, 'after\n'],
+  ])('preserves native stderr and the caller\'s exit policy: %s', async (ending, exitCode, stdout) => {
+    const { ctx, bash } = await setup()
+    try {
+      const result = await bash.run(bash.resolve({
+        command: `& $env:PWSH_EXECUTOR_TEST_NODE -e 'process.stderr.write(process.env.PWSH_EXECUTOR_TEST_STDERR);process.exit(7)'; ${ending}`,
+        env: { PWSH_EXECUTOR_TEST_NODE: process.execPath, PWSH_EXECUTOR_TEST_STDERR: 'native diagnostic\n' },
+      }))
+      expect(result.exitCode).toBe(exitCode)
+      expect(lf(result.stdout.text)).toBe(stdout)
+      expect(lf(result.stderr.text)).toBe('native diagnostic\n')
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it.skipIf(process.platform !== 'win32')('keeps the Windows PowerShell fallback error and native-stderr semantics', async () => {
+    const { ctx, bash } = await setup({ pwshPath: 'powershell.exe' })
+    try {
+      const failure = await bash.run(bash.resolve({
+        command: 'Write-Output before; "sha=$([System.BitConverter]::ToString(\'not-a-byte-array\'))"; Write-Output after',
+      }))
+      expect(failure.exitCode).toBe(1)
+      expect(lf(failure.stdout.text)).toBe('before\n')
+      const handled = await bash.run(bash.resolve({
+        command: 'try { Write-Error "synthetic error" } catch { [Console]::Out.Write("handled") }',
+      }))
+      expect(handled.exitCode).toBe(0)
+      expect(handled.stdout.text).toBe('handled')
+      const native = await bash.run(bash.resolve({
+        // Avoid embedded JS quotes: legacy PowerShell strips them when forwarding native argv.
+        command: '& $env:PWSH_EXECUTOR_TEST_NODE -e \'process.stderr.write(process.env.PWSH_EXECUTOR_TEST_STDERR);process.exit(7)\'; exit $LASTEXITCODE',
+        env: { PWSH_EXECUTOR_TEST_NODE: process.execPath, PWSH_EXECUTOR_TEST_STDERR: 'native diagnostic\n' },
+      }))
+      expect(native.exitCode, native.stderr.text).toBe(7)
+      expect(lf(native.stderr.text)).toBe('native diagnostic\n')
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('resolves with output and the effective timeout', { timeout: 15_000 }, async () => {
     const { bash } = await setup({ timeoutMs: 10_000 })
     const result = await bash.run(bash.resolve({ command: 'Write-Output hi' }))
@@ -318,6 +396,24 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.run', () => {
 })
 
 describe.skipIf(!hasPwsh)('PwshLocalExecutor.start (background process handles)', () => {
+  it('settles unhandled PowerShell errors with nonzero status without running later statements', async () => {
+    const { ctx, bash } = await setup()
+    try {
+      const proc = bash.start(bash.resolve({
+        command: 'Write-Output before; "sha=$([System.BitConverter]::ToString(\'not-a-byte-array\'))"; Write-Output after',
+      }))
+      await proc.done
+      expect(proc.exitCode).toBe(1)
+      expect(proc.status).toBe('completed')
+      const output = lf(proc.readOutput().delta)
+      expect(output).toMatch(/^before\n\[stderr\]/)
+      expect(output).not.toContain('\nafter\n')
+      expect(output).not.toContain('\nsha=')
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('start returns immediately with a running handle that settles as completed', async () => {
     const { bash } = await setup()
     const before = Date.now()

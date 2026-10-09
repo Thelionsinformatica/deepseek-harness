@@ -54,6 +54,9 @@ function harness(options: {
   emit?: (event: Event) => void | Promise<void>
   historyMode?: 'v1' | 'temporal-v2'
   maxGraphNodes?: number
+  retryAttempts?: number
+  retryDelayMs?: number
+  retryMaxDelayMs?: number
 } = {}) {
   const memories = options.memories ?? table<MemoryId, LocalMemoryRecord>([[a, record()], [b, record()]])
   const graph = options.graph ?? table<WorkspaceId, LocalMemoryGraph>()
@@ -70,6 +73,9 @@ function harness(options: {
     enabled: true, minScore: 0.75, maxEdgesPerNode: 5,
     maxGraphNodes: options.maxGraphNodes ?? 50, debounceMs: 5, model: 'test', api: 'ollama',
     historyMode: options.historyMode ?? 'temporal-v2',
+    retryAttempts: options.retryAttempts ?? 3,
+    retryDelayMs: options.retryDelayMs ?? 1000,
+    retryMaxDelayMs: options.retryMaxDelayMs ?? 30_000,
   }, options.emit ?? ((event) => { events.push(event) }))
   schedulers.push(scheduler)
   return { memories, graph, events, link, scheduler }
@@ -82,6 +88,68 @@ afterEach(async () => {
 })
 
 describe('graph durable publication and lifecycle', () => {
+  it('recovers transient transport without reads or new writes, within one generation', async () => {
+    vi.useFakeTimers()
+    const { scheduler, graph, link, events } = harness({ retryDelayMs: 20 })
+    link.mockRejectedValueOnce(new SemanticSearchError('TRANSPORT'))
+    scheduler.dirty(alpha)
+    await vi.advanceTimersByTimeAsync(5)
+    expect(graph.get(alpha)).toMatchObject({ status: 'failed', failureCode: 'TRANSPORT' })
+    await vi.advanceTimersByTimeAsync(25)
+    expect(graph.get(alpha)).toMatchObject({ status: 'computed', generation: 1 })
+    expect(graph.get(alpha)?.failureCode).toBeUndefined()
+    expect(events.map(event => event.status)).toEqual(['failed', 'computed'])
+    expect(link).toHaveBeenCalledTimes(2)
+  })
+
+  it('bounds retries, caps exponential delays and resets the allowance only after a new commit', async () => {
+    vi.useFakeTimers()
+    const { scheduler, graph, link } = harness({ retryAttempts: 3, retryDelayMs: 10, retryMaxDelayMs: 15 })
+    link.mockRejectedValue(new SemanticSearchError('HTTP_ERROR', true))
+    scheduler.dirty(alpha)
+    await vi.advanceTimersByTimeAsync(500)
+    expect(link).toHaveBeenCalledTimes(4)
+    expect(graph.get(alpha)?.status).toBe('failed')
+    expect(vi.getTimerCount()).toBe(0)
+    scheduler.snapshot(alpha)
+    await vi.advanceTimersByTimeAsync(500)
+    expect(link).toHaveBeenCalledTimes(4)
+    scheduler.dirty(alpha)
+    await vi.advanceTimersByTimeAsync(500)
+    expect(link).toHaveBeenCalledTimes(8)
+    expect(graph.get(alpha)?.generation).toBe(2)
+  })
+
+  it.each(['dispose', 'disable'] as const)('cancels a delayed retry on %s and leaves no timer', async (action) => {
+    vi.useFakeTimers()
+    const { scheduler, link } = harness({ retryDelayMs: 20 })
+    link.mockRejectedValue(new SemanticSearchError('TRANSPORT'))
+    scheduler.dirty(alpha)
+    await vi.advanceTimersByTimeAsync(5)
+    if (action === 'dispose') await scheduler.dispose()
+    else await scheduler.setEnabled(false)
+    await vi.advanceTimersByTimeAsync(500)
+    expect(link).toHaveBeenCalledTimes(1)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('retains exact prior coverage on irrecoverable failure without presenting it as current', async () => {
+    vi.useFakeTimers()
+    const { scheduler, memories, graph, link } = harness()
+    scheduler.dirty(alpha)
+    await vi.advanceTimersByTimeAsync(5)
+    const previous = graph.get(alpha)!
+    await memories.put(a, record({ revision: 2, content: 'changed synthetic record' }))
+    link.mockRejectedValue(new SemanticSearchError('INPUT_TOO_LARGE'))
+    scheduler.dirty(alpha)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(graph.get(alpha)).toMatchObject({ status: 'failed', failureCode: 'INPUT_TOO_LARGE',
+      recordRevisions: previous.recordRevisions, edges: previous.edges, computedAt: previous.computedAt })
+    expect(scheduler.snapshot(alpha).status).toBe('failed')
+    expect(memories.get(a)?.content).toBe('changed synthetic record')
+    expect(link).toHaveBeenCalledTimes(2)
+  })
+
   it('reports an unseen idle empty scope without scheduling, embedding, or persisting on reads', async () => {
     vi.useFakeTimers()
     const { scheduler, graph, link } = harness({ memories: table() })

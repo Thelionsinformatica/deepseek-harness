@@ -82,7 +82,7 @@ describe('independent auditor boundaries through the real ACP application', () =
     const header = childEvents.find(event => event.type === 'request/header')
     if (header?.type !== 'request/header') throw new Error('missing actual auditor request header')
     expect(header.data.header.tools?.map(tool => tool.name).sort()).toEqual([
-      'completion_artifact_read', 'completion_evidence_read', 'structured_output',
+      'completion_artifact_read', 'structured_output',
     ])
     expect(resultText(childEvents, 'auditor-read')).toContain(seed.trim())
     expect(resultText(childEvents, 'auditor-read')).not.toContain('Forbidden mutation.')

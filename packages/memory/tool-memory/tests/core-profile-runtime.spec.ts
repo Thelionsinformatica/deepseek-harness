@@ -217,7 +217,7 @@ describe('personal core profile through the real loop, Loader, and durable reque
     expect(lastRequest(adapter).messages).toEqual(agent.session.deriveMessages().slice(0, -1))
   })
 
-  it('replaces an already-used revision with current query recall and preserves the original log', async () => {
+  it('withdraws an unconfirmed correction from core and query recall while preserving the original log', async () => {
     const { ctx, adapter, root } = await boot()
     const record = await remember(ctx)
     const agent = await createAgent(ctx, root)
@@ -231,7 +231,7 @@ describe('personal core profile through the real loop, Loader, and durable reque
 
     const text = messageText(lastRequest(adapter).messages)
     expect(text).not.toContain(fact)
-    expect(text.split(correctedFact)).toHaveLength(2)
+    expect(text).not.toContain(correctedFact)
     expectRetainedHistory(agent)
   })
 

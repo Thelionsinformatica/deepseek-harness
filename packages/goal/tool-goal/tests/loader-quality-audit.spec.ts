@@ -104,6 +104,7 @@ describe('tool-goal independent audit through real Loader composition', () => {
       '    completionAuditorMaxTokens: 2048',
       '    completionAuditorMaxAttemptsPerTurn: 2',
       '    completionAuditorReportMaxCharacters: 2000',
+      '    completionAuditorTools: [completion_evidence_read]',
       `    completionAuditorEvidenceMaxCharacters: ${evidenceLimit}`,
       ...artifactStream === undefined ? [] : ['    completionAuditorRequireArtifacts: true'],
       '',
@@ -128,8 +129,16 @@ describe('tool-goal independent audit through real Loader composition', () => {
             const childCtx = scope.ctx.extend({ agent: child })
             Object.defineProperty(child, 'ctx', { value: childCtx })
             await request.setup?.(childCtx)
+            expect(request.toolFilter?.allow?.includes('completion_evidence_read')).toBe(evidenceLimit === 256)
             const unregister = ctx.agents.register(child)
             const result = async () => {
+              if (evidenceLimit === 24000) {
+                const unassigned = await ctx.agents.withInitiator(child, () => ctx.tools.execute({
+                  signal: new AbortController().signal, callId: CallId('unassigned-page'),
+                  name: 'completion_evidence_read', arguments: { page: 1 }, agent: child,
+                }))
+                expect(unassigned.isError).toBe(true)
+              }
               if (artifactStream !== undefined) {
                 const artifact = await ctx.agents.withInitiator(child, () => ctx.tools.execute({
                   signal: new AbortController().signal, callId: CallId('read-local-artifact'),

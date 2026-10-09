@@ -75,6 +75,14 @@ export interface SemanticSearchConfig {
   readonly maxResponseBytes?: number
   /** Embedding endpoint dialect; `openai-compatible` targets `/v1/embeddings`. */
   readonly api?: 'ollama' | 'openai-compatible'
+  /** Maximum graph chunk characters before the task prefix; complete documents are segmented. */
+  readonly graphInputCharacters?: number
+  /** Maximum graph chunks submitted together. */
+  readonly graphBatchInputs?: number
+  /** Maximum binary subdivisions after a singleton input-size rejection. */
+  readonly graphInputSplitDepth?: number
+  /** Total deadline in milliseconds for one graph embedding pass, including subdivisions. */
+  readonly graphTimeoutMs?: number
   /** Minimum cosine score for a semantic-only result. */
   readonly minimumScore?: number
   /** Semantic contribution to the final hybrid score. */
@@ -108,6 +116,10 @@ export const Config: z<Config> = z.object({
     semanticWeight: z.number().default(0.8),
     lexicalWeight: z.number().default(0.2),
     api: z.union(['ollama', 'openai-compatible'] as const).default('ollama'),
+    graphInputCharacters: z.number().default(1024),
+    graphBatchInputs: z.number().default(8),
+    graphInputSplitDepth: z.number().default(8),
+    graphTimeoutMs: z.number().default(60_000),
   }),
   linking: z.object({
     enabled: z.boolean().default(false),
@@ -116,6 +128,9 @@ export const Config: z<Config> = z.object({
     maxGraphNodes: z.number().default(200),
     maxExpandedHits: z.number().default(4),
     debounceMs: z.number().default(2_000),
+    retryAttempts: z.number().default(3),
+    retryDelayMs: z.number().default(1_000),
+    retryMaxDelayMs: z.number().default(30_000),
   }),
 })
 
@@ -151,6 +166,10 @@ declare module '@deepseek-ai/cordis' {
 }
 
 interface ResolvedSemanticSearchConfig extends OllamaSemanticIndexConfig {
+  readonly graphInputCharacters: number
+  readonly graphBatchInputs: number
+  readonly graphInputSplitDepth: number
+  readonly graphTimeoutMs: number
   readonly enabled: boolean
   readonly maxCandidates: number
   readonly minimumScore: number
@@ -178,6 +197,12 @@ export interface MemoryGraphLinkingConfig {
   readonly maxExpandedHits?: number
   /** Debounce between a commit burst and one graph rebuild. */
   readonly debounceMs?: number
+  /** Additional attempts after transient failures in one generation; 0 disables retries. */
+  readonly retryAttempts?: number
+  /** First retry delay in milliseconds, doubled for subsequent retries. */
+  readonly retryDelayMs?: number
+  /** Maximum retry delay in milliseconds. */
+  readonly retryMaxDelayMs?: number
 }
 
 /** Durable lexical provider with optional loopback semantic reranking. */
@@ -517,6 +542,9 @@ function resolveGraphScheduler(
     model: semantic.config.model,
     api: semantic.config.api ?? 'ollama',
     historyMode: config.historyMode ?? 'temporal-v2',
+    retryAttempts: linking.retryAttempts ?? 3,
+    retryDelayMs: linking.retryDelayMs ?? 1_000,
+    retryMaxDelayMs: linking.retryMaxDelayMs ?? 30_000,
   }
   const scheduler = new MemoryGraphScheduler(
     graphTable,
@@ -620,6 +648,10 @@ export function resolveSemanticConfig(input: SemanticSearchConfig = {}): Resolve
     semanticWeight: input.semanticWeight ?? 0.8,
     lexicalWeight: input.lexicalWeight ?? 0.2,
     api: input.api ?? 'ollama',
+    graphInputCharacters: input.graphInputCharacters ?? 1024,
+    graphBatchInputs: input.graphBatchInputs ?? 8,
+    graphInputSplitDepth: input.graphInputSplitDepth ?? 8,
+    graphTimeoutMs: input.graphTimeoutMs ?? 60_000,
   }
   if (resolved.model.length === 0 || resolved.model.length > 256) {
     throw new TypeError('memory-local: semantic model must contain 1-256 characters')
@@ -629,6 +661,10 @@ export function resolveSemanticConfig(input: SemanticSearchConfig = {}): Resolve
   assertIntegerRange('maxCandidates', resolved.maxCandidates, 1, 10_000)
   assertIntegerRange('maxCacheEntries', resolved.maxCacheEntries, 1, 100_000)
   assertIntegerRange('maxResponseBytes', resolved.maxResponseBytes, 1, 100_000_000)
+  assertIntegerRange('graphInputCharacters', resolved.graphInputCharacters, 2, 16_384)
+  assertIntegerRange('graphBatchInputs', resolved.graphBatchInputs, 1, 256)
+  assertIntegerRange('graphInputSplitDepth', resolved.graphInputSplitDepth, 0, 12)
+  assertIntegerRange('graphTimeoutMs', resolved.graphTimeoutMs, 1, 2_147_483_647)
   assertUnitInterval('minimumScore', resolved.minimumScore)
   assertNonNegativeFinite('semanticWeight', resolved.semanticWeight)
   assertNonNegativeFinite('lexicalWeight', resolved.lexicalWeight)
@@ -654,10 +690,16 @@ export function validateMemoryGraphLinkingConfig(input: MemoryGraphLinkingConfig
     ['maxGraphNodes', input.maxGraphNodes ?? 200, 1],
     ['maxExpandedHits', input.maxExpandedHits ?? 4, 0],
     ['debounceMs', input.debounceMs ?? 2_000, 0],
+    ['retryDelayMs', input.retryDelayMs ?? 1_000, 1],
+    ['retryMaxDelayMs', input.retryMaxDelayMs ?? 30_000, 1],
   ] as const) {
     if (!Number.isSafeInteger(value) || value < minimum || value > 2_147_483_647) {
       throw new TypeError(`memory-local: linking.${name} must be an integer from ${minimum} to 2147483647`)
     }
+  }
+  const attempts = input.retryAttempts ?? 3
+  if (!Number.isSafeInteger(attempts) || attempts < 0 || attempts > 10) {
+    throw new TypeError('memory-local: linking.retryAttempts must be an integer from 0 to 10')
   }
 }
 

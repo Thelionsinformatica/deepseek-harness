@@ -1,0 +1,140 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 720px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.title {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+}
+
+.intro, .description, .note, .metadata, .notice, .error {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.intro, .description {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.note, .metadata {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.notice {
+  color: var(--dsw-alias-state-warn-label);
+}
+
+.error {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.filters {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.field {
+  display: flex;
+  flex: 1 1 180px;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field select {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.skill {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+}
+
+.detail {
+  min-width: 0;
+}
+
+.name {
+  margin: 0 0 4px;
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.control {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.switch {
+  display: flex;
+  align-items: center;
+  width: 40px;
+  height: 24px;
+  padding: 3px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.switch[aria-checked='true'] {
+  justify-content: flex-end;
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.switch:disabled, .field select:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.switch:focus-visible, .field select:focus-visible {
+  outline: 2px solid var(--dsw-alias-label-primary);
+  outline-offset: 2px;
+}

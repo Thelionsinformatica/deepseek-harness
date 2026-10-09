@@ -1,0 +1,33 @@
+# Adapters and persistence root belong to the keyless scenario, never the live host.
+- id: agent
+  name: '@deepseek-ai/dsh-agent-spine-demo'
+  config:
+    agents: []
+    workspaceContext: false
+    skills:
+      enabled: false
+    toolBash: false
+    toolJobs: false
+    goals: false
+- id: persistence
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: !!js process.env.DSH_GOAL_FEEDBACK_FIXTURE_ROOT
+    compression: none
+- name: '@deepseek-ai/dsh-fs-local'
+- name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: false
+    preserveExistingItems: true
+- name: '@deepseek-ai/dsh-subagent'
+- name: '@deepseek-ai/dsh-subagent-spawn-in-process'
+  config:
+    providerName: spawn
+- name: '@deepseek-ai/dsh-goal'
+- name: '@deepseek-ai/dsh-tool-goal'
+  config:
+    completionRequiresCompletedTodos: true
+    completionAuditorProvider: spawn
+    completionAuditorModelProvider: fixture-reviewer
+    completionAuditorModel: reviewer
+    completionAuditorRequireArtifacts: true

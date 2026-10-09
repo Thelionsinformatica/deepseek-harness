@@ -26,6 +26,7 @@ import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
 import { createApiProxy } from '../src/api-proxy.ts'
 import { chooseAdaptiveModel } from '../src/adaptive-model.ts'
 import * as CompletionClaimPolicy from '@deepseek-ai/dsh-completion-claim-policy'
+import AgentDefaultModelConfig from '@deepseek-ai/dsh-agent-default-model'
 
 let nextRpc = 1
 function request<P>(payload: P): RpcRequest<P> {
@@ -134,6 +135,165 @@ function registerTextOnly(ctx: Context): void {
 }
 
 describe('Web session model selection', () => {
+  it('lets explicit adaptive mode classify despite a coordinator deployment default', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    const choose = vi.fn(() => ({ provider: 'deepseek-official', model: 'deepseek-chat' }))
+    Object.assign(agent, { status: 'idle', followup: vi.fn() })
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-reasoner' }),
+      adaptiveModelSelection: choose, automaticCoordinator: true, cwd: '/tmp',
+    })
+    expect(expectValue(await api.sessions.models(request({ sessionId })))).toMatchObject({
+      selectionMode: 'team', automatic: true, current: { model: 'deepseek-reasoner' },
+    })
+    expect(choose).not.toHaveBeenCalled()
+    expect(expectValue(await api.sessions.selectModel(request({
+      sessionId, provider: 'deepseek-official', model: 'deepseek-reasoner', selectionMode: 'adaptive',
+    })))).toMatchObject({ selectionMode: 'adaptive', automatic: true })
+    expectValue(await api.sessions.prompt(request({
+      sessionId, mode: 'queue', content: [{ type: 'text', text: 'Oi' }],
+    })))
+    expect(choose).toHaveBeenCalled()
+    expect(expectValue(await api.sessions.models(request({ sessionId })))).toMatchObject({
+      selectionMode: 'adaptive', current: { model: 'deepseek-chat' },
+    })
+    await ctx.fiber.dispose()
+  })
+
+  it('uses the saved principal in team mode without starting workers or a reviewer', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    const choose = vi.fn(() => ({ provider: 'deepseek-official', model: 'deepseek-reasoner' }))
+    const followup = vi.fn()
+    Object.assign(agent, { status: 'idle', followup })
+    await ctx.plugin(AgentDefaultModelConfig, {
+      provider: 'deepseek-official', model: 'deepseek-chat',
+      auxiliaryModels: { localProviders: ['deepseek-official'], roles: {
+        worker: { provider: 'deepseek-official', model: 'deepseek-chat' },
+        review: { provider: 'deepseek-official', model: 'deepseek-reasoner' },
+        vision: { provider: 'deepseek-official', model: 'deepseek-reasoner' },
+      } },
+    })
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ctx.agentDefaultModel.currentSelection(),
+      adaptiveModelSelection: choose, cwd: '/tmp',
+    })
+    expect(expectValue(await api.sessions.selectModel(request({
+      sessionId, provider: 'deepseek-official', model: 'deepseek-reasoner', selectionMode: 'team',
+    })))).toMatchObject({ selected: { model: 'deepseek-chat' }, selectionMode: 'team', automatic: true })
+    const models = expectValue(await api.sessions.models(request({ sessionId })))
+    expect(models.coordination).toEqual({
+      coordinator: { provider: 'deepseek-official', model: 'deepseek-chat' },
+      worker: { provider: 'deepseek-official', model: 'deepseek-chat' },
+      review: { provider: 'deepseek-official', model: 'deepseek-reasoner' },
+      vision: { provider: 'deepseek-official', model: 'deepseek-reasoner' },
+    })
+    expectValue(await api.sessions.prompt(request({
+      sessionId, mode: 'queue', content: [{ type: 'text', text: 'Faça uma auditoria completa.' }],
+    })))
+    expect(choose).not.toHaveBeenCalled()
+    expect(followup).toHaveBeenCalledOnce()
+    expect(ctx.agents.list()).toHaveLength(1)
+    await ctx.fiber.dispose()
+  })
+
+  it('honors an explicit manual mode over the legacy automatic flag', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    const choose = vi.fn(() => ({ provider: 'deepseek-official', model: 'deepseek-reasoner' }))
+    Object.assign(agent, { status: 'idle', followup: vi.fn() })
+    const saveDefaultModelSelection = vi.fn(() => Promise.resolve())
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      adaptiveModelSelection: choose, saveDefaultModelSelection, cwd: '/tmp',
+    })
+    expect(expectValue(await api.sessions.selectModel(request({
+      sessionId, provider: 'deepseek-official', model: 'deepseek-chat',
+      selectionMode: 'manual', automatic: true, externalFailoverConsent: true,
+    })))).toMatchObject({ selectionMode: 'manual', automatic: false, externalFailoverConsent: false })
+    expectValue(await api.sessions.prompt(request({
+      sessionId, mode: 'queue', content: [{ type: 'text', text: 'Auditoria completa' }],
+    })))
+    expect(choose).not.toHaveBeenCalled()
+    expect(saveDefaultModelSelection).not.toHaveBeenCalled()
+    await ctx.fiber.dispose()
+  })
+
+  it('reports the configured principal for an idle team session with an older request model', async () => {
+    const { ctx, agent, sessionId } = await harness({ provider: 'deepseek-official', model: 'deepseek-reasoner' })
+    Object.assign(agent, { status: 'idle' })
+    agent.session.append('turn/start', { turn: 1 })
+    agent.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      adaptiveModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-reasoner' }),
+      automaticCoordinator: true, cwd: '/tmp',
+    })
+    expect(expectValue(await api.sessions.models(request({ sessionId })))).toMatchObject({
+      selectionMode: 'team', current: { provider: 'deepseek-official', model: 'deepseek-chat' },
+    })
+    await ctx.fiber.dispose()
+  })
+
+  it.each(['adaptive', 'team'] as const)('rejects %s when no routing policy is mounted', async (selectionMode) => {
+    const { ctx, sessionId } = await harness()
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp',
+    })
+    expect((await api.sessions.selectModel(request({
+      sessionId, provider: 'deepseek-official', model: 'deepseek-chat', selectionMode,
+    }))).result).toMatchObject({ ok: false, error: { code: 'model-unavailable' } })
+    expect((await api.sessions.selectModel(request({
+      sessionId, provider: 'deepseek-official', model: 'deepseek-chat', automatic: true,
+    }))).result).toMatchObject({ ok: false, error: { code: 'model-unavailable' } })
+    await ctx.fiber.dispose()
+  })
+
+  it('does not apply a queued adaptive decision after switching to team mode', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    const followup = vi.fn()
+    Object.assign(agent, { followup })
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      adaptiveModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-reasoner' }), cwd: '/tmp',
+    })
+    expectValue(await api.sessions.prompt(request({
+      sessionId, mode: 'queue', content: [{ type: 'text', text: 'Auditoria completa' }],
+    })))
+    const queued = followup.mock.calls[0]?.[0] as UserMessage
+    expectValue(await api.sessions.selectModel(request({
+      sessionId, provider: 'deepseek-official', model: 'deepseek-chat', selectionMode: 'team',
+    })))
+    agentEvents(ctx, agent).emit('agent/inbox/claimed', { message: queued, turn: 2 })
+    expect(expectValue(await api.sessions.models(request({ sessionId })))).toMatchObject({
+      selectionMode: 'team', current: { model: 'deepseek-chat' },
+    })
+    await ctx.fiber.dispose()
+  })
+
+  it('projects declared modalities and exact route limits without inventing absent metadata', async () => {
+    const { ctx, sessionId } = await harness()
+    ctx.llm.registerAdapter(['visual'], new class extends CatalogAdapter {
+      override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+        return Promise.resolve({
+          provider, id: model, name: model, inputModalities: ['text', 'image'],
+          context: { contextWindow: 128_000 }, defaultMaxTokens: 4096,
+        })
+      }
+    }('Visual', [{ provider: 'visual', id: 'visual-small', name: 'Visual Small' }]))
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp',
+    })
+    const models = expectValue(await api.sessions.models(request({ sessionId })))
+    expect(models.groups.find(group => group.id === 'visual')?.models[0]).toMatchObject({
+      inputModalities: ['text', 'image'], context: { contextWindow: 128_000 }, defaultMaxTokens: 4096,
+    })
+    const unknown = models.groups.find(group => group.id === 'deepseek-official')?.models[0]
+    expect(unknown).not.toHaveProperty('inputModalities')
+    expect(unknown).not.toHaveProperty('context')
+    expect(unknown).not.toHaveProperty('defaultMaxTokens')
+    expect(models.coordination).toBeUndefined()
+    await ctx.fiber.dispose()
+  })
+
   it('rejects acceptance criteria when the native policy is absent', async () => {
     const { ctx, agent, sessionId } = await harness()
     const followup = vi.fn()

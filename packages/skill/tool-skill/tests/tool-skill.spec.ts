@@ -710,6 +710,93 @@ describe('dsh-tool-skill', () => {
     expect(catalogMessages(session)).toHaveLength(1)
   })
 
+  it('blocks model loading after a live scoped restriction changes while leaving sibling agents enabled', async () => {
+    const home = await tempDir('tool-live-skill-restriction')
+    const ctx = await setup(home)
+    const getCalls: string[] = []
+    ctx.skills.registerProvider(() => ({
+      name: 'restricted-provider',
+      list: () => Promise.resolve([{
+        name: 'restricted-skill',
+        description: 'Restricted skill',
+        invocation: { modelInvocable: true, userInvocable: true },
+        source: 'runtime',
+        provider: 'restricted-provider',
+        rank: 1,
+        locator: 'restricted-skill',
+      }]),
+      get: (candidate) => {
+        getCalls.push(candidate.name)
+        return Promise.resolve({ ...candidate, content: 'RESTRICTED_PROVIDER_BODY' })
+      },
+    }))
+    const { agent, scope } = await mintAgentScope(ctx, home)
+    const skills = scope.ctx.get('skills')
+    if (skills === undefined) throw new Error('skills service missing')
+    let enabled = true
+    skills.registerRestriction(name => name !== 'restricted-skill' || enabled)
+    try {
+      expect(JSON.stringify(await composePrefixForAgent(ctx, agent))).toContain('restricted-skill')
+      const allowed = await ctx.tools.execute({
+        signal: testToolSignal, callId: CallId('restriction-allowed'), name: 'skill', arguments: { name: 'restricted-skill' }, agent,
+      })
+      expect(allowed.isError).toBe(false)
+      expect(JSON.stringify(allowed.content)).toContain('RESTRICTED_PROVIDER_BODY')
+      enabled = false
+      await fireStep(ctx, agent, 1, 2)
+      expect(catalogMessages(agent.session).at(-1)?.data.source).toMatchObject({ kind: 'skill-catalog', entries: [] })
+      const denied = await ctx.tools.execute({
+        signal: testToolSignal, callId: CallId('restriction-denied'), name: 'skill', arguments: { name: 'restricted-skill' }, agent,
+      })
+      expect(denied.isError).toBe(true)
+      expect(JSON.stringify(denied.content)).not.toContain('RESTRICTED_PROVIDER_BODY')
+      expect(getCalls).toEqual(['restricted-skill'])
+
+      const sibling = await ctx.tools.execute({
+        signal: testToolSignal, callId: CallId('restriction-sibling'), name: 'skill', arguments: { name: 'restricted-skill' },
+        agent: agentForCwd(home),
+      })
+      expect(sibling.isError).toBe(false)
+      expect(JSON.stringify(sibling.content)).toContain('RESTRICTED_PROVIDER_BODY')
+      expect(getCalls).toEqual(['restricted-skill', 'restricted-skill'])
+    } finally {
+      await scope.dispose()
+    }
+  })
+
+  it('retains an old summary during incomplete discovery but denies loading its disabled body', async () => {
+    const home = await tempDir('tool-incomplete-restriction')
+    const ctx = await setup(home)
+    ctx.skills.register({
+      name: 'disabled-skill', description: 'Initially available', source: 'runtime', content: 'DISABLED_SKILL_BODY',
+    })
+    let enabled = true
+    ctx.skills.registerRestriction(() => enabled)
+    const agent = agentForCwd(home)
+    await composePrefixForAgent(ctx, agent)
+    expect(catalogMessages(agent.session)).toHaveLength(1)
+    ctx.skills.registerProvider(() => ({
+      name: 'incomplete',
+      list: () => Promise.resolve({ candidates: [], complete: false }),
+      get: () => Promise.resolve(undefined),
+    }))
+    enabled = false
+    await fireStep(ctx, agent, 1, 2)
+
+    // Incomplete discovery preserves the last-good durable catalog, including
+    // this stale summary. Invocation still consults the live restriction.
+    expect(catalogMessages(agent.session)).toHaveLength(1)
+    expect(catalogMessages(agent.session)[0]?.data.source).toMatchObject({
+      kind: 'skill-catalog', entries: [{ name: 'disabled-skill', description: 'Initially available' }],
+    })
+    expect(await ctx.skills.snapshot({ scope: agent, cwd: home })).toEqual({ skills: [], complete: false })
+    const denied = await ctx.tools.execute({
+      signal: testToolSignal, callId: CallId('incomplete-denied'), name: 'skill', arguments: { name: 'disabled-skill' }, agent,
+    })
+    expect(denied.isError).toBe(true)
+    expect(JSON.stringify(denied.content)).not.toContain('DISABLED_SKILL_BODY')
+  })
+
   it('omits catalog guidance when the calling agent restricts away the shipped skill tool', async () => {
     const home = await tempDir('tool-restricted-catalog')
     const ctx = await setup(home)
@@ -1009,6 +1096,41 @@ describe('user-explicit invocation injection', () => {
     expect(decision.messages.some(message =>
       (message.source as { kind?: string; name?: string }).kind === 'skill-invocation'
       && (message.source as { name?: string }).name === 'shared-skill')).toBe(true)
+  })
+
+  it.each([
+    { path: 'slash', name: 'shared-skill', text: '/shared-skill go', body: 'Shared instructions.' },
+    { path: 'user-only slash', name: 'hidden-demo', text: '/hidden-demo go', body: 'Say the magic word: PINEAPPLE.' },
+    { path: 'autoLoad', name: 'shared-skill', text: 'please use the automatic marker', body: 'Shared instructions.' },
+  ])('blocks $path through live skill restrictions and permits it again after re-enabling', async ({ name, text, body }) => {
+    const { ctx, agent } = await invokeHarness({ autoLoad: [{ name: 'shared-skill', contains: ['automatic marker'] }] })
+    const { scope } = await mintAgentScope(ctx, agent)
+    const skills = scope.ctx.get('skills')
+    if (skills === undefined) throw new Error('skills service missing')
+    let enabled = true
+    skills.registerRestriction(skillName => skillName !== name || enabled)
+    try {
+      const initial = await proposeStep(ctx, agent, [gesture(text)])
+      if (initial.kind !== 'enter') throw new Error('expected enter')
+      expect(initial.messages.filter(message => message.source.kind === 'skill-invocation')).toHaveLength(1)
+      expect(JSON.stringify(initial.messages)).toContain(body)
+
+      enabled = false
+      const input = gesture(text)
+      const denied = await proposeStep(ctx, agent, [input])
+      if (denied.kind !== 'enter') throw new Error('expected enter')
+      expect(denied.messages).toContain(input)
+      expect(denied.messages.some(message => message.source.kind === 'skill-invocation')).toBe(false)
+      expect(JSON.stringify(denied.messages)).not.toContain(body)
+
+      enabled = true
+      const restored = await proposeStep(ctx, agent, [gesture(text)])
+      if (restored.kind !== 'enter') throw new Error('expected enter')
+      expect(restored.messages.filter(message => message.source.kind === 'skill-invocation')).toHaveLength(1)
+      expect(JSON.stringify(restored.messages)).toContain(body)
+    } finally {
+      await scope.dispose()
+    }
   })
 
   it('recognizes a mid-sentence gesture but not paths, fractions, or broken boundaries', async () => {

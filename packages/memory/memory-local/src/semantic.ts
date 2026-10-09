@@ -26,6 +26,14 @@ export interface OllamaSemanticIndexConfig {
   readonly maxCacheEntries: number
   readonly maxResponseBytes: number
   readonly api?: SemanticEmbeddingApi
+  /** Maximum document characters per graph embedding chunk, excluding its task prefix. */
+  readonly graphInputCharacters?: number
+  /** Maximum graph chunks in one embedding request. */
+  readonly graphBatchInputs?: number
+  /** Maximum binary subdivisions of a rejected singleton graph chunk. */
+  readonly graphInputSplitDepth?: number
+  /** Total deadline for one graph embedding pass, including adaptive subdivision. */
+  readonly graphTimeoutMs?: number
 }
 
 /** Ranked candidate input whose public record retains workspace provenance. */
@@ -65,6 +73,7 @@ export interface SemanticRanking {
 
 interface CachedEmbedding {
   readonly revision: number
+  readonly purpose: 'retrieval' | 'graph'
   readonly vector: readonly number[]
 }
 
@@ -74,8 +83,9 @@ export class SemanticSearchError extends Error {
 
   /**
    * @param code - Stable fallback class safe for telemetry.
+   * @param retryable - Whether a bounded graph retry may recover a transient HTTP failure.
    */
-  constructor(readonly code: SemanticFallbackCode) {
+  constructor(readonly code: SemanticFallbackCode, readonly retryable = false) {
     super(`local semantic search failed: ${code}`)
   }
 }
@@ -162,19 +172,16 @@ export class OllamaSemanticIndex {
     const missing: SemanticLinkCandidate[] = []
     const vectors = new Map<MemoryIdType, readonly number[]>()
     for (const candidate of candidates) {
-      const cached = this.takeCached(candidate.id, candidate.revision)
+      const cached = this.takeCached(candidate.id, candidate.revision, 'graph')
       if (cached === undefined) missing.push(candidate)
       else vectors.set(candidate.id, cached)
     }
     if (missing.length > 0) {
-      const embedded = await this.embed(
-        missing.map(candidate => `search_document: ${candidate.content}`),
-        signal,
-      )
+      const embedded = await this.embedGraphDocuments(missing.map(candidate => candidate.content), signal)
       for (const [index, candidate] of missing.entries()) {
         const vector = requiredVector(embedded[index])
         vectors.set(candidate.id, vector)
-        this.cacheEmbedding(candidate.id, candidate.revision, vector)
+        this.cacheEmbedding(candidate.id, candidate.revision, vector, 'graph')
       }
     }
     const scored: SemanticEdge[] = []
@@ -213,9 +220,9 @@ export class OllamaSemanticIndex {
     this.cache.delete(id)
   }
 
-  private takeCached(id: MemoryIdType, revision: number): readonly number[] | undefined {
+  private takeCached(id: MemoryIdType, revision: number, purpose: CachedEmbedding['purpose'] = 'retrieval'): readonly number[] | undefined {
     const cached = this.cache.get(id)
-    if (cached === undefined || cached.revision !== revision) {
+    if (cached === undefined || cached.revision !== revision || cached.purpose !== purpose) {
       this.cache.delete(id)
       return undefined
     }
@@ -224,12 +231,81 @@ export class OllamaSemanticIndex {
     return cached.vector
   }
 
-  private cacheEmbedding(id: MemoryIdType, revision: number, vector: readonly number[]): void {
+  private cacheEmbedding(id: MemoryIdType, revision: number, vector: readonly number[], purpose: CachedEmbedding['purpose'] = 'retrieval'): void {
     this.cache.delete(id)
-    this.cache.set(id, { revision, vector })
+    this.cache.set(id, { revision, vector, purpose })
     while (this.cache.size > this.config.maxCacheEntries) {
       const oldest = this.cache.keys().next().value as MemoryIdType
       this.cache.delete(oldest)
+    }
+  }
+
+  /** Complete documents contribute length-weighted means; no source character is discarded. */
+  private async embedGraphDocuments(contents: readonly string[], signal?: AbortSignal): Promise<readonly (readonly number[])[]> {
+    using passDeadline = deadline(signal, this.config.graphTimeoutMs ?? 60_000, SEMANTIC_TIMEOUT_CODE)
+    try {
+      return await this.embedGraphInputs(contents, passDeadline.signal)
+    } catch (error) {
+      if (timeoutOf(passDeadline.signal, SEMANTIC_TIMEOUT_CODE) !== undefined) throw new SemanticSearchError('TIMEOUT')
+      throw error
+    }
+  }
+
+  private async embedGraphInputs(contents: readonly string[], signal: AbortSignal): Promise<readonly (readonly number[])[]> {
+    const maximum = this.config.graphInputCharacters ?? 1024
+    const batchSize = this.config.graphBatchInputs ?? 8
+    const aggregates = contents.map(text => ({ text,
+      sum: Array.from({ length: this.config.dimensions }, () => 0), weight: 0 }))
+    const chunks: Array<{ document: typeof aggregates[number]; text: string }> = []
+    for (const document of aggregates) {
+      const { text } = document
+      let start = 0
+      do {
+        let end = Math.min(text.length, start + maximum)
+        if (end < text.length && isHighSurrogate(text.charCodeAt(end - 1))) end--
+        chunks.push({ document, text: text.slice(start, end) })
+        start = end
+      } while (start < text.length)
+    }
+    for (let start = 0; start < chunks.length; start += batchSize) {
+      if (signal.aborted) throw abortReason(signal)
+      const batch = chunks.slice(start, start + batchSize)
+      const vectors = await this.embedGraphBatch(batch.map(chunk => chunk.text), signal)
+      for (const [index, chunk] of batch.entries()) {
+        const vector = requiredVector(vectors[index])
+        const weight = Math.max(1, chunk.text.length)
+        const { sum } = chunk.document
+        for (const [axis, value] of vector.entries()) sum[axis] = Number(sum[axis]) + value * weight
+        chunk.document.weight += weight
+      }
+    }
+    return aggregates.map(({ sum, weight }) => sum.map(value => value / weight))
+  }
+
+  /** Split rejected batches before subdividing individual documents, with a finite depth bound. */
+  private async embedGraphBatch(texts: readonly string[], signal?: AbortSignal, depth = 0): Promise<readonly (readonly number[])[]> {
+    throwIfAborted(signal)
+    try {
+      return await this.embed(texts.map(text => `search_document: ${text}`), signal)
+    } catch (error) {
+      if (!(error instanceof SemanticSearchError) || error.code !== 'INPUT_TOO_LARGE') throw error
+      throwIfAborted(signal)
+      if (texts.length > 1) {
+        const middle = Math.ceil(texts.length / 2)
+        return [
+          ...await this.embedGraphBatch(texts.slice(0, middle), signal, depth),
+          ...await this.embedGraphBatch(texts.slice(middle), signal, depth),
+        ]
+      }
+      const text = texts[0]
+      if (text === undefined) throw error
+      if (depth >= (this.config.graphInputSplitDepth ?? 8) || text.length < 2) throw error
+      let middle = Math.floor(text.length / 2)
+      if (isHighSurrogate(text.charCodeAt(middle - 1))) middle++
+      if (middle >= text.length) throw error
+      const left = requiredVector((await this.embedGraphBatch([text.slice(0, middle)], signal, depth + 1))[0])
+      const right = requiredVector((await this.embedGraphBatch([text.slice(middle)], signal, depth + 1))[0])
+      return [left.map((value, axis) => (value * middle + Number(right[axis]) * (text.length - middle)) / text.length)]
     }
   }
 
@@ -251,7 +327,11 @@ export class OllamaSemanticIndex {
         signal: requestDeadline.signal,
       })
       const body = await readBoundedText(response, this.config.maxResponseBytes, requestDeadline.signal)
-      if (!response.ok) throw new SemanticSearchError(classifyEmbeddingHttpError(response.status, body))
+      if (!response.ok) {
+        const code = classifyEmbeddingHttpError(response.status, body)
+        throw new SemanticSearchError(code, code !== 'INPUT_TOO_LARGE'
+          && [408, 429, 500, 502, 503, 504].includes(response.status))
+      }
       let parsed: unknown
       try {
         parsed = JSON.parse(body)
@@ -270,6 +350,10 @@ export class OllamaSemanticIndex {
       throw new SemanticSearchError('TRANSPORT')
     }
   }
+}
+
+function isHighSurrogate(code: number): boolean {
+  return code >= 0xD800 && code <= 0xDBFF
 }
 
 /** Recognize explicit context/batch overflow without retaining or exposing provider detail. */
@@ -394,6 +478,11 @@ function requiredVector(vector: readonly number[] | undefined): readonly number[
   /* v8 ignore next -- validated batches and candidate maps guarantee every indexed vector. */
   if (vector === undefined) throw new SemanticSearchError('INVALID_RESPONSE')
   return vector
+}
+
+/** Re-read cancellation after awaits without retaining TypeScript's pre-await narrowing. */
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted === true) throw abortReason(signal)
 }
 
 function abortReason(signal: AbortSignal): Error {

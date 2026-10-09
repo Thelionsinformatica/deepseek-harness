@@ -384,7 +384,7 @@ describe('memory shadow extraction through a real Loader composition', () => {
       source: { kind: 'session', sessionId: SessionId('core-source') },
     })
     await context.personalMemory.create({
-      scope, content: 'O projeto usa Ollama.',
+      scope, content: 'O projeto usa Ollama.', validation: 'explicit',
       source: { kind: 'session', sessionId: SessionId('core-source') },
     })
 
@@ -432,7 +432,7 @@ describe('memory shadow extraction through a real Loader composition', () => {
     if (context === undefined) throw new Error('loader context was not initialized')
     const scope = { ownerId: PersonalMemoryOwnerId('core-owner') }
     await context.personalMemory.create({
-      scope, content: 'O projeto usa armazenamento local.',
+      scope, content: 'O projeto usa armazenamento local.', validation: 'explicit',
       source: { kind: 'session', sessionId: SessionId('core-source') },
     })
     const list = vi.spyOn(PersonalMemoryLocal.LocalPersonalMemoryProvider.prototype, 'list')

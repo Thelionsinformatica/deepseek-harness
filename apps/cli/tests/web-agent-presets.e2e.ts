@@ -7,13 +7,14 @@ import { Context } from '@deepseek-ai/cordis'
 import { boot, healProfilesModuleFallback, loadOverlayPatches, loadProfile } from '@deepseek-ai/dsh-app-boot'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
+import { agentEvents, Inbox, type Agent } from '@deepseek-ai/dsh-agent'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { resolveSessionPreset, SETTINGS_NAMESPACE } from '@deepseek-ai/dsh-agent-presets'
 import { applyChildComposition, childSessionMeta } from '@deepseek-ai/dsh-subagent'
 import { CallId, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { MockAdapter, textResponse, toolCallResponse } from '../../../packages/core/agent-loop/tests/mock-adapter.ts'
 import type {} from '@deepseek-ai/dsh-compaction-basic'
 import type {} from '@deepseek-ai/dsh-skill'
 import type {} from '@deepseek-ai/dsh-tools'
@@ -370,7 +371,10 @@ describe('the shipped Web composition', () => {
   it('composes the cordis agent with its own toolset', async () => {
     const handle = await ctx.agents.create({
       sessionId: SessionId('preset-cordis'),
-      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'cordis').then(() => undefined),
+      setup: async (agentCtx) => {
+        agentCtx.agent!.session.append('sandbox/mode', { mode: 'danger-full-access' })
+        await ctx.agentPresets.mount(agentCtx, 'cordis')
+      },
     })
     try {
       const tools = toolNames(ctx, handle.agent)
@@ -388,8 +392,89 @@ describe('the shipped Web composition', () => {
       const scoped = (await ctx.skills.list({ scope: handle.agent })).map(skill => skill.name)
       expect(scoped).toContain('editing-cordis-compositions')
       expect((await ctx.skills.list()).map(skill => skill.name)).not.toContain('editing-cordis-compositions')
+      expect(ctx.sandboxPolicy.overrideOf(handle.agent.session)).toBe('danger-full-access')
+      expect(handle.agent.session.events.filter(event => event.type === 'sandbox/mode')).toHaveLength(1)
+
+      if (process.platform === 'win32') {
+        // These policy denials happen before a subprocess can start.
+        const denied = await ctx.tools.execute({
+          callId: CallId('preset-cordis-block-host-process-termination'), name: 'pwsh',
+          arguments: { command: 'Stop-Process -Id 4012 -Force', description: 'stop occupied port owner' },
+          signal: AbortSignal.timeout(5_000), agent: handle.agent,
+        })
+        expect(denied.isError).toBe(true)
+        expect(JSON.stringify(denied.content)).toContain('host process termination is disabled for this agent')
+        const combined = await ctx.tools.execute({
+          callId: CallId('preset-cordis-block-combined-server-check'), name: 'pwsh',
+          arguments: { command: "node server.js; Invoke-WebRequest -Uri 'http://localhost:3008/'",
+            description: 'start and test server', run_in_background: true },
+          signal: AbortSignal.timeout(5_000), agent: handle.agent,
+        })
+        expect(combined.isError).toBe(true)
+        expect(JSON.stringify(combined.content)).toContain('HTTP health check in a separate foreground call')
+      }
     } finally {
       await handle.dispose()
+    }
+  })
+
+  it.each(['pass', 'reject', 'unstructured'] as const)('requires a real isolated %s completion review in the cordis preset', async (verdict) => {
+    const provider = `creator-review-${verdict}`
+    const adapter = new MockAdapter([verdict === 'unstructured'
+      ? textResponse('I approve without a structured verdict.')
+      : toolCallResponse('review-verdict', 'structured_output', {
+        status: verdict, summary: 'Synthetic completion review.', findings: [],
+      })])
+    const unregister = ctx.llm.registerAdapter([provider], adapter)
+    const handle = await ctx.agents.create({
+      sessionId: SessionId(`preset-cordis-review-${verdict}`),
+      agentOptions: { provider, model: 'scripted-review' },
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'cordis').then(() => undefined),
+    })
+    const agent = handle.agent
+    const status = vi.spyOn(agent, 'status', 'get').mockReturnValue('running')
+    const start = ctx.subagents.start.bind(ctx.subagents)
+    let startFailure: unknown
+    const observedStart = vi.spyOn(ctx.subagents, 'start').mockImplementation(async (...args) => {
+      try { return await start(...args) } catch (error) { startFailure = error; throw error }
+    })
+    try {
+      // Admit a host-owned human turn without waking the coordinator model;
+      // only the real spawn driver's independent reviewer consumes the script.
+      const inbox = new Inbox(agent.session, { inserted: () => {}, discarded: () => {}, claimed: () => {} })
+      inbox.append('next-turn', createUserMessage({
+        content: [{ type: 'text', text: 'Deliver the synthetic verified result.' }], source: { kind: 'user' },
+      }))
+      const admitted = inbox.claim('next-turn', 1)
+      agent.session.append('turn/start', { turn: 1 })
+      for (const message of admitted) agent.session.append('user/message', message, { surfaceOp: 'append' })
+      const goal = ctx.goals.create(agent, { objective: 'Deliver the synthetic verified result.' })
+      const complete = () => ctx.agents.withInitiator(agent, () => ctx.tools.execute({
+        callId: CallId(`creator-complete-${agent.session.seq}`), name: 'update_goal',
+        arguments: { action: 'complete', goal_id: goal.id, revision: goal.revision },
+        signal: AbortSignal.timeout(10_000), agent,
+      }))
+      const incomplete = await complete()
+      expect(incomplete.isError).toBe(true)
+      expect(JSON.stringify(incomplete)).toContain('GOAL_TOOL_TODOS_REQUIRED')
+      expect(adapter.requests).toHaveLength(0)
+      agent.session.append('todo/write', { todos: [{ content: 'Validate the result.', status: 'in_progress' }] })
+      expect(JSON.stringify(await complete())).toContain('GOAL_TOOL_TODOS_INCOMPLETE')
+      expect(adapter.requests).toHaveLength(0)
+      agent.session.append('todo/write', { todos: [{ content: 'Validate the result.', status: 'completed' }] })
+      const result = await complete()
+      expect(adapter.requests, `${String(startFailure)} ${JSON.stringify(result)}`).toHaveLength(1)
+      const names = adapter.requests[0]?.tools?.map(tool => tool.name) ?? []
+      expect(names).toEqual(expect.arrayContaining(['structured_output', 'completion_artifact_read']))
+      for (const name of ['pwsh', 'write', 'cordis_run']) expect(names).not.toContain(name)
+      expect(result.isError).toBe(verdict !== 'pass')
+      expect(ctx.goals.get(agent)?.phase).toBe(verdict === 'pass' ? 'complete' : 'active')
+      expect(agent.session.events.some(event => event.type === 'goal/completion-audit')).toBe(verdict === 'pass')
+    } finally {
+      status.mockRestore()
+      observedStart.mockRestore()
+      await handle.dispose()
+      unregister()
     }
   })
 

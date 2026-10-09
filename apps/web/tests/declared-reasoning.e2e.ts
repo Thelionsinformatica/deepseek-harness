@@ -1,11 +1,9 @@
 // Web e2e scenario: a hand-declared model's `reasoningEfforts` reaches the
 // composer's effort pane — the levels a settings profile declares are exactly
-// what the picker offers, and picking one records it with the Agent default.
+// what the picker offers, and picking one applies to this session only.
 // Zero model calls: declaring, describing, and switching are settings/llm
 // traffic only, so there is no fixture and a stray stream would fail loud.
-import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
@@ -77,15 +75,20 @@ describe.skipIf(MODE === 'record')('web e2e: declared reasoning efforts reach th
     const snapshot = await captureStableAria(page, '[role="menu"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
 
-    // Picking a level is the same gesture that saves the default selection, so
-    // the effort lands in the Agent default Settings section beside provider/model.
+    // The real Host reports the picked effort for this session without changing
+    // the configured principal. No inference is needed to prove the selection.
     await page.getByRole('menuitemradio', { name: 'High' }).click()
-    await expect.poll(
-      async () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'),
-      { timeout: 10_000 },
-    ).toContain('reasoningEffort: high')
     await expect.poll(() => trigger.getAttribute('aria-label'), { timeout: 10_000 })
       .toBe('选择模型，当前 Acme Think，推理等级 High')
+    const agent = scaffold.ctx.agents.list()[0]
+    if (agent === undefined) throw new Error('No browser session agent')
+    const response = await scaffold.ctx.apiProxy.sessions.models({
+      rpcId: 'declared-reasoning-models' as never,
+      payload: { sessionId: agent.session.id },
+    })
+    if (!response.result.ok) throw new Error(response.result.error.message)
+    expect(response.result.value.current).toEqual({ provider: 'acme-gateway', model: 'acme-think', reasoningEffort: 'high' })
+    expect(scaffold.ctx.agentDefaultModel.currentSelection()).toEqual({ provider: 'acme-gateway', model: 'acme-think' })
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 

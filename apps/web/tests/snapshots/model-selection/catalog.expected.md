@@ -1,0 +1,40 @@
+- menu "Model and reasoning effort":
+  - searchbox "Search models"
+  - menuitem "Leon Adaptive":
+    - text: Leon Adaptive
+    - img
+  - menuitem "Leon Team":
+    - text: Leon Team
+    - img
+    - img
+  - menuitem "Effort Default":
+    - text: Effort Default
+    - img
+  - text: Model
+  - group "Selector Main":
+    - text: Selector Main
+    - menuitemradio "Fast Text"
+    - menuitemradio "Main Think"
+  - group "Selector Review":
+    - text: Selector Review
+    - menuitemradio "Review Text"
+  - text: Catalog metadata does not prove live availability, quota, or execution quality.
+  - region "Model details":
+    - text: Main Think
+    - paragraph: Automatic mode uses Host-configured routes. Manual selection is optional and does not grant external access.
+    - term: Provider
+    - definition: Selector Main
+    - term: Model ID
+    - definition: main-think
+    - term: Input
+    - definition: Text · Images
+    - term: Context
+    - definition: 1000000 tokens
+    - term: Default output cap
+    - definition: 4096 tokens
+    - term: Reasoning levels
+    - definition: Off · High · Max
+    - term: Pricing
+    - definition: Not provided
+    - paragraph: Catalog metadata does not prove live availability, quota, or execution quality.
+    - paragraph: The mode applies to this run; restarting Leon restores the configured default.

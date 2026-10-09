@@ -1,0 +1,30 @@
+# Keyless selector scenario: these are synthetic routes, never production credentials.
+- id: llm-pi-ai
+  config: { providers: {} }
+- id: agent-default-model
+  config:
+    provider: selector-main
+    model: main-think
+    auxiliaryModels:
+      localProviders: []
+      roles:
+        worker: { provider: selector-main, model: fast-text, allowExternal: true }
+        review: { provider: selector-review, model: review-text, allowExternal: true }
+        vision: { provider: selector-main, model: main-think, allowExternal: true }
+- id: api-gateway
+  config:
+    nativeOpen: false
+    adaptiveRouting:
+      coordinatorMode: true
+      provider: selector-main
+      fastModel: fast-text
+      mainModel: main-think
+      expertProvider: selector-review
+      expertModel: review-text
+      visionRoute: { provider: selector-main, model: main-think }
+      failovers:
+        - fromProviders: [selector-main]
+          provider: selector-review
+          model: review-text
+          residency: external
+          failureCodes: [TRANSPORT]

@@ -2907,6 +2907,13 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     },
 
     skills: {
+      catalog: request => ok(request, {
+        agentPreset: request.payload.agentPreset, complete: true, revision: 0, writable: false, disabledNames: [],
+        skills: [
+          { name: 'fixture-demo', description: 'Fixture skill', source: 'bundled', enabled: true, modelInvocable: true, userInvocable: true },
+          { name: 'fixture-user-only', description: 'User-only fixture skill', source: 'bundled', enabled: true, modelInvocable: false, userInvocable: true },
+        ],
+      }),
       inspect: (request) => {
         const missing = requireSession(request)
         if (missing !== undefined) return missing
@@ -3255,6 +3262,7 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'workspace.deleteSession': return this.api.workspace.deleteSession(request)
       case 'skill.list': return this.api.skills.list(request)
       case 'skill.inspect': return this.api.skills.inspect(request)
+      case 'skill.catalog': return this.api.skills.catalog(request)
       case 'agentPreset.list': return this.api.agentPresets.list(request)
       case 'agentPreset.select': return this.api.agentPresets.select(request)
       case 'agentPreset.read': return this.api.agentPresets.read(request)

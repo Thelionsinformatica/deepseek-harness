@@ -95,6 +95,9 @@ function scriptedApi(overrides: {
       deleteSession: r => ok(r, { deleted: true as const, archivedSessionIds: [] }),
     },
     skills: {
+      catalog: r => ok(r, {
+        agentPreset: r.payload.agentPreset, complete: true, skills: [], revision: 0, writable: false, disabledNames: [],
+      }),
       list: r => ok(r, { skills: [] }),
       inspect: r => ok(r, { agentPreset: null, complete: false, modelToolAvailable: false, authorization: 'not-evaluated', skills: [], observedAt: '2026-09-21T12:00:00.000Z' }),
       ...overrides.skills,

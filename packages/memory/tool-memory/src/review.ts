@@ -59,6 +59,7 @@ import {
   type MemoryCandidateReviewMarkRequest,
   type MemoryCandidateReviewMarkResult,
   type PersonalMemoryAdminGraphResult,
+  type PersonalMemoryAdminCorrectRequest,
   type PersonalMemoryAdminListResult,
   type PersonalMemoryAdminRememberRequest,
   type PersonalMemoryAdminRememberResult,
@@ -457,13 +458,14 @@ export class MemoryCandidateReviewService extends TypertRemoteService {
    * @returns The explicitly validated browser-safe row and content-free audit id, or an explicit failure.
    */
   @Remote('correctPersonalMemory')
-  correctPersonalMemory(request: MemoryAdminCorrectRequest): Promise<MemoryAdminCorrectResult> {
+  correctPersonalMemory(request: PersonalMemoryAdminCorrectRequest): Promise<MemoryAdminCorrectResult> {
     return this.withPersonalMemory(`personal:${String(request.id)}`, request, async (personal) => {
       const content = request.content.trim()
       if (looksSensitive(content)) return adminRejected({ code: 'memory-admin-sensitive-content' })
       const admitted = await this.admitPersonalAdminAction(request.sessionId, 'correct', {
         memoryId: request.id,
         expectedRevision: request.revision,
+        ...(request.core === undefined ? {} : { desiredCore: request.core }),
       })
       if (!admitted.ok) return admitted
       const audit = admitted.value
@@ -475,6 +477,7 @@ export class MemoryCandidateReviewService extends TypertRemoteService {
           source: { kind: 'session', sessionId: request.sessionId },
           confidence: 1,
           validation: 'explicit',
+          ...(request.core === undefined ? {} : { core: request.core }),
         })
         await this.finishPersonalAdminAction(audit, updated.id, updated.revision)
         return success({ item: projectMemory(updated, memoryStatusAt(updated)), auditId: audit.id })
@@ -616,7 +619,7 @@ export class MemoryCandidateReviewService extends TypertRemoteService {
     action: PersonalMemoryAdminActionRecord['action'],
     details: Pick<
       PersonalMemoryAdminActionRecord,
-      'memoryId' | 'expectedRevision' | 'desiredEnabled'
+      'memoryId' | 'expectedRevision' | 'desiredEnabled' | 'desiredCore'
     > = {},
   ): Promise<PersonalMemoryAdminActionRecord> {
     const ownerId = this.personalOwnerId
@@ -640,7 +643,7 @@ export class MemoryCandidateReviewService extends TypertRemoteService {
     action: PersonalMemoryAdminActionRecord['action'],
     details: Pick<
       PersonalMemoryAdminActionRecord,
-      'memoryId' | 'expectedRevision' | 'desiredEnabled'
+      'memoryId' | 'expectedRevision' | 'desiredEnabled' | 'desiredCore'
     > = {},
   ): Promise<{ readonly ok: true; readonly value: PersonalMemoryAdminActionRecord } | MemoryAdminRejected> {
     try {
@@ -979,6 +982,7 @@ function projectMemory(record: MemoryRecord | PersonalMemoryRecord, status: Memo
     ...(record.importance === undefined ? {} : { importance: record.importance }),
     ...(record.confidence === undefined ? {} : { confidence: record.confidence }),
     ...(record.validation === undefined ? {} : { validation: record.validation }),
+    ...(record.core === undefined ? {} : { core: record.core }),
     ...(record.validFrom === undefined ? {} : { validFrom: record.validFrom }),
     ...(record.validUntil === undefined ? {} : { validUntil: record.validUntil }),
     ...(record.expiresAt === undefined ? {} : { expiresAt: record.expiresAt }),

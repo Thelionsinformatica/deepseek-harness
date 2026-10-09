@@ -1,8 +1,7 @@
 /**
- * skills domain contract: read-only skill catalog lookup addressed by session.
- * The session's header cwd resolves to the canonical project root host-side —
- * the client never submits a raw path, and skill lookup never creates or
- * resumes an Agent.
+ * Read-only skill discovery addressed by session or administrative preset and
+ * registered workspace. The host resolves project paths; lookup never creates
+ * or resumes an Agent.
  */
 
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -50,6 +49,28 @@ export interface SkillInspection {
   readonly observedAt: string
 }
 
+/** Path-free installed skill metadata for the administrative preset catalog. */
+export interface SkillCatalogEntry extends SkillInspectionEntry {
+  /** Whether this preset's current restrictions permit the skill. */
+  readonly enabled: boolean
+}
+
+/** Administrative inventory, including disabled skills, without executing them. */
+export interface SkillCatalog {
+  /** Preset whose standing composition supplies this inventory. */
+  readonly agentPreset: string
+  /** All providers completed and settings stayed at the returned revision. */
+  readonly complete: boolean
+  /** Metadata only; invocation flags describe policy, not tool authorization. */
+  readonly skills: readonly SkillCatalogEntry[]
+  /** Revision of the agent-presets namespace for settings.mutate CAS writes. */
+  readonly revision: number
+  /** A settings provider can persist edits to the registered namespace. */
+  readonly writable: boolean
+  /** Configured disabled names, including skills absent from this observation. */
+  readonly disabledNames: readonly string[]
+}
+
 /**
  * Skill-domain unary methods (the map key skill.* of RpcMethodMap). These
  * read-only catalogs never invoke a skill: invocation is a plain `session.prompt`
@@ -58,6 +79,12 @@ export interface SkillInspection {
  * one deterministic path with no dedicated invocation wire.
  */
 export interface SkillsApi {
+  /**
+   * Loopback-only installed inventory for one preset, with no session required.
+   * An optional registered workspace selects project skills; omission leaves
+   * cwd unset. This may mount the preset's standing plugins, but starts no agent.
+   */
+  catalog(request: RpcRequest<{ agentPreset: string; workspaceId?: string }>): Promise<RpcResponse<SkillCatalog>>
   /** Lists the user-invocable skill catalog for the session's project. */
   list(request: RpcRequest<{ sessionId: SessionId }>): Promise<RpcResponse<{ skills: readonly SkillEntry[] }>>
   /** Inspects scoped metadata and loader visibility without authorizing execution or resuming an agent. */

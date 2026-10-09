@@ -174,6 +174,11 @@ export function apply(ctx: ClientContext): void {
             if (!available || current === null) return Promise.resolve(false)
             return directory.select(current, true, externalFailoverConsent).then(() => true, () => false)
           },
+          selectTeam: () => {
+            const current = directory.store.getSnapshot().current
+            if (!available || current === null) return Promise.resolve(false)
+            return directory.select(current, true, false, 'team').then(() => true, () => false)
+          },
         }
       },
     }, ModelSelect))

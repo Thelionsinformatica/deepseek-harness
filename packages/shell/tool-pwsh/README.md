@@ -38,6 +38,8 @@ Result text contains stdout, an optional `[stderr]` section, then applicable tru
 
 The canonical success is `{ kind: 'foreground', ...ShellRunResult }` for a completed foreground process (with the executor's `sandbox` facts — `mode`/`denied`, optional `enforcement`/`runnerFailed` — projected when present) or `{ kind: 'background', jobId }` for a published task. The renderer preserves exactly `started background job <id>` for background acks; programmatic consumers use the typed fields without parsing the rendered text.
 
+`isError: false` means the tool returned a command result, not that the command or the user's task succeeded. Inspect `exitCode`, `timedOut`, `aborted`, and `signal` independently. The local PowerShell executor defaults to `$ErrorActionPreference = 'Stop'`, so unhandled PowerShell errors become nonzero process exits instead of being masked by later output; explicitly caught or continued errors and ordinary stderr remain governed by the script. This does not validate a command's business result, such as whether a reported hash is correct.
+
 When `run_in_background` is true, this plugin preflights `ctx.jobs.start()` before spawning, registers the calling agent as owner, and adapts the returned `ShellProcess` handle into generic cancel/done/incremental-output hooks. The job runtime owns ids, cross-session isolation, completion notices, waiting, and disposal cleanup; this plugin only maps pwsh exit facts into job output and outcome detail. `enableRunInBackground: false` removes the parameter and rejects a forced background call at execution time.
 
 ## UI presentation

@@ -22,6 +22,8 @@ import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ClientSessionContext, InputTriggerSource } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { apply, inject } from '../src/client/index.ts'
 import { SkillRow as SkillToolRow } from '../src/client/SkillRow.tsx'
+import { SkillSettingsSection, type SkillSettingsInjected } from '../src/client/SkillSettingsSection.tsx'
+import { en, pt, zh } from '../src/client/locales.ts'
 
 type SkillRow = { name: string; description: string; whenToUse?: string; modelInvocable?: boolean }
 type ListResult =
@@ -122,24 +124,32 @@ describe('apply', () => {
     expect(entry?.options).toMatchObject({ key: 'skill' })
     expect(entry?.locale).toBe('skill')
     expect(entry?.component).toBe(SkillToolRow)
-    expect(presentation.dictionaries).toEqual([{
-      namespace: 'skill', dictionaries: {
-        zh: {
-          'row.running': '正在加载 skill',
-          'row.failed': 'skill 加载失败',
-          'row.stopped': 'skill 加载已中止',
-          'row.instructions': '说明',
-          'menu.userOnly': '仅用户',
-        },
-        en: {
-          'row.running': 'Loading skill',
-          'row.failed': 'Skill load failed',
-          'row.stopped': 'Skill load stopped',
-          'row.instructions': 'Instructions',
-          'menu.userOnly': 'user-only',
-        },
-      },
-    }])
+    expect(presentation.dictionaries).toEqual([{ namespace: 'skill', dictionaries: { zh, en, pt } }])
+  })
+
+  it('registers Settings when its slot is declared later and removes the page on disposal', async () => {
+    const ctx = new Context()
+    ctx.provide('inputTriggers', { registerSource: () => () => {} })
+    ctx.provide('sessions', { subagentAddress: () => undefined })
+    ctx.provide('connection', { api: { skills: { list: listOk(CATALOG) } } })
+    new TestRemote(ctx)
+    const presentation = providePresentation(ctx)
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const parent = presentation.slots.register({
+      name: 'root', priority: 1, children: { 'settings.section': { kind: 'list', scope: 'root' } },
+    } as never, () => null)
+    expect(presentation.slots.entries('settings.section')[0]).toMatchObject({
+      component: SkillSettingsSection, options: { id: 'skills', order: 25 },
+    })
+    parent()
+    const replacement = presentation.slots.register({
+      name: 'root', priority: 1, children: { 'settings.section': { kind: 'list', scope: 'root' } },
+    } as never, () => null)
+    expect(presentation.slots.entries('settings.section')).toHaveLength(1)
+    await fiber.dispose()
+    expect(presentation.slots.entries('settings.section')).toHaveLength(0)
+    replacement()
   })
 
   it('registers the "/" skill source; disposal frees the name (HMR safety)', async () => {
@@ -166,6 +176,45 @@ describe('apply', () => {
     expect(() => inputTriggers.registerSource(rival)).not.toThrow()
     expect(presentation.slots.entries('tool.call.toolview')).toHaveLength(0)
     expect(presentation.localeDisposed).toBe(true)
+  })
+
+  it('refreshes the opened Settings projection on profile commits and reconnect, then detaches on disposal', async () => {
+    const ctx = new Context()
+    ctx.provide('inputTriggers', { registerSource: () => () => {} })
+    ctx.provide('sessions', { subagentAddress: () => undefined })
+    const catalog = vi.fn(async () => ({ result: { ok: true, value: {
+      agentPreset: 'leon', complete: true, skills: [], revision: 1, writable: true, disabledNames: [],
+    } } }))
+    ctx.provide('connection', { api: {
+      skills: { list: listOk(CATALOG), catalog },
+      agentPresets: { list: async () => ({ result: { ok: true, value: { presets: [{ id: 'leon', isDefault: true }] } } }) },
+      settings: { mutate: vi.fn() },
+    } })
+    new TestRemote(ctx)
+    const presentation = providePresentation(ctx)
+    const parent = presentation.slots.register({
+      name: 'root', priority: 1, children: { 'settings.section': { kind: 'list', scope: 'root' } },
+    } as never, () => null)
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const entry = presentation.slots.entries('settings.section')[0]!
+    const face = (entry.inject as unknown as () => SkillSettingsInjected)()
+    ctx.remote.$dispatch('settings/document-updated', ['agent-presets'])
+    expect(catalog).not.toHaveBeenCalled()
+    await face.load()
+    expect(catalog).toHaveBeenCalledTimes(1)
+    ctx.remote.$dispatch('settings/document-updated', ['unrelated'])
+    expect(catalog).toHaveBeenCalledTimes(1)
+    ctx.remote.$dispatch('settings/document-updated', ['agent-presets'])
+    await vi.waitFor(() => { expect(catalog).toHaveBeenCalledTimes(2) })
+    ctx.emit('connection/reset')
+    await vi.waitFor(() => { expect(catalog).toHaveBeenCalledTimes(3) })
+    expect(face.hooks.skillSettings.getSnapshot().status).toBe('ready')
+    await fiber.dispose()
+    ctx.remote.$dispatch('settings/document-updated', ['agent-presets'])
+    ctx.emit('connection/reset')
+    expect(catalog).toHaveBeenCalledTimes(3)
+    parent()
   })
 })
 
@@ -292,6 +341,35 @@ describe('catalog cache', () => {
     await source.candidates(proj('s1'), req(''))
     await source.candidates(proj('s2'), req(''))
     expect(payloads).toHaveLength(4)
+  })
+
+  it('profile settings commits invalidate every slash catalog but unrelated settings do not', async () => {
+    const { list, payloads } = countingList()
+    const { ctx, source } = await bench(list)
+    await source.candidates(proj('s1'), req(''))
+    await source.candidates(proj('s2'), req(''))
+    ctx.remote.$dispatch('settings/document-updated', ['unrelated'])
+    await source.candidates(proj('s1'), req(''))
+    expect(payloads).toHaveLength(2)
+    ctx.remote.$dispatch('settings/document-updated', ['agent-presets'])
+    expect(source.lexicon!(proj('s1'))).toBeUndefined()
+    await source.candidates(proj('s1'), req(''))
+    await source.candidates(proj('s2'), req(''))
+    expect(payloads).toHaveLength(4)
+    await ctx.fiber.dispose()
+  })
+
+  it('does not publish an old slash catalog after a profile settings invalidation', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((done) => { release = done })
+    const { ctx, source } = await bench(async (payload) => { await gate; return listOk(CATALOG)(payload) })
+    const pending = source.candidates(proj('s1'), req(''))
+    const rejected = expect(pending).rejects.toThrow()
+    ctx.remote.$dispatch('settings/document-updated', ['agent-presets'])
+    release()
+    await rejected
+    expect(source.lexicon!(proj('s1'))).toBeUndefined()
+    await ctx.fiber.dispose()
   })
 })
 

@@ -1,0 +1,5 @@
+- menu "Model and reasoning effort":
+  - text: Leon Adaptive Uses the route this deployment configured for each task — text may follow your saved default model; an external fallback applies only when the deployment declares one and you consent The mode applies to this run; restarting Leon restores the configured default.
+  - menuitemcheckbox "Allow API fallback This may send this conversation context to an external provider and incur API charges. Off by default."
+  - menuitem "Save preference"
+  - menuitem "Back to models"

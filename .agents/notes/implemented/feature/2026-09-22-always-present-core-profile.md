@@ -12,7 +12,7 @@ Personal-memory automatic recall only ran when the human message contained at le
 
 `tool-memory` adds an optional `core` marker to the memory record (additive; legacy records stay valid with no migration). Pre-step recall projects active, confirmed core facts (`core: true` and `validation` present) with a separate budget (`coreRecallLimit` default 10, `coreRecallMaxChars` default 2000), independent of the query. Query recall excludes only facts actually serialized in the core profile, so budget-omitted facts remain eligible for relevant search.
 
-Listing is paginated so a core fact beyond the first page is still found. A process-local `contextVersion` rejects reads spanning successful mutations, provider changes, or enablement changes, independently of telemetry. Provider failures are caught and logged without aborting the turn. `personal_memory_remember` accepts a `core` argument, and `personal_memory_update` accepts `core` to mark or unmark an existing fact. Tool outputs expose `core` so the model can inspect current membership.
+Listing is paginated so a core fact beyond the first page is still found. A process-local `contextVersion` rejects reads spanning successful mutations, provider changes, or enablement changes, independently of telemetry. Provider failures are caught and logged without aborting the turn. Tool outputs expose `core` so the model can inspect current membership; only the confirmed Host administration operation can change membership, as specified by [human-confirmed personal memory](../bug-fix/2026-09-25-human-confirmed-personal-profile.md).
 
 Every step clears previous owned personal snapshots through logged Session surface replacements before downstream compaction, then projects current values into retained slots. Request-error recovery refreshes again before an admitted same-step retry, including ordinary backoff and context-overflow recovery. This changes the active model view without deleting original events or mutating a captured request. Disabled or invalidated reads leave content-free markers rather than stale values.
 
@@ -34,7 +34,7 @@ A new session receives confirmed core facts even for "oi". Ordinary correction i
 
 Output is bounded but scanning every active page adds local I/O. Surface replacements invalidate KV Cache from the first changed token and append audit events. Legacy duplicate slots retain one content-free marker each until compaction. The change does not redact facts copied into human messages, assistant replies, tool results, or older summaries; original logs remain preserved. Process-local revision checks do not detect out-of-process storage edits or cancel requests already sent to a provider.
 
-The pre-existing model-facing `personal_memory_remember` tool automatically marks its writes `explicit` based on its prompt's explicit-intent requirement, without an independent consent gate. The core filter therefore validates metadata eligibility, not the truth or authorization of every existing record. This lifecycle change does not close that separate creation-policy gap.
+Model-created proposals now remain unconfirmed under the separate [human-confirmation decision](../bug-fix/2026-09-25-human-confirmed-personal-profile.md). Existing confirmation metadata is not retroactively audited: the core filter establishes eligibility, not the truth or authorization of every pre-existing record.
 
 ## Testing
 

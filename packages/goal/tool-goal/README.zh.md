@@ -52,15 +52,15 @@ complete 与 blocked 还接受完全一致的当前 Goal Round：来源为 goal 
 
 空的 `completionAuditorProvider` 会禁用独立审核。非空值要求一次性提供方声明支持宿主 `setup`；缺失时在推理前拒绝。`completionAuditorModelProvider` 与 `completionAuditorModel` 必须同时配置，或者同时省略以继承执行器路由；已组合的辅助 `review` 选择优先。正安全整数限制输出 token、每轮启动次数、反馈及产物证据。委派后的 sandbox／approval 策略仍然继承。
 
-`completionAuditorTools` 默认为空允许列表。宿主在发布或推理前安装子级执行守卫：只允许 `completion_evidence_read`、`completion_artifact_read`、`structured_output` 及明确配置的验证工具。守卫也检查继承工具过滤器无法约束的子级自有工具及嵌套调用。额外名称必须存在于父级工具中；应使用功能受限的只读验证器，而不是通用 shell。宿主仍对其实现负责。
+`completionAuditorTools` 默认为空允许列表。宿主在发布或推理前安装子级执行守卫：只允许 `completion_artifact_read`、`structured_output`、已分配页面的 `completion_evidence_read` 及明确配置的验证工具。守卫也检查继承工具过滤器无法约束的子级自有工具及嵌套调用。额外名称必须存在于父级工具中；应使用功能受限的只读验证器，而不是通用 shell。宿主仍对其实现负责。
 
 `completion_artifact_read({ file_path })` 通过当前 `ctx.fs` 提供方返回完整 UTF-8 文件、字节数及 SHA-256。它将读取限制在指定工作区内，拒绝常见凭据路径、Windows 流语法、二进制或超限内容，并仅记录成功且未改变的最终交付。冒号仅用于路径开头的 Windows 盘符，包括扩展路径；所有提供方都拒绝其他含冒号的名称。普通盘符路径和 UNC 路径仍受工作区包含检查约束。默认最多 64 个路径，每个文件 1048576 字节。为兼容非文件目标，`completionAuditorRequireArtifacts` 默认为 false；设为 true 时必须至少交付一个文件，仅有文字 PASS 不够。
 
 ## 审查生命周期
 
-`update_goal action: review` 调用已配置的独立审查员，但不完成目标，也不修改待办事项。审查通过后，结果返回 `review.status`、审查会话 ID 和有长度限制的摘要。更新审查待办状态后，`complete` 仅在同一开放轮次、相同目标修订、任务内容不变且没有执行其他工作工具时复用该 PASS。新工作、新轮次或需求变更要求重新审查；未完成的待办仍会阻止目标完成。
+`update_goal action: review` 调用已配置的独立审查员，但不完成目标，也不修改待办事项，因此无需提前声称审查事项已经完成。通过后的结果包含 `review.status`、审查会话 ID、有长度限制的摘要，以及宿主提供的 `review.nextAction`，指示使用 `todo_write` 仅记录真正完成的条目。更新审查待办状态后，`complete` 仅在同一开放轮次、相同目标修订、任务内容不变且没有执行其他工作工具时复用该 PASS。新工作、新轮次或需求变更要求重新审查；未完成的待办仍会阻止目标完成。拒绝结果包含完整当前列表，并明确指出：不更新列表而重复调用 `complete` 仍会失败。
 
-审查证据包含宿主捕获的父会话工具调用与结果，以及直接子会话的执行记录和实际模型来源。覆盖范围明确标记为 `live-only` 或 `live-and-persisted`。超出 `completionAuditorEvidenceMaxCharacters` 的证据由 `completion_evidence_read` 分页提供，每页均受大小限制。只有指定的审查员可读取，运行结束后权限失效。宿主在所有页面交付前拒绝 PASS；交付不等于理解。原始会话记录不会被截断或覆盖。
+审查证据包含宿主捕获的父会话工具调用与结果，以及直接子会话的执行记录和实际模型来源。覆盖范围明确标记为 `live-only` 或 `live-and-persisted`。超出 `completionAuditorEvidenceMaxCharacters` 的证据由 `completion_evidence_read` 分页提供，每页均受大小限制。内联证据会明确标注；该次审查既不展示也不允许页面工具，即使 `completionAuditorTools` 列出了它。只有指定的审查员可读取页面，运行结束后权限失效。宿主在所有页面交付前拒绝 PASS；交付不等于理解。页面预算小到无法容纳封装时，会在推理前失败。原始会话记录不会被截断或覆盖。
 
 新回执包含 `artifacts` manifest（元数据清单），覆盖标记为 `files-reviewed` 或 `no-files-reviewed`。审查结束后以及同轮复用前，都会重新检查完整字节及提供方目标身份。文件变化或缺失会以 `GOAL_QUALITY_AUDIT_ARTIFACT_STALE` 拒绝完成；执行器必须明确请求新审查。旧回执仍可读取，但不能授权复用。回执不存文件内容；子级工具结果仍作为普通证据记录。参见[审查边界决策](../../../.agents/notes/implemented/bug-fix/2026-09-21-completion-audit-boundaries.zh.md)。
 
@@ -75,7 +75,7 @@ complete 与 blocked 还接受完全一致的当前 Goal Round：来源为 goal 
 ##### Goal 策略
 
 ```markdown
-Use goal tools only for one long-running objective; skip routine single-turn work. create_goal may infer goal intent from a direct human request in any language. A deployment may create it automatically: call get_goal first, then use exact goal_id/revision. Resuming a session or forking it disarms an active goal; any human continue or resume request in any wording or language requires update_goal action resume. Complete only when achieved. Block only after the same condition lasts at least 3 consecutive goal rounds; set blocked_reason. Difficulty, uncertainty, or remaining work are not blockers. Completion needs a non-empty todo_write list with all items done. An incomplete-list rejection returns the complete canonical list; preserve content/order, update statuses, retain legitimate new items, then retry. Use action review to request independent review before marking review bookkeeping completed. A successful review leaves the goal active and never completes todos. Then finish bookkeeping and call complete in the same turn without other work. Complete reuses that current PASS; otherwise it starts a fresh audit. Never mark a review todo completed before PASS. If rejected, fix findings and revalidate before retrying.
+Use goal tools only for one long-running objective; skip routine single-turn work. create_goal may infer goal intent from a direct human request in any language. A deployment may create it automatically: call get_goal first, then use exact goal_id/revision. Resuming a session or forking it disarms an active goal; any human continue or resume request in any wording or language requires update_goal action resume. Complete only when achieved. Block only after the same condition lasts at least 3 consecutive goal rounds; set blocked_reason. Difficulty, uncertainty, or remaining work are not blockers. Completion needs a non-empty todo_write list with all items done. An incomplete-list rejection returns the complete canonical list. Do not repeat complete with an unchanged list. Call todo_write to record only genuinely finished items; preserve content/order and retain legitimate new items before retrying. Use action review to request independent review before marking review bookkeeping completed. A successful review leaves the goal active and never completes todos. After PASS, use todo_write to mark finished review bookkeeping completed, then call complete in the same turn without other work. Complete reuses that current PASS; otherwise it starts a fresh audit. Never mark a review todo completed before PASS. If rejected, fix findings and revalidate before retrying.
 ```
 
 #### Token 影响
@@ -105,6 +105,7 @@ schema 的定义与可见性不变时，前缀保持稳定。调用和结果会�
 - **证据范围** — 仅覆盖直接子会话，不递归。没有持久化时无法验证冷会话。哈希覆盖实际读取的文件，而非所有必需产物或语义正确性。它检测已观察到的变化，不检测最后一次检查后的写入；没有工作区锁或全局写入屏障。空覆盖不代表文件验证。
 
 - **语义意图仍由模型判断**：执行只能证明当前轮次包含一条人类直接发送的消息，无法证明请求是否足够重大而值得创建 goal。
+- **重试纪律仍取决于模型行为**：反馈指出下一项必需操作，但不能阻止模型重复被拒绝的调用。不会自动完成任何待办，PASS 也不会免除任务或产物检查。
 - **阻塞条件是否相同仍由模型判断**：运行时强制统计互不重复的已准入 Goal Round，而不判断障碍在语义上是否等价；完成审核器不评估 blocked 报告。
 - **宿主扩展仍受信任** — 允许列表不是针对恶意宿主插件的操作系统沙箱。明确授予通用 shell 会破坏只读意图。凭据名称过滤并非通用秘密检测。文件内容遵循审核器配置的模型路由，包括已配置的外部提供方。
 - **不负责调度或直接面向人类呈现**：这些工具只变更状态；同会话驱动器与 [`dsh-command-goal`](../command-goal/README.zh.md) 是同一领域的独立消费方。

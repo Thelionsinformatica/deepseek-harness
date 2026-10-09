@@ -14,7 +14,7 @@ skill 注册表最初将发现操作视为模型目录：`ctx.skills.list()` 会
 
 `SkillSummary` 包含一个必填且类型明确的 `invocation: SkillInvocationPolicy` 对象，其 `modelInvocable: boolean` 和 `userInvocable: boolean` 字段为正向且对称。只有显式输入边界可以省略它：未提供策略的运行时 `SkillRegistration`，以及两个调用键均未提供的本地 frontmatter，都会在生成候选项或定义前解析为 `{ modelInvocable: true, userInvocable: true }`。未来的 frontmatter 键只有在具备消费方和执行约定后，才会进入领域模型；本地提供方仍将 frontmatter 解析为开放的 `Record<string, unknown>`，然后只把已识别字段及其默认值投影到规范化的类型化策略中。
 
-`ctx.skills.list()` 返回所有胜出的摘要，不再替任何调用接口选择策略。`isModelInvocable(skill)` 和 `isUserInvocable(skill)` 分别直接读取对应的正向字段。`ctx.skills.get()` 保持策略无关，因为可信内部调用方可能需要任意定义；对外消费方则必须在展示或加载 skill 之前执行自身对应的判定函数。模型工具和 TUI 会在调用 `get()` 前检查与调用策略无关的摘要，随后再次检查已加载的定义：被拒绝的名称绝不会进入定义加载流程，发现与加载之间发生策略变更也无法暴露该 skill 的正文。
+`ctx.skills.list()` 返回宿主可用性限制允许的胜出摘要，不替任何调用接口选择策略。`isModelInvocable(skill)` 和 `isUserInvocable(skill)` 分别直接读取对应的正向字段。`ctx.skills.get()` 对调用标志保持中立，同时执行额外的[按配置可用性限制](2026-09-25-profile-skill-selection.zh.md)。对外消费方必须在展示或加载 skill 之前执行自身的调用判定。模型工具和 TUI 会在调用 `get()` 前检查与调用策略无关的摘要，随后再次检查已加载的定义：被拒绝的名称绝不会进入定义加载流程，发现与加载之间发生策略变更也无法暴露正文。管理用的 `inventory()` 包含不可用条目的元数据，但不会加载正文。
 
 本地提供方只接受拼写完全一致的 kebab-case frontmatter 键 `disable-model-invocation` 和 `user-invocable`。它接受 YAML 布尔值，以及不区分大小写的 `true`/`false`、`yes`/`no`、`on`/`off` 和 `1`/`0`，与 Claude skills 实际支持的布尔写法一致。它将 `disable-model-invocation` 映射为相反的正向字段，即使两个键都不存在，也会根据默认值填充两个正向字段。若使用外部驼峰式拼写或提供非布尔调用值，发现流程会丢弃整个 skill，并给出有针对性的警告；本仓库尚处于发布前阶段，因此不为磁盘格式保留兼容别名。调用数据校验遵循失败时默认拒绝原则，因为忽略这类数据会默认授予权限，可能使 skill 暴露在已禁用的接口上；与之不同，类型错误的可选 `whenToUse` 和 `metadata` 值会被省略，因为它们不参与调用判定。
 

@@ -399,11 +399,18 @@ describe('goal tool state transitions', () => {
     const created = ctx.goals.create(root.agent, { objective: 'review then complete' })
     root.session.append('todo/write', { todos: [{ content: 'independent review', status: 'in_progress' }] })
     const args = { goal_id: created.id, revision: created.revision }
-    expect(resultGoal(await execute(ctx, 'update_goal', { ...args, action: 'review' }, root.agent)))
+    const review = await execute(ctx, 'update_goal', { ...args, action: 'review' }, root.agent)
+    expect(JSON.stringify(resultJson(review))).toContain('If review bookkeeping is pending, call todo_write')
+    expect(resultGoal(review))
       .toMatchObject({ phase: 'active', revision: 1 })
     expect(root.session.events.findLast(event => event.type === 'todo/write')?.data.todos[0]?.status).toBe('in_progress')
-    expect((await execute(ctx, 'update_goal', { ...args, action: 'complete' }, root.agent)).error?.info?.code)
-      .toBe('GOAL_TOOL_TODOS_INCOMPLETE')
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const incomplete = await execute(ctx, 'update_goal', { ...args, action: 'complete' }, root.agent)
+      expect(incomplete.error?.info?.code).toBe('GOAL_TOOL_TODOS_INCOMPLETE')
+      expect(incomplete.error?.message).toContain('Do not repeat complete with an unchanged list')
+      expect(ctx.goals.get(root.agent)?.phase).toBe('active')
+      expect(audit.requests).toHaveLength(1)
+    }
     root.session.append('todo/write', { todos: [{ content: 'independent review', status: 'completed' }] })
     expect(resultGoal(await execute(ctx, 'update_goal', { ...args, action: 'complete' }, root.agent)))
       .toMatchObject({ phase: 'complete' })
@@ -563,11 +570,12 @@ describe('goal tool state transitions', () => {
       provider: 'google', model: 'gemini-test', maxTokens: 2048,
     })
     expect(audit.requests[0]?.persona).toContain('independent release auditor')
-    expect(audit.requests[0]?.toolFilter?.allow).toEqual(['completion_evidence_read'])
+    expect(audit.requests[0]?.toolFilter?.allow).toEqual([])
     expect(audit.requests[0]?.setup).toBeTypeOf('function')
     const prompt = audit.requests[0]?.prompt[0]
     expect(prompt?.type).toBe('text')
     if (prompt?.type !== 'text') throw new Error('expected audit text prompt')
+    expect(prompt.text).toContain('No evidence pages are assigned')
     expect(prompt.text).toContain('deliver a tested scheduling site')
     expect(prompt.text).toContain('[completed] run the tests')
     expect(audit.requests[0]?.outputSchema).toMatchObject({

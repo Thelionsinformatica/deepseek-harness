@@ -55,3 +55,7 @@ worktrees/
 /install_log.txt
 /MODEL_CATALOG.md
 /ARCHITECTURE_REVIEW.md
+
+# Preset backups kept outside the repository at D:\Leon\Backups\preset-leon-bak-20260917;
+# discovery reads only agent.cordis.yml, so a backup inside the preset directory is inert.
+apps/cli/config/agent-presets/**/*.bak-*

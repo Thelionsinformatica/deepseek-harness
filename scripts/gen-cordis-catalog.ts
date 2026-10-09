@@ -537,6 +537,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   MemoryAdminGraphStatus: 'memory.md',
   MemoryAdminGraphValue: 'memory.md',
   PersonalMemoryAdminGraphResult: 'memory.md',
+  PersonalMemoryAdminCorrectRequest: 'memory.md',
   PersonalMemoryAdminListResult: 'memory.md',
   PersonalMemoryAdminRememberRequest: 'memory.md',
   PersonalMemoryAdminRememberResult: 'memory.md',

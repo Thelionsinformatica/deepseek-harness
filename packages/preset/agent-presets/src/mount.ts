@@ -260,13 +260,49 @@ export function serviceForAgent<K extends string & keyof Context>(
 ): Context[K] | undefined {
   const mount = standingMountFor(agent.ctx)
   if (mount === undefined) return undefined
+  return serviceForStanding(ctx, mount.key, name)
+}
+
+/**
+ * Resolve a preset-owned service without creating a session or joining an agent.
+ * The returned service keeps its owning context for scoped registrations.
+ * @param ctx - runtime whose service store is inspected.
+ * @param standingKey - host-owned standing scope identity.
+ * @param name - service name to locate.
+ * @returns the preset-owned service, or undefined when it inherits the host service.
+ */
+export function serviceForStanding<K extends string & keyof Context>(
+  ctx: Context, standingKey: ScopeKey, name: K,
+): Context[K] | undefined {
+  return standingService(ctx, standingKey, name)?.context.get(name)
+}
+
+/**
+ * Join a standing service's realm while retaining the caller's scope and fiber.
+ * Injection registered here survives replacement of the providing plugin.
+ * @param ctx - stable standing context that owns the dependent registration.
+ * @param standingKey - standing scope whose service realm is selected.
+ * @param name - service to follow, inheriting the caller's realm when absent.
+ * @returns a caller-owned context addressing the selected service realm.
+ */
+export function standingServiceContext(ctx: Context, standingKey: ScopeKey, name: string): Context {
+  const service = standingService(ctx, standingKey, name)
+  return service === undefined ? ctx : ctx.isolate(name, service.key)
+}
+
+/** Locate the exact provided symbol and owner context without rebinding service methods. */
+function standingService(
+  ctx: Context, standingKey: ScopeKey, name: string,
+): { context: Context; key: symbol } | undefined {
+  const mount = livePresetMounts().find(candidate => candidate.key === standingKey)
+  if (mount === undefined) return undefined
   const store = ctx.reflect.store
   for (const key of Object.getOwnPropertySymbols(store)) {
     const impl = store[key]
     /* v8 ignore next -- cordis deletes a store slot on disposal rather than clearing it */
     if (impl === undefined) continue
     if (impl.name !== name) continue
-    if (withinFiber(impl.fiber, mount.fiber)) return impl.value as Context[K]
+    if (withinFiber(impl.fiber, mount.fiber)) return { context: impl.fiber.ctx, key }
   }
   return undefined
 }

@@ -225,6 +225,8 @@ export interface MemoryAdminItem {
   readonly importance?: number
   readonly confidence?: number
   readonly validation?: MemoryAdminValidation
+  /** Whether selected for the query-independent profile; confirmation is still required. */
+  readonly core?: boolean
   readonly validFrom?: string
   readonly validUntil?: string
   readonly expiresAt?: string
@@ -298,6 +300,12 @@ export interface MemoryAdminCorrectRequest {
   readonly revision: number
   readonly content: string
   readonly confirmed: boolean
+}
+
+/** Human-confirmed personal correction, reconfirmation, or profile-membership change. */
+export interface PersonalMemoryAdminCorrectRequest extends MemoryAdminCorrectRequest {
+  /** Omitted preserves membership; an explicit value changes it in the confirmed revision. */
+  readonly core?: boolean
 }
 
 /** Request to forget one exact memory lineage. */

@@ -107,6 +107,21 @@ export interface ModelSelection {
   reasoningEffort?: string
 }
 
+/** Interactive routing policy; auxiliary assignments remain owned by the deployment. */
+export type ModelSelectionMode = 'manual' | 'adaptive' | 'team'
+
+/** Configured coordination roles; this snapshot does not claim that a role ran. */
+export interface ModelCoordination {
+  /** Saved interactive principal. */
+  coordinator: ModelSelection
+  /** Assigned worker, or inheritance when absent. */
+  worker?: ModelSelection
+  /** Assigned reviewer, or inheritance when absent. */
+  review?: ModelSelection
+  /** Assigned visual route, or inheritance when absent. */
+  vision?: ModelSelection
+}
+
 /** One adapter-owned reasoning effort displayed for an exact model route. */
 export interface ModelReasoningEffort {
   /** Opaque value submitted back to the owning adapter. */
@@ -135,6 +150,12 @@ export interface ModelCatalogModel {
   description?: string
   /** Exact-route reasoning metadata when the adapter exposes it. */
   reasoning?: ModelReasoning
+  /** Declared accepted modalities; absence means unknown, not text-only. */
+  inputModalities?: ('text' | 'image')[]
+  /** Exact-route context capacity when the adapter exposes it. */
+  context?: { contextWindow: number }
+  /** Adapter-configured output cap; absence does not imply unlimited output. */
+  defaultMaxTokens?: number
 }
 
 /** One provider and the models it advertised successfully. */
@@ -174,6 +195,10 @@ export interface SessionModels {
   automatic: boolean
   /** Whether this deployment exposes a local adaptive policy. */
   automaticAvailable: boolean
+  /** Process-local selection mode; older Hosts omit it. A Host restart restores the deployment default. */
+  selectionMode?: ModelSelectionMode
+  /** Live configured role assignments, not a delegation or review execution claim. */
+  coordination?: ModelCoordination
   /** Whether the automatic policy declares at least one external failover route. */
   externalFailoverAvailable?: boolean
   /**
@@ -322,6 +347,8 @@ export interface SessionsApi {
     reasoningEffort?: string
     /** Enable local adaptive routing; omission selects this model manually. */
     automatic?: boolean
+    /** Explicit process-local mode; overrides automatic. Explicit manual changes only this session, not the saved principal. */
+    selectionMode?: ModelSelectionMode
     /**
      * Explicitly permit this session's automatic retries to use configured
      * external failovers for the local results already present when this
@@ -333,6 +360,8 @@ export interface SessionsApi {
   Promise<RpcResponse<{
     selected: ModelSelection
     automatic: boolean
+    /** Effective process-local mode; a Host restart restores the deployment default. */
+    selectionMode?: ModelSelectionMode
     /** Effective process-local consent covering every protected local result currently present. */
     externalFailoverConsent?: boolean
   }>>

@@ -7,7 +7,7 @@ import { z } from 'zod'
 import type { RequestPayload, ResponseValue } from './rpc-map.ts'
 import type { Wire } from './rpc.schema.ts'
 import { sessionIdSchema } from './sessions.schema.ts'
-import type { SkillEntry, SkillInspectionEntry } from './skills.ts'
+import type { SkillCatalogEntry, SkillEntry, SkillInspectionEntry } from './skills.ts'
 
 /** SkillEntry row of skill.list. */
 export const skillEntrySchema = z.object({
@@ -35,6 +35,27 @@ export const skillInspectionEntrySchema = z.object({
   modelInvocable: z.boolean(),
   userInvocable: z.boolean(),
 }) satisfies z.ZodType<Wire<SkillInspectionEntry>>
+
+/** skill.catalog request accepts registered identifiers, never filesystem paths. */
+export const skillCatalogRequestSchema = z.object({
+  agentPreset: z.string().min(1),
+  workspaceId: z.string().min(1).optional(),
+}) satisfies z.ZodType<Wire<RequestPayload<'skill.catalog'>>>
+
+/** Administrative metadata row, including the preset restriction decision. */
+export const skillCatalogEntrySchema = skillInspectionEntrySchema.extend({
+  enabled: z.boolean(),
+}) satisfies z.ZodType<Wire<SkillCatalogEntry>>
+
+/** skill.catalog response with the settings revision needed for a later edit. */
+export const skillCatalogValueSchema = z.object({
+  agentPreset: z.string().min(1),
+  complete: z.boolean(),
+  skills: z.array(skillCatalogEntrySchema),
+  revision: z.number().int().nonnegative(),
+  writable: z.boolean(),
+  disabledNames: z.array(z.string().min(1)),
+}) satisfies z.ZodType<Wire<ResponseValue<'skill.catalog'>>>
 
 /** skill.inspect request payload. */
 export const skillInspectRequestSchema = z.object({

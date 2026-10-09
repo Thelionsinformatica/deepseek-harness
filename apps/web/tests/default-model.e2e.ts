@@ -1,8 +1,6 @@
-// Web e2e scenario: switching models in the composer is how this deployment's
-// default is chosen. The gesture writes the shared `agent-default-model` settings section, a
-// session created afterwards starts from it, and a session that already logged
-// a route keeps deriving from its own log — the tier order the gateway
-// resolves on every read.
+// Web e2e scenario: an explicit manual composer choice changes this session,
+// never the deployment's configured principal or another session. A session
+// that already logged a route keeps deriving from its own log.
 // Zero model calls: the switch is settings/llm-domain traffic only, so there
 // is no fixture and a stray stream would fail loud because the adapter registry is empty. Both
 // routes are declared host-side (not through the UI, which has its own
@@ -10,9 +8,7 @@
 // fixture-less scaffold registers no adapter at all, so the routes the
 // picker offers — and the one the composer must start on — have to come from
 // somewhere, and settings profiles are the product's own way to add them.
-import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
@@ -27,11 +23,11 @@ const OVERLAY = fileURLToPath(new URL('./default-model.overlay.yml', import.meta
 /** The route this scenario starts on, patched over the shipped default. */
 const START_ROUTE = 'origin-gateway'
 const START_MODEL = 'origin-large'
-/** The route the switch lands on, which then becomes the saved default. */
+/** The route the per-session manual switch lands on. */
 const ROUTE = 'acme-gateway'
 const MODEL = 'acme-large'
 
-describe('web e2e: the composer model switch is the default for later sessions', () => {
+describe('web e2e: an explicit manual composer switch preserves the principal and other sessions', () => {
   let scaffold: WebScaffold
   let browser: Browser
   let page: Page
@@ -94,7 +90,7 @@ describe('web e2e: the composer model switch is the default for later sessions',
     await scaffold?.close()
   })
 
-  it('writes the switched model as the default and leaves a logged session alone', async () => {
+  it('changes this session without rewriting the default or a logged session', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-default-model'))
     // A session that has already run a turn, spelled as the fact a turn
     // leaves behind: its own logged route.
@@ -107,23 +103,18 @@ describe('web e2e: the composer model switch is the default for later sessions',
     const trigger = page.getByRole('button', { name: /^选择模型/ })
     await trigger.waitFor({ timeout: 15_000 })
     await trigger.click()
-    await page.getByRole('menuitem', { name: /模型/ }).click()
     await page.getByRole('menuitemradio', { name: 'Acme Large' }).click()
 
-    // The switch is what sets the default: the shared Agent-route settings section
-    // now names it, beside the provider profiles the Models page writes.
-    await expect.poll(
-      async () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'),
-      { timeout: 10_000 },
-    ).toContain('agent-default-model:')
-    const document = await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')
-    expect(document).toContain(`provider: ${ROUTE}`)
-    expect(document).toContain(`model: ${MODEL}`)
-
-    // A session created after the switch starts from it...
-    expect(await currentOf(await createSession('default-model-after')))
+    const browserAgent = scaffold.ctx.agents.list().find(agent => agent.session.id !== loggedId)
+    if (browserAgent === undefined) throw new Error('The browser session was not created')
+    await expect.poll(() => currentOf(browserAgent.session.id), { timeout: 10_000 })
       .toEqual({ provider: ROUTE, model: MODEL })
-    // ...while the one holding a logged route keeps deriving from its log.
+    expect(scaffold.ctx.agentDefaultModel.currentSelection()).toEqual({ provider: START_ROUTE, model: START_MODEL })
+
+    // A later session still starts from the configured principal...
+    expect(await currentOf(await createSession('default-model-after')))
+      .toEqual({ provider: START_ROUTE, model: START_MODEL })
+    // ...and the one holding a logged route keeps deriving from its log.
     expect(await currentOf(loggedId)).toEqual({ provider: START_ROUTE, model: START_MODEL })
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
@@ -154,13 +145,23 @@ describe('web e2e: the composer model switch is the default for later sessions',
     })
     expect(refused.result).toMatchObject({ ok: false, error: { code: 'model-unavailable' } })
 
+    // Register a replacement, not the broken manual route: recovery still
+    // requires an explicit choice rather than silently replacing this session.
+    await scaffold.ctx.settings.update(settingsNamespace('llm-pi-ai'), {
+      providers: {
+        [START_ROUTE]: {
+          displayName: 'Origin Gateway', api: 'openai-completions',
+          baseURL: 'https://gateway.origin.example/v1',
+          models: [{ id: START_MODEL, name: 'Origin Large' }],
+        },
+      },
+    })
     // The way out stays open. Locking the model seat with everything else
     // would leave the composer asking for the one thing it prevents.
     const seat = page.getByRole('button', { name: /^选择模型/ })
     expect(await seat.isEnabled()).toBe(true)
     await seat.click()
-    await page.getByRole('menuitem', { name: /模型/ }).click()
-    await page.getByRole('menuitemradio').first().click()
+    await page.getByRole('menuitemradio', { name: 'Origin Large', exact: true }).click()
     await expect.poll(async () => box.isEnabled(), { timeout: 15_000 }).toBe(true)
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)

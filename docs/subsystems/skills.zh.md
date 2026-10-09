@@ -12,7 +12,9 @@
 
 注册表采用宿主 + 按 scope 的分层结构，即[工具注册表](tools.zh.md)在 [dsh-scope](../../packages/core/scope) 之上确立的形态：注册会落入调用方上下文 scope 对应的层——宿主行与 repository 插件落入全局层，由 agent（智能体） preset 常驻组合挂载的插件落入该 preset 的层——提供方名称在每层内唯一，而非进程级唯一。读取时将全局层与观察 scope 的链合并：最近层的条目直接赢得重名 skill，下文的 rank 顺序只在单层内裁决重名。发现缓存以解析后的 scope 链为键，因此重设 scope 父级（空会话重组）无需注册表变更即可被下一次读取看到。
 
-在单层内，重名项依次按 rank、提供方顺序和本地顺序确定优先级；摘要按名称排序。提供方的 `list()` 被拒绝时，系统会记录日志，并从不完整观测中省略该提供方的结果；显式的不完整观测会提供可用候选项，但不会使结果变得可缓存；格式错误的候选项快速失败。每个提供方工厂都会接收一项注册作用域内的控制能力；仅当该精确注册仍处于活动状态时，其 `invalidate()` 才会清除已完成目录；注册失败或 dispose（资源释放）时，其信号会中止。若提供方代次在发现进行期间发生变化，该发现会重试一次；若再次变化，则返回最新候选项，并将结果标为不完整且不予缓存。提供方和运行时变更会发出不带过滤条件的 `skills/change` 失效事件；该事件不携带 diff，因此消费方会使用自身的查找选项重新获取 `snapshot()`。
+在单层内，重名项依次按 rank、提供方顺序和本地顺序确定优先级；摘要按名称排序。提供方的 `list()` 被拒绝时，系统会记录日志，并从不完整观测中省略该提供方的结果；显式的不完整观测会提供可用候选项，但不会使结果变得可缓存；格式错误的候选项快速失败。每个提供方工厂都会接收一项注册作用域内的控制能力；仅当该精确注册仍处于活动状态时，其 `invalidate()` 才会清除已完成目录；注册失败或 dispose（资源释放）时，其信号会中止。若提供方代次在发现进行期间发生变化，该发现会重试一次；若再次变化，则返回最新候选项，并将结果标为不完整且不予缓存。提供方／运行时变更以及限制的注册／释放会发出不带过滤条件的 `skills/change` 失效事件；该事件不携带 diff，因此消费方会使用自身的查找选项重新获取 `snapshot()`。
+
+`registerRestriction(allow)` 向调用方作用域贡献实时可用性判定函数。所有全局和继承的限制都必须允许该名称；更近的作用域不能覆盖拒绝。限制在重名裁决后生效，因此禁用胜出项不会暴露被遮蔽的 skill。`isEnabled(name, options)` 读取这些判定函数，不执行发现或调用策略检查。判定结果不缓存；所捕获状态的变化本身不触发 `skills/change`。
 
 `SkillProvider.list()` 返回的数组是完整发现的简写形式。`SkillProviderObservation` 允许提供方公开仍可直接加载的候选项，同时报告该观测不具权威性。
 
@@ -123,9 +125,9 @@ interface SkillSummary {
 }
 ```
 
-`ctx.skills.list()` 保留全部四种策略组合。`isModelInvocable(skill)` 和 `isUserInvocable(skill)` 分别读取对应的必填字段。仅供模型调用的 skill 设置 `{ modelInvocable: true, userInvocable: false }`，仅供用户调用的 skill 设置 `{ modelInvocable: false, userInvocable: true }`，两个字段均设为 `false` 后，该 skill 只能由受信的 `ctx.skills.get()` 调用方获取。本地提供方读取名称完全匹配的 kebab-case frontmatter 键 `disable-model-invocation` 和 `user-invocable`，将省略的字段默认为 `true`，并为每个解析出的 skill 生成这个规范化策略。
+`ctx.skills.list()` 过滤可用性，但保留全部四种调用策略组合。`isModelInvocable(skill)` 和 `isUserInvocable(skill)` 分别读取对应的必填字段。仅供模型调用的 skill 设置 `{ modelInvocable: true, userInvocable: false }`，仅供用户调用的 skill 设置 `{ modelInvocable: false, userInvocable: true }`，两个字段均设为 `false` 后，只允许受信的 `ctx.skills.get()` 调用方获取，且仍受可用性限制。本地提供方读取名称完全匹配的 kebab-case frontmatter 键 `disable-model-invocation` 和 `user-invocable`，将省略的字段默认为 `true`，并为每个解析出的 skill 生成这个规范化策略。
 
-`SkillCatalogSnapshot` 用于区分已确定的不存在与提供方的瞬时失败或发现期间持续变化的目录。`skills` 包含该次观测中收集、排序且与调用策略无关的摘要；只有每个已注册提供方都在没有并发目录修订时完成发现，`complete` 才为 true。不完整快照不会缓存，因此每个消费方可以保留上一份经过自身过滤的可用目录并重试。
+`SkillCatalogSnapshot` 用于区分已确定的不存在与提供方的瞬时失败或发现期间持续变化的目录。`skills` 包含排序且与调用策略无关的摘要：`inventory()` 包含已禁用的胜出元数据，不含正文；`snapshot()` 则移除被实时限制拒绝的名称。只有每个已注册提供方都在没有并发目录修订时完成发现，`complete` 才为 true。不完整快照不会缓存，因此每个消费方可以保留上一份经过自身过滤的可用目录并重试。
 
 ```ts type-equiv
 /** One catalog observation plus whether discovery completed within a stable catalog revision. */
@@ -191,7 +193,7 @@ type SkillRegistration = Omit<SkillDefinition, 'invocation' | 'provider'> & {
 
 skill 查找对 cwd 敏感，因为提供方可能暴露工作区本地的 skill；可选的 signal 为调用方取消提供方的工作。注册表读取还通过 `SkillViewOptions` 携带观察 scope——消费方传入调用中的 agent，agent 本身就是自己的 scope key；注册表消费 `scope` 做层选择，提供方只从同一个借用的选项对象中读取其 `SkillLookupOptions` 约定。取消在目录选择前后（包括缓存命中时）都会检查，并与发现和完整定义加载竞争。如果找不到 git root，本地提供方将所提供的 cwd 本身视为项目根目录。
 
-注册表不缓存完整定义。每次调用 `get()` 都会携所选候选项调用胜出提供方，因此本地提供方会重新读取当前正文。名称与该候选项不再匹配的定义会被拒绝，并使该提供方实例失效以便重新发现。
+注册表不缓存完整定义。加载正文前或提供方完成后，只要实时限制拒绝该名称，`get()` 就返回 `undefined`；没有选项可以绕过这些检查。否则，它会携所选候选项调用胜出提供方，因此本地提供方会重新读取当前正文。名称与该候选项不再匹配的定义会被拒绝，并使该提供方实例失效以便重新发现。
 
 ```ts type-equiv
 /** Caller context used for cwd-sensitive and abortable provider work. */
@@ -230,7 +232,7 @@ interface Config {
 
 `dsh-tool-skill` 在存活会话中第一个观察到非空完整视图的 `agent/pre-step` 注入初始的持久 user-role `<system-reminder>`。目录只包含已排序的 skill `name` 和规范化、经 XML 转义的 `description`；不包含正文、路径、来源、提供方或路由提示。发现通过 `SkillLookupOptions` 转发该步骤的 abort signal。`catalogDescriptionMaxLength` 是消费方用于 description 上限的配置，默认值为 `500`，整数最小值为 `3`。
 
-在后续每个模型步骤之前，消费方都会应用精确的工具可见性，并对完整快照中 `<available_skills>` 标签之间精确渲染的条目计算 digest。它以该插件所发布、最新一条可识别且仍可见的目录消息中的相同条目作为比较基线。digest 发生变化时，会通过 `agent.inject()` 追加一条持久的完整目录替换；删除所有 skill 时会追加一条显式的空替换。不完整快照会保留上一份可用模型视图。如果压缩（compaction）隐藏了所有历史目录消息，下一份完整快照会重新建立当前目录；如果视图为空且从未发布目录，则不发送任何内容。这些目录消息属于会话历史，而非 World State。
+在后续每个模型步骤之前，消费方都会应用精确的工具可见性，并对完整快照中 `<available_skills>` 标签之间精确渲染的条目计算 digest。它以该插件所发布、最新一条可识别且仍可见的目录消息中的相同条目作为比较基线。digest 发生变化时，会通过 `agent.inject()` 追加一条持久的完整目录替换；删除所有 skill 时会追加一条显式的空替换。不完整快照会保留上一份可用模型视图，其中可能仍有已禁用 skill 的陈旧摘要；实时限制仍会阻止加载其正文。如果压缩（compaction）隐藏了所有历史目录消息，下一份完整快照会重新建立当前目录；如果视图为空且从未发布目录，则不发送任何内容。这些目录消息属于会话历史，而非 World State。
 
 面向模型的 `skill({ name })` 工具校验 kebab-case 名称，在与调用策略无关的目录中查找摘要，并在加载前通过 `isModelInvocable` 拒绝无权访问的 skill；随后它根据调用方 agent 的 cwd 重新读取完整定义，并在返回内容前再次检查策略。该工具将无法解析的 skill 报告为未知或已不可用，并返回包含 `<skill_content name="...">`、`<skill_resources>` 和 `<skill_instructions>` 的工具结果。`resourceBase` 仅按需解析显式引用的脚本、参考资料和资产；加载结果不枚举 skill 目录。因此，仅修改正文会改变后续工具调用，而不会生成目录消息或改写先前工具结果。
 
@@ -266,6 +268,25 @@ registerModelTool(tool: object): () => void
 isModelTool(tool: object | undefined): boolean
 
 /**
+ * Add a live restriction in the calling context's layer. Global and inherited
+ * restrictions all apply; a nearer registration cannot override a denial.
+ * Predicates run synchronously on every read, must be side-effect-free, and
+ * may read current settings. A thrown predicate fails the read instead of allowing access.
+ * @param allow - whether the skill name is enabled in this registration.
+ * @returns the exact Cordis disposer removing only this restriction.
+ */
+registerRestriction(allow: (name: string) => boolean): () => void
+
+/**
+ * Read live restrictions without discovering providers or checking invocation
+ * flags. This does not establish that a skill exists or is invocable.
+ * @param name - kebab-case skill name; invalid names are disabled.
+ * @param options - view options; only `scope` selects applicable restrictions.
+ * @returns whether every global and scope-chain restriction allows the name.
+ */
+isEnabled(name: string, options: SkillViewOptions = {}): boolean
+
+/**
  * Register a borrowed same-process provider synchronously during plugin
  * apply, into the calling context's layer: a scoped context (an agent
  * preset's standing mount) registers for that scope alone, an unscoped
@@ -295,7 +316,7 @@ register(skill: SkillRegistration): () => void
  * options and provider candidates are readonly same-process values borrowed
  * throughout discovery.
  * @param options - view options; `scope` selects the viewing agent's layers, `cwd` selects project roots, and `signal` cancels discovery.
- * @returns all sorted winning summaries.
+ * @returns sorted winning summaries allowed by live restrictions.
  */
 async list(options: SkillViewOptions = {}): Promise<SkillSummary[]>
 
@@ -304,18 +325,27 @@ async list(options: SkillViewOptions = {}): Promise<SkillSummary[]>
  * Incomplete observations are never cached, allowing consumers to retain last-good state and
  * retry on their next request boundary.
  * @param options - view options; `scope` selects the viewing agent's layers, `cwd` selects project roots, and `signal` cancels discovery.
- * @returns sorted summaries plus discovery-completeness state.
+ * @returns sorted summaries allowed by live restrictions plus discovery-completeness state.
  */
 async snapshot(options: SkillViewOptions = {}): Promise<SkillCatalogSnapshot>
 
 /**
+ * Inspect winning metadata including disabled skills, without loading bodies.
+ * Consumers must not use this administrative inventory as an invocation catalog.
+ * @param options - view options; `scope` selects layers, `cwd` selects project roots, and `signal` cancels discovery.
+ * @returns sorted summaries, including disabled names, plus discovery-completeness state.
+ */
+async inventory(options: SkillViewOptions = {}): Promise<SkillCatalogSnapshot>
+
+/**
  * Load and validate the winning candidate, passing its opaque discovery locator back to the
  * provider. Cancellation is rechecked after selection, including cache hits, and raced against
- * loading so an uncooperative provider cannot hang the caller.
+ * loading so an uncooperative provider cannot hang the caller. Live restrictions
+ * are checked before provider loading and after it settles; no lookup option bypasses them.
  * @param name - kebab-case skill name.
  * @param options - view options; `scope` selects the viewing agent's layers,
  *   `cwd` selects workspace-sensitive skills, and `signal` cancels work.
- * @returns the full skill, including body content, or `undefined`.
+ * @returns the full skill, including body content, or `undefined` when absent or disabled.
  */
 async get(name: string, options: SkillViewOptions = {}): Promise<SkillDefinition | undefined>
 ```
@@ -330,11 +360,11 @@ Source: [`packages/skill/skill/src/index.ts`](../../packages/skill/skill/src/ind
 
 #### `skills/change` — emit
 
-A skill provider, runtime contribution, or provider-backed catalog may have changed. This is an unfiltered invalidation notification; consumers refetch the catalog for their own lookup options. Listener failures are contained and cannot veto the registry mutation.
+A skill provider, runtime contribution, restriction registration, or provider-backed catalog may have changed. This is an unfiltered invalidation notification; consumers refetch the catalog for their own lookup options. Listener failures are contained and cannot veto the registry mutation.
 
 ```ts cordis-catalog
 /**
- * A skill provider, runtime contribution, or provider-backed catalog may
+ * A skill provider, runtime contribution, restriction registration, or provider-backed catalog may
  * have changed. This is an unfiltered invalidation notification; consumers
  * refetch the catalog for their own lookup options. Listener failures are
  * contained and cannot veto the registry mutation.

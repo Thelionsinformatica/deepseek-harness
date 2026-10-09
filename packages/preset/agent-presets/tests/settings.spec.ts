@@ -4,7 +4,7 @@
  * so a person can change which preset new sessions get without a restart.
  */
 
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -21,6 +21,8 @@ import FileSettingsProvider from '@deepseek-ai/dsh-settings-file'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { describe, expect, it } from 'vitest'
 import AgentPresets, { COMPOSITION_FILE, SETTINGS_NAMESPACE } from '@deepseek-ai/dsh-agent-presets'
+import SkillRegistry from '@deepseek-ai/dsh-skill'
+import { scopeOf } from '@deepseek-ai/dsh-scope'
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
 const ROOTS = [{ path: join(FIXTURES, 'system'), trust: 'system' as const }]
@@ -32,10 +34,10 @@ const NS = settingsNamespace(SETTINGS_NAMESPACE)
  */
 async function harness(
   extraRoots: readonly { path: string; trust: 'system' | 'user' }[] = [],
+  existingSettingsFile?: string,
 ): Promise<{ ctx: Context; settingsFile: string; settingsFiber: { dispose: () => unknown } }> {
-  const home = await mkdtemp(join(tmpdir(), 'dsh-preset-settings-'))
-  const settingsFile = join(home, 'settings.yaml')
-  await writeFile(settingsFile, '{}\n')
+  const settingsFile = existingSettingsFile ?? join(await mkdtemp(join(tmpdir(), 'dsh-preset-settings-')), 'settings.yaml')
+  if (existingSettingsFile === undefined) await writeFile(settingsFile, '{}\n')
 
   const ctx = new Context()
   ctx.baseUrl = pathToFileURL(FIXTURES).href + '/'
@@ -159,5 +161,117 @@ describe('a settings provider that goes away', () => {
     await settingsFiber.dispose()
 
     expect(ctx.agentPresets.defaultId).toBe('standard')
+  })
+})
+
+describe('skill selection belongs to the persisted preset', () => {
+  it('retains an isolated registry restriction after the Loader replaces that registry', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-preset-local-skills-'))
+    const presetDir = join(root, 'local-skills')
+    await mkdir(presetDir)
+    const composition = '- id: registry\n  name: cordis:test-skill-registry\n  isolate:\n    skills: true\n'
+    const compositionFile = join(presetDir, COMPOSITION_FILE)
+    await writeFile(compositionFile, composition)
+    const { ctx } = await harness([{ path: root, trust: 'user' }])
+    ctx.loader.builtins['test-skill-registry'] = SkillRegistry
+    await ctx.plugin(SkillRegistry)
+    ctx.skills.register({ name: 'example-skill', description: 'Host skill', content: 'Host body', source: 'runtime' })
+    await ctx.settings.update(NS, { disabledSkills: { 'local-skills': ['example-skill'] } })
+    try {
+      const scope = await ctx.agentPresets.standingKeyFor('local-skills')
+      const before = await ctx.agentPresets.serviceForPreset('local-skills', 'skills')
+      if (before === undefined) throw new Error('expected isolated skill registry')
+      before.register({ name: 'example-skill', description: 'Local skill', content: 'Local body', source: 'runtime' })
+      expect(before.isEnabled('example-skill', { scope })).toBe(false)
+      expect(await before.get('example-skill', { scope })).toBeUndefined()
+      expect(await ctx.skills.get('example-skill')).toBeDefined()
+      const impl = Object.getOwnPropertySymbols(ctx.reflect.store)
+        .map(key => ctx.reflect.store[key])
+        .find(value => value?.name === 'skills' && scopeOf(value.fiber.ctx) === scope)
+      const entry = impl?.fiber.entry
+      if (entry === undefined) throw new Error('expected Loader-owned isolated registry')
+      await entry.update({ disabled: true })
+      await entry.update({ disabled: false })
+      await ctx.loader.await()
+      expect(await ctx.agentPresets.standingKeyFor('local-skills')).toBe(scope)
+      const after = await ctx.agentPresets.serviceForPreset('local-skills', 'skills')
+      if (after === undefined) throw new Error('expected replacement skill registry')
+      expect(after.isEnabled('example-skill', { scope })).toBe(false)
+      after.register({ name: 'example-skill', description: 'Reloaded skill', content: 'Reloaded body', source: 'runtime' })
+      expect(await after.get('example-skill', { scope })).toBeUndefined()
+      expect((await after.inventory({ scope })).skills).toHaveLength(1)
+      expect(await ctx.skills.get('example-skill')).toBeDefined()
+      await ctx.settings.mutate(NS, [{ op: 'set', path: ['disabledSkills', 'local-skills'], value: [] }])
+      expect(await after.get('example-skill', { scope })).toBeDefined()
+      expect(await readFile(compositionFile, 'utf8')).toBe(composition)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('denies new loads for the selected preset and its children, not siblings, then re-enables live', async () => {
+    const { ctx, settingsFile } = await harness()
+    await ctx.plugin(SkillRegistry)
+    ctx.skills.register({ name: 'example-skill', description: 'Example', content: 'PRIVATE SKILL BODY', source: 'runtime' })
+    const lead = await ctx.agents.create({
+      sessionId: SessionId('selection-lead'),
+      setup: async (agentCtx) => { await ctx.agentPresets.mount(agentCtx, 'standard') },
+    })
+    const child = await ctx.agents.create({
+      sessionId: SessionId('selection-child'),
+      setup: (agentCtx) => { ctx.agentPresets.composeFrom(agentCtx, lead.agent.ctx) },
+    })
+    try {
+      const standard = await ctx.agentPresets.standingKeyFor('standard')
+      const minimal = await ctx.agentPresets.standingKeyFor('minimal')
+      expect(await ctx.skills.get('example-skill', { scope: lead.agent })).toBeDefined()
+      await ctx.settings.update(NS, { disabledSkills: { standard: ['example-skill'] } })
+      expect(await ctx.skills.get('example-skill', { scope: lead.agent })).toBeUndefined()
+      expect(await ctx.skills.get('example-skill', { scope: child.agent })).toBeUndefined()
+      expect(await ctx.skills.list({ scope: standard })).toEqual([])
+      expect((await ctx.skills.inventory({ scope: standard })).skills.map(skill => skill.name)).toEqual(['example-skill'])
+      expect(await ctx.skills.get('example-skill', { scope: minimal })).toBeDefined()
+      expect(await readFile(settingsFile, 'utf8')).toContain('example-skill')
+      expect(await ctx.agentPresets.serviceForPreset('standard', 'skills')).toBeDefined()
+      await ctx.settings.mutate(NS, [{ op: 'set', path: ['disabledSkills', 'standard'], value: [] }])
+      expect(await ctx.skills.get('example-skill', { scope: child.agent })).toBeDefined()
+      expect(ctx.agentPresets.defaultId).toBe('standard')
+    } finally {
+      await child.dispose()
+      await lead.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('retains the last restriction when settings disappears and loads it before the first agent', async () => {
+    const { ctx, settingsFiber } = await harness()
+    await ctx.settings.update(NS, { disabledSkills: { standard: ['example-skill'] } })
+    await ctx.plugin(SkillRegistry)
+    ctx.skills.register({ name: 'example-skill', description: 'Example', content: 'Body', source: 'runtime' })
+    try {
+      const scope = await ctx.agentPresets.standingKeyFor('standard')
+      expect(await ctx.skills.get('example-skill', { scope })).toBeUndefined()
+      await settingsFiber.dispose()
+      expect(await ctx.skills.get('example-skill', { scope })).toBeUndefined()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('reloads the persisted selection in a new host before any agent is created', async () => {
+    const first = await harness()
+    await first.ctx.settings.update(NS, { disabledSkills: { standard: ['example-skill'] } })
+    await first.ctx.fiber.dispose()
+    const second = await harness([], first.settingsFile)
+    try {
+      await second.ctx.plugin(SkillRegistry)
+      second.ctx.skills.register({ name: 'example-skill', description: 'Example', content: 'Body', source: 'runtime' })
+      const scope = await second.ctx.agentPresets.standingKeyFor('standard')
+      expect(second.ctx.skills.isEnabled('example-skill', { scope })).toBe(false)
+      expect(await second.ctx.skills.get('example-skill', { scope })).toBeUndefined()
+      expect((await second.ctx.skills.inventory({ scope })).skills).toHaveLength(1)
+    } finally {
+      await second.ctx.fiber.dispose()
+    }
   })
 })

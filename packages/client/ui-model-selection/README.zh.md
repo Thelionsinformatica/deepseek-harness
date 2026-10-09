@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-模型选择插件（浏览器侧）：**两个入口共用一份会话级目录**，由 `ModelDirectoryResolver`（`ctx.modelDirectories`）持有。对于普通会话，`/model` popupSelect 贡献项（经 `ctx.commandUi` 注册）与 composer 的具名 `conversation.input.model` slot 都通过同一个 `ModelDirectory` 实例，经 `session.models` 加载会话的建议目录，并经 `session.selectModel` 提交。紧凑型 composer 触发器会打开两级 Model/Effort 菜单：模型仍按提供方分组，所选具体模型则提供由其适配器持有的推理强度名称、说明和默认值。宿主公开自适应路由时，模型面板还会提供 `Leon 自动`；紧凑触发器会在自动标签旁显示实际正在使用的模型，并在 turn 开始和持久自动 failover 到达后刷新该路由。只有宿主声明外部备用路由时，界面才显示外部授权。选择一个明确模型会停用自动模式，选择 `Leon 自动` 则重新启用。`/model` 应用所选模型的默认推理强度，composer 随后可以选择任一已公布的推理强度。
+模型选择插件（浏览器侧）：两个入口共用一份会话级目录，由 `ModelDirectoryResolver`（`ctx.modelDirectories`）持有。对于普通会话，`/model` popupSelect 贡献项与 composer 的 `conversation.input.model` slot 都经同一个 `ModelDirectory` 加载 `session.models` 并提交 `session.selectModel`。composer 打开可搜索的提供方分组目录；提供方 id、模型 id、名称和说明均可搜索。鼠标悬停或聚焦模型会显示宿主报告的输入模态、上下文容量、默认输出上限与推理等级。缺失的元数据和价格明确标为未知，不会根据模型名称推断。所选具体模型提供适配器持有的推理强度名称、说明和默认值；`/model` 应用该默认值，composer 可选择任一已公布的推理强度。
 
 Host 报告的 `ModelSelection` 是唯一的选择事实，其中包含提供方、模型与推理（reasoning）强度；但只有当该提供方／模型对仍在已公布分组中时才会回显。目录行缺席时，可路由的选择保持不变，但触发器会提示 `Select model`；系统不会合成陈旧行，且在用户选择已公布的模型之前不会显示 Effort 行。目录加载与选择共享一个代次计数器，旧响应不会覆盖新结果；连接重置会丢弃所有常驻目录投影，并在显示前重新拉取 Host 恢复的选择。各提供方的元数据获取失败会内联列出，同时可用分组仍可选择；选择失败会保留先前的选择和目录。
 
@@ -12,7 +12,7 @@ Host 报告的 `ModelSelection` 是唯一的选择事实，其中包含提供方
 
 每一份常驻目录都会直接在转发的 owner 事件 `llm/adapters-updated` 与 `settings/document-updated` 上重拉。因此提供方拓扑、提供方目录与默认选择都能收敛，Host 与 client runtime 无需再派生一个单独的模型变更别名。
 
-根菜单直接提供自动路由，并说明手动选择是可选操作。打开菜单不会选择模型或授予外部授权。此展示不会创建团队、更改部署默认值，也不证明辅助模型已经执行任务。
+宿主提供自适应路由时，菜单提供 `Leon Adaptive`；返回已配置的协调角色时，提供 `Leon Team`。Adaptive 使用部署方的路由策略。Team 使用已登记的协调模型与委派的工作者、审查和视觉路由；面板显示这些配置角色，但不启动任务、不强制委派，也不保证每次回复都经过审查。明确选择模型或推理等级会启用手动模式。触发器在实际路由旁显示已接受的模式，并在 turn 开始及持久 failover 到达后刷新自动路由。打开任一面板不会选择模型、更改部署默认值或授予外部授权；只有声明外部备用路由时才显示外部授权。路由模式仅在进程内生效，重启宿主后恢复配置的默认值。
 
 `/client` 导出面为插件本体（`apply`/`inject`）、`ModelDirectoryResolver`、`ModelDirectory` 及其状态形状、slot 注入面类型。
 

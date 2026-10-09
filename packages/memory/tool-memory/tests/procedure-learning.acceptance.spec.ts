@@ -125,7 +125,7 @@ describe('LEON-ACC-005 structured procedure learning', () => {
 
     const sensitive = await ctx.procedureLearning.propose({
       ...proposal,
-      trigger: 'Use a senha: sk-proj-1234567890abcdefghijklmnop para preparar o workspace.',
+      trigger: 'Use a senha: sk-proj-1234567890abcdefghijklmnop para preparar o workspace.', // verify-secrets: allow synthetic test fixture, asserted redacted
     })
     expect(sensitive).toEqual({ ok: false, error: { code: 'procedure-sensitive-content' } })
     expect(ctx.storageDomain.get('procedure_learning')?.table('procedures').size).toBe(0)

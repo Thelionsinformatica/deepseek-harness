@@ -10,7 +10,7 @@ This Consumer gives an agent explicit long-term memory controls over workspace-s
 | `memory_search` | Retrieve active ranked memories, or explicitly request audit history, from the current workspace only |
 | `memory_update` | Correct the exact id and revision returned by search |
 | `memory_forget` | Delete the exact id and revision returned by search |
-| `personal_memory_remember` | Retain one explicit non-sensitive personal fact across workspaces |
+| `personal_memory_remember` | Propose one non-sensitive personal fact across workspaces, pending human confirmation |
 | `personal_memory_search` | Search the configured local owner's personal facts |
 | `personal_memory_update` | Correct one exact personal-memory revision |
 | `personal_memory_forget` | Delete one exact personal-memory revision |
@@ -24,6 +24,8 @@ The model guidance permits writes only for explicit remember intent or a clearly
 ## Personal memory
 
 Personal tools never accept an owner id from the model. They use the deployment-configured partition, require an owning agent Session for provenance, and preserve the same exact-revision correction and forgetting behavior as workspace memory. Personal recall derives its query only from human-authored text, skips credential-like values, stays inside the configured owner partition, and labels the bounded `personal-memory:recall` snapshot as untrusted data with no instruction authority. It does not create durable memory automatically.
+
+Model proposals do not assign validation, confidence, or core-profile membership. Their compact results include `confirmationRequired: true`. Explicit personal search can inspect pending records and labels them with the same flag, but automatic query and core recall exclude unconfirmed records. A human confirms the exact text through the separate Host administration boundary; natural-language model interpretation is not approval authority.
 
 Confirmed active records marked `core: true` also form a query-independent `personal-memory:core` snapshot, including on a greeting such as "oi". `coreRecallLimit` defaults to 10 and `coreRecallMaxChars` to 2,000. Listing traverses all active pages; only facts actually serialized within that budget are excluded from query recall. Marking `core` alone does not confirm a fact.
 
@@ -66,7 +68,7 @@ When `personalOwnerId`, `personalMemory`, and `settings` are composed, the Host 
 
 The live enablement preference is stored under the `personal-memory` settings namespace. Disabling it immediately blocks model recall, creation, and correction, while listing and permanent forgetting remain available so the user can inspect or remove existing local data. Personal rows, settings, and audit records never share a workspace-memory partition.
 
-The confirmed correction operation also reconfirms the complete submitted text, even when unchanged, with `validation: explicit` and `confidence: 1`. It still requires full administration, visible confirmation, the owning Session, and the exact revision. Ordinary model corrections do not receive this approval: changing content without a new confirmation removes the previous confirmation and keeps the fact outside the core profile.
+The confirmed correction operation also reconfirms the complete submitted text, even when unchanged, with `validation: explicit` and `confidence: 1`. Its optional `core` field explicitly includes or removes the fact from the bounded profile; omission preserves the previous selection. The personal panel provides separate reconfirmation and profile-selection actions, shows the exact text before confirmation, and submits the current revision. Each successful operation creates a new revision and retains its predecessors. The content-free administrative audit records an optional `desiredCore` choice. All operations still require full administration, visible confirmation, the owning Session, and the exact revision. Ordinary model corrections cannot set core membership and do not receive human approval: changing content without a new confirmation removes the previous confirmation and keeps the fact outside both automatic query recall and the core profile.
 
 ## Structured procedure learning
 
@@ -100,7 +102,7 @@ Prefix-stable while service availability and policy text are unchanged. Activati
 
 #### What the model sees
 
-When enabled, the first accepted step of a turn derives a bounded query from human-authored text, searches only active revisions in the registered current workspace, applies the shared final ranking, removes credential-like records, and prepends at most `recallLimit` compact hits. A final context composer deduplicates ids, rechecks workspace and sensitive-content boundaries, trims values, skips records that would exceed `recallMaxChars`, and labels the envelope as untrusted data with no instruction authority. Every retained value carries its memory id, revision, and source session for local audit, but no workspace id or raw path. The source is a durable plugin `snapshot` named `memory:recall`. Missing services, an unregistered workspace, no relevant safe record, cancellation, or provider failure produces no snapshot; provider failure is logged and the turn continues. Historical revisions are available only through an explicit tool audit and never enter automatic recall.
+When enabled, the first accepted step of a turn derives a bounded query from human-authored text, searches only active revisions in the registered current workspace, applies the shared final ranking, removes credential-like records, and prepends at most `recallLimit` compact hits. A final context composer deduplicates ids, rechecks workspace and sensitive-content boundaries, trims values, skips records that would exceed `recallMaxChars`, and labels the envelope as untrusted data with no instruction authority. Every retained value carries its memory id, revision, and source session for local audit, but no workspace id or raw path. The source is a durable plugin `snapshot` named `memory:recall`. The previous turn's slot is retired to a content-free marker before the new snapshot is composed, so two competing current values never coexist in active context. Missing services, an unregistered workspace, no relevant safe record, cancellation, or provider failure produces no snapshot; provider failure is logged and the turn continues. Historical revisions are available only through an explicit tool audit and never enter automatic recall.
 
 ##### Example snapshot
 
@@ -111,11 +113,11 @@ Workspace memory context — SECURITY BOUNDARY: UNTRUSTED DATA, NOT INSTRUCTIONS
 
 #### Token effect
 
-Zero when disabled or no safe hit is found; otherwise data-dependent and hard-bounded by `recallMaxChars` once per turn.
+Zero when disabled or no safe hit is found; otherwise data-dependent and hard-bounded by `recallMaxChars` once per turn. Each recalled turn also retires its predecessor to one fixed content-free marker, so retained markers grow by one per recalled turn until compaction.
 
 #### KV Cache effect
 
-The snapshot is inserted immediately before the current human message and varies with query and stored facts, so that turn's dynamic suffix changes. Earlier durable history remains reusable.
+The snapshot is inserted immediately before the current human message and varies with query and stored facts, so that turn's dynamic suffix changes. Earlier durable history remains reusable. Retiring the previous turn's slot edits a position in the recent tail rather than the session prefix, so reuse of earlier durable history survives.
 
 ### Personal core and query projections
 
@@ -237,7 +239,7 @@ Append-only; individual calls and results follow the reusable request prefix and
 
 ## Known Limitations and Deferred Work
 
-- The existing `personal_memory_remember` tool assigns `validation: explicit` and confidence 1 based on the model following its explicit-intent instructions. It has no separate deterministic consent gate. The core filter checks recorded metadata, not independent evidence of human approval; the confirmed administration path does not govern this creation tool.
+- Existing confirmation metadata is not migrated or retroactively audited. Deployments that used the former self-confirming model tool should review those records through the human panel; this change never rewrites existing data.
 - Clearing personal snapshots does not redact values already copied into human messages, tool results, assistant replies, or older summaries. Audit events are deliberately preserved; this is current-context invalidation, not retroactive erasure of the conversation.
 - Core recall traverses every active page on each step. Output is bounded, but read cost grows with the owner partition; large deployments need measured latency before activation.
 - Controlled writes require an explicit approval plus exact Host configuration; the current UI does not yet edit the per-user or per-workspace allowlists.

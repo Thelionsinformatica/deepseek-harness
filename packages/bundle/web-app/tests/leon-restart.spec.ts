@@ -70,7 +70,7 @@ async function mountedRestartRoute(
     },
   })
   await fiber.await()
-  return { dispose: () => fiber.dispose(), route: routes[0] }
+  return { dispose: () => fiber.dispose(), ...(routes[0] === undefined ? {} : { route: routes[0] }) }
 }
 
 function detachedChild(): ChildProcess {

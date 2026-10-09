@@ -58,6 +58,7 @@ async function bench() {
   const ctx = new Context()
   let current: ModelSelection = { provider: 'deepseek-official', model: 'deepseek-v4-flash' }
   let automatic = false
+  let selectionMode: 'manual' | 'adaptive' | 'team' = 'manual'
   let externalFailoverConsent = false
   let lastSelection: {
     provider: string
@@ -65,6 +66,7 @@ async function bench() {
     reasoningEffort?: string
     automatic?: boolean
     externalFailoverConsent?: boolean
+    selectionMode?: 'manual' | 'adaptive' | 'team'
   } | undefined
   const calls = { models: 0, select: 0 }
   ctx.provide('connection', { api: { sessions: {
@@ -74,7 +76,11 @@ async function bench() {
         result: {
           ok: true as const,
           value: {
-            current, routable, automatic, automaticAvailable: true, externalFailoverAvailable: true,
+            current, routable, automatic, selectionMode, automaticAvailable: true, externalFailoverAvailable: true,
+            coordination: {
+              coordinator: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+              worker: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
+            },
             ...externalFailoverConsent ? { externalFailoverConsent: true } : {},
             groups: GROUPS, failures: [],
           },
@@ -87,6 +93,7 @@ async function bench() {
       reasoningEffort?: string
       automatic?: boolean
       externalFailoverConsent?: boolean
+      selectionMode?: 'manual' | 'adaptive' | 'team'
     }) => {
       calls.select += 1
       lastSelection = payload
@@ -97,7 +104,8 @@ async function bench() {
           ? {}
           : { reasoningEffort: payload.reasoningEffort },
       }
-      automatic = payload.automatic ?? false
+      selectionMode = payload.selectionMode ?? (payload.automatic ? 'adaptive' : 'manual')
+      automatic = selectionMode !== 'manual'
       externalFailoverConsent = automatic && (payload.externalFailoverConsent ?? false)
       return Promise.resolve({
         result: {
@@ -105,6 +113,7 @@ async function bench() {
           value: {
             selected: current,
             automatic,
+            selectionMode,
             ...externalFailoverConsent ? { externalFailoverConsent: true } : {},
           },
         },
@@ -272,6 +281,25 @@ describe('ui-model-selection dual entry', () => {
     expect(b.ctx.modelDirectories.directoryFor(sid('a')).store).toBe(faceA.directory)
   })
 
+  it('submits team and adaptive modes explicitly and reflects the Host-confirmed mode', async () => {
+    const b = await bench()
+    b.mint('s1')
+    const face = b.seat().inject!(sid('s1'))
+    await b.ctx.modelDirectories.directoryFor(sid('s1')).load()
+    expect(face.directory.getSnapshot().coordination?.worker).toEqual({
+      provider: 'deepseek-official', model: 'deepseek-v4-pro',
+    })
+    expect(await face.selectTeam()).toBe(true)
+    expect(b.lastSelection()).toMatchObject({ selectionMode: 'team', externalFailoverConsent: false })
+    expect(face.directory.getSnapshot()).toMatchObject({ automatic: true, selectionMode: 'team' })
+    expect(await face.selectAutomatic(false)).toBe(true)
+    expect(b.lastSelection()).toMatchObject({ selectionMode: 'adaptive' })
+    expect(face.directory.getSnapshot()).toMatchObject({ automatic: true, selectionMode: 'adaptive' })
+    await face.select({ provider: 'deepseek-official', model: 'deepseek-v4-pro' })
+    expect(b.lastSelection()).toMatchObject({ selectionMode: 'manual' })
+    expect(face.directory.getSnapshot()).toMatchObject({ automatic: false, selectionMode: 'manual' })
+  })
+
   it('drops an unconsumed local selection and restores the Host target after reconnect', async () => {
     const b = await bench()
     b.mint('s1')
@@ -375,6 +403,7 @@ describe('ui-model-selection dual entry', () => {
     expect(face.available).toBe(false)
     face.load()
     await expect(face.select({ provider: 'deepseek', model: 'deepseek-v4-pro' })).resolves.toBe(false)
+    await expect(face.selectTeam()).resolves.toBe(false)
     await expect(b.ctx.modelDirectories.directoryFor(sid('child')).load())
       .rejects.toThrow(/unavailable for addressed subagent/)
     await expect(b.ctx.modelDirectories.directoryFor(sid('child')).select({

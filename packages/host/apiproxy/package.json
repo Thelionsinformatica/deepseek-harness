@@ -85,6 +85,9 @@
     "@deepseek-ai/dsh-invariants": "workspace:^"
   },
   "devDependencies": {
+    "@deepseek-ai/cordis-plugin-loader": "workspace:^",
+    "@deepseek-ai/cordis-plugin-include": "workspace:^",
+    "@deepseek-ai/dsh-agent-loop": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-agent-presets": "workspace:^",
     "@deepseek-ai/dsh-cordis-host-runner": "workspace:^",

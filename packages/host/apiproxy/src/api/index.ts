@@ -44,7 +44,7 @@ export interface ApiProxy {
 // ---- Domain interfaces and payload entities ----
 export type {
   HistoryEntry, ModelCatalogFailure, ModelCatalogModel, ModelProviderGroup, ModelReasoning,
-  ModelReasoningEffort, ModelSelection, PromptContentPart, QueueAction, SessionModels,
+  ModelReasoningEffort, ModelSelection, ModelSelectionMode, ModelCoordination, PromptContentPart, QueueAction, SessionModels,
   SessionListMetadata, SessionProjectionsBlock, SessionSearchItem, SessionsApi, SessionSummary,
 } from './sessions.ts'
 export type { DirectoryEntry, DirectoryListing, HostApi } from './host.ts'
@@ -54,7 +54,7 @@ export type {
 } from './subagents.ts'
 export type { JobView } from './jobs.ts'
 export type { WorkspaceApi, WorkspaceId, WorkspaceView } from './workspace.ts'
-export type { SkillsApi, SkillEntry, SkillInspection, SkillInspectionEntry } from './skills.ts'
+export type { SkillsApi, SkillCatalog, SkillCatalogEntry, SkillEntry, SkillInspection, SkillInspectionEntry } from './skills.ts'
 export type { AgentPresetsApi, AgentPresetEntry } from './agent-presets.ts'
 export type { EventsApi, MuxFrame, HostFrame, QueuedInboxItem, ToolCallView, ToolEventView, ToolResultView } from './events.ts'
 export type { GoalsApi, GoalId, GoalRef } from './goals.ts'

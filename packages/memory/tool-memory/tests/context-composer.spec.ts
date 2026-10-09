@@ -72,7 +72,7 @@ describe('safe memory context composer', () => {
     const otherWorkspace = WorkspaceId('workspace-other')
     const result = composeMemoryContext([
       hit('other', 'Memória de outro projeto.', 1, { scope: { workspaceId: otherWorkspace } }),
-      hit('secret', 'API key: sk-proj-abcdef1234567890abcdef', 0.9),
+      hit('secret', 'API key: sk-proj-abcdef1234567890abcdef', 0.9), // verify-secrets: allow synthetic test fixture, asserted redacted
       hit('empty', '   ', 0.8),
     ], { workspaceId, maxChars: 1_000 })
 

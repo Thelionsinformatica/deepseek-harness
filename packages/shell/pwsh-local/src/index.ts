@@ -212,10 +212,13 @@ export class PwshLocalExecutor extends ShellExecutor {
    * The pwsh invocation argv for one resolved spec — the argv-level seam a
    * confining subclass wraps through `ctx.sandbox.confine` (the pwsh twin of
    * `dsh-bash-local`'s `runArgv`/`startArgv` hooks; see
-   * `@deepseek-ai/dsh-pwsh-sandbox`).
+   * `@deepseek-ai/dsh-pwsh-sandbox`). Stop unhandled PowerShell errors before
+   * later statements can mask failure; native stderr and explicit error handling
+   * remain PowerShell's responsibility, never inferred from output text.
    */
   protected argv(spec: ShellExecSpec): string[] {
-    return [this.pwshPath, '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', `${ENCODING_PREAMBLE}${spec.command}`]
+    return [this.pwshPath, '-NoLogo', '-NoProfile', '-NonInteractive', '-Command',
+      `${ENCODING_PREAMBLE}$ErrorActionPreference = 'Stop'; ${spec.command}`]
   }
 
   /** Map one resolved spec plus its argv onto a fully-specified subprocess spawn. */

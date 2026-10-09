@@ -552,6 +552,14 @@ async recompose(agentCtx: Context, id: string): Promise<AgentPreset>
  * @throws when the preset is unknown or its composition is unusable.
  */
 async standingKeyFor(id?: string): Promise<ScopeKey>
+
+/**
+ * Inspect a preset's services without creating or resuming an agent.
+ * @param id - stable preset identifier.
+ * @param name - service name to resolve.
+ * @returns the preset-owned service or inherited host service.
+ */
+async serviceForPreset<K extends string & keyof Context>(id: string, name: K): Promise<Context[K] | undefined>
 ```
 
 Types: [ScopeKey](scope.md)

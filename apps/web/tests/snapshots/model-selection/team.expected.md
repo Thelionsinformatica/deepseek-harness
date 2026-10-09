@@ -1,0 +1,14 @@
+- menu "Model and reasoning effort":
+  - text: Leon Team Uses the registered coordinator and worker, review, and vision routes.
+  - term: Coordinator
+  - definition: Selector Main · Main Think
+  - term: Worker
+  - definition: Selector Main · Fast Text
+  - term: Review
+  - definition: Selector Review · Review Text
+  - term: Vision
+  - definition: Selector Main · Main Think
+  - paragraph: Selecting Team does not start a mission, force delegation, or guarantee review of each reply. Participation requires execution evidence.
+  - paragraph: The mode applies to this run; restarting Leon restores the configured default.
+  - menuitem "Enable team mode"
+  - menuitem "Back to models"

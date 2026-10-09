@@ -2,9 +2,9 @@
 # read and write the runtime it is running in.
 #
 # It exists so a person can ask an agent to author another agent. Everything in
-# `standard` is here unchanged; what is added is the self-referential Cordis
-# toolset, a skill that teaches composition authoring, and a persona that says
-# which of the two planes an edit belongs to.
+# `standard` is here with Leon's process safeguards and completion review;
+# what is added is the self-referential Cordis toolset, a skill that teaches
+# composition authoring, and a persona that says which plane owns an edit.
 #
 # TRUST: `cordis_mount` evaluates model-written JavaScript against the live
 # runtime, and a composition this agent writes becomes a preset other sessions
@@ -49,6 +49,9 @@
 - id: tool-pwsh
   name: '@deepseek-ai/dsh-tool-pwsh'
   disabled: !!js process.platform !== 'win32'
+  config:
+    allowHostProcessTermination: false
+    enforceManagedServerValidation: true
 
 # ── filesystem ──────────────────────────────────────────────────────────────
 
@@ -84,6 +87,15 @@
 # session. What a preset chooses is whether its agent can call the goal tool.
 - id: tool-goal
   name: '@deepseek-ai/dsh-tool-goal'
+  config:
+    completionRequiresCompletedTodos: true
+    # Use the host's existing independent review route and Leon's audit limits.
+    # The driver installs private evidence and verdict tools in the child scope;
+    # its host guard excludes coordinator shell, editing, and composition tools.
+    completionAuditorProvider: spawn
+    completionAuditorMaxTokens: 4096
+    completionAuditorMaxAttemptsPerTurn: 2
+    completionAuditorReportMaxCharacters: 6000
 
 # ── plan mode ───────────────────────────────────────────────────────────────
 

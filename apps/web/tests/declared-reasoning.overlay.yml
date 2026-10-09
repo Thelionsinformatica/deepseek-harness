@@ -2,6 +2,10 @@
 # deepseek-official default would be a route nothing serves. This scenario
 # starts the default on its own declared reasoning model so the effort pane
 # describes that model from the first open.
+- id: llm-pi-ai
+  config: { providers: {} }
+- id: api-gateway
+  config: {}
 - id: agent-default-model
   config:
     provider: acme-gateway

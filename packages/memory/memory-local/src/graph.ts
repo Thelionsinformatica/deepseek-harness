@@ -13,7 +13,7 @@ import type { OllamaSemanticIndex, SemanticEmbeddingApi } from './semantic.ts'
 import { SemanticSearchError } from './semantic.ts'
 
 /** Version of the edge-derivation algorithm; persisted snapshots carry it. */
-export const MEMORY_GRAPH_ALGORITHM_VERSION = 1 as const
+export const MEMORY_GRAPH_ALGORITHM_VERSION = 2 as const
 
 /** Validated scheduling and edge policy for one derived workspace graph. */
 export interface MemoryGraphConfig {
@@ -25,6 +25,12 @@ export interface MemoryGraphConfig {
   readonly model: string
   readonly api: SemanticEmbeddingApi
   readonly historyMode?: 'v1' | 'temporal-v2'
+  /** Additional transient-failure attempts per generation; zero disables retries. */
+  readonly retryAttempts?: number
+  /** Initial exponential backoff in milliseconds. */
+  readonly retryDelayMs?: number
+  /** Maximum backoff between transient attempts in milliseconds. */
+  readonly retryMaxDelayMs?: number
 }
 
 /** Content-free observability for one completed or failed graph computation. */
@@ -48,6 +54,7 @@ export interface MemoryGraphEvent {
 export class MemoryGraphScheduler {
   private readonly pending = new Set<WorkspaceId>()
   private readonly generations = new Map<WorkspaceId, number>()
+  private readonly retries = new Map<WorkspaceId, { count: number; timer?: ReturnType<typeof setTimeout> }>()
   private running: Promise<void> | undefined
   private operation: { workspaceId: WorkspaceId; controller: AbortController } | undefined
   private timer: ReturnType<typeof setTimeout> | undefined
@@ -79,6 +86,8 @@ export class MemoryGraphScheduler {
    */
   dirty(workspaceId: WorkspaceId): void {
     if (this.disposed || !this.enabled) return
+    this.clearRetry(workspaceId)
+    if (this.operation?.workspaceId === workspaceId) this.operation.controller.abort()
     this.generations.set(workspaceId, (this.generations.get(workspaceId) ?? this.storedGeneration(workspaceId)) + 1)
     this.pending.add(workspaceId)
     this.schedule()
@@ -96,6 +105,7 @@ export class MemoryGraphScheduler {
     for (const [workspaceId] of this.graphTable.entries()) workspaces.add(workspaceId)
     for (const workspaceId of workspaces) {
       if (this.pending.has(workspaceId)) continue
+      this.clearRetry(workspaceId)
       this.generations.set(workspaceId, (this.generations.get(workspaceId) ?? this.storedGeneration(workspaceId)) + 1)
       this.pending.add(workspaceId)
     }
@@ -129,6 +139,7 @@ export class MemoryGraphScheduler {
     if (this.timer !== undefined) clearTimeout(this.timer)
     if (this.transitionTimer !== undefined) clearTimeout(this.transitionTimer)
     this.pending.clear()
+    this.clearRetries()
     this.operation?.controller.abort()
     await this.running
   }
@@ -154,6 +165,7 @@ export class MemoryGraphScheduler {
     this.timer = undefined
     this.transitionTimer = undefined
     this.pending.clear()
+    this.clearRetries()
     this.operation?.controller.abort()
     await this.running
   }
@@ -182,6 +194,7 @@ export class MemoryGraphScheduler {
         workspaceId, generation, controller.signal,
       )
       if (!await this.publish(snapshot, generation)) return
+      this.clearRetry(workspaceId)
       await this.notify({
         workspaceId,
         status: snapshot.status,
@@ -209,10 +222,39 @@ export class MemoryGraphScheduler {
           durationMs: Date.now() - startedAt,
           failureCode,
         })
+        if (error instanceof SemanticSearchError
+          && (error.code === 'TRANSPORT' || error.code === 'TIMEOUT' || error.retryable)) {
+          this.scheduleRetry(workspaceId, generation)
+        }
       }
     } finally {
       this.operation = undefined
     }
+  }
+
+  private scheduleRetry(workspaceId: WorkspaceId, generation: number): void {
+    if (this.disposed || !this.enabled || this.generations.get(workspaceId) !== generation) return
+    const count = (this.retries.get(workspaceId)?.count ?? 0) + 1
+    if (count > (this.config.retryAttempts ?? 3)) return
+    const delay = Math.min((this.config.retryDelayMs ?? 1000) * 2 ** (count - 1), this.config.retryMaxDelayMs ?? 30_000)
+    const timer = setTimeout(() => {
+      if (this.disposed || !this.enabled || this.generations.get(workspaceId) !== generation) return
+      this.retries.set(workspaceId, { count })
+      this.pending.add(workspaceId)
+      this.schedule()
+    }, delay)
+    timer.unref()
+    this.retries.set(workspaceId, { count, timer })
+  }
+
+  private clearRetry(workspaceId: WorkspaceId): void {
+    const retry = this.retries.get(workspaceId)
+    if (retry?.timer !== undefined) clearTimeout(retry.timer)
+    this.retries.delete(workspaceId)
+  }
+
+  private clearRetries(): void {
+    for (const workspaceId of this.retries.keys()) this.clearRetry(workspaceId)
   }
 
   private async compute(
@@ -308,6 +350,8 @@ export class MemoryGraphScheduler {
   }
 
   private failure(workspaceId: WorkspaceId, generation: number, startedAt: number, failureCode: string): LocalMemoryGraph {
+    const previous = this.graphTable.get(workspaceId)
+    if (previous !== undefined) return { ...previous, status: 'failed', generation, failureCode }
     return {
       workspaceId,
       status: 'failed',

@@ -1127,6 +1127,174 @@ describe('renderSkillContent', () => {
   })
 })
 
+describe('SkillRegistry live restrictions', () => {
+  it('applies global and inherited restrictions together without affecting sibling scopes', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SkillRegistry)
+    registerProvider(ctx, new MemoryProvider([
+      memorySkill('global-denied', 'Global denied', 1),
+      memorySkill('preset-denied', 'Preset denied', 1),
+      memorySkill('agent-denied', 'Agent denied', 1),
+      memorySkill('allowed', 'Allowed', 1),
+    ]))
+    const preset = createScope(ctx, { preset: 'restricted' })
+    const sibling = createScope(ctx, { preset: 'sibling' })
+    const agent = createScope(ctx, { agent: 'child' })
+    const scope = scopeOf(agent.ctx)
+    const binding = bindScopeParent(scope as object, scopeOf(preset.ctx) as object)
+    ctx.skills.registerRestriction(name => name !== 'global-denied')
+    scopedSkills(preset.ctx).registerRestriction(name => name !== 'preset-denied')
+    scopedSkills(agent.ctx).registerRestriction(name => name !== 'agent-denied')
+    scopedSkills(agent.ctx).registerRestriction(() => true)
+
+    expect((await ctx.skills.list({ scope })).map(skill => skill.name)).toEqual(['allowed'])
+    expect((await ctx.skills.list({ scope: scopeOf(sibling.ctx) })).map(skill => skill.name))
+      .toEqual(['agent-denied', 'allowed', 'preset-denied'])
+    expect((await ctx.skills.list()).map(skill => skill.name))
+      .toEqual(['agent-denied', 'allowed', 'preset-denied'])
+    for (const name of ['global-denied', 'preset-denied', 'agent-denied']) {
+      expect(ctx.skills.isEnabled(name, { scope })).toBe(false)
+      expect(await ctx.skills.get(name, { scope })).toBeUndefined()
+    }
+    expect(ctx.skills.isEnabled('allowed', { scope })).toBe(true)
+    expect(ctx.skills.isEnabled('unknown', { scope })).toBe(true)
+    expect(ctx.skills.isEnabled('Invalid name', { scope })).toBe(false)
+
+    binding.rebind(scopeOf(sibling.ctx) as object)
+    expect(ctx.skills.isEnabled('preset-denied', { scope })).toBe(true)
+    expect(ctx.skills.isEnabled('agent-denied', { scope })).toBe(false)
+    await agent.dispose()
+    await preset.dispose()
+    await sibling.dispose()
+  })
+
+  it('retains restriction-only layers and withdraws each registration on disposal', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SkillRegistry)
+    const changes = vi.fn()
+    ctx.on('skills/change', changes)
+    const preset = createScope(ctx, { preset: 'restriction-owner' })
+    const scope = scopeOf(preset.ctx)
+    const deny = (): boolean => false
+    const disposeFirst = scopedSkills(preset.ctx).registerRestriction(deny)
+    const disposeSecond = scopedSkills(preset.ctx).registerRestriction(deny)
+    const disposeSkill = scopedSkills(preset.ctx).register({
+      name: 'temporary', description: 'Temporary', source: 'runtime', content: 'Temporary body.',
+    })
+    disposeSkill()
+    disposeFirst()
+    disposeFirst()
+    expect(ctx.skills.isEnabled('temporary', { scope })).toBe(false)
+    disposeSecond()
+    expect(ctx.skills.isEnabled('temporary', { scope })).toBe(true)
+    scopedSkills(preset.ctx).registerRestriction(deny)
+    const notified = changes.mock.calls.length
+    await preset.dispose()
+    expect(ctx.skills.isEnabled('temporary', { scope })).toBe(true)
+    expect(changes.mock.calls.length).toBeGreaterThan(notified)
+  })
+
+  it('rechecks live state on cached catalogs and inventories only winning metadata', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SkillRegistry)
+    const candidate = {
+      ...memorySkill('selected', 'Winning', 1),
+      invocation: { modelInvocable: false, userInvocable: true },
+    }
+    const provider = new MemoryProvider([candidate, memorySkill('selected', 'Shadowed', 2)])
+    const get = vi.spyOn(provider, 'get')
+    registerProvider(ctx, provider)
+    let enabled = true
+    ctx.skills.registerRestriction(() => enabled)
+
+    expect((await ctx.skills.list()).map(skill => skill.name)).toEqual(['selected'])
+    enabled = false
+    expect(await ctx.skills.snapshot()).toEqual({ skills: [], complete: true })
+    expect(await ctx.skills.list()).toEqual([])
+    const inventory = await ctx.skills.inventory()
+    expect(inventory.complete).toBe(true)
+    expect(inventory.skills).toHaveLength(1)
+    expect(inventory.skills[0]).toMatchObject({ name: 'selected', description: 'Winning', invocation: candidate.invocation })
+    expect(inventory.skills[0]).not.toHaveProperty('content')
+    expect(inventory.skills[0]).not.toHaveProperty('locator')
+    expect(inventory.skills[0]).not.toHaveProperty('path')
+    expect(await ctx.skills.get('selected')).toBeUndefined()
+    expect(get).not.toHaveBeenCalled()
+    expect(provider.listCalls).toBe(1)
+
+    enabled = true
+    expect((await ctx.skills.get('selected'))?.invocation).toEqual({ modelInvocable: false, userInvocable: true })
+    expect((await ctx.skills.list()).map(skill => skill.name)).toEqual(['selected'])
+    expect(provider.listCalls).toBe(1)
+  })
+
+  it('filters after awaited discovery and prevents a newly disabled provider load', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SkillRegistry)
+    const listed = Promise.withResolvers<SkillCandidate[]>()
+    const started = Promise.withResolvers<undefined>()
+    const provider = new MemoryProvider([])
+    provider.list = () => { started.resolve(undefined); return listed.promise }
+    const get = vi.spyOn(provider, 'get')
+    registerProvider(ctx, provider)
+    let enabled = true
+    ctx.skills.registerRestriction(() => enabled)
+    const pendingGet = ctx.skills.get('selected')
+    const pendingSnapshot = ctx.skills.snapshot()
+    await started.promise
+    enabled = false
+    listed.resolve([memorySkill('selected', 'Selected', 1)])
+    expect(await pendingGet).toBeUndefined()
+    expect(await pendingSnapshot).toEqual({ skills: [], complete: true })
+    expect(get).not.toHaveBeenCalled()
+  })
+
+  it('withholds a body disabled while the provider is loading', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SkillRegistry)
+    const candidate = memorySkill('selected', 'Selected', 1)
+    const loaded = Promise.withResolvers<SkillDefinition>()
+    const started = Promise.withResolvers<undefined>()
+    const provider = new MemoryProvider([candidate])
+    provider.get = () => { started.resolve(undefined); return loaded.promise }
+    registerProvider(ctx, provider)
+    let enabled = true
+    ctx.skills.registerRestriction(() => enabled)
+    const pending = ctx.skills.get('selected')
+    await started.promise
+    enabled = false
+    loaded.resolve({ ...candidate, content: 'Restricted body.' })
+    expect(await pending).toBeUndefined()
+  })
+
+  it('keeps incomplete inventory metadata without exposing disabled skills to invocation', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SkillRegistry)
+    ctx.skills.registerProvider(() => ({
+      name: 'memory',
+      list: () => Promise.resolve({ candidates: [memorySkill('selected', 'Selected', 1)], complete: false }),
+      get: () => Promise.resolve(undefined),
+    }))
+    ctx.skills.registerRestriction(() => false)
+    expect(await ctx.skills.snapshot()).toEqual({ skills: [], complete: false })
+    expect(await ctx.skills.inventory()).toMatchObject({ skills: [{ name: 'selected' }], complete: false })
+  })
+
+  it('does not treat a failing restriction as permission to load', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SkillRegistry)
+    const provider = new MemoryProvider([memorySkill('selected', 'Selected', 1)])
+    const get = vi.spyOn(provider, 'get')
+    registerProvider(ctx, provider)
+    ctx.skills.registerRestriction(() => { throw new Error('restriction unavailable') })
+    expect(() => ctx.skills.isEnabled('selected')).toThrow('restriction unavailable')
+    await expect(ctx.skills.list()).rejects.toThrow('restriction unavailable')
+    await expect(ctx.skills.get('selected')).rejects.toThrow('restriction unavailable')
+    expect(get).not.toHaveBeenCalled()
+    expect((await ctx.skills.inventory()).skills).toHaveLength(1)
+  })
+})
+
 describe('SkillRegistry scoped layers', () => {
   it('files a scoped provider into its layer and merges it into that scope view only', async () => {
     const ctx = new Context()

@@ -112,6 +112,14 @@ agent-presets:
 
 The value is read per resolution rather than snapshotted, so a hot-reloaded document takes effect on the next session created and every running session stays on the preset it was composed from. Clearing the user field re-inherits the composition default. A default naming a preset no root supplies is stored without complaint and fails at the next `resolve()` — the roster is a live directory, so a name absent now may exist by the time a session asks for it.
 
+### Per-preset skill selection
+
+The same settings namespace accepts `disabledSkills`, a map from stable preset id to skill names. An absent entry preserves discovery defaults. The Skills settings page uses revision-checked path edits; it does not rewrite a composition, change the default preset, or remove skill files.
+
+Each standing mount registers an inherited restriction with the skill registry. Joined agents and children use that host-owned scope identity. The registry checks the current policy during catalog reads and before and after loading a body. Disabling therefore applies to subsequent loads in existing and new sessions, including explicit slash invocation and automatic loading. It does not erase instructions already present in conversation history or revoke independent file/tool permissions. Enabling cannot override a skill's own invocation restrictions.
+
+`serviceForPreset(id, name)` resolves the standing composition's service, falling back to the host, without creating an agent or starting inference. Settings-provider removal retains the last confirmed disabled-skill policy until a new provider supplies a replacement.
+
 ## What a mount rejects
 
 A directly-plugged subtree is absent from `ctx.loader.entries()`, so no boot audit covers it. `mount()` therefore proves the result usable itself, and rejects three things.

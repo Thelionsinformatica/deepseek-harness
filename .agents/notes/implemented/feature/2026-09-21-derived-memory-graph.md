@@ -16,7 +16,7 @@ Durable memories accumulated as an unordered record set: the read-only overview 
 
 Publication uses the domain mutation queue and revalidates generation and active revisions at the write slot and after completion. A success event follows the durable write, never a discarded computation. Backend rejection is contained as `persistence-failed`; observers cannot turn a saved graph into a failure. Disposal drains inference and already-submitted writes before the domain closes. Startup includes graph-only empty partitions, and timers cover expiry and future-revision transitions without read-side scheduling. Personal-memory opt-out suspends graph processing, including startup and in-flight work. Active historical revisions remain eligible until a scheduled correction takes effect; explicit history search does not expand through current edges.
 
-Embedding responses require a bijection of integer indices to inputs, bounded error bodies, and redirect rejection. Oversized input is reported as `INPUT_TOO_LARGE`, including llama.cpp's physical-batch HTTP 500 response; content is not truncated or silently split. UI health remains separate from graph contents and displays only computed revision-pinned similarity edges. A local endpoint is not itself proof of local inference: deployments must verify its process and disable remote proxying.
+Embedding responses require a bijection of integer indices to inputs, bounded error bodies, and redirect rejection. Algorithm version 2 segments complete documents and adaptively subdivides oversized batches and singleton inputs under explicit bounds; exhausted limits remain `INPUT_TOO_LARGE`, without truncating facts. The [bounded recovery decision](../bug-fix/2026-09-25-bounded-memory-graph-recovery.md) owns this replacement of the original whole-document-only failure policy. UI health remains separate from graph contents and displays only computed revision-pinned similarity edges. A local endpoint is not itself proof of local inference: deployments must verify its process and disable remote proxying.
 
 ## Alternatives considered
 
@@ -28,7 +28,7 @@ Embedding responses require a bijection of integer indices to inputs, bounded er
 
 ## Consequences
 
-Graph state is derived and rebuildable from authoritative records; deleting the `graph` table loses no memory content. Embedding work runs on a dedicated local endpoint so it does not contend with the conversation model loader. A provider crash records one `failed` snapshot and waits for the next commit rather than retrying per read. Deployments choose `linking.minScore` per embedding model; the Leon web profile uses 0.75 from a measured pt-BR gap (related pairs 0.805-0.891, unrelated 0.646-0.692).
+Graph state is derived and rebuildable from authoritative records; deleting the `graph` table loses no memory content. Embedding work runs on a dedicated local endpoint so it does not contend with the conversation model loader. A transient provider failure records `failed` and receives finite scheduled retries, never read-triggered retries. Rebuild failure retains prior snapshot coverage with its failed status. Deployments choose `linking.minScore` per embedding model; the Leon web profile uses 0.75 from a measured pt-BR gap (related pairs 0.805-0.891, unrelated 0.646-0.692). These whole-document measurements do not calibrate the new long-document chunk means.
 
 ## Verification
 

@@ -12,7 +12,8 @@ import type { RequestPayload, ResponseValue } from './rpc-map.ts'
 import type { Wire } from './rpc.schema.ts'
 import type {
   HistoryEntry, ModelCatalogFailure, ModelCatalogModel, ModelProviderGroup, ModelReasoning,
-  ModelReasoningEffort, ModelSelection, SessionListMetadata, SessionProjectionsBlock, SessionSearchItem, SessionSummary,
+  ModelReasoningEffort, ModelSelection, ModelSelectionMode, ModelCoordination,
+  SessionListMetadata, SessionProjectionsBlock, SessionSearchItem, SessionSummary,
 } from './sessions.ts'
 import type { ToolEventView } from './events.ts'
 import type { AttachmentIdType, ImageAttachmentLimits, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
@@ -152,6 +153,17 @@ export const modelSelectionSchema = z.object({
   reasoningEffort: z.string().min(1).optional(),
 }) satisfies z.ZodType<Wire<ModelSelection>>
 
+/** Explicit interactive routing policy. */
+export const modelSelectionModeSchema = z.enum(['manual', 'adaptive', 'team']) satisfies z.ZodType<ModelSelectionMode>
+
+/** Configured principal and auxiliary assignments, without execution claims. */
+export const modelCoordinationSchema = z.object({
+  coordinator: modelSelectionSchema,
+  worker: modelSelectionSchema.optional(),
+  review: modelSelectionSchema.optional(),
+  vision: modelSelectionSchema.optional(),
+}) satisfies z.ZodType<Wire<ModelCoordination>>
+
 /** One adapter-owned reasoning effort. */
 export const modelReasoningEffortSchema = z.object({
   id: z.string().min(1),
@@ -171,6 +183,9 @@ export const modelCatalogModelSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   reasoning: modelReasoningSchema.optional(),
+  inputModalities: z.array(z.enum(['text', 'image'])).optional(),
+  context: z.object({ contextWindow: z.number().int().positive() }).optional(),
+  defaultMaxTokens: z.number().int().positive().optional(),
 }) satisfies z.ZodType<Wire<ModelCatalogModel>>
 
 /** One successfully loaded provider group. */
@@ -253,6 +268,8 @@ export const sessionModelsValueSchema = z.object({
   routable: z.boolean(),
   automatic: z.boolean(),
   automaticAvailable: z.boolean(),
+  selectionMode: modelSelectionModeSchema.optional(),
+  coordination: modelCoordinationSchema.optional(),
   externalFailoverAvailable: z.boolean().optional(),
   externalFailoverConsent: z.boolean().optional(),
   groups: z.array(modelProviderGroupSchema),
@@ -266,6 +283,7 @@ export const sessionSelectModelRequestSchema = z.object({
   model: z.string().min(1),
   reasoningEffort: z.string().min(1).optional(),
   automatic: z.boolean().optional(),
+  selectionMode: modelSelectionModeSchema.optional(),
   externalFailoverConsent: z.boolean().optional(),
 }) satisfies z.ZodType<Wire<RequestPayload<'session.selectModel'>>>
 
@@ -273,6 +291,7 @@ export const sessionSelectModelRequestSchema = z.object({
 export const sessionSelectModelValueSchema = z.object({
   selected: modelSelectionSchema,
   automatic: z.boolean(),
+  selectionMode: modelSelectionModeSchema.optional(),
   externalFailoverConsent: z.boolean().optional(),
 }) satisfies z.ZodType<Wire<ResponseValue<'session.selectModel'>>>
 

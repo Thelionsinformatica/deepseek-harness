@@ -15,14 +15,17 @@
 - `ctx.skills.registerModelTool(tool): () => void` 在其 Cordis effect 释放前记录受信模型加载器的精确对象身份。重复注册同一对象会抛错；名称相同的另一对象不会被识别。这既不注册工具，也不授予权限或 scope 可见性。
 - `ctx.skills.isModelTool(tool | undefined): boolean` 检查该精确对象是否仍是活动的模型加载器。检查消费方必须先通过观察 agent 的分层工具注册表解析工具，再执行身份检查；单独调用此方法不能证明任何 agent 可使用该工具。
 - `ctx.skills.registerProvider(create): () => void` 调用同步提供方工厂并向其传入 `{ signal, invalidate }`，随后以在调用方上下文所在层内唯一的 `provider.name` 注册其只读结果。同层重复提供方名称会抛错，`runtime` 为保留名称；注册失败会中止信号。精确的 Cordis disposer 会注销提供方、中止信号，并保持有序组合拆卸。
-- `ctx.skills.snapshot({ cwd?, signal?, scope? })` 返回观察 scope 各层合并后、与调用策略无关的 `{ skills, complete }` 观测。任一提供方调用被拒绝或显式报告发现不完整，或有界重试期间又发生目录修订时，`complete` 为 false；该次观测提供的候选项仍保留在此结果中，但该结果绝不缓存。
-- `ctx.skills.list({ cwd?, signal?, scope? })` 借用只读视图选项，然后返回当前工作区中的全部胜出摘要；这些摘要在全局层与观察 scope 链之间合并，并按名称排序。消费方在自身边界调用 `isModelInvocable(skill)` 或 `isUserInvocable(skill)`。
-- `ctx.skills.get(name, { cwd?, signal?, scope? })` 在发现和加载中使用同一组只读选项和胜出候选项；在发现或缓存命中后重新检查取消，让提供方加载与信号竞速，验证已加载定义，然后无论调用策略如何都将其返回。
+- `ctx.skills.registerRestriction(allow): () => void` 在调用方上下文所在层注册同步实时判定函数。所有适用的全局和 scope 链限制都必须允许该名称。Cordis disposer 仅移除自身注册。
+- `ctx.skills.isEnabled(name, { scope? }): boolean` 查询实时限制，不执行提供方发现；名称无效时返回 false。这不证明 skill 存在，也不证明模型或用户可以调用它。
+- `ctx.skills.inventory({ cwd?, signal?, scope? })` 以 `{ skills, complete }` 返回包括已禁用名称的胜出元数据，不加载正文。这是管理清单，不是调用目录。提供方拒绝调用、显式报告发现不完整，或有界重试期间再次发生目录修订时，`complete` 为 false；不完整观测绝不缓存。
+- `ctx.skills.snapshot({ cwd?, signal?, scope? })` 在发现结束后按实时限制过滤清单，保留完整性状态和调用标志。
+- `ctx.skills.list({ cwd?, signal?, scope? })` 返回快照中按名称排序的已启用摘要。消费方还需在自身边界调用 `isModelInvocable(skill)` 或 `isUserInvocable(skill)`。
+- `ctx.skills.get(name, { cwd?, signal?, scope? })` 在发现和加载中使用同一组只读选项和胜出候选项；在发现或缓存命中后重新检查取消，让提供方加载与信号竞速，并验证已加载定义。加载前或提供方完成后，只要实时限制拒绝该名称，就返回 `undefined`。没有选项可以绕过限制；模型和用户调用标志仍由消费方执行。
 - `ctx.skills.register(skill): () => void` 将只读运行时嵌入式 skill 注册进调用方上下文所在层，省略时添加允许模型和用户调用的策略以及 `provider: "runtime"`。同层同名运行时注册使用先到先得：重复项会记录警告，并获得无操作 disposer。成功注册会返回精确的 Cordis disposer，以供有序组合拆卸。
 
 ### 事件
 
-- `skills/change` 是一条不带过滤条件的失效通知，在提供方或运行时贡献注册或释放后，以及活动提供方的注册控制触发失效后发出。它不携带目录或 diff；每个消费方都使用自身的查找选项重新获取 `snapshot()`。监听器抛错或 Promise 拒绝会被记录，既不能否决注册表变更，也不能阻止后续监听器执行。
+- `skills/change` 是一条不带过滤条件的失效通知，在提供方、运行时贡献或限制注册或释放后，以及活动提供方的注册控制触发失效后发出。它不携带目录或 diff；每个消费方都使用自身的查找选项重新获取 `snapshot()`。监听器抛错或 Promise 拒绝会被记录，既不能否决注册表变更，也不能阻止后续监听器执行。限制所捕获状态的变化会被实时读取，但本身不触发该事件；主动通知由该状态的所有者提供。
 
 ### 配置
 
@@ -45,7 +48,9 @@
 
 `renderSkillContent(skill)` 把一个已加载 skill 渲染为规范的 `<skill_content>` 块（转义后的 `name` 属性、资源提示、原样正文）。它是两条加载路径的唯一真源：`dsh-tool-skill` 将其作为 `skill` 工具结果返回，并在用户显式的手势边界将其注入，因此无论加载由谁发起，模型看到的都是同一种形态。`escapeText` 随之一并导出，供要在同一标记框架中嵌入文案的消费方使用。该包还声明 `skill-invocation` 这个 `MessageSource` kind（{ name, form: 'instructions' }），用户显式注入会把它打在自己的消息上——transcript（文本记录）消费方依据这份元数据呈现该次调用，而不是重新解析正文。
 
-`isModelInvocable(skill)` 和 `isUserInvocable(skill)` 分别直接读取对应的正向字段。`ctx.skills.get()` 仍是受信且与策略无关的加载原语，因此每个面向用户或模型的消费方都必须先执行与自身接口匹配的判定，再暴露或加载 skill。
+`isModelInvocable(skill)` 和 `isUserInvocable(skill)` 分别直接读取对应的正向字段。`ctx.skills.get()` 执行实时限制，但对这两个标志保持中立，因此每个面向用户或模型的消费方仍须执行与自身接口匹配的调用判定。
+
+限制在重名裁决后生效，因此禁用胜出名称不会暴露被遮蔽的定义。判定函数必须同步且无副作用；它们可以读取当前设置，抛错会使读取失败而不是允许访问。判定结果不缓存，所以即使发现结果已缓存，状态变化也会作用于后续读取。限制不修改提供方元数据、不授予权限，也无法移除会话历史中已保留的正文或取消已开始的工作。
 
 ## 提供方约定
 

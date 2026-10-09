@@ -1,0 +1,55 @@
+- dialog "Settings":
+  - navigation:
+    - text: Settings
+    - button "General":
+      - img
+      - text: General
+    - button "Personalization":
+      - img
+      - text: Personalization
+    - button "Models":
+      - img
+      - text: Models
+    - button "Plugins":
+      - img
+      - text: Plugins
+    - button "Agent presets":
+      - img
+      - text: Agent presets
+    - button "Skills":
+      - img
+      - text: Skills
+  - button "Open configuration file"
+  - button "Close":
+    - img
+    - text: Close
+  - heading "Skills" [level=2]
+  - paragraph: View locally installed skills and manage availability for each agent profile. This page does not install external skills.
+  - text: Agent profile
+  - combobox "Agent profile":
+    - option "Leon (leon)"
+    - option "标准模式 (standard) · Default for new sessions" [selected]
+    - option "PTC 模式 (code)"
+    - option "极简模式 (minimal)"
+    - option "创造模式 (cordis)"
+  - text: Workspace (optional)
+  - combobox "Workspace (optional)":
+    - option "Profile and user skills only" [selected]
+  - button "Refresh"
+  - paragraph: Workspace selection only changes the catalog shown. Toggles apply by skill name across all workspaces of this agent profile; they do not change the default profile or the current session’s profile.
+  - paragraph: Changes affect subsequent catalog reads and skill loads, not instructions already loaded into a conversation. Enabling does not override a skill’s invocation restrictions.
+  - list "Installed skills":
+    - listitem:
+      - heading "test-review" [level=3]
+      - paragraph: Review synthetic reports without changing files.
+      - paragraph: "Source: runtime"
+      - paragraph: "Model invocation: Allowed · User invocation: Allowed"
+      - switch "test-review" [checked]
+      - text: Enabled
+    - listitem:
+      - heading "test-user-only" [level=3]
+      - paragraph: Explicit user guidance for the synthetic test.
+      - paragraph: "Source: runtime"
+      - paragraph: "Model invocation: Restricted · User invocation: Allowed"
+      - switch "test-user-only" [checked]
+      - text: Enabled

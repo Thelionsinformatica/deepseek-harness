@@ -15,10 +15,8 @@ it('projects a confirmed profile on greetings and replaces corrected or forgotte
     async inspect(cwd) {
       const root = join(cwd, 'sessions')
       const files = (await readdir(root, { recursive: true })).filter(file => file.endsWith('.jsonl'))
-      expect(files).toHaveLength(1)
-      const file = files[0]
-      if (file === undefined) throw new Error('Expected the durable personal-profile session.')
-      const log = await readFile(join(root, file), 'utf8')
+      expect(files).toHaveLength(2)
+      const log = (await Promise.all(files.map(file => readFile(join(root, file), 'utf8')))).join('\n')
       expect(log).toContain('O nome de trabalho do usuário é Pessoa Exemplo.')
       expect(log).toContain('O nome de trabalho do usuário é Pessoa Revisada.')
       expect(log).toContain('Personal memory context cleared.')

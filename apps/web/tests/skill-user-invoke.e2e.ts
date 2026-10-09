@@ -12,6 +12,7 @@ import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import type { ReplayOverrideDoc } from '@deepseek-ai/dsh-llm-replay'
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import {
   assertFixtureInventory,
   captureStableAria,
@@ -75,6 +76,8 @@ describe.skipIf(MODE === 'record')('web e2e: user-explicit skill invocation thro
       // deterministically; instant playback races it in and out of the golden.
       paceMs: 10,
     })
+    // This scenario inspects diagnostic injection rows, hidden in normal chat.
+    await scaffold.ctx.settings.update(settingsNamespace('ui-conversation'), { showTechnicalContext: true })
     await seedUserOnlySkill(scaffold.workspaceCwd)
     browser = await chromium.launch()
     page = await newEnglishPage(browser)

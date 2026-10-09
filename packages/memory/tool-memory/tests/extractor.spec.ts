@@ -74,7 +74,7 @@ describe('memory candidate extractor', () => {
 
   it('marks credential-like candidates as blocked and drops their content', () => {
     const candidate = extractMemoryCandidate([
-      userMessage('Lembre que minha API key é sk-proj-1234567890abcdefghijklmnop.'),
+      userMessage('Lembre que minha API key é sk-proj-1234567890abcdefghijklmnop.'), // verify-secrets: allow synthetic test fixture, asserted redacted
     ])
     expect(candidate).toMatchObject({ sensitivity: 'blocked', scopeCandidate: 'workspace' })
     expect(candidate).not.toHaveProperty('content')

@@ -52,9 +52,13 @@ The workspace `local` provider stores records through the versioned `memory_loca
 
 The provider-neutral boundary rejects credential-like content before any provider write. The Leon deployment configures one explicit local owner label; it does not reuse the anonymous telemetry id and does not claim authenticated multi-user ownership. Local files are not encrypted by this subsystem and inherit the configured storage backend and operating-system protection.
 
+`PersonalMemoryAdminCorrectRequest` extends the exact-revision, confirmed `MemoryAdminCorrectRequest` with optional `core`: an explicit value changes profile selection, while omission preserves it. `MemoryAdminItem.core` exposes that selection independently of validation; only confirmed active selections qualify for the bounded core profile. Human confirmation can retain unchanged text, creates a new revision, and records the optional selection in the content-free `personal_memory_admin` audit. The [personal-memory administration contract](../../packages/memory/tool-memory/README.md) owns the permission and enablement checks.
+
 ## Model policy
 
 `dsh-tool-memory` always contributes the four workspace tools `memory_remember`, `memory_search`, `memory_update`, and `memory_forget` when workspace services are present. A configured personal owner and `ctx.personalMemory` add `personal_memory_remember`, `personal_memory_search`, `personal_memory_update`, and `personal_memory_forget`. The model supplies neither workspace nor owner ids. Prompt policy permits writes only for explicit remember intent or clearly confirmed stable facts and forbids passwords, API keys, tokens, private keys, document bodies, and other secrets.
+
+Personal model proposals have no confirmation metadata or core-selection authority. Explicit search labels pending records with `confirmationRequired`; automatic personal recall excludes them until a human confirms the exact text through the Host panel. Model content corrections invalidate prior confirmation. Existing confirmation metadata is preserved without retroactive consent claims or migration.
 
 The Leon preset enables bounded automatic recall on the first model request of each turn for both scopes. The query comes only from human-authored text. Workspace retrieval remains in the current project, while personal retrieval remains in the configured owner partition; each snapshot is capped to four safe hits and 4,000 characters and is prepended as untrusted data. Provider failures fail open for recall, while explicit mutation failures remain visible tool errors. No path performs an automatic durable write.
 
@@ -210,7 +214,7 @@ async recordCandidate(record: MemoryCandidateRecord): Promise<void>
  * @param request - Session anchor, exact revision, complete confirmed text, and confirmation.
  * @returns The explicitly validated browser-safe row and content-free audit id, or an explicit failure.
  */
-@Remote('correctPersonalMemory') correctPersonalMemory(request: MemoryAdminCorrectRequest): Promise<MemoryAdminCorrectResult>
+@Remote('correctPersonalMemory') correctPersonalMemory(request: PersonalMemoryAdminCorrectRequest): Promise<MemoryAdminCorrectResult>
 
 /**
  * Permanently remove one personal-memory lineage after confirmation.

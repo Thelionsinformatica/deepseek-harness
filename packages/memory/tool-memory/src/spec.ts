@@ -191,6 +191,7 @@ export interface PersonalMemoryAdminActionRecord {
   readonly expectedRevision?: number
   readonly resultRevision?: number
   readonly desiredEnabled?: boolean
+  readonly desiredCore?: boolean
   readonly action: 'remember' | 'correct' | 'forget' | 'toggle'
   readonly status: 'requested' | 'succeeded' | 'failed'
   readonly failureCode?: string
@@ -207,6 +208,7 @@ export const personalMemoryAdminActionRecord = z.object({
   expectedRevision: z.number().int().positive().optional(),
   resultRevision: z.number().int().positive().optional(),
   desiredEnabled: z.boolean().optional(),
+  desiredCore: z.boolean().optional(),
   action: z.enum(['remember', 'correct', 'forget', 'toggle']),
   status: z.enum(['requested', 'succeeded', 'failed']),
   failureCode: z.string().optional(),

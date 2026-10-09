@@ -26,6 +26,78 @@ function item(content = 'Prefiro respostas diretas.', revision = 1): MemoryAdmin
 }
 
 describe('Leon personal-memory panel', () => {
+  it('confirms unchanged text and changes profile membership only after visible confirmation', async () => {
+    const pending = { ...item(), validation: undefined }
+    const correctPersonalMemory = vi.fn((
+      _sessionId: SessionId, current: MemoryAdminItem, content: string, core?: boolean,
+    ) => Promise.resolve({
+      ...current, content, revision: current.revision + 1, validation: 'explicit' as const,
+      ...(core === undefined ? {} : { core }),
+    }))
+    render(<PersonalMemoryPanel
+      sessionId={sessionId}
+      listPersonalMemories={vi.fn().mockResolvedValue({
+        items: [pending], hasMore: false, nextOffset: 1, readOnly: false, enabled: true,
+      })}
+      rememberPersonalMemory={vi.fn()}
+      correctPersonalMemory={correctPersonalMemory}
+      forgetPersonalMemory={vi.fn()}
+      setPersonalMemoryEnabled={vi.fn()}
+      t={makeTranslate(pt)}
+    />)
+    await screen.findByText(pt['memory.personal.unconfirmed'])
+    fireEvent.click(screen.getByRole('button', { name: pt['memory.personal.reconfirm'] }))
+    expect(correctPersonalMemory).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: pt['memory.confirm.action'] }))
+    await screen.findByText(pt['memory.personal.confirmed'])
+    expect(correctPersonalMemory).toHaveBeenLastCalledWith(sessionId, pending, pending.content)
+
+    fireEvent.click(screen.getByRole('button', { name: pt['memory.personal.markCore'] }))
+    expect(correctPersonalMemory).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: pt['memory.confirm.action'] }))
+    await screen.findByText(pt['memory.personal.core'])
+    expect(correctPersonalMemory).toHaveBeenLastCalledWith(
+      sessionId, expect.objectContaining({ revision: 2 }), pending.content, true,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: pt['memory.personal.unmarkCore'] }))
+    expect(correctPersonalMemory).toHaveBeenCalledTimes(2)
+    fireEvent.click(screen.getByRole('button', { name: pt['memory.confirm.action'] }))
+    await waitFor(() => { expect(screen.queryByText(pt['memory.personal.core'])).toBeNull() })
+    expect(correctPersonalMemory).toHaveBeenLastCalledWith(
+      sessionId, expect.objectContaining({ revision: 3, core: true }), pending.content, false,
+    )
+    expect(screen.getByText(pending.content!)).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: pt['memory.saved.correct'] }))
+    const review = screen.getByRole('button', { name: pt['memory.saved.reviewCorrection'] })
+    expect(review.hasAttribute('disabled')).toBe(false)
+    fireEvent.click(review)
+    fireEvent.click(screen.getByRole('button', { name: pt['memory.confirm.action'] }))
+    await waitFor(() => { expect(correctPersonalMemory).toHaveBeenCalledTimes(4) })
+    expect(correctPersonalMemory).toHaveBeenLastCalledWith(
+      sessionId, expect.objectContaining({ revision: 4, core: false }), pending.content,
+    )
+  })
+
+  it.each(['read-only', 'disabled', 'redacted'] as const)('blocks confirmation and profile changes when %s', async (condition) => {
+    render(<PersonalMemoryPanel
+      sessionId={sessionId}
+      listPersonalMemories={vi.fn().mockResolvedValue({
+        items: [{ ...item(), redacted: condition === 'redacted' }], hasMore: false, nextOffset: 1,
+        readOnly: condition === 'read-only', enabled: condition !== 'disabled',
+      })}
+      rememberPersonalMemory={vi.fn()}
+      correctPersonalMemory={vi.fn()}
+      forgetPersonalMemory={vi.fn()}
+      setPersonalMemoryEnabled={vi.fn()}
+      t={makeTranslate(pt)}
+    />)
+    const confirm = await screen.findByRole('button', { name: pt['memory.personal.reconfirm'] })
+    expect(confirm.hasAttribute('disabled')).toBe(true)
+    expect(screen.getByRole('button', { name: pt['memory.personal.markCore'] }).hasAttribute('disabled')).toBe(true)
+  })
+
   it('confirms additions, corrections, disabling, and forgetting while keeping deletion available', async () => {
     const listPersonalMemories = vi.fn(() => Promise.resolve({
       items: [item()],

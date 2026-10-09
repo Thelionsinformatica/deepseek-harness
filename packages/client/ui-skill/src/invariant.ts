@@ -15,10 +15,11 @@ export const name = 'client-ui-skill-invariant'
 export const inject = ['invariants']
 
 /**
- * No runtime invariant: the slash source, locale dictionaries, and keyed
- * toolview are registry-owned registrations whose disposal is proven by the
- * HMR-safety spec. They emit no cordis events and own no cross-plugin mutable
- * state.
+ * No runtime invariant: slash, locale, toolview, and Settings registrations
+ * are registry-owned; their disposal is proven by the HMR-safety spec.
+ * Settings state is a disposable Host projection, not an authoritative fact
+ * source. Controller tests cover stale reads, revision-fenced writes, and
+ * disposal. This package emits no cordis events or cross-plugin mutable state.
  */
 const install: InvariantInstaller = () => {}
 

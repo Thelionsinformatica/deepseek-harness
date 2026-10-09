@@ -1440,7 +1440,7 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
 
 ### `personal_memory_remember`
 
-跨项目 workspace 记住一条稳定、非敏感的个人事实。仅在用户明确要求记住或清楚确认后使用。绝不存储凭据。
+在明确记住意图之后，跨项目 workspace 提出一条稳定、非敏感的个人事实。用户必须在个人记忆面板确认后，事实才能进入自动回忆。绝不存储凭据。
 
 ```json
 {
@@ -1449,10 +1449,6 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
     "content": {
       "type": "string",
       "description": "Self-contained personal fact to remember."
-    },
-    "core": {
-      "type": "boolean",
-      "description": "Mark as part of the always-present core profile (identity and stable preferences)."
     }
   },
   "required": [
@@ -1511,10 +1507,6 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
     "content": {
       "type": "string",
       "description": "Complete corrected personal fact."
-    },
-    "core": {
-      "type": "boolean",
-      "description": "Optional marker to set or unset core-profile membership for this fact."
     }
   },
   "required": [

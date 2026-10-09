@@ -69,6 +69,7 @@ describe.skipIf(!hasPwsh)('pwsh tool over the real pwsh executor', () => {
   })
 
   afterEach(async () => {
+    await ctx.fiber.dispose()
     await rm(dir, { recursive: true, force: true })
   })
 
@@ -89,6 +90,18 @@ describe.skipIf(!hasPwsh)('pwsh tool over the real pwsh executor', () => {
     }, agent())
     expect(result.isError).toBe(false)
     expect(lf(text(result))).toBe('[stderr]\nboom\n[exit code: 3]')
+  })
+
+  it('reports an unhandled method error as a failed command, not a clean tool result', async () => {
+    const result = await call('pwsh', {
+      command: '"sha=$([System.BitConverter]::ToString(\'not-a-byte-array\'))"; Write-Output after',
+      description: 'reproduce synthetic hash conversion failure',
+    }, agent())
+    expect(result.isError).toBe(false)
+    if (result.isError) throw new Error('expected a completed command result')
+    expect(result.value).toMatchObject({ kind: 'foreground', exitCode: 1, stdout: { text: '' } })
+    expect(text(result)).toContain('[stderr]')
+    expect(text(result)).toContain('[exit code: 1]')
   })
 
   it('resolves relative paths in the session workspace', async () => {

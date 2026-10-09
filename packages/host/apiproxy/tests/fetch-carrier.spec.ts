@@ -231,6 +231,13 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
       },
     },
     skills: {
+      async catalog(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: {
+          agentPreset: request.payload.agentPreset, complete: true, revision: 3, writable: true,
+          disabledNames: ['commit-helper'],
+          skills: [{ name: 'commit-helper', description: 'Git commits', source: 'runtime', enabled: false, modelInvocable: false, userInvocable: false }],
+        } } }
+      },
       async inspect(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: {
           agentPreset: 'leon', complete: true, modelToolAvailable: true, authorization: 'not-evaluated',
@@ -451,6 +458,16 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
     const c = client()
     const skills = await c.skills.list({ sessionId: 's' as never })
     expect(skills.result).toEqual({ ok: true, value: { skills: [{ name: 'commit-helper', description: 'Git commits', modelInvocable: true }] } })
+  })
+
+  it('round-trips administrative skill.catalog metadata through the wire form', async () => {
+    const c = client()
+    const response = await c.skills.catalog({ agentPreset: 'cordis', workspaceId: 'workspace-1' })
+    expect(response.result).toEqual({ ok: true, value: {
+      agentPreset: 'cordis', complete: true, revision: 3, writable: true,
+      disabledNames: ['commit-helper'],
+      skills: [{ name: 'commit-helper', description: 'Git commits', source: 'runtime', enabled: false, modelInvocable: false, userInvocable: false }],
+    } })
   })
 
   it('round-trips skill.inspect metadata through the wire form', async () => {

@@ -99,13 +99,14 @@ export function apply(ctx: ClientContext): void {
       })
       return remoteValue(carried).item
     },
-    correctPersonalMemory: async (sessionId, item, content) => {
+    correctPersonalMemory: async (sessionId, item, content, core) => {
       const carried = await ctx.remote.memoryCandidateReview.correctPersonalMemory({
         sessionId,
         id: item.id,
         revision: item.revision,
         content,
         confirmed: true,
+        ...(core === undefined ? {} : { core }),
       })
       return remoteValue(carried).item
     },

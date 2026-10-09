@@ -1,14 +1,20 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore, type ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ComponentProps } from 'react'
 import type { ModelDirectoryState } from '../src/client/directory.ts'
-import { ModelSelect } from '../src/client/ModelSelect.tsx'
+import { ModelSelect as ModelSelectSeat } from '../src/client/ModelSelect.tsx'
 import { pt, zh } from '../src/client/locales.ts'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
+
+function ModelSelect(props: Omit<ComponentProps<typeof ModelSelectSeat>, 'selectTeam'> & {
+  selectTeam?: ComponentProps<typeof ModelSelectSeat>['selectTeam']
+}) {
+  return <ModelSelectSeat {...props} selectTeam={props.selectTeam ?? vi.fn().mockResolvedValue(true)} />
+}
 
 // The seat's key domain is model ∪ common; the stub mirrors the real lookup
 // chain: package dictionary, then common vocabulary, then the key.
@@ -48,6 +54,7 @@ function state(overrides: Partial<ModelDirectoryState> = {}): ModelDirectoryStat
     current: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
     routable: true,
     automatic: false,
+    selectionMode: overrides.automatic ? 'adaptive' : 'manual',
     automaticAvailable: false,
     externalFailoverAvailable: true,
     externalFailoverConsent: false,
@@ -81,8 +88,8 @@ describe('ModelSelect reasoning effort', () => {
     />)
     fireEvent.click(screen.getByRole('button', { name: /Selecionar modelo, atual/ }))
     expect(screen.getByText(/Descreva a tarefa ao Leon/)).toBeTruthy()
-    expect(screen.getByRole('menuitem', { name: /Modelo manual/ })).toBeTruthy()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Leon Automático' }))
+    expect(screen.getByRole('searchbox', { name: 'Buscar modelos' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Leon Adaptativo' }))
     expect(screen.getByRole('menuitemcheckbox').getAttribute('aria-checked')).toBe('false')
     expect(select).not.toHaveBeenCalled()
     expect(selectAutomatic).not.toHaveBeenCalled()
@@ -146,8 +153,7 @@ describe('ModelSelect reasoning effort', () => {
     />)
 
     fireEvent.click(screen.getByRole('button', { name: /选择模型，当前/ }))
-    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
-    fireEvent.click(screen.getByRole('menuitemradio', { name: /Leon 自动/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Leon 自适应/ }))
     expect(screen.getByRole('menuitemcheckbox', { name: /允许通过 API 使用外部备用模型/ })
       .getAttribute('aria-checked')).toBe('false')
     fireEvent.click(screen.getByRole('menuitem', { name: '启用 Leon 自动模式' }))
@@ -181,8 +187,7 @@ describe('ModelSelect reasoning effort', () => {
     />)
 
     fireEvent.click(screen.getByRole('button', { name: /Selecionar modelo, atual/ }))
-    fireEvent.click(screen.getByRole('menuitem', { name: /Modelo/ }))
-    fireEvent.click(screen.getByRole('menuitemradio', { name: /Leon Automático/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Leon Adaptativo/ }))
 
     const consent = screen.getByRole('menuitemcheckbox', { name: /Permitir fallback por API/ })
     expect(consent.getAttribute('aria-checked')).toBe('false')
@@ -214,8 +219,7 @@ describe('ModelSelect reasoning effort', () => {
     />)
 
     fireEvent.click(screen.getByRole('button', { name: /Selecionar modelo, atual/ }))
-    fireEvent.click(screen.getByRole('menuitem', { name: /Modelo/ }))
-    fireEvent.click(screen.getByRole('menuitemradio', { name: /Leon Automático/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Leon Adaptativo/ }))
     expect(screen.queryByRole('menuitemcheckbox', { name: /Permitir fallback por API/ })).toBeNull()
   })
 
@@ -237,8 +241,7 @@ describe('ModelSelect reasoning effort', () => {
     />)
 
     fireEvent.click(screen.getByRole('button', { name: /Leon Automático, usando agora/ }))
-    fireEvent.click(screen.getByRole('menuitem', { name: /Modelo/ }))
-    fireEvent.click(screen.getByRole('menuitemradio', { name: /Leon Automático/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Leon Adaptativo/ }))
     expect(screen.getByRole('menuitemcheckbox', { name: /Permitir fallback por API/ })
       .getAttribute('aria-checked')).toBe('true')
   })
@@ -265,7 +268,6 @@ describe('ModelSelect reasoning effort', () => {
     />)
 
     fireEvent.click(screen.getByRole('button', { name: /Leon Automático, usando agora/ }))
-    fireEvent.click(screen.getByRole('menuitem', { name: /Modelo/ }))
     fireEvent.click(screen.getByRole('menuitemradio', { name: 'DeepSeek-V4-Flash' }))
 
     await waitFor(() => {
@@ -368,7 +370,6 @@ describe('ModelSelect reasoning effort', () => {
     expect(trigger.textContent).toContain('选择模型')
     fireEvent.click(trigger)
     expect(screen.queryByRole('menuitem', { name: /推理等级/ })).toBeNull()
-    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
     expect(screen.queryByText('removed-model')).toBeNull()
     expect(screen.getByRole('menuitemradio', { name: 'DeepSeek-V4-Flash' })).toBeTruthy()
   })
@@ -399,7 +400,6 @@ describe('ModelSelect reasoning effort', () => {
     />)
 
     fireEvent.click(screen.getByRole('button', { name: /选择模型|当前/ }))
-    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
     fireEvent.click(screen.getByRole('menuitemradio', { name: /DeepSeek-V4-Pro/ }))
     const toast = await screen.findByRole('alert')
     expect(toast.textContent).toContain('模型操作失败：model-unavailable: session already contains images')
@@ -422,5 +422,119 @@ describe('ModelSelect reasoning effort', () => {
 
     expect(screen.queryByRole('button')).toBeNull()
     expect(load).not.toHaveBeenCalled()
+  })
+
+  it('filters across provider ids, model ids, names and descriptions without selecting a route', () => {
+    const directory = createSnapshotStore<ModelDirectoryState>(state({
+      groups: [
+        { id: 'deepseek-official', name: 'DeepSeek', models: [{ id: 'flash', name: 'Flash', description: 'Texto rápido' }] },
+        { id: 'google', name: 'Google', models: [{ id: 'gemini-vision', name: 'Gemini', description: 'Revisão visual' }] },
+      ],
+      current: { provider: 'deepseek-official', model: 'flash' },
+    }))
+    const select = vi.fn().mockResolvedValue(true)
+    render(<ModelSelect locked={false} available directory={directory} load={vi.fn()} select={select}
+      selectAutomatic={vi.fn().mockResolvedValue(true)} useSession={useSession} t={tPt} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Selecionar modelo, atual Flash' }))
+    const search = screen.getByRole('searchbox', { name: 'Buscar modelos' })
+    for (const query of ['GOOGLE', 'gemini-vision', 'Gemini', 'visual']) {
+      fireEvent.change(search, { target: { value: query } })
+      expect(screen.getAllByRole('menuitemradio').map(item => item.textContent)).toEqual(['GeminiRevisão visual'])
+    }
+    fireEvent.change(search, { target: { value: 'inexistente' } })
+    expect(screen.queryByRole('menuitemradio')).toBeNull()
+    expect(screen.getByText('Nenhum modelo corresponde à busca.')).toBeTruthy()
+    expect(select).not.toHaveBeenCalled()
+    fireEvent.keyDown(search, { key: 'Escape' })
+    expect(screen.getAllByRole('menuitemradio')).toHaveLength(2)
+    fireEvent.keyDown(search, { key: 'Escape' })
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  it('shows only advertised metadata, distinguishing unknown values from supported vision', () => {
+    const directory = createSnapshotStore<ModelDirectoryState>(state({
+      groups: [{ id: 'provider', name: 'Provider', models: [
+        { id: 'text', name: 'Text', inputModalities: ['text'], reasoning },
+        { id: 'vision', name: 'Vision', inputModalities: ['text', 'image'],
+          context: { contextWindow: 32768 }, defaultMaxTokens: 2048 },
+      ] }],
+      current: { provider: 'provider', model: 'text' },
+    }))
+    render(<ModelSelect locked={false} available directory={directory} load={vi.fn()}
+      select={vi.fn().mockResolvedValue(true)} selectAutomatic={vi.fn().mockResolvedValue(true)}
+      useSession={useSession} t={tPt} />)
+    fireEvent.click(screen.getByRole('button', { name: /Selecionar modelo, atual Text/ }))
+    const details = within(screen.getByRole('region', { name: 'Detalhes do modelo' }))
+    expect(details.getByText('Texto')).toBeTruthy()
+    expect(details.queryByText('Imagens')).toBeNull()
+    expect(details.getAllByText('Não informado')).toHaveLength(3)
+    fireEvent.mouseEnter(screen.getByRole('menuitemradio', { name: 'Vision' }))
+    expect(details.getByText('Texto · Imagens')).toBeTruthy()
+    expect(details.getByText('32768 tokens')).toBeTruthy()
+    expect(details.getByText('2048 tokens')).toBeTruthy()
+    expect(details.getAllByText('Não informado')).toHaveLength(2)
+    expect(details.getByText(/não comprova disponibilidade/)).toBeTruthy()
+    expect(details.getByText(/após reiniciar o Leon/)).toBeTruthy()
+  })
+
+  it('enters the filtered list from the search field and updates details through keyboard focus', () => {
+    const directory = createSnapshotStore<ModelDirectoryState>(state({
+      groups: [{ id: 'provider', name: 'Provider', models: [
+        { id: 'first', name: 'First', inputModalities: ['text'] },
+        { id: 'second', name: 'Second', inputModalities: ['text', 'image'] },
+      ] }],
+      current: { provider: 'provider', model: 'first' },
+    }))
+    render(<ModelSelect locked={false} available directory={directory} load={vi.fn()}
+      select={vi.fn().mockResolvedValue(true)} selectAutomatic={vi.fn().mockResolvedValue(true)}
+      useSession={useSession} t={tPt} />)
+    fireEvent.click(screen.getByRole('button', { name: /Selecionar modelo, atual First/ }))
+    const search = screen.getByRole('searchbox', { name: 'Buscar modelos' })
+    act(() => { search.focus() })
+    fireEvent.keyDown(search, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: 'First' }))
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: 'Second' }))
+    expect(within(screen.getByRole('region', { name: 'Detalhes do modelo' })).getByText('Texto · Imagens')).toBeTruthy()
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' })
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  it('shows configured team roles and applies team mode only after explicit selection', async () => {
+    const coordination = {
+      coordinator: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+      worker: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
+      review: { provider: 'google', model: 'gemini' },
+    }
+    const directory = createSnapshotStore<ModelDirectoryState>(state({ coordination }))
+    const selectTeam = vi.fn(async () => {
+      directory.set(state({ automatic: true, selectionMode: 'team', coordination }))
+      return true
+    })
+    const select = vi.fn().mockResolvedValue(true)
+    render(<ModelSelect locked={false} available directory={directory} load={vi.fn()} select={select}
+      selectAutomatic={vi.fn().mockResolvedValue(true)} selectTeam={selectTeam} useSession={useSession} t={tPt} />)
+    fireEvent.click(screen.getByRole('button', { name: /Selecionar modelo, atual/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Leon Equipe' }))
+    expect(screen.getByText('DeepSeek · DeepSeek-V4-Flash')).toBeTruthy()
+    expect(screen.getByText('deepseek-official · deepseek-v4-pro')).toBeTruthy()
+    expect(screen.getByText('google · gemini')).toBeTruthy()
+    expect(screen.getByText('Não configurado')).toBeTruthy()
+    expect(screen.getByText(/não garante revisão de toda resposta/)).toBeTruthy()
+    expect(selectTeam).not.toHaveBeenCalled()
+    expect(select).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Ativar modo Equipe' }))
+    await waitFor(() => { expect(selectTeam).toHaveBeenCalledOnce() })
+    expect(screen.getByRole('button', {
+      name: 'Leon Equipe, coordenador atual DeepSeek-V4-Flash',
+    })).toBeTruthy()
+  })
+
+  it('does not advertise team mode without Host role configuration', () => {
+    render(<ModelSelect locked={false} available directory={createSnapshotStore(state())} load={vi.fn()}
+      select={vi.fn().mockResolvedValue(true)} selectAutomatic={vi.fn().mockResolvedValue(true)}
+      useSession={useSession} t={tPt} />)
+    fireEvent.click(screen.getByRole('button', { name: /Selecionar modelo, atual/ }))
+    expect(screen.queryByRole('menuitem', { name: 'Leon Equipe' })).toBeNull()
   })
 })

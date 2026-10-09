@@ -190,6 +190,9 @@ export class FakeApiClient implements IApiClient {
   // wire shapes so cases can program catalogs and skill lists without casts.
   onSkillList: (payload: unknown) => Promise<RpcResponse<{ skills: SkillEntry[] }>>
     = () => Promise.resolve(ok({ skills: [] }))
+  onSkillCatalog: IApiClient['skills']['catalog'] = payload => Promise.resolve(ok({
+    agentPreset: payload.agentPreset, complete: true, skills: [], revision: 0, writable: true, disabledNames: [],
+  }))
 
 
   readonly agentPresets: IApiClient['agentPresets'] = {
@@ -209,6 +212,7 @@ export class FakeApiClient implements IApiClient {
   }
 
   readonly skills: IApiClient['skills'] = {
+    catalog: (payload, signal) => this.record('skill.catalog', payload, this.onSkillCatalog(payload, signal)),
     list: (payload: unknown) => this.record('skill.list', payload, this.onSkillList(payload)),
     inspect: (payload: unknown) => this.record('skill.inspect', payload, Promise.resolve(ok({
       agentPreset: null, complete: false, modelToolAvailable: false, authorization: 'not-evaluated', skills: [],

@@ -4,6 +4,9 @@
     - button "通用设置":
       - img
       - text: 通用设置
+    - button "个性化":
+      - img
+      - text: 个性化
     - button "模型":
       - img
       - text: 模型
@@ -13,6 +16,9 @@
     - button "Agent 预设":
       - img
       - text: Agent 预设
+    - button "Skills":
+      - img
+      - text: Skills
   - button "打开配置文件"
   - button "关闭":
     - img
@@ -42,4 +48,8 @@
   - text: 繁忙时 Enter 键行为 仅在智能体运行时生效；Cmd/Ctrl+Enter 使用另一行为
   - button "排队发送":
     - text: 排队发送
+    - img
+  - text: 聊天中的技术上下文 显示系统指令、技能和时间等提示词准备事件
+  - button "隐藏":
+    - text: 隐藏
     - img

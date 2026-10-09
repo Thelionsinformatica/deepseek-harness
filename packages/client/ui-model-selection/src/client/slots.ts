@@ -23,9 +23,14 @@ export interface ModelSelectInjected {
    */
   select: (selection: ModelSelection) => Promise<boolean>
   /**
-   * Re-enable Leon's configured local adaptive policy for this session.
+   * Re-enable Leon's configured adaptive policy for this session.
    * @param externalFailoverConsent - whether retries may send context to an external provider.
    * @returns whether the host accepted the selection and consent choice.
    */
   selectAutomatic: (externalFailoverConsent: boolean) => Promise<boolean>
+  /**
+   * Use the configured coordinator and delegated role routes without creating a mission.
+   * @returns whether the Host accepted team routing for this session.
+   */
+  selectTeam: () => Promise<boolean>
 }

@@ -23,9 +23,13 @@ export interface ModelDirectoryState {
    * from the groups yet perfectly usable.
    */
   routable: boolean | null
-  /** Whether Leon chooses the local tier for the next prompt. */
+  /** Whether the Host routes the next prompt automatically. */
   automatic: boolean
-  /** Whether this Host exposes automatic local routing. */
+  /** Host-confirmed routing mode; legacy automatic state maps to adaptive/manual. */
+  selectionMode: 'manual' | 'adaptive' | 'team'
+  /** Configured coordination roles; registration is not evidence of execution. */
+  coordination?: SessionModels['coordination']
+  /** Whether this Host exposes adaptive routing. */
   automaticAvailable: boolean
   /** Whether the automatic policy declares an external fallback route. */
   externalFailoverAvailable: boolean
@@ -48,6 +52,7 @@ export class ModelDirectory {
     current: null,
     routable: null,
     automatic: false,
+    selectionMode: 'manual',
     automaticAvailable: false,
     externalFailoverAvailable: false,
     externalFailoverConsent: false,
@@ -92,12 +97,14 @@ export class ModelDirectory {
     }
     const {
       current, routable, automatic, automaticAvailable, externalFailoverAvailable,
-      externalFailoverConsent, groups, failures,
+      externalFailoverConsent, groups, failures, selectionMode, coordination,
     } = result.value
     this.store.update((s) => {
       s.current = current
       s.routable = routable
       s.automatic = automatic
+      s.selectionMode = selectionMode ?? (automatic ? 'adaptive' : 'manual')
+      s.coordination = coordination
       s.automaticAvailable = automaticAvailable
       s.externalFailoverAvailable = externalFailoverAvailable ?? false
       s.externalFailoverConsent = externalFailoverConsent ?? false
@@ -114,13 +121,15 @@ export class ModelDirectory {
    * updates the shared current; failure surfaces on the store and throws so
    * each entry's own retry surface engages.
    * @param selection - provider, provider-owned model id, and optional adapter-owned effort.
-   * @param automatic - whether the Host should adapt future prompts between local tiers.
+   * @param automatic - legacy flag for Host-managed prompt routing.
    * @param externalFailoverConsent - whether automatic retries may use an external provider.
+   * @param selectionMode - explicit Host routing mode; omission follows the automatic flag.
    */
   async select(
     selection: ModelSelection,
     automatic: boolean = false,
     externalFailoverConsent: boolean = false,
+    selectionMode: 'manual' | 'adaptive' | 'team' = automatic ? 'adaptive' : 'manual',
   ): Promise<void> {
     this.assertAvailable()
     const generation = ++this.generation
@@ -129,6 +138,7 @@ export class ModelDirectory {
       sessionId: this.sessionId,
       provider: selection.provider,
       model: selection.model,
+      selectionMode,
       ...selection.reasoningEffort === undefined
         ? {}
         : { reasoningEffort: selection.reasoningEffort },
@@ -148,6 +158,7 @@ export class ModelDirectory {
       s.current = result.value.selected
       s.routable = true
       s.automatic = result.value.automatic
+      s.selectionMode = result.value.selectionMode ?? (result.value.automatic ? 'adaptive' : 'manual')
       s.externalFailoverConsent = result.value.externalFailoverConsent ?? false
       s.status = 'ready'
       s.error = null
@@ -166,6 +177,8 @@ export class ModelDirectory {
       s.current = null
       s.routable = null
       s.automatic = false
+      s.selectionMode = 'manual'
+      s.coordination = undefined
       s.automaticAvailable = false
       s.externalFailoverConsent = false
       s.groups = []

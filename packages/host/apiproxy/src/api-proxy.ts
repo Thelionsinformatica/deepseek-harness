@@ -38,12 +38,12 @@ import {
   InvalidPresetIdError, PresetExistsError, PresetMountError,
   PresetNotWritableError, resolveSessionPreset, UnknownPresetError,
 } from '@deepseek-ai/dsh-agent-presets'
-import type { PresetBearingSession } from '@deepseek-ai/dsh-agent-presets'
+import type { AgentPresetSettings, PresetBearingSession } from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-completion-claim-policy'
 import type {
   ApiProxy, ConfigurableProviderView, CredentialView, GoalRef, HistoryEntry, HostFrame,
-  ModelCatalogFailure, ModelProviderGroup,
+  ModelCatalogFailure, ModelProviderGroup, ModelSelectionMode, ModelCoordination,
   ModelReasoning, MuxFrame, PromptContentPart, QuestionResponsePayload, SessionListMetadata, SessionProjectionsBlock, SessionSearchItem,
   QueuedInboxItem, SessionSummary, SettingsNamespaceView, SubagentAddress, JobView, ToolEventView,
   WorkspaceId, WorkspaceView,
@@ -382,6 +382,9 @@ async function buildModelCatalog(ctx: Context): Promise<{
           name: model.name,
           ...model.description === undefined ? {} : { description: model.description },
           ...reasoning === undefined ? {} : { reasoning },
+          ...resolved.inputModalities === undefined ? {} : { inputModalities: [...resolved.inputModalities] },
+          ...resolved.context === undefined ? {} : { context: { ...resolved.context } },
+          ...resolved.defaultMaxTokens === undefined ? {} : { defaultMaxTokens: resolved.defaultMaxTokens },
         }
       }))
       const group: ModelProviderGroup = {
@@ -1372,8 +1375,8 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   }
   type WebModelSelectionRef = ModelSelectionRef & { current: ModelSelection }
   const selections = new WeakMap<Agent, WebModelSelectionRef>()
-  /** Process-local mode choice; automatic is the configured default. */
-  const automaticSelections = new WeakMap<Agent, boolean>()
+  /** Process-local mode choice; a Host restart restores the deployment default. */
+  const modelSelectionModes = new WeakMap<Agent, ModelSelectionMode>()
   /** Automatic external route plus the last local route safe to resume when consent becomes stale. */
   const activeExternalFailovers = new WeakMap<Agent, {
     external: ModelSelection
@@ -1434,7 +1437,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     if (resolved === undefined) return
     pending?.delete(message.id)
     if (pending?.size === 0) pendingAdaptiveSelections.delete(agent)
-    // A manual selection made after this message was queued wins.
+    // An explicit selection made after admission must not be overwritten by a queued decision.
     if (!automaticFor(agent)) return
     selectionFor(agent).current = resolved
   })
@@ -1514,7 +1517,33 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
   /** Whether Leon may choose between the configured tiers for this session. */
   function automaticFor(agent: Agent): boolean {
-    return automaticSelections.get(agent) ?? defaults.adaptiveModelSelection !== undefined
+    return selectionModeFor(agent) !== 'manual'
+  }
+
+  /** Resolve the current process-local policy, preserving the legacy deployment default. */
+  function selectionModeFor(agent: Agent): ModelSelectionMode {
+    return modelSelectionModes.get(agent) ?? defaultAutomaticMode()
+  }
+
+  /** Policy used by legacy automatic requests and by a fresh Host. */
+  function defaultAutomaticMode(): ModelSelectionMode {
+    if (defaults.adaptiveModelSelection === undefined) return 'manual'
+    return defaults.automaticCoordinator === true ? 'team' : 'adaptive'
+  }
+
+  /** Read live role assignments without resolving models or entering provider inference. */
+  function coordinationFor(): ModelCoordination | undefined {
+    const roles = ctx.get('agentDefaultModel')
+    if (roles === undefined) return undefined
+    const worker = roles.auxiliarySelection('worker')
+    const review = roles.auxiliarySelection('review')
+    const vision = roles.auxiliarySelection('vision')
+    return {
+      coordinator: roles.currentSelection(),
+      ...worker === undefined ? {} : { worker },
+      ...review === undefined ? {} : { review },
+      ...vision === undefined ? {} : { vision },
+    }
   }
 
   /**
@@ -1577,7 +1606,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         : event.type === 'tool/result' && contentHasImage(event.data.message.content),
     )
     const hasImage = hasImageHistory || input.content.some(part => part.type === 'image')
-    if (defaults.automaticCoordinator === true && !hasImage) {
+    if (selectionModeFor(agent) === 'team' && !hasImage) {
       const resolved = await ctx.llm.resolveCallConfig(defaults.defaultModelSelection())
       return {
         provider: resolved.provider,
@@ -3031,21 +3060,24 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const { sessionId } = request.payload
         const found = await agentFor(sessionId)
         if ('error' in found) return err(request, found.error)
-        // A blank automatic session advertises the same cheap local baseline
-        // its first simple prompt will use. This prevents a new chat from
-        // visually inheriting a stronger manual/default effort from another
-        // session before the first adaptive admission occurs.
-        if (!found.agent.session.events.some(event => event.type === 'turn/start')) {
-          await applyAdaptiveSelection(found.agent, [])
+        // Idle team sessions report the configured principal rather than an
+        // inherited request header. Route projection shares admission's lock
+        // so a pending metadata lookup cannot overwrite an explicit switch.
+        if (selectionModeFor(found.agent) === 'team'
+          || !found.agent.session.events.some(event => event.type === 'turn/start')) {
+          await serializeImageAdmission(found.agent, () => applyAdaptiveSelection(found.agent, []))
         }
         const current = selectionFor(found.agent).current
         const { groups, failures } = await buildModelCatalog(ctx)
         const routable = routeServed(current.provider)
+        const coordination = coordinationFor()
         return ok(request, {
           current: { ...current },
           routable,
           automatic: automaticFor(found.agent),
           automaticAvailable: defaults.adaptiveModelSelection !== undefined,
+          selectionMode: selectionModeFor(found.agent),
+          ...coordination === undefined ? {} : { coordination },
           externalFailoverAvailable: defaults.externalFailoverAvailable
             ?? defaults.adaptiveModelFailover !== undefined,
           externalFailoverConsent: externalFailoverConsented(found.agent),
@@ -3056,22 +3088,27 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       async selectModel(request) {
         const {
-          sessionId, provider, model, reasoningEffort, automatic = false, externalFailoverConsent = false,
+          sessionId, provider, model, reasoningEffort, automatic = false, selectionMode, externalFailoverConsent = false,
         } = request.payload
         const found = await agentFor(sessionId)
         if ('error' in found) return err(request, found.error)
         return serializeImageAdmission(found.agent, async () => {
           try {
-            if (automatic && defaults.adaptiveModelSelection === undefined) {
+            const effectiveMode = selectionMode ?? (automatic
+              ? defaults.automaticCoordinator === true ? 'team' : 'adaptive'
+              : 'manual')
+            const effectiveAutomatic = effectiveMode !== 'manual'
+            if (effectiveAutomatic && defaults.adaptiveModelSelection === undefined) {
               throw new Error('automatic model routing is unavailable in this deployment')
             }
-            const resolved = await ctx.llm.resolveCallConfig({
+            const requested = effectiveMode === 'team' ? defaults.defaultModelSelection() : {
               provider,
               model,
               ...reasoningEffort === undefined
                 ? {}
                 : { reasoningEffort: ReasoningEffortId(reasoningEffort) },
-            })
+            }
+            const resolved = await ctx.llm.resolveCallConfig(requested)
             const selected: ModelSelection = {
               provider: resolved.provider,
               model: resolved.model,
@@ -3080,12 +3117,13 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
                 : { reasoningEffort: resolved.reasoningEffort },
             }
             selectionFor(found.agent).current = selected
-            automaticSelections.set(found.agent, automatic)
+            modelSelectionModes.set(found.agent, effectiveMode)
+            pendingAdaptiveSelections.delete(found.agent)
             const activeExternal = activeExternalFailovers.get(found.agent)
-            if (!automatic || activeExternal === undefined || !sameRoute(selected, activeExternal.external)) {
+            if (!effectiveAutomatic || activeExternal === undefined || !sameRoute(selected, activeExternal.external)) {
               activeExternalFailovers.delete(found.agent)
             }
-            const effectiveExternalFailoverConsent = automatic && externalFailoverConsent
+            const effectiveExternalFailoverConsent = effectiveAutomatic && externalFailoverConsent
             if (effectiveExternalFailoverConsent) {
               externalFailoverConsents.set(found.agent, {
                 throughSeq: found.agent.session.events.at(-1)?.seq ?? -1,
@@ -3093,7 +3131,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             } else {
               externalFailoverConsents.delete(found.agent)
             }
-            if (!automatic) {
+            if (!effectiveAutomatic && selectionMode === undefined) {
               try {
                 await defaults.saveDefaultModelSelection?.(selected)
               } catch (error: unknown) {
@@ -3104,7 +3142,8 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             }
             return ok(request, {
               selected: { ...selected },
-              automatic,
+              automatic: effectiveAutomatic,
+              selectionMode: effectiveMode,
               externalFailoverConsent: effectiveExternalFailoverConsent,
             })
           } catch (error: unknown) {
@@ -4125,6 +4164,65 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     },
 
     skills: {
+      async catalog(request) {
+        const { agentPreset, workspaceId } = request.payload
+        const presets = ctx.get('agentPresets')
+        if (presets === undefined) return err(request, noRoster(agentPreset))
+        let cwd: string | undefined
+        if (workspaceId !== undefined) {
+          const workspace = ctx.get('workspaceRegistry')?.get(brandWorkspaceId(workspaceId))
+          if (workspace === undefined) return workspaceNotFound(request, workspaceId)
+          cwd = workspace.path
+        }
+        let scope: ScopeKey
+        try {
+          scope = await presets.standingKeyFor(agentPreset)
+        } catch (error: unknown) {
+          if (error instanceof UnknownPresetError) return err(request, presetError(agentPreset, error))
+          return err(request, { code: 'internal', message: 'skill catalog cannot resolve the requested agent preset', details: {} })
+        }
+        try {
+          const registry = await presets.serviceForPreset(agentPreset, 'skills')
+          if (registry === undefined) {
+            return err(request, { code: 'internal', message: 'skill registry is absent from the requested preset composition', details: {} })
+          }
+          const settings = ctx.get('settings')
+          const describe = () => ctx.get('settings')?.describe({ redactSecrets: true }).find(entry => entry.ns === 'agent-presets')
+          const descriptor = describe()
+          const snapshot = await registry.inventory({ cwd, scope })
+          if (await presets.standingKeyFor(agentPreset) !== scope) {
+            return err(request, { code: 'internal', message: 'agent preset changed during skill discovery; retry the catalog', details: {} })
+          }
+          // Do not attach a fresh CAS revision to an older catalog observation.
+          if (describe()?.revision !== descriptor?.revision) {
+            return err(request, { code: 'internal', message: 'skill settings changed during catalog discovery; retry the catalog', details: {} })
+          }
+          const value = descriptor?.value as AgentPresetSettings | undefined
+          const disabled = value?.disabledSkills
+          return ok(request, {
+            agentPreset,
+            complete: snapshot.complete,
+            revision: descriptor?.revision ?? 0,
+            writable: descriptor !== undefined && settings?.writable === true,
+            disabledNames: disabled !== undefined && Object.hasOwn(disabled, agentPreset) ? [...disabled[agentPreset] ?? []] : [],
+            skills: snapshot.skills.map((skill) => {
+              const enabled = registry.isEnabled(skill.name, { scope })
+              return {
+                name: skill.name,
+                description: skill.description,
+                source: SKILL_INSPECTION_SOURCES.has(skill.source) ? skill.source : 'custom',
+                enabled,
+                modelInvocable: enabled && skill.invocation.modelInvocable,
+                userInvocable: enabled && skill.invocation.userInvocable,
+              }
+            }),
+          })
+        } catch {
+          // Provider and mount diagnostics can contain private filesystem paths.
+          return err(request, { code: 'internal', message: 'skill catalog failed while reading the preset inventory', details: {} })
+        }
+      },
+
       async inspect(request) {
         const { sessionId } = request.payload
         const session = ctx.sessions.get(sessionId)

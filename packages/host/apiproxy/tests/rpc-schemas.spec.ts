@@ -31,7 +31,7 @@ import {
   workspaceUnarchiveSessionRequestSchema, workspaceUnarchiveSessionValueSchema,
 } from '../src/api/workspace.schema.ts'
 import {
-  skillEntrySchema, skillInspectRequestSchema, skillInspectValueSchema,
+  skillCatalogRequestSchema, skillCatalogValueSchema, skillEntrySchema, skillInspectRequestSchema, skillInspectValueSchema,
   skillListRequestSchema, skillListValueSchema,
 } from '../src/api/skills.schema.ts'
 import {
@@ -247,6 +247,23 @@ describe('sessions domain schemas', () => {
       automatic: false,
       externalFailoverConsent: false,
     }).selected.reasoningEffort).toBe('max')
+    for (const selectionMode of ['manual', 'adaptive', 'team']) {
+      expect(sessionSelectModelRequestSchema.parse({
+        sessionId: 's1', provider: 'deepseek-official', model: 'deepseek-v4-flash', selectionMode,
+      }).selectionMode).toBe(selectionMode)
+    }
+    expect(() => sessionSelectModelRequestSchema.parse({
+      sessionId: 's1', provider: 'deepseek-official', model: 'm', selectionMode: 'fusion',
+    })).toThrow()
+    expect(sessionModelsValueSchema.parse({
+      current: { provider: 'p', model: 'm' }, routable: true, automatic: true,
+      automaticAvailable: true, selectionMode: 'team',
+      coordination: { coordinator: { provider: 'p', model: 'm' }, review: { provider: 'r', model: 'audit' } },
+      groups: [{ id: 'p', name: 'P', models: [{
+        id: 'm', name: 'M', inputModalities: ['text', 'image'],
+        context: { contextWindow: 128000 }, defaultMaxTokens: 4096,
+      }] }], failures: [],
+    }).coordination?.review).toEqual({ provider: 'r', model: 'audit' })
     expect(() => sessionSelectModelRequestSchema.parse({
       sessionId: 's1',
       provider: '',
@@ -440,6 +457,21 @@ describe('workspace domain schemas', () => {
 })
 
 describe('skills domain schemas', () => {
+  it('requires a preset address and strips paths and bodies from administrative catalog payloads', () => {
+    expect(skillCatalogRequestSchema.parse({ agentPreset: 'leon', cwd: '/private' })).toEqual({ agentPreset: 'leon' })
+    expect(skillCatalogRequestSchema.parse({ agentPreset: 'leon', workspaceId: 'w1' })).toEqual({ agentPreset: 'leon', workspaceId: 'w1' })
+    expect(() => skillCatalogRequestSchema.parse({ workspaceId: 'w1' })).toThrow()
+    expect(() => skillCatalogRequestSchema.parse({ agentPreset: '', workspaceId: '' })).toThrow()
+    const value = {
+      agentPreset: 'leon', complete: true, revision: 1, writable: true, disabledNames: ['a'],
+      skills: [{ name: 'a', description: 'A', source: 'bundled', enabled: false, modelInvocable: false, userInvocable: false, content: 'PRIVATE', path: '/private' }],
+    }
+    expect(JSON.stringify(skillCatalogValueSchema.parse(value))).not.toMatch(/PRIVATE|\/private/)
+    expect(() => skillCatalogValueSchema.parse({ ...value, revision: -1 })).toThrow()
+    expect(() => skillCatalogValueSchema.parse({ ...value, revision: 0.5 })).toThrow()
+    expect(() => skillCatalogValueSchema.parse({ ...value, disabledNames: undefined })).toThrow()
+  })
+
   it('requires a session address and complete inspection metadata while omitting private provider fields', () => {
     expect(skillInspectRequestSchema.parse({ sessionId: 's1', path: '/private' })).toEqual({ sessionId: 's1' })
     expect(() => skillInspectRequestSchema.parse({ path: '/private' })).toThrow()

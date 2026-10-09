@@ -1,0 +1,34 @@
+- id: storage
+  name: '@deepseek-ai/dsh-storage'
+- id: storage-json
+  name: '@deepseek-ai/dsh-storage-json'
+  config:
+    root: !!js process.cwd() + '/store'
+- id: storage-domain
+  name: '@deepseek-ai/dsh-storage-domain'
+  config:
+    backend: json
+- id: memory
+  name: '@deepseek-ai/dsh-memory'
+  config:
+    provider: local
+- id: memory-local
+  # This lib-only smoke loads the built provider without requiring a new workspace install.
+  name: '../../packages/memory/memory-local/lib/index.js'
+  config:
+    semanticSearch:
+      enabled: true
+      baseUrl: !!js process.env.LEON_GRAPH_TEST_ENDPOINT
+      api: openai-compatible
+      model: synthetic-graph-test
+      dimensions: 64
+      graphInputCharacters: 256
+      graphBatchInputs: 4
+      graphInputSplitDepth: 8
+      graphTimeoutMs: 10000
+    linking:
+      enabled: true
+      debounceMs: 20
+      retryAttempts: 2
+      retryDelayMs: 10
+      retryMaxDelayMs: 20

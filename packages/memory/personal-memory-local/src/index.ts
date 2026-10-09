@@ -73,6 +73,14 @@ export interface PersonalEmbeddingsConfig {
   readonly maxResponseBytes?: number
   /** Wire dialect: Ollama `/api/embed` or OpenAI-compatible `/v1/embeddings`. */
   readonly api?: SemanticEmbeddingApi
+  /** Maximum graph input characters per chunk; source facts remain complete. */
+  readonly graphInputCharacters?: number
+  /** Maximum graph input chunks in one embedding request. */
+  readonly graphBatchInputs?: number
+  /** Maximum subdivisions of an oversized singleton graph chunk. */
+  readonly graphInputSplitDepth?: number
+  /** Total deadline in milliseconds for one complete graph embedding pass. */
+  readonly graphTimeoutMs?: number
 }
 
 /** Bounded edge-derivation policy; owner partitions are computed independently. */
@@ -89,6 +97,12 @@ export interface PersonalLinkingConfig {
   readonly maxExpandedHits?: number
   /** Quiet period after a committed mutation before a rebuild starts. */
   readonly debounceMs?: number
+  /** Additional attempts for transient failures in one graph generation. */
+  readonly retryAttempts?: number
+  /** Initial exponential retry delay in milliseconds. */
+  readonly retryDelayMs?: number
+  /** Maximum retry delay in milliseconds. */
+  readonly retryMaxDelayMs?: number
 }
 
 export const Config: z<Config> = z.object({
@@ -101,6 +115,10 @@ export const Config: z<Config> = z.object({
     maxCacheEntries: z.number().default(2_000),
     maxResponseBytes: z.number().default(8_000_000),
     api: z.union(['ollama', 'openai-compatible'] as const).default('ollama'),
+    graphInputCharacters: z.number().default(1024),
+    graphBatchInputs: z.number().default(8),
+    graphInputSplitDepth: z.number().default(8),
+    graphTimeoutMs: z.number().default(60_000),
   }),
   linking: z.object({
     enabled: z.boolean().default(false),
@@ -109,6 +127,9 @@ export const Config: z<Config> = z.object({
     maxGraphNodes: z.number().default(200),
     maxExpandedHits: z.number().default(4),
     debounceMs: z.number().default(2_000),
+    retryAttempts: z.number().default(3),
+    retryDelayMs: z.number().default(1_000),
+    retryMaxDelayMs: z.number().default(30_000),
   }),
 })
 
@@ -242,6 +263,9 @@ function resolveGraph(
     model: resolved.model,
     api: resolved.api ?? 'ollama',
     historyMode: config.historyMode ?? 'temporal-v2',
+    retryAttempts: config.linking.retryAttempts ?? 3,
+    retryDelayMs: config.linking.retryDelayMs ?? 1_000,
+    retryMaxDelayMs: config.linking.retryMaxDelayMs ?? 30_000,
   }
   const scheduler = new MemoryGraphScheduler(
     graphTable,

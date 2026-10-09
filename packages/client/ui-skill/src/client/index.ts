@@ -19,7 +19,7 @@
  * snapshot locally, so one session costs one RPC. The scope-birth warm hook
  * prewarms the session's key; a preset switch drops that one key (the
  * catalog is the preset's, and a blank session may switch after the warm);
- * connection/reset clears everything — the host
+ * profile Settings changes and connection/reset clear everything — the host
  * catalog may differ across generations. A shared in-flight fetch
  * deliberately outlives any single menu interaction: closing the menu must
  * not kill the prewarm other consumers will hit, so it carries its own
@@ -28,6 +28,8 @@
  *
  * This browser half also owns the `skill` keyed toolview: a replay-stable
  * accent row derived only from each logged call/result slice.
+ * The Settings section projects the Host's installed catalog and commits
+ * profile-wide availability preferences through revision-fenced Settings.
  */
 // Type-only: the carrier types, the forwarded Host-event face and the ctx.remote merge.
 import type { ConnectionHandle, SessionId, SkillEntry } from '@deepseek-ai/dsh-api-remotes/client'
@@ -35,12 +37,15 @@ import type { ClientContext, ISessions } from '@deepseek-ai/dsh-client-runtime/c
 import type { InputTriggerServiceContract, InputTriggerSource } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { SkillRow } from './SkillRow.tsx'
-import { en, NS, zh, type SkillKey } from './locales.ts'
+import { SkillSettingsSection, type SkillSettingsInjected } from './SkillSettingsSection.tsx'
+import { SkillSettingsController } from './settings-controller.ts'
+import { en, NS, pt, zh, type SkillKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** The dedicated skill tool row's copy. */
+    /** Skill references, tool row, and profile settings copy. */
     skill: SkillKey
   }
 }
@@ -57,17 +62,32 @@ interface CatalogFetch {
 export const inject = ['inputTriggers', 'connection', 'sessions', 'slots', 'locale', 'remote']
 
 /**
- * Client plugin body: register the '/' source, dictionaries, and keyed tool row.
+ * Client plugin body: register the '/' source, dictionaries, tool row, and Settings section.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-skill: dictionaries')
+  ctx.effect(() => ctx.locale.register(NS, { zh, en, pt }), 'ui-skill: dictionaries')
   ctx.slots.inject('tool.call.toolview', () => ctx.slots.register(
     { name: 'tool.call.toolview', key: 'skill', locale: NS },
     SkillRow,
   ))
 
-  const skills = (ctx.get('connection') as ConnectionHandle).api.skills
+  const { api } = ctx.get('connection') as ConnectionHandle
+  const skills = api.skills
+  const settings = new SkillSettingsController(api)
+  const settingsFace: SkillSettingsInjected = {
+    hooks: { skillSettings: settings.store },
+    load: () => settings.load(),
+    selectPreset: id => settings.selectPreset(id),
+    selectWorkspace: id => settings.selectWorkspace(id),
+    setEnabled: (name, enabled) => settings.setEnabled(name, enabled),
+  }
+  ctx.effect(() => () => settings.dispose(), 'ui-skill: settings operations')
+  ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section', id: 'skills', order: 25, locale: NS,
+    label: () => ctx.locale.bind(NS)('settings.title'),
+    inject: () => settingsFace,
+  }, SkillSettingsSection))
   const sessions = ctx.get('sessions') as ISessions
   // Session-keyed catalog cache; single-flight per key. Plugin-closure state:
   // the fiber effect below is its teardown boundary.
@@ -95,6 +115,7 @@ export function apply(ctx: ClientContext): void {
     const abort = new AbortController()
     const promise = (async () => {
       const { result } = await skills.list({ sessionId }, abort.signal)
+      abort.signal.throwIfAborted()
       if (!result.ok) throw new Error(`skill.list failed: ${result.error.code}: ${result.error.message}`)
       return result.value.skills
     })()
@@ -180,7 +201,11 @@ export function apply(ctx: ClientContext): void {
   // A preset decides which skill providers an agent reads, so a switched
   // session's cached catalog belongs to the composition it no longer runs.
   ctx.remote.$on('agent-preset/selected', invalidate)
-  ctx.on('connection/reset', clearAll)
+  const refresh = (): void => { clearAll(); settings.refresh() }
+  ctx.remote.$on('settings/document-updated', (namespace) => {
+    if (namespace === 'agent-presets') refresh()
+  })
+  ctx.on('connection/reset', refresh)
   ctx.effect(() => {
     const unregister = inputTriggers.registerSource(source)
     return () => {

@@ -1434,7 +1434,7 @@ Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-mem
 
 ### `personal_memory_remember`
 
-Remember one stable, non-sensitive personal fact across project workspaces. Use only after explicit remember intent or clear user confirmation. Never store credentials.
+Propose one stable, non-sensitive personal fact across project workspaces after explicit remember intent. The user must confirm it in the personal-memory panel before automatic recall. Never store credentials.
 
 ```json
 {
@@ -1443,10 +1443,6 @@ Remember one stable, non-sensitive personal fact across project workspaces. Use 
     "content": {
       "type": "string",
       "description": "Self-contained personal fact to remember."
-    },
-    "core": {
-      "type": "boolean",
-      "description": "Mark as part of the always-present core profile (identity and stable preferences)."
     }
   },
   "required": [
@@ -1505,10 +1501,6 @@ Correct one personal memory using the exact id and revision returned by search.
     "content": {
       "type": "string",
       "description": "Complete corrected personal fact."
-    },
-    "core": {
-      "type": "boolean",
-      "description": "Optional marker to set or unset core-profile membership for this fact."
     }
   },
   "required": [

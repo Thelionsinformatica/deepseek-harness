@@ -59,6 +59,11 @@ describe('dsh-leon bundle', () => {
     expect(host.inserted.find(row => row.id === 'memory-candidate-review')?.config).toMatchObject({ automaticWrite: false })
   })
 
+  it('ships local semantic memory retrieval as an explicit opt-in', () => {
+    const memoryLocal = patchRows('cordis.patch.yml').inserted.find(row => row.id === 'memory-local')
+    expect(memoryLocal?.config).toMatchObject({ semanticSearch: { enabled: false } })
+  })
+
   it('declares every plugin package its patches mount', () => {
     const rows = [...patchRows('cordis.patch.yml').inserted, ...flatPlugins]
     for (const row of rows) {

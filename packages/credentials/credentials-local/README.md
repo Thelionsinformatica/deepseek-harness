@@ -112,7 +112,7 @@ A key's value can be any text, multi-line values included — no quoting tricks 
 
 ### Who can read the file
 
-Only your OS user can read the file: the product creates it with owner-only permissions, and on POSIX it refuses to load a file that any other user can read — the error tells you to run `chmod 600`. Windows has no mode to inspect, so the check is skipped there rather than faked. The agent is not another user: its tool processes run as you, so they can read the file like any other file you own. The product never hands the agent the file's path and never loads the file into the environment, so reaching a value takes a deliberate read of a path the agent was not given. That is discretion, not a boundary: a deployment that must keep provider keys away from its own agent cannot get there with file permissions.
+Only your OS user can read the file: the product creates it with owner-only permissions, and on POSIX it refuses to load a file that any other user can read — the error tells you to run `chmod 600`. Windows has no mode to inspect, so the check is skipped there rather than faked; instead the document is stored encrypted with DPAPI for the current Windows user, so a copy of the file is unreadable under another account or on another machine. The agent is not another user: its tool processes run as you, so they can read the file like any other file you own. The product never hands the agent the file's path and never loads the file into the environment, so reaching a value takes a deliberate read of a path the agent was not given. That is discretion, not a boundary: a deployment that must keep provider keys away from its own agent cannot get there with file permissions.
 
 ### What can go wrong
 
@@ -143,6 +143,7 @@ This section explains the design decisions behind the provider and points at the
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Provider: layer resolution, strict document parse, reference and record write paths under the writer lock, watcher lifecycle, permissions check |
+| [`src/windows-protection.ts`](src/windows-protection.ts) | Current-user DPAPI protector run through the inbox Windows PowerShell over standard input and output |
 
 ### Resolution and write paths
 
@@ -157,6 +158,8 @@ A watcher event or the ready-time reconciliation queues a refresh behind the sam
 ### Document versioning
 
 The document carries `version: 1`, stamped on every write. A boot that recognizes the pre-release flat layout — a bare mapping of reference names with no `version` — upgrades the document in place under the writer lock, nesting the original lines under `refs:` so values, comments, and spellings survive byte for byte; any other unversioned shape is refused by name rather than read as an empty store. A live reload never migrates: a flat document restored mid-run keeps the last good snapshot until the next boot.
+
+On Windows the file holds a `version: 2` envelope instead: `protection: windows-dpapi-current-user` and a base64 `payload` that decrypts to the `version: 1` document. Every write protects the new text, decrypts it again to verify, and only then replaces the file. A plaintext document that holds values migrates to the envelope at boot under the writer lock; a plaintext document appearing during a live reload is refused rather than read, so the provider never silently resumes plaintext storage. Credential bytes reach the PowerShell helper only through standard input, never through arguments, environment, or diagnostics.
 
 ### Diagnostics never quote a value
 

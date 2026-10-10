@@ -76,6 +76,11 @@
         maxEquivalentFailures: 2
         maxNoFinalResponseRecoveries: 1
 
+    # Brazilian Portuguese interface; a Portuguese browser selects it
+    # automatically and the Language row offers it explicitly.
+    - id: language-pt-br
+      name: '@deepseek-ai/dsh-client-language-pt-br'
+
     # Every web_search and web_fetch call asks the user once, showing the
     # complete queries or URL, before anything leaves the machine.
     - id: web-egress-approval

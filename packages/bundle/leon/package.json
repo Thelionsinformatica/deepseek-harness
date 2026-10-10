@@ -54,6 +54,8 @@
     "@deepseek-ai/dsh-completion-claim-policy": "workspace:*",
     "@deepseek-ai/dsh-explicit-target-policy": "workspace:*",
     "@deepseek-ai/dsh-failure-recovery-policy": "workspace:*",
+    "@deepseek-ai/dsh-lsp": "workspace:*",
+    "@deepseek-ai/dsh-lsp-stdio": "workspace:*",
     "@deepseek-ai/dsh-memory": "workspace:*",
     "@deepseek-ai/dsh-memory-local": "workspace:*",
     "@deepseek-ai/dsh-persona": "workspace:*",
@@ -69,6 +71,7 @@
     "@deepseek-ai/dsh-tool-goal": "workspace:*",
     "@deepseek-ai/dsh-tool-jobs": "workspace:*",
     "@deepseek-ai/dsh-tool-knowledge-base": "workspace:*",
+    "@deepseek-ai/dsh-tool-lsp": "workspace:*",
     "@deepseek-ai/dsh-tool-memory": "workspace:*",
     "@deepseek-ai/dsh-tool-present": "workspace:*",
     "@deepseek-ai/dsh-tool-pwsh": "workspace:*",
@@ -79,7 +82,8 @@
     "@deepseek-ai/dsh-tool-web": "workspace:*",
     "@deepseek-ai/dsh-tool-workflow": "workspace:*",
     "@deepseek-ai/dsh-web-egress-approval": "workspace:*",
-    "@deepseek-ai/dsh-workflow-ptc": "workspace:*"
+    "@deepseek-ai/dsh-workflow-ptc": "workspace:*",
+    "typescript-language-server": "^5.0.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~"

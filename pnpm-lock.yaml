@@ -2409,6 +2409,12 @@ importers:
       '@deepseek-ai/dsh-failure-recovery-policy':
         specifier: workspace:*
         version: link:../../guard/failure-recovery-policy
+      '@deepseek-ai/dsh-lsp':
+        specifier: workspace:*
+        version: link:../../lsp/lsp
+      '@deepseek-ai/dsh-lsp-stdio':
+        specifier: workspace:*
+        version: link:../../lsp/lsp-stdio
       '@deepseek-ai/dsh-memory':
         specifier: workspace:*
         version: link:../../memory/memory
@@ -2454,6 +2460,9 @@ importers:
       '@deepseek-ai/dsh-tool-knowledge-base':
         specifier: workspace:*
         version: link:../../knowledge/tool-knowledge-base
+      '@deepseek-ai/dsh-tool-lsp':
+        specifier: workspace:*
+        version: link:../../lsp/tool-lsp
       '@deepseek-ai/dsh-tool-memory':
         specifier: workspace:*
         version: link:../../memory/tool-memory
@@ -2487,6 +2496,9 @@ importers:
       '@deepseek-ai/dsh-workflow-ptc':
         specifier: workspace:*
         version: link:../../workflow/workflow-ptc
+      typescript-language-server:
+        specifier: ^5.0.0
+        version: 5.3.0
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:~

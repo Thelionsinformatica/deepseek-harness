@@ -9,8 +9,8 @@
 # web_search and web_fetch run only after the host guard
 # @deepseek-ai/dsh-web-egress-approval obtains a one-shot user approval.
 #
-# Not yet composed here, pending their port to 0.2.1: the read-only audit
-# subagent and MCP desktop automation.
+# Not yet composed here, pending their port to 0.2.1:
+# MCP desktop automation (Cua driver), still a laboratory in the fork.
 - insert:
     - id: preset-leon
       name: '@deepseek-ai/dsh-agent-preset'
@@ -60,6 +60,9 @@
               sampleOverCapGlobResults: false
           - id: tool-jobs
             name: '@deepseek-ai/dsh-tool-jobs'
+          # Definitions, references, and symbol details through the host LSP.
+          - id: tool-lsp
+            name: '@deepseek-ai/dsh-tool-lsp'
           # A direct human message naming `.leon/knowledge` locks the turn to
           # that exact root; generic tools cannot bypass the bounded helper.
           - id: explicit-target-policy
@@ -207,6 +210,23 @@
                 config:
                   provider: fork
                   toolName: subagent_fork
+              # Read-only investigator: reads and searches a given scope and
+              # reports cited evidence; the coordinator verifies and acts.
+              - id: tool-subagent-audit
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent_audit
+                  maxDepth: 1
+                  toolFilter:
+                    allow: [read, grep, glob]
+                  persona: |-
+                    Você é um investigador temporário do Leon, somente leitura. Examine apenas o escopo
+                    recebido com read, grep e glob. Cite caminho, trecho e resultado observado para cada
+                    achado; separe fato, hipótese e limitação. Listagem não prova conteúdo. Não invente
+                    arquivos, linhas, comandos executados ou resultados. Sem evidência, informe o bloqueio.
+                    Não altere código, execute shell, delegue ou amplie permissões. O coordenador verifica
+                    seu parecer e executa os testes. Responda de forma curta em português brasileiro.
               - id: workflow-ptc
                 name: '@deepseek-ai/dsh-workflow-ptc'
                 config:

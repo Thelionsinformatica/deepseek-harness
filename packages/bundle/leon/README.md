@@ -60,7 +60,7 @@ The bundle adds nothing of its own to the request prefix; the composed plugins o
 
 - **Web access asks every call** — the fork's revocable session-wide web access switch is not ported, so each `web_search` or `web_fetch` waits for its own approval.
 - **No MCP desktop automation yet** — the Cua driver bridge waits for executor-side approval and a tool allowlist.
-- **Not ported yet** — the read-only audit subagent, the goal completion auditor, and Leon's client pages.
+- **Not ported yet** — the goal completion auditor, the audit subagent's per-session call cap and evidence-tool check, and Leon's client pages.
 - **Single local owner** — memory owner ids are fixed for a single-user Windows deployment; multi-user hosts must override them.
 
 <a id="dev-note"></a>

@@ -76,6 +76,31 @@
         maxEquivalentFailures: 2
         maxNoFinalResponseRecoveries: 1
 
+    # Read-only semantic navigation for TypeScript and JavaScript projects.
+    # The language server ships as a bundle dependency and starts through
+    # Node directly, avoiding PATH, npx downloads, and shell wrappers.
+    - id: lsp
+      name: '@deepseek-ai/dsh-lsp'
+
+    - id: lsp-stdio
+      name: '@deepseek-ai/dsh-lsp-stdio'
+      config:
+        servers:
+          typescript:
+            command: !!js process.execPath
+            args:
+              - !!js "process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('typescript-language-server/lib/cli.mjs')"
+              - --stdio
+            extensionToLanguage:
+              .ts: typescript
+              .tsx: typescriptreact
+              .js: javascript
+              .jsx: javascriptreact
+              .mts: typescript
+              .cts: typescript
+              .mjs: javascript
+              .cjs: javascript
+
     # Brazilian Portuguese interface; a Portuguese browser selects it
     # automatically and the Language row offers it explicitly.
     - id: language-pt-br

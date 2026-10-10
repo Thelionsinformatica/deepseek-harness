@@ -20,7 +20,8 @@ async function harness(options: { commands?: boolean } = {}): Promise<{ ctx: Con
 
 /** The command runtime reads only these members of the invoking agent. */
 function agentFor(session: Session): Agent {
-  return { session, status: 'idle', options: {}, reserveTurnAdmission: () => () => undefined } as Agent
+  const agent: Partial<Agent> = { session, status: 'idle', options: {} }
+  return agent as Agent
 }
 
 async function run(ctx: Context, session: Session, line: string) {

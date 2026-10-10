@@ -7,7 +7,12 @@
  * Usage: pnpm run leon:locale-coverage [--strict]
  */
 import ts from 'typescript'
-import { dictionaries } from '../packages/client/language-pt-br/src/client/dictionaries.ts'
+
+// Loaded at run time: the dictionaries belong to the client program, not this host script.
+const dictionariesPath = new URL('../packages/client/language-pt-br/src/client/dictionaries.ts', import.meta.url)
+const { dictionaries } = await import(dictionariesPath.href) as {
+  dictionaries: Readonly<Record<string, Readonly<Record<string, string>>>>
+}
 
 const configPath = ts.findConfigFile('.', file => ts.sys.fileExists(file), 'tsconfig.client.json')
 if (configPath === undefined) throw new Error('tsconfig.client.json not found')

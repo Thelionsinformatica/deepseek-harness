@@ -2385,6 +2385,9 @@ importers:
       '@deepseek-ai/dsh-agent-preset':
         specifier: workspace:*
         version: link:../../preset/agent-preset
+      '@deepseek-ai/dsh-client-language-pt-br':
+        specifier: workspace:*
+        version: link:../../client/language-pt-br
       '@deepseek-ai/dsh-command-compact':
         specifier: workspace:*
         version: link:../../compaction/command-compact

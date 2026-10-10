@@ -28,7 +28,8 @@ describe('language-pt-br', () => {
   it('adds pt-BR with an English fallback and translates registered namespaces', async () => {
     const { locale } = await mount(['en-US'])
     locale.setLocale('pt-BR')
-    const t = locale.bind('common')
+    // The untyped overload: this bench registers a key outside the typed common vocabulary.
+    const t = locale.bind('common' as string)
     expect(t('cancel')).toBe('Cancelar')
     // A key the pack does not translate reaches the English fallback, never the raw key.
     expect(t('onlyEnglish')).toBe('English only')

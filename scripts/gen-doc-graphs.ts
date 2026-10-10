@@ -117,6 +117,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Provider-neutral create, search, correct, and forget operations stay scoped by WorkspaceId; the local backend persists through storage-domain while tool-memory owns the model policy.',
   },
   {
+    key: 'webAccess',
+    pkg: 'web-access',
+    title: 'Session web access grant',
+    mode: 'service',
+    consumers: ['web-egress-approval', 'client-ui-web-access'],
+    note: 'Records the per-session user decision that lets native web tools skip the per-call egress approval; /web on|off and the composer Web button switch it.',
+  },
+  {
     key: 'personalMemory',
     pkg: 'personal-memory',
     title: 'Durable personal memory seam',

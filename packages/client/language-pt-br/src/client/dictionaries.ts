@@ -2738,6 +2738,14 @@ export const dictionaries: Readonly<Record<string, Readonly<Record<string, strin
     'permission': 'O acesso ao microfone está desativado. Permita nas configurações do navegador e do sistema.',
     'tooLarge': 'A gravação passa do limite do serviço. Tente uma gravação mais curta.',
   },
+  'web-access': {
+    'off.aria': 'Ativar acesso web nesta sessão',
+    'off.title': 'Ativar acesso web nesta sessão para pesquisas e leitura de páginas públicas.',
+    'on.aria': 'Desativar acesso web nesta sessão',
+    'on.title': 'Acesso web ativo nesta sessão. Clique para revogar imediatamente.',
+    'pending': 'Atualizando acesso web…',
+    'failure': 'Não foi possível atualizar o acesso web',
+  },
   'workflowRun': {
     'run.title': '{name}',
     'run.members.one': '{count} membro',

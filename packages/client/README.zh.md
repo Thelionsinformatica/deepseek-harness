@@ -36,6 +36,7 @@ kind: "package-group"
 | [`hmr/`](hmr/README.zh.md) | 在开发期间刷新客户端插件 | — |
 | [`locale/`](locale/README.zh.md) | 提供本地化偏好与消息词典 | `ctx.locale` |
 | [`language-pt-br/`](language-pt-br/README.zh.md) | 为界面语言添加巴西葡萄牙语 | — |
+| [`ui-web-access/`](ui-web-access/README.zh.md) | 用于会话 Web 访问授权的输入框 Web 按钮 | — |
 | [`test-runtime/`](../test-support/client-runtime/README.zh.md) | 为客户端功能包提供共享的仓库测试支持 | — |
 | [`ui-renderer/`](ui-renderer/README.zh.md) | 将 slot 数据绑定到 React，并挂载组装完成的应用 | `ctx.uiRenderer` |
 | [`ui-slots/`](ui-slots/README.zh.md) | 定义类型化扩展 Slots 与可复用 Component Factory | — |

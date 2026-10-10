@@ -3814,6 +3814,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'webAccess',
+    summary: 'Host-plane controller for one explicit user-controlled web-access grant.',
+    description: 'Host-plane controller for one explicit user-controlled web-access grant. It does not contact the web itself and does not alter global approvals.',
+    methods: [
+      {
+        signature: 'isEnabled(session: Session): boolean',
+        description: 'Read the effective durable grant for one session.',
+        parameters: [{ name: 'session', description: 'session whose event history owns the decision.' }],
+        returns: 'whether native web tools may skip their per-call approval.',
+      },
+      {
+        signature: 'set(session: Session, enabled: boolean): boolean',
+        description: 'Change the complete session-scoped grant. Repeating the current value is intentionally a no-op so the durable log remains an audit of decisions.',
+        parameters: [{ name: 'session', description: 'session whose user decision changes.' }, { name: 'enabled', description: 'next complete grant state.' }],
+        returns: 'true only when a new durable event was appended.',
+      },
+    ],
+  },
+  {
     key: 'webhookRuntime',
     summary: 'Fire-and-forget rule runtime.',
     description: 'Fire-and-forget rule runtime. Session creation is the only built-in action.',

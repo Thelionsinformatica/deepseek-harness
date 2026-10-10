@@ -27,6 +27,7 @@ Six packages play the web roles; the subsystem reference owns the exhaustive voc
 | Package | Role | ctx key |
 |---|---|---|
 | [`web/`](web/README.md) | Search/fetch service: search and fetch URLs through interchangeable backends, one selection and error policy | `ctx.web` |
+| [`web-access/`](web-access/README.md) | Session-scoped user grant that lets native web tools skip the per-call approval | `ctx.webAccess` |
 | [`web-search-exa/`](web-search-exa/README.md) | Searches the web through Exa | registers on `ctx.web` |
 | [`web-search-perplexity/`](web-search-perplexity/README.md) | Searches the web through Perplexity | registers on `ctx.web` |
 | [`web-search-deepseek/`](web-search-deepseek/README.md) | Searches the web through DeepSeek native search | registers on `ctx.web` |

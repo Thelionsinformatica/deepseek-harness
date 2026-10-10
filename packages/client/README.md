@@ -36,6 +36,7 @@ The kernel packages boot and serve the page; the UI feature packages present it.
 | [`hmr/`](hmr/README.md) | Refreshes client plugins during development | — |
 | [`locale/`](locale/README.md) | Provides localization preferences and message dictionaries | `ctx.locale` |
 | [`language-pt-br/`](language-pt-br/README.md) | Adds Brazilian Portuguese to the interface languages | — |
+| [`ui-web-access/`](ui-web-access/README.md) | Composer Web button for the session web access grant | — |
 | [`test-runtime/`](../test-support/client-runtime/README.md) | Shared repository test support for client feature packages | — |
 | [`ui-renderer/`](ui-renderer/README.md) | Binds slot data to React and mounts the assembled application | `ctx.uiRenderer` |
 | [`ui-slots/`](ui-slots/README.md) | Defines typed extension Slots and reusable Component Factories | — |

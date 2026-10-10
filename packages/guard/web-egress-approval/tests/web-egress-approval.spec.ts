@@ -16,6 +16,7 @@ import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import ApprovalService, { type ApprovalOutcome, type ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
 import ToolRuntime, { defineContentToolFixture, type PreToolDecision } from '@deepseek-ai/dsh-tools'
 import * as guard from '@deepseek-ai/dsh-web-egress-approval'
+import WebAccessService from '@deepseek-ai/dsh-web-access'
 
 function fakeAgent(): Agent {
   const session = Session.create(SessionId('web-egress-agent'))
@@ -125,6 +126,27 @@ describe('web-egress-approval', () => {
     expect(denied.content[0]).toMatchObject({ text: 'Error: blocked by target policy' })
     expect(ran).toEqual(['read'])
     expect(asked).toBe(0)
+  })
+
+  it('skips the ask when the user switched web access on for the session', async () => {
+    const { ctx, ran } = await setup()
+    await ctx.plugin(WebAccessService)
+    let asked = 0
+    ctx.on('approval/request', () => {
+      asked++
+      return Promise.resolve<ApprovalOutcome>('rejected')
+    })
+    const session = ctx.sessions.create(SessionId('web-egress-granted'))
+    session.append('turn/start', { turn: 1 })
+    const agent = { session } as Agent
+    ctx.webAccess.set(session, true)
+    const granted = await ctx.tools.execute({ callId: ToolCallId('g1'), name: 'web_search', arguments: { queries: ['x'] }, agent, signal })
+    expect(granted.isError).toBe(false)
+    ctx.webAccess.set(session, false)
+    const asking = await ctx.tools.execute({ callId: ToolCallId('g2'), name: 'web_search', arguments: { queries: ['x'] }, agent, signal })
+    expect(asking.isError).toBe(true)
+    expect(ran).toEqual(['web_search'])
+    expect(asked).toBe(1)
   })
 
   it('bounds the arguments shown in the prompt', () => {

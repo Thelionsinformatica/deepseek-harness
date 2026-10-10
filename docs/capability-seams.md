@@ -11,6 +11,10 @@ flowchart LR
   svc_memory["ctx.memory<br/>Durable workspace memory seam"]
   pkg_memory_local["memory-local"]
   pkg_tool_memory["tool-memory"]
+  pkg_web_access["web-access"]
+  svc_webAccess["ctx.webAccess<br/>Session web access grant"]
+  pkg_web_egress_approval["web-egress-approval"]
+  pkg_client_ui_web_access["client-ui-web-access"]
   pkg_personal_memory["personal-memory"]
   svc_personalMemory["ctx.personalMemory<br/>Durable personal memory seam"]
   pkg_personal_memory_local["personal-memory-local"]
@@ -446,6 +450,7 @@ flowchart LR
   pkg_user_approval --> svc_approval
   pkg_user_questions --> svc_userQuestions
   pkg_web --> svc_web
+  pkg_web_access --> svc_webAccess
   pkg_web_fetch_http --> svc_web
   pkg_web_search_deepseek --> svc_web
   pkg_web_search_exa --> svc_web
@@ -593,6 +598,8 @@ flowchart LR
   svc_typert --> pkg_typert_loader
   svc_userQuestions --> pkg_tool_ask_user
   svc_web --> pkg_tool_web
+  svc_webAccess --> pkg_client_ui_web_access
+  svc_webAccess --> pkg_web_egress_approval
   svc_webServer --> pkg_client_connection
   svc_webServer --> pkg_client_hmr
   svc_webServer --> pkg_client_modules
@@ -614,6 +621,7 @@ flowchart LR
 | ctx key | Role | Owner | Implementations | Direct consumers | Companion plugins | Note |
 | --- | --- | --- | --- | --- | --- | --- |
 | `ctx.memory` | `seam` | [`memory`](../packages/memory/memory) | [`memory-local`](../packages/memory/memory-local) | [`tool-memory`](../packages/memory/tool-memory) | - | Provider-neutral create, search, correct, and forget operations stay scoped by WorkspaceId; the local backend persists through storage-domain while tool-memory owns the model policy. |
+| `ctx.webAccess` | `service` | [`web-access`](../packages/web/web-access) | - | [`web-egress-approval`](../packages/guard/web-egress-approval), [`client-ui-web-access`](../packages/client/ui-web-access) | - | Records the per-session user decision that lets native web tools skip the per-call egress approval; /web on\|off and the composer Web button switch it. |
 | `ctx.personalMemory` | `seam` | [`personal-memory`](../packages/memory/personal-memory) | [`personal-memory-local`](../packages/memory/personal-memory-local) | [`tool-memory`](../packages/memory/tool-memory) | - | A separate owner-scoped provider registry and storage domain retain explicit non-sensitive personal facts across workspaces without using telemetry identity. |
 | `ctx.memoryContinuity` | `core` | [`memory-continuity`](../packages/memory/memory-continuity) | - | - | - | Exports lineage snapshots and restores missing records to caller-supplied tables; journal persistence remains caller-owned. |
 | `ctx.memoryCandidateReview` | `core` | [`tool-memory`](../packages/memory/tool-memory) | - | - | - | Owns the local shadow queue, derives workspace authority from a live or persisted Session, and records immutable human decisions through a projected Remote without writing final memory. |

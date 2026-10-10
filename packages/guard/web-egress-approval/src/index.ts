@@ -5,6 +5,8 @@
  * grant. The prompt carries the complete arguments: the user must see the exact
  * queries or URL, including parameters that might hold private data.
  *
+ * When the optional `dsh-web-access` service reports that the user switched
+ * web access on for the session, listed calls run without a per-call ask.
  * Without an approval service, without an agent, or under the `never` approval
  * policy the registry's own `ask` resolution denies the call, so the guard
  * fails closed.
@@ -15,6 +17,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { PreToolDecision, ToolExecution } from '@deepseek-ai/dsh-tools'
+// Type-only: the optional session-scoped grant service (ctx.webAccess).
+import type {} from '@deepseek-ai/dsh-web-access'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'web-egress-approval'
@@ -97,6 +101,9 @@ export function apply(ctx: Context, config: Config): void {
   ctx.on('tools/pre-execute', async (exec, next): Promise<PreToolDecision> => {
     const decision = await next()
     if (decision.kind !== 'allow' || !tools.has(exec.name)) return decision
+    // A user who switched web access on for this session already consented.
+    const session = exec.agent?.session
+    if (session !== undefined && ctx.get('webAccess')?.isEnabled(session) === true) return decision
     return egressAsk(exec, config)
   })
 }

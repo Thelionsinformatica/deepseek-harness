@@ -46,6 +46,8 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
  */
 const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/client/language-pt-br': { kind: 'indirect', reason: 'A browser language pack; it changes interface text only and never reaches a model request.' },
+  'packages/web/web-access': { kind: 'indirect', reason: 'The grant adds no prompt text or schema; it only decides whether the web egress guard asks before a call.' },
+  'packages/client/ui-web-access': { kind: 'indirect', reason: 'A browser composer control; it never reaches a model request.' },
   'packages/guard/web-egress-approval': { kind: 'indirect', reason: 'The guard adds no prompt text or schema; the model sees only the registry\'s approval outcome on a refused call.' },
   'packages/bundle/leon': { kind: 'indirect', reason: 'The bundle is a patch-list carrier; mounted packages own model-facing text and the Leon persona reaches the model through dsh-persona.' },
   'packages/memory/memory': { kind: 'indirect', reason: 'The provider registry delegates model rendering to dsh-tool-memory.' },

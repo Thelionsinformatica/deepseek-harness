@@ -80,6 +80,7 @@ The [format references](persistence-changes/historical-formats/README.md) cover 
 | `event:turn/end` | event | `0f8512903d94f57a4748fa1a2092e64342856796684e6b8343db685b192745ce` | [`{ type: "turn/end" }`](#persistence-type-sha256-0f8512903d94f57a4748fa1a2092e64342856796684e6b8343db685b192745ce) |
 | `event:turn/start` | event | `aa0957eca50aeb28bcd2e6930b95809926edacb550c8c340ba526ba6b861b3d8` | [`{ type: "turn/start" }`](#persistence-type-sha256-aa0957eca50aeb28bcd2e6930b95809926edacb550c8c340ba526ba6b861b3d8) |
 | `event:user/message` | event | `5179471a82d11980dc5db71a36e6efefa31161ef1afbf3bc6863e1a5f1d24c7b` | [`{ type: "user/message" }`](#persistence-type-sha256-5179471a82d11980dc5db71a36e6efefa31161ef1afbf3bc6863e1a5f1d24c7b) |
+| `event:web/access` | event | `5186d42540d72069270711837a91a81011179a8af785f32b859ec0dc6d327559` | [`{ type: "web/access" }`](#persistence-type-sha256-5186d42540d72069270711837a91a81011179a8af785f32b859ec0dc6d327559) |
 | `event:web/deepseek-search-llm-request` | event | `cf6e3aaf1e2de6480aa0157730a41b9a492108a55304100b0f7e112711dd4331` | [`{ type: "web/deepseek-search-llm-request" }`](#persistence-type-sha256-cf6e3aaf1e2de6480aa0157730a41b9a492108a55304100b0f7e112711dd4331) |
 | `event:working-directory/change` | event | `124aa62078ca3311353b39cc3bf6c75da281338be6bbf672f8b361d828cddca3` | [`{ type: "working-directory/change" }`](#persistence-type-sha256-124aa62078ca3311353b39cc3bf6c75da281338be6bbf672f8b361d828cddca3) |
 | `event:workspace/changes` | event | `e308ccf867a5398e316e0af8cb6ce238a8d33a63b9b384c8250a686786285f72` | [`{ type: "workspace/changes" }`](#persistence-type-sha256-e308ccf867a5398e316e0af8cb6ce238a8d33a63b9b384c8250a686786285f72) |
@@ -1276,6 +1277,17 @@ Source: [`packages/core/session/src/types.ts:288`](../packages/core/session/src/
 Source: [`packages/core/session/src/types.ts:309`](../packages/core/session/src/types.ts)
 
 ### `web/*`
+
+<a id="webaccess--log-only"></a>
+
+#### `web/access` — log-only
+
+```ts persistence-catalog
+/** Complete post-change state of the explicit native web-access grant. */
+'web/access': WebAccessProjection
+```
+
+Source: [`packages/web/web-access/src/index.ts:38`](../packages/web/web-access/src/index.ts)
 
 <a id="webdeepseek-search-llm-request--log-only"></a>
 
@@ -2970,6 +2982,14 @@ SHA-256: `9645cf93769a6dfb227bd400bd6cb9fa7bab9140f4a851e4ae92514ade6e3114`
 SHA-256: `de25352d2dc4196309bd84b5bac6319f6d5c898ea0e82bb5ae66c5738d0d426f`
 
 `"user/message"`
+
+<a id="persistence-type-sha256-de19ddef3917438808da2b293734179823252b3c4789fd744b19562d332998f8"></a>
+
+### `"web/access"`
+
+SHA-256: `de19ddef3917438808da2b293734179823252b3c4789fd744b19562d332998f8`
+
+`"web/access"`
 
 <a id="persistence-type-sha256-6f611bed14b2106542480c4a230b4a83baf76dc0d8ac0cd13319a7cb8dae7675"></a>
 
@@ -5372,6 +5392,22 @@ Attribution-only additions: `tmux-context`, `user-question-reply`, `working-dire
 SHA-256: `31aeca6a3e13188b96fd73a99c93f6633f8acb05c57927baccd26e1938523557`
 
 Array of [`UserMessage`](#persistence-type-sha256-65b17c5bd02a6cf4cdf176f23e00deca6c8d71b7ca53f00b21eefec81526d709).
+
+<a id="persistence-type-sha256-c2a13242efc3bea4b36a843ddf1524ff4d33c765a71b582fa1fdbfa4fa148434"></a>
+
+<a id="persistence-type-packageswebweb-accesssrctypestswebaccessprojection"></a>
+
+<a id="persistence-type-webaccessprojection"></a>
+
+### `WebAccessProjection`
+
+SHA-256: `c2a13242efc3bea4b36a843ddf1524ff4d33c765a71b582fa1fdbfa4fa148434`
+
+Sources: [`packages/web/web-access/src/types.ts:10`](../packages/web/web-access/src/types.ts)
+
+| Property | Presence | Type |
+|---|---|---|
+| `enabled` | required | `boolean` |
 
 <a id="persistence-type-sha256-c2deb7c9183735d4e0fffddf5c623f4e34daa1c8e96b111982e957dfcbbcf896"></a>
 
@@ -9354,6 +9390,22 @@ SHA-256: `5179471a82d11980dc5db71a36e6efefa31161ef1afbf3bc6863e1a5f1d24c7b`
 | `surfaceOp` | required | [`SurfaceOp`](#persistence-type-sha256-335e242de1fcc17b6ca920fc420d71bec2d76e53e37955c00948b65ab77f05c5) |
 | `time` | required | `number` |
 | `type` | required | `"user/message"` |
+
+<a id="persistence-type-sha256-5186d42540d72069270711837a91a81011179a8af785f32b859ec0dc6d327559"></a>
+
+<a id="persistence-type-eventwebaccess"></a>
+
+### `{ type: "web/access" }`
+
+SHA-256: `5186d42540d72069270711837a91a81011179a8af785f32b859ec0dc6d327559`
+
+| Property | Presence | Type |
+|---|---|---|
+| `data` | required | [`WebAccessProjection`](#persistence-type-sha256-c2a13242efc3bea4b36a843ddf1524ff4d33c765a71b582fa1fdbfa4fa148434) |
+| `ignorable` | optional | `true` |
+| `seq` | required | `number` |
+| `time` | required | `number` |
+| `type` | required | `"web/access"` |
 
 <a id="persistence-type-sha256-cf6e3aaf1e2de6480aa0157730a41b9a492108a55304100b0f7e112711dd4331"></a>
 

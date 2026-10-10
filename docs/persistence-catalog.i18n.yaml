@@ -9,8 +9,8 @@
   en: 1387c4505dde2faf
   zh: 48570fa1c13d6910
 /session-persistence-event-catalog/persistence-type-fingerprints:
-  en: 19f7f648ac13c62e
-  zh: 147a3616cc9f161f
+  en: 0c606fb17e97c862
+  zh: a73075d540aa1803
 /session-persistence-event-catalog/event-envelope:
   en: 7ebb1a2e0dd1f916
   zh: 8946f415dda5c1b8
@@ -285,8 +285,11 @@
   en: 6d302c03787ebb1f
   zh: d53f597a8b651309
 /session-persistence-event-catalog/events/web:
-  en: d278748103cf1640
-  zh: d278748103cf1640
+  en: 6a9daea72c43e3b5
+  zh: 6a9daea72c43e3b5
+/session-persistence-event-catalog/events/web/web-access-log-only:
+  en: 9db1942e4545b6ad
+  zh: 782460a967855f80
 /session-persistence-event-catalog/events/web/web-deepseek-search-llm-request-log-only:
   en: f12c598242992aa3
   zh: 08609553e15a91f3
@@ -918,8 +921,11 @@
   en: ce169abc5bc0ad1f
   zh: ce169abc5bc0ad1f
 /session-persistence-event-catalog/resolved-persistence-types/user-message:
-  en: ecc3b25a07772288
-  zh: ecc3b25a07772288
+  en: fca019070d6ae23a
+  zh: fca019070d6ae23a
+/session-persistence-event-catalog/resolved-persistence-types/web-access:
+  en: 6d2cb917b5f5f50b
+  zh: 6d2cb917b5f5f50b
 /session-persistence-event-catalog/resolved-persistence-types/web-deepseek-search-llm-request:
   en: 1b4a805f3d1632e6
   zh: 1b4a805f3d1632e6
@@ -1317,8 +1323,11 @@
   en: e3bcda7af7242981
   zh: c5e5607d19bf59b8
 /session-persistence-event-catalog/resolved-persistence-types/usermessage~2:
-  en: 4a68fe857baaf703
-  zh: 70a4bcbf2508e1e3
+  en: f139ffe19de39736
+  zh: 370c7a04902aab9c
+/session-persistence-event-catalog/resolved-persistence-types/webaccessprojection:
+  en: 2cec53171fac4bee
+  zh: b6e1b9fd9b4c59ab
 /session-persistence-event-catalog/resolved-persistence-types/workflowagentoutcome:
   en: d0a3f9aab18c3de5
   zh: 76ac69a835ca4e29
@@ -2214,8 +2223,11 @@
   en: 3229f42f30c23805
   zh: 7b6cdf4399459e5b
 /session-persistence-event-catalog/resolved-persistence-types/type-user-message:
-  en: 4b4310333754fa78
-  zh: a85443ce839375ec
+  en: d47b4496ed919eb7
+  zh: 2a91a17b3ff5ed59
+/session-persistence-event-catalog/resolved-persistence-types/type-web-access:
+  en: faa68b7d3f447f7f
+  zh: b08b46d3d1e43287
 /session-persistence-event-catalog/resolved-persistence-types/type-web-deepseek-search-llm-request:
   en: f109997e295af37d
   zh: b2dcfd599f73b61c

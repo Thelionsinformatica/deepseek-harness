@@ -24165,6 +24165,76 @@
       }
     },
     {
+      "key": "event:web/access",
+      "kind": "event",
+      "event": "web/access",
+      "surface": false,
+      "digest": "5186d42540d72069270711837a91a81011179a8af785f32b859ec0dc6d327559",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 3,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 5,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "enabled",
+                "type": 2,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "boolean"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": "web/access"
+          }
+        ]
+      }
+    },
+    {
       "key": "event:web/deepseek-search-llm-request",
       "kind": "event",
       "event": "web/deepseek-search-llm-request",
@@ -25798,6 +25868,11 @@
     },
     {
       "digest": "5179471a82d11980dc5db71a36e6efefa31161ef1afbf3bc6863e1a5f1d24c7b",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "5186d42540d72069270711837a91a81011179a8af785f32b859ec0dc6d327559",
       "names": [],
       "sources": []
     },
@@ -27613,6 +27688,15 @@
       "sources": []
     },
     {
+      "digest": "c2a13242efc3bea4b36a843ddf1524ff4d33c765a71b582fa1fdbfa4fa148434",
+      "names": [
+        "packages/web/web-access/src/types.ts#WebAccessProjection"
+      ],
+      "sources": [
+        "packages/web/web-access/src/types.ts:10"
+      ]
+    },
+    {
       "digest": "c2deb7c9183735d4e0fffddf5c623f4e34daa1c8e96b111982e957dfcbbcf896",
       "names": [
         "packages/workflow/workflow/src/types.ts#WorkflowAgentOutcome"
@@ -27890,6 +27974,11 @@
     },
     {
       "digest": "ddb1e872f681a8439ec7c7d64d1f3951e4c8cf40ed72f70287ecb261b31fc127",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "de19ddef3917438808da2b293734179823252b3c4789fd744b19562d332998f8",
       "names": [],
       "sources": []
     },

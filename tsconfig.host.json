@@ -489,6 +489,7 @@
     { "path": "./packages/bundle/leon" },
     { "path": "./packages/guard/failure-recovery-policy" },
     { "path": "./packages/guard/web-egress-approval" },
+    { "path": "./packages/web/web-access" },
     { "path": "./packages/guard/completion-claim-policy" },
     { "path": "./packages/knowledge/tool-knowledge-base" },
     { "path": "./packages/memory/memory" },

@@ -54,7 +54,7 @@ describe('dsh-leon bundle', () => {
     expect(host.inserted.map(row => row.id)).toEqual([
       'memory', 'memory-local', 'personal-memory', 'personal-memory-local',
       'memory-candidate-review', 'procedure-learning', 'failure-recovery-policy',
-      'lsp', 'lsp-stdio', 'language-pt-br', 'web-egress-approval',
+      'lsp', 'lsp-stdio', 'language-pt-br', 'web-access', 'ui-web-access', 'web-egress-approval',
     ])
     expect(host.inserted.find(row => row.id === 'memory-candidate-review')?.config).toMatchObject({ automaticWrite: false })
   })

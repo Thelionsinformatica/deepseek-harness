@@ -106,6 +106,15 @@
     - id: language-pt-br
       name: '@deepseek-ai/dsh-client-language-pt-br'
 
+    # Session-scoped web access: /web on|off and the composer Web button let
+    # the user consent once for a whole session; the egress guard below
+    # honors it and asks per call otherwise.
+    - id: web-access
+      name: '@deepseek-ai/dsh-web-access'
+
+    - id: ui-web-access
+      name: '@deepseek-ai/dsh-client-ui-web-access'
+
     # Every web_search and web_fetch call asks the user once, showing the
     # complete queries or URL, before anything leaves the machine.
     - id: web-egress-approval

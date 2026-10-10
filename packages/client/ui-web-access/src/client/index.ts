@@ -31,7 +31,7 @@ export interface WebAccessControlInjected {
 }
 
 /** Required services: slot registry, command Remote, locale registry. */
-export const inject = ['slots', 'remote', 'locale']
+export const inject = ['slots', 'remote', 'remote.commands', 'locale']
 
 /**
  * Browser plugin body. It only executes the human command: the host projection

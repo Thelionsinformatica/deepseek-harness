@@ -43,7 +43,7 @@ kind: "package-bundle"
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
-本组合包有两个 patch 文件。`cordis.patch.yml` 把 `session-query-sqlite` 改为首次搜索时打开的持久索引，把 agent 预设注册表的默认值设为 `leon`，并插入宿主行。`presets/leon.patch.yml` 插入一条 `@deepseek-ai/dsh-agent-preset` 声明，其插件按 agent 挂载。`skills/` 目录随包发布，并通过 `skill-filesystem` 加入预设的 skill 根目录。知识库工具运行 `dsh-tool-knowledge-base` 随附的辅助程序；`leon-knowledge-base` skill 内的副本供该 skill 的维护命令使用，必须保持逐字节一致，包测试会强制检查。
+本组合包有两个 patch 文件。`cordis.patch.yml` 把 `session-query-sqlite` 改为首次搜索时打开的持久索引，把 agent 预设注册表的默认值设为 `leon`，并插入宿主行。这些行包含内容守护：当工具结果读起来像指令或携带凭据样式的值时，它追加一条建议式通知，而不改动输出。`presets/leon.patch.yml` 插入一条 `@deepseek-ai/dsh-agent-preset` 声明，其插件按 agent 挂载。`skills/` 目录随包发布，并通过 `skill-filesystem` 加入预设的 skill 根目录。知识库工具运行 `dsh-tool-knowledge-base` 随附的辅助程序；`leon-knowledge-base` skill 内的副本供该 skill 的维护命令使用，必须保持逐字节一致，包测试会强制检查。
 
 <a id="model-experience"></a>
 ## 模型体验

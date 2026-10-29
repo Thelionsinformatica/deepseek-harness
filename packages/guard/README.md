@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The `guard/` group keeps the agent loop productive by watching for two common failure patterns. `repeat-tool-reminder` notices when the model repeats the exact same tool call and reminds it to change approach or finish, so a stuck loop stops burning time and tokens. `timeout-policy` puts a time limit on tool calls that declare one, so a hung call returns a clear timed-out error to the model instead of stalling the session. Both ship enabled in the `dsh` base bundle; a composition can tune or remove them.
+The `guard/` group keeps the agent loop productive by watching for two common failure patterns. `repeat-tool-reminder` notices when the model repeats the exact same tool call and reminds it to change approach or finish, so a stuck loop stops burning time and tokens. `timeout-policy` puts a time limit on tool calls that declare one, so a hung call returns a clear timed-out error to the model instead of stalling the session. Both ship enabled in the `dsh` base bundle; a composition can tune or remove them. The remaining policies guard trust boundaries rather than loops.
 
 ## Table of Contents
 
@@ -32,6 +32,7 @@ Two small plugins cover the two patterns, and the Leon target guard enforces dir
 | [`completion-claim-policy/`](completion-claim-policy/README.md) | Checks strong completion claims and exact task acceptance against the open turn's evidence; mounted by Leon presets |
 | [`failure-recovery-policy/`](failure-recovery-policy/README.md) | Stops repeated equivalent tool failures and recovers empty final responses; mounted by Leon presets |
 | [`web-egress-approval/`](web-egress-approval/README.md) | Asks the user once per `web_search` or `web_fetch` call before anything leaves the machine; mounted by the Leon bundle |
+| [`content-guard/`](content-guard/README.md) | Flags instruction-shaped tool output and credential-shaped secrets before the model reads them; advisory by default, optional in-place secret redaction |
 
 -----
 

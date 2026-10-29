@@ -1,0 +1,70 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/guard/content-guard/README.md
+/:
+  en: 00e8806b78d12853
+  zh: 5e80ed82dc717b28
+/deepseek-ai-dsh-content-guard:
+  en: 3e38a70f6f0b5082
+  zh: 18a83d355e527100
+/deepseek-ai-dsh-content-guard/summary:
+  en: 9b728119db223d0f
+  zh: e85277599bb44637
+/deepseek-ai-dsh-content-guard/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 071ea728d1fb7ad6
+/deepseek-ai-dsh-content-guard/use-this-package:
+  en: 9aac382d2cffb3ba
+  zh: ebf4d6c26ee31ffc
+/deepseek-ai-dsh-content-guard/use-this-package/when-to-choose-it:
+  en: 065879573d75f0c8
+  zh: a72a3dfb98edd56c
+/deepseek-ai-dsh-content-guard/use-this-package/configuring:
+  en: f82f9e890e28f53d
+  zh: 9f378f0031cf2719
+/deepseek-ai-dsh-content-guard/use-this-package/what-you-get:
+  en: 79f182896e2e244c
+  zh: 8dfcf7413d7694d3
+/deepseek-ai-dsh-content-guard/understand-the-implementation:
+  en: 42b15ac6321706aa
+  zh: 7ae097f3abcc5d9c
+/deepseek-ai-dsh-content-guard/understand-the-implementation/design-commitments:
+  en: ecf52922d4340c50
+  zh: c5db6f510747ca86
+/deepseek-ai-dsh-content-guard/understand-the-implementation/detection:
+  en: af87c63f42051796
+  zh: 1d41ad169d5b50f6
+/deepseek-ai-dsh-content-guard/understand-the-implementation/delivery-and-redaction:
+  en: 7e252aad8d51db38
+  zh: cf641407b2c354a1
+/deepseek-ai-dsh-content-guard/understand-the-implementation/source-map:
+  en: 639f27454ef46c7e
+  zh: 2cd1afbf401514a9
+/deepseek-ai-dsh-content-guard/further-exploration:
+  en: f4dee32aa81633ba
+  zh: fc4c393b16d656e5
+/deepseek-ai-dsh-content-guard/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-content-guard/model-experience/flagged-tool-output:
+  en: c5c22f8aba9d9190
+  zh: 72525d986eb73039
+/deepseek-ai-dsh-content-guard/model-experience/flagged-tool-output/what-the-model-sees:
+  en: d6a829e6c4b17ef3
+  zh: b759e79e9303f3c9
+/deepseek-ai-dsh-content-guard/model-experience/flagged-tool-output/what-the-model-sees/flagged-output-notice:
+  en: d1cd05f02a2a25db
+  zh: d3560e1b24b721b6
+/deepseek-ai-dsh-content-guard/model-experience/flagged-tool-output/token-effect:
+  en: 66b3bfb3156292f0
+  zh: 16bb8e77ba03238a
+/deepseek-ai-dsh-content-guard/model-experience/flagged-tool-output/kv-cache-effect:
+  en: 6afb9833a409bc34
+  zh: ad3cff2dcbc7e0f7
+/deepseek-ai-dsh-content-guard/known-limitations-and-deferred-work:
+  en: 058dc50aa64dd21a
+  zh: 5e7ae218274c9659
+/deepseek-ai-dsh-content-guard/known-limitations-and-deferred-work/dev-note:
+  en: 86a647e4b09a03cd
+  zh: 65dda57279f7e6f2

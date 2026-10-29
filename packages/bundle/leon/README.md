@@ -43,7 +43,7 @@ New sessions then start with the `leon` preset. The profile's own `cordis.patch.
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
-The bundle has two patch files. `cordis.patch.yml` overrides `session-query-sqlite` to a durable index opened on first search, sets the agent preset registry default to `leon`, and inserts the host rows. `presets/leon.patch.yml` inserts one `@deepseek-ai/dsh-agent-preset` declaration whose plugins mount per agent. The `skills/` directory ships with the package and is added to the preset's skill roots through `skill-filesystem`. The knowledge-base tool runs the helper shipped by `dsh-tool-knowledge-base`; the copy inside the `leon-knowledge-base` skill serves the skill's maintenance commands and must stay byte-identical, which the package tests enforce.
+The bundle has two patch files. `cordis.patch.yml` overrides `session-query-sqlite` to a durable index opened on first search, sets the agent preset registry default to `leon`, and inserts the host rows. Those rows include the content guard, which adds one advisory notice when a tool result reads like instructions or carries a credential-shaped value, and leaves the output unchanged. `presets/leon.patch.yml` inserts one `@deepseek-ai/dsh-agent-preset` declaration whose plugins mount per agent. The `skills/` directory ships with the package and is added to the preset's skill roots through `skill-filesystem`. The knowledge-base tool runs the helper shipped by `dsh-tool-knowledge-base`; the copy inside the `leon-knowledge-base` skill serves the skill's maintenance commands and must stay byte-identical, which the package tests enforce.
 
 <a id="model-experience"></a>
 ## Model Experience

@@ -820,6 +820,43 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-completion-claim-policy -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-content-guard -->
+<a id="deepseek-aidsh-content-guard"></a>
+
+## `@deepseek-ai/dsh-content-guard`
+
+- `source`: [`packages/guard/content-guard/src/index.ts:99`](../packages/guard/content-guard/src/index.ts)
+
+```ts config-catalog
+/** Plugin configuration; every field is validated before the listener installs. */
+export interface Config {
+  /**
+   * Secret handling (default `notice`). `notice` leaves the tool output
+   * untouched and adds one warning message; `redact` replaces each detected
+   * secret in the model-facing content with `[redacted:<rule>]`.
+   */
+  mode?: ContentGuardMode
+  /** Inspect output for instruction-shaped text (default `true`). */
+  injection?: boolean
+  /** Inspect output for credential-shaped secrets (default `true`). */
+  secrets?: boolean
+  /** Tool-name patterns to inspect; empty means every tool (default `[]`). */
+  include?: string[]
+  /** Tool-name patterns never inspected (default `[]`). */
+  exclude?: string[]
+  /**
+   * Maximum characters of one tool result the guard inspects (default
+   * `65536`). The bound keeps a huge payload from turning the guard into a
+   * scan cost; text beyond it is passed through unexamined.
+   */
+  maxScanChars?: number
+}
+
+/** How detected secrets are handled; instruction-like text is always annotate-only. */
+export type ContentGuardMode = 'notice' | 'redact'
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-content-guard -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-cordis-host-runner -->
 <a id="deepseek-aidsh-cordis-host-runner"></a>
 

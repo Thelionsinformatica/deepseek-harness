@@ -55,6 +55,7 @@ describe('dsh-leon bundle', () => {
       'memory', 'memory-local', 'personal-memory', 'personal-memory-local',
       'memory-candidate-review', 'procedure-learning', 'failure-recovery-policy',
       'lsp', 'lsp-stdio', 'language-pt-br', 'web-access', 'ui-web-access', 'web-egress-approval',
+      'content-guard',
     ])
     expect(host.inserted.find(row => row.id === 'memory-candidate-review')?.config).toMatchObject({ automaticWrite: false })
   })

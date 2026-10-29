@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-10-29-content-guard-message-source.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/persistence-changes/2026-10-29-content-guard-message-source.md
+/:
+  en: 3d5a424ae7d7e46b
+  zh: c22a8e4a62d8cc1a
+/2026-10-29-content-guard-message-source:
+  en: b35bbf2f0ba202fe
+  zh: 66598b64b8b74ccf
+/2026-10-29-content-guard-message-source/summary:
+  en: b279734f3152d138
+  zh: b9b273e28c0450e2
+/2026-10-29-content-guard-message-source/table-of-contents:
+  en: 6cf314a069ceb451
+  zh: 9adff678e9ecab3b
+/2026-10-29-content-guard-message-source/declaration:
+  en: 6907136f28e48c90
+  zh: 02f8298485f3d8e7
+/2026-10-29-content-guard-message-source/compatibility:
+  en: 9c60cc6de642a66d
+  zh: 02d230a19764c530
+/2026-10-29-content-guard-message-source/verification:
+  en: 5bb7e7ae51b1dd6e
+  zh: 473da0aac9a17d0e
+/2026-10-29-content-guard-message-source/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269

@@ -122,3 +122,11 @@
       config:
         tools: [web_search, web_fetch]
         maxArgumentChars: 8192
+
+    # Tool output is untrusted input. A result whose text looks like
+    # instructions, or whose value looks like a credential, earns one advisory
+    # notice naming the matched rule identifiers; the output itself is
+    # unchanged and nothing is blocked. Set `mode: redact` in a profile patch
+    # to replace detected secrets in place instead.
+    - id: content-guard
+      name: '@deepseek-ai/dsh-content-guard'

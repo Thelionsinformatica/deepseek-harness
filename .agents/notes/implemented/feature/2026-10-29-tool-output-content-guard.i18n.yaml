@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-10-29-tool-output-content-guard.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-29-tool-output-content-guard.md
+/agent-note-a-content-guard-for-tool-output:
+  en: d9976aa71f74b2c3
+  zh: 0c1a560acc3d513d
+/agent-note-a-content-guard-for-tool-output/problem:
+  en: 9a436c974b6ac2c6
+  zh: 3fbceed9e53bdf53
+/agent-note-a-content-guard-for-tool-output/decision:
+  en: e194ef23660e7f1e
+  zh: 3575d28481898587
+/agent-note-a-content-guard-for-tool-output/alternatives-considered:
+  en: 776b22f3974cc700
+  zh: c7632abc82551622
+/agent-note-a-content-guard-for-tool-output/consequences:
+  en: 0072a6cd05de44c2
+  zh: ff713ed822153198
+/agent-note-a-content-guard-for-tool-output/verification:
+  en: 43a8e7a772fc75fd
+  zh: 6c5f8253c61fef54

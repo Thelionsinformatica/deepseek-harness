@@ -1,0 +1,55 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/guard/completion-claim-policy/README.md
+/:
+  en: 3240bdd22ff36314
+  zh: 5172e60fe16c61a5
+/deepseek-ai-dsh-completion-claim-policy:
+  en: 04b80e868e45f8c2
+  zh: fa06b31bbeec7938
+/deepseek-ai-dsh-completion-claim-policy/summary:
+  en: 185a47be532fcf6f
+  zh: 41c363ffe3a6e01b
+/deepseek-ai-dsh-completion-claim-policy/table-of-contents:
+  en: cef19f35a4e47dd9
+  zh: f6819f6439bf1733
+/deepseek-ai-dsh-completion-claim-policy/config:
+  en: 831e3f4c8220f56d
+  zh: bd3b91c5ba224f8e
+/deepseek-ai-dsh-completion-claim-policy/claim-classification:
+  en: 93e4131306e5479f
+  zh: 179480a3ef126ecc
+/deepseek-ai-dsh-completion-claim-policy/evidence-reconstruction:
+  en: 3c69d63c0ad2fa59
+  zh: 31cbfca92bf92b57
+/deepseek-ai-dsh-completion-claim-policy/stop-behavior:
+  en: 4108294a37f10c91
+  zh: b4aefebc50665091
+/deepseek-ai-dsh-completion-claim-policy/exact-task-acceptance:
+  en: 96555a7b81d0e075
+  zh: 8c0587cf0c452626
+/deepseek-ai-dsh-completion-claim-policy/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-completion-claim-policy/model-experience/evidence-recovery-message:
+  en: 0abba52ed7c422b0
+  zh: a26da8bde26878c0
+/deepseek-ai-dsh-completion-claim-policy/model-experience/evidence-recovery-message/what-the-model-sees:
+  en: 059b3d55f0bceac6
+  zh: bec6faca9c72aa53
+/deepseek-ai-dsh-completion-claim-policy/model-experience/evidence-recovery-message/what-the-model-sees/recovery-template:
+  en: 843aa5ae92862147
+  zh: f62ebe4a2c7d3b1f
+/deepseek-ai-dsh-completion-claim-policy/model-experience/evidence-recovery-message/token-effect:
+  en: 53c4175cfd82831f
+  zh: 829331cb5962046d
+/deepseek-ai-dsh-completion-claim-policy/model-experience/evidence-recovery-message/kv-cache-effect:
+  en: d7752dc5c0c136e6
+  zh: 89d998b3442554f7
+/deepseek-ai-dsh-completion-claim-policy/known-limitations-and-deferred-work:
+  en: 0ae2009b49d6dcfb
+  zh: f242790cf70e5b8b
+/deepseek-ai-dsh-completion-claim-policy/known-limitations-and-deferred-work/dev-note:
+  en: 37c08ca5d0c622b9
+  zh: 1f9eb2dc5fe84a13

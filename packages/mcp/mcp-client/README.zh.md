@@ -59,6 +59,7 @@ kind: "package-reference"
 | `command` / `args` / `env` / `cwd` | — | stdio：可执行文件、参数、合并到清洗过的环境之上的额外环境变量、工作目录 |
 | `url` / `headers` | — | streamable-http：端点 URL 与额外请求标头 |
 | `toolCallTimeoutMs` | `60,000` | 每次 `tools/call` 或资源请求的超时 |
+| `allowedTools` | 全部已声明工具 | 要发布的确切原始工具名；其他工具不发布，服务器未声明的列出名称会使发现失败 |
 | `maxInstructionBytes` | `32,768` | 包括服务器归属信息在内的服务器指令 UTF-8 字节上限；超出时连接失败 |
 | `failOnStartupError` | `false` | 初始连接或工具同步失败时拒绝插件激活 |
 | `reconnect.enabled` | `true` | 连接丢失后自动重新连接 |

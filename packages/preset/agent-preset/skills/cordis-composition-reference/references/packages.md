@@ -62,6 +62,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | `@deepseek-ai/dsh-client-connection` | yes | Authenticated RPC transport and generation lifecycle |
 | `@deepseek-ai/dsh-client-file-upload` | no | Agent-scoped browser file upload, streaming intake, and staged receipt service |
 | `@deepseek-ai/dsh-client-hmr` | yes | Web client graph synchronization and rebuilt-bundle reload transport |
+| `@deepseek-ai/dsh-client-language-pt-br` | no | Brazilian Portuguese language pack for the browser client |
 | `@deepseek-ai/dsh-client-locale` | no | Locale plugin: Host-backed preference, extensible language catalog, browser fallback, and typed built-in dictionaries |
 | `@deepseek-ai/dsh-client-modules` | no | Client module system, dual-face: node half composes the __DSH_BOOT__ entry graph (incremental dsh.client scan, bundle route, index tap, webPlugins service); browser half is the lazy-CJS module table the vendored cordis Loader consumes as its internal seam |
 | `@deepseek-ai/dsh-client-product-analytics` | yes | Desktop product event collection and authenticated Host reporting |
@@ -119,6 +120,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | `@deepseek-ai/dsh-client-ui-tool` | no | Client Tool call-tree renderer and keyed per-tool presentation slot |
 | `@deepseek-ai/dsh-client-ui-trajectory` | yes | Trajectory event ledger and timing overview with live tool-result inspection |
 | `@deepseek-ai/dsh-client-ui-user-questions` | no | Web ask_user_question composer takeover and plan-review presentation UI |
+| `@deepseek-ai/dsh-client-ui-web-access` | no | Explicit session-scoped web-access toggle for the Leon conversation composer |
 | `@deepseek-ai/dsh-client-ui-workflow-run` | no | Durable workflow-run Conversation Node and nested member disclosure for dsh web |
 | `@deepseek-ai/dsh-client-ui-workspace` | no | Workspace picker plugin: one WorkspacePicker registered into the sidebar and empty-state workspace slots |
 
@@ -275,8 +277,12 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 
 | Package | Config | Description |
 |---|---|---|
+| `@deepseek-ai/dsh-completion-claim-policy` | yes | Evidence policy for strong global completion claims at the end of an agent turn |
+| `@deepseek-ai/dsh-explicit-target-policy` | yes | Tool guard that preserves an explicit Windows target selected by the latest direct user message in a turn |
+| `@deepseek-ai/dsh-failure-recovery-policy` | yes | Tool failure recovery policy: guides strategy changes and blocks an exact call after repeated equivalent failures |
 | `@deepseek-ai/dsh-repeat-tool-reminder` | yes | Repeat-tool-call guard plugin: advisory reminders when an agent loops on identical tool calls |
 | `@deepseek-ai/dsh-tool-call-timeout-policy` | no | Tool-call timeout policy: a tools/execute wrapper that arms a per-tool deadline on exec.signal and returns TOOL_TIMEOUT when it wins |
+| `@deepseek-ai/dsh-web-egress-approval` | yes | Web egress approval: a tools/pre-execute listener that asks the user once per web_search or web_fetch call before anything leaves the machine |
 
 ## host
 
@@ -308,6 +314,12 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | `@deepseek-ai/dsh-jobs-local` | yes | Process-local implementation of the DeepSeek Harness background job registry seam |
 | `@deepseek-ai/dsh-tool-jobs` | yes | Model-facing background job control tools (job_output, job_list, job_kill) over the ctx.jobs registry |
 
+## knowledge
+
+| Package | Config | Description |
+|---|---|---|
+| `@deepseek-ai/dsh-tool-knowledge-base` | yes | Bounded model-facing status and search tools for a local Leon knowledge base |
+
 ## llm
 
 | Package | Config | Description |
@@ -335,6 +347,17 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 |---|---|---|
 | `@deepseek-ai/dsh-mcp-client` | yes | MCP client bridge: connects to MCP servers and registers their tools on ctx.tools |
 | `@deepseek-ai/dsh-mcp-resources` | no | Scoped MCP resource discovery and reading through shared model tools |
+
+## memory
+
+| Package | Config | Description |
+|---|---|---|
+| `@deepseek-ai/dsh-memory` | yes | Provider-neutral durable workspace memory capability for the DeepSeek Harness |
+| `@deepseek-ai/dsh-memory-continuity` | no | Portable export, import, journal, and restore validation for DSH local memory |
+| `@deepseek-ai/dsh-memory-local` | yes | Local durable storage-domain provider for the DeepSeek Harness memory capability |
+| `@deepseek-ai/dsh-personal-memory` | yes | Provider-neutral durable personal memory isolated from project workspaces |
+| `@deepseek-ai/dsh-personal-memory-local` | yes | Local durable provider for personal memory in an isolated storage domain |
+| `@deepseek-ai/dsh-tool-memory` | yes | Model-facing explicit workspace memory tools for the DeepSeek Harness |
 
 ## plan
 
@@ -513,6 +536,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 |---|---|---|
 | `@deepseek-ai/dsh-tool-web` | yes | Model-facing web tools (web_search, web_fetch) over the DeepSeek Harness web capability seam (ctx.web) |
 | `@deepseek-ai/dsh-web` | yes | Abstract web access capability seam (ctx.web) for the DeepSeek Harness — search/fetch provider registry, registration-order-independent selection, request/result vocabulary, and the WebError taxonomy |
+| `@deepseek-ai/dsh-web-access` | no | Explicit session-scoped user authorization for native public web search and fetch |
 | `@deepseek-ai/dsh-web-deepseek-api` | yes | DeepSeek Search and Fetch API providers for the DeepSeek Harness web capability seam (ctx.web) |
 | `@deepseek-ai/dsh-web-fetch-http` | yes | Anonymous HTTP(S) fetch provider for the DeepSeek Harness web capability seam (ctx.web) |
 | `@deepseek-ai/dsh-web-search-deepseek` | yes | DeepSeek-backed search provider (native web_search via the Anthropic-compatible API) for the DeepSeek Harness web capability seam (ctx.web) |

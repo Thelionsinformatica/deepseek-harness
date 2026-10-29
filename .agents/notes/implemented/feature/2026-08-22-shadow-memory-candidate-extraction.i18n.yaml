@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-08-22-shadow-memory-candidate-extraction.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-22-shadow-memory-candidate-extraction.md
+/agent-note-local-shadow-extraction-of-memory-candidates:
+  en: dba5fa8804a93aa8
+  zh: 86d15e8abe31ef8c
+/agent-note-local-shadow-extraction-of-memory-candidates/problem:
+  en: cf62133b1c6975b2
+  zh: 30e62355d459a0b5
+/agent-note-local-shadow-extraction-of-memory-candidates/decision:
+  en: 63e1a0e92a592905
+  zh: f4f09b27cb68e210
+/agent-note-local-shadow-extraction-of-memory-candidates/verification:
+  en: 2d71682e84ab3617
+  zh: 35fcb7b94bfd8dc9
+/agent-note-local-shadow-extraction-of-memory-candidates/alternatives-considered:
+  en: 9f4d0899457aa24e
+  zh: 43ef952307cf4725
+/agent-note-local-shadow-extraction-of-memory-candidates/consequences:
+  en: 7c25dec9b77b9b65
+  zh: 9a1da6fb22e6482a

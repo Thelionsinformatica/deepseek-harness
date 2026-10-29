@@ -1,0 +1,124 @@
+# Leon host layer, applied after the dsh-base and dsh-web-app bundles. It
+# mounts Leon's memory services and host-plane guards, keeps a durable session
+# search index, and makes the `leon` agent preset (presets/leon.patch.yml) the
+# default for new sessions.
+
+# The derived history index lives on disk and opens on the first search, so
+# startup stays quiet; it is rebuilt from session logs and never serves as
+# canonical session storage.
+- id: session-query-sqlite
+  config:
+    path: !!js dshHomePath('storages/session-query.sqlite')
+    openAt: first-search
+
+- id: agent-preset-registry
+  config:
+    default: leon
+
+- insert:
+    # Workspace memory: the provider-neutral seam with the local
+    # storage-domain provider selected explicitly.
+    - id: memory
+      name: '@deepseek-ai/dsh-memory'
+      config:
+        provider: local
+
+    - id: memory-local
+      name: '@deepseek-ai/dsh-memory-local'
+      config:
+        # Corrections preserve prior revisions atomically. Set to v1 only as
+        # an emergency rollback that resumes in-place overwrites.
+        historyMode: temporal-v2
+        # Semantic recall needs a loopback embeddings endpoint; a profile patch
+        # enables it once that endpoint is running.
+        semanticSearch:
+          enabled: false
+
+    # Personal memory keeps its own service, provider registry, and storage
+    # domain; it crosses projects only inside the configured owner partition.
+    - id: personal-memory
+      name: '@deepseek-ai/dsh-personal-memory'
+      config:
+        provider: local
+
+    - id: personal-memory-local
+      name: '@deepseek-ai/dsh-personal-memory-local'
+      config:
+        historyMode: temporal-v2
+
+    # The shadow candidate queue and its human review trail. Final writes
+    # need the master switch, the exact workspace id, and the exact owner id;
+    # nothing is written automatically until the operator opts in.
+    - id: memory-candidate-review
+      name: '@deepseek-ai/dsh-tool-memory/review'
+      config:
+        reviewedBy: leon-local-operator
+        automaticWrite: false
+        automaticWriteWorkspaceIds: []
+        automaticWriteUserIds: []
+        # Set back to read-only for an immediate mutation rollback.
+        administrationMode: full
+        personalOwnerId: leon-local-owner
+
+    # Reviewed, workspace-scoped procedures. A candidate becomes reusable only
+    # after the exact direct-human review command accepts it.
+    - id: procedure-learning
+      name: '@deepseek-ai/dsh-tool-memory/procedure-learning'
+      config:
+        reviewedBy: leon-local-operator
+
+    # Two equivalent tool failures add logged recovery context and lock the
+    # unchanged call; a response without final content gets one guided
+    # continuation before failing visibly.
+    - id: failure-recovery-policy
+      name: '@deepseek-ai/dsh-failure-recovery-policy'
+      config:
+        maxEquivalentFailures: 2
+        maxNoFinalResponseRecoveries: 1
+
+    # Read-only semantic navigation for TypeScript and JavaScript projects.
+    # The language server ships as a bundle dependency and starts through
+    # Node directly, avoiding PATH, npx downloads, and shell wrappers.
+    - id: lsp
+      name: '@deepseek-ai/dsh-lsp'
+
+    - id: lsp-stdio
+      name: '@deepseek-ai/dsh-lsp-stdio'
+      config:
+        servers:
+          typescript:
+            command: !!js process.execPath
+            args:
+              - !!js "process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('typescript-language-server/lib/cli.mjs')"
+              - --stdio
+            extensionToLanguage:
+              .ts: typescript
+              .tsx: typescriptreact
+              .js: javascript
+              .jsx: javascriptreact
+              .mts: typescript
+              .cts: typescript
+              .mjs: javascript
+              .cjs: javascript
+
+    # Brazilian Portuguese interface; a Portuguese browser selects it
+    # automatically and the Language row offers it explicitly.
+    - id: language-pt-br
+      name: '@deepseek-ai/dsh-client-language-pt-br'
+
+    # Session-scoped web access: /web on|off and the composer Web button let
+    # the user consent once for a whole session; the egress guard below
+    # honors it and asks per call otherwise.
+    - id: web-access
+      name: '@deepseek-ai/dsh-web-access'
+
+    - id: ui-web-access
+      name: '@deepseek-ai/dsh-client-ui-web-access'
+
+    # Every web_search and web_fetch call asks the user once, showing the
+    # complete queries or URL, before anything leaves the machine.
+    - id: web-egress-approval
+      name: '@deepseek-ai/dsh-web-egress-approval'
+      config:
+        tools: [web_search, web_fetch]
+        maxArgumentChars: 8192

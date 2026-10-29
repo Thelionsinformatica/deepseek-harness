@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-08-25-leon-personal-memory-control.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-25-leon-personal-memory-control.md
+/agent-note-leon-personal-memory-user-control:
+  en: d9fc52faf66a69a6
+  zh: e65e592ad659c9da
+/agent-note-leon-personal-memory-user-control/problem:
+  en: 066be7b4dece8a3d
+  zh: 158a4529270d342b
+/agent-note-leon-personal-memory-user-control/decision:
+  en: 9f15519f076769a5
+  zh: 0e5b1fd28b910d0a
+/agent-note-leon-personal-memory-user-control/verification:
+  en: d1f9b25a37cda208
+  zh: 49435205f310be86
+/agent-note-leon-personal-memory-user-control/alternatives-considered:
+  en: 5ac0b8199b7e1498
+  zh: 5f2d9dd65b23403a
+/agent-note-leon-personal-memory-user-control/consequences:
+  en: c05b094a5af2c538
+  zh: 001a5be9c2e37dc7

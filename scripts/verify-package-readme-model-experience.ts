@@ -49,6 +49,16 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
  */
 const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/client/ui-entry-customization': { kind: 'none', reason: 'Controls browser launchers and prepares a reviewable Creator draft without submitting model input.' },
+  'packages/client/language-pt-br': { kind: 'indirect', reason: 'A browser language pack; it changes interface text only and never reaches a model request.' },
+  'packages/web/web-access': { kind: 'indirect', reason: 'The grant adds no prompt text or schema; it only decides whether the web egress guard asks before a call.' },
+  'packages/client/ui-web-access': { kind: 'indirect', reason: 'A browser composer control; it never reaches a model request.' },
+  'packages/guard/web-egress-approval': { kind: 'indirect', reason: 'The guard adds no prompt text or schema; the model sees only the registry\'s approval outcome on a refused call.' },
+  'packages/bundle/leon': { kind: 'indirect', reason: 'The bundle is a patch-list carrier; mounted packages own model-facing text and the Leon persona reaches the model through dsh-persona.' },
+  'packages/memory/memory': { kind: 'indirect', reason: 'The provider registry delegates model rendering to dsh-tool-memory.' },
+  'packages/memory/memory-local': { kind: 'indirect', reason: 'The local provider delegates model rendering to dsh-tool-memory.' },
+  'packages/memory/memory-continuity': { kind: 'none', reason: 'Snapshot export and restore register no model tools or prompt sections; consumers own retrieval.' },
+  'packages/memory/personal-memory': { kind: 'indirect', reason: 'The provider registry delegates model rendering to dsh-tool-memory.' },
+  'packages/memory/personal-memory-local': { kind: 'indirect', reason: 'The local provider delegates model rendering to dsh-tool-memory.' },
   'packages/experimental/client-ui-cot-translation': { kind: 'indirect', reason: 'The translator owns optional paid queries; normal Session activation delegates startup context to the preset.' },
   'packages/experimental/cot-translation-bundle': { kind: 'indirect', reason: 'The GUI consumer delegates paid query prompts to the translator and normal activation context to the Session preset.' },
   'packages/client/product-analytics': { kind: 'none', reason: 'Desktop analytics observes selected interactions without contributing model context or Session events.' },

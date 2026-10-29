@@ -1,0 +1,40 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/memory/memory-continuity/README.md
+/:
+  en: 86ce2cf6e7ac8098
+  zh: 76bbf7fb4ee24131
+/deepseek-ai-dsh-memory-continuity:
+  en: 89f383c63eb39ee2
+  zh: 01b4b0424ffa56ef
+/deepseek-ai-dsh-memory-continuity/summary:
+  en: 9c13c50048614fca
+  zh: ce7e723caba6e0f0
+/deepseek-ai-dsh-memory-continuity/table-of-contents:
+  en: cf3aaa789df2c145
+  zh: a1cd2e2e2bf3bd04
+/deepseek-ai-dsh-memory-continuity/consumer-contract:
+  en: 0dafcf95bcb31b87
+  zh: eb05b0b5278bb05c
+/deepseek-ai-dsh-memory-continuity/journal-and-persistence:
+  en: 30a404a186257712
+  zh: becbe3d83dda4358
+/deepseek-ai-dsh-memory-continuity/verification:
+  en: 71c1bcb2676e3778
+  zh: 5665c3ff5bbca54a
+/deepseek-ai-dsh-memory-continuity/license:
+  en: 71c8a8470556dbbe
+  zh: 2a321f716b6dc3c4
+/deepseek-ai-dsh-memory-continuity/model-experience:
+  en: c67aaa7a21ecbee9
+  zh: 282376a28ee6f4a5
+/deepseek-ai-dsh-memory-continuity/model-experience/kv-cache-effect:
+  en: f283ad439fecb42c
+  zh: b0ab6f53e64b0fd9
+/deepseek-ai-dsh-memory-continuity/known-limitations-and-deferred-work:
+  en: ed97f396c0fe8ce2
+  zh: 73382366b5a2d095
+/deepseek-ai-dsh-memory-continuity/known-limitations-and-deferred-work/dev-note:
+  en: 9357c0ffcebdac00
+  zh: 4983cfa4f92e1d8e

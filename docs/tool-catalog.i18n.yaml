@@ -9,8 +9,44 @@
   en: 6cc2cd9ced70bb09
   zh: 1c0e6cb4ba2ed637
 /tool-schema-catalog/tool-package-map:
-  en: 4d42222acd39d083
-  zh: 8153a5065bf2ebd6
+  en: 2f9a0e5473847798
+  zh: 9a0f073f09360e61
+/tool-schema-catalog/deepseek-ai-dsh-tool-memory:
+  en: b94bf14065439df0
+  zh: b94bf14065439df0
+/tool-schema-catalog/deepseek-ai-dsh-tool-memory/memory-forget:
+  en: 37fcc3e863ab091a
+  zh: ca25cf49d1dc460c
+/tool-schema-catalog/deepseek-ai-dsh-tool-memory/memory-remember:
+  en: 385d699901152252
+  zh: d0f626e0749d3405
+/tool-schema-catalog/deepseek-ai-dsh-tool-memory/memory-search:
+  en: 20621047cb4c0c84
+  zh: e0fe6fe2df6cd2c3
+/tool-schema-catalog/deepseek-ai-dsh-tool-memory/memory-update:
+  en: ccdc6a326146d74a
+  zh: 22370c085d58c68b
+/tool-schema-catalog/deepseek-ai-dsh-tool-memory/personal-memory-forget:
+  en: 3c6c68b7b22fe7f4
+  zh: 2260086cfb15700e
+/tool-schema-catalog/deepseek-ai-dsh-tool-memory/personal-memory-remember:
+  en: 0b3a543b9dafe9d4
+  zh: 5273123e5bddb204
+/tool-schema-catalog/deepseek-ai-dsh-tool-memory/personal-memory-search:
+  en: 4aa5133858400057
+  zh: adfeaf624a209577
+/tool-schema-catalog/deepseek-ai-dsh-tool-memory/personal-memory-update:
+  en: 98cc49a840338c52
+  zh: 530ce7c12792ac14
+/tool-schema-catalog/deepseek-ai-dsh-tool-knowledge-base:
+  en: 4e974bd0da1af96c
+  zh: 4e974bd0da1af96c
+/tool-schema-catalog/deepseek-ai-dsh-tool-knowledge-base/knowledge-search:
+  en: 14f056a62a865aa4
+  zh: 3188b73370f165eb
+/tool-schema-catalog/deepseek-ai-dsh-tool-knowledge-base/knowledge-status:
+  en: 1bf3a056a06ccbaf
+  zh: 7fd20f631fdca8f7
 /tool-schema-catalog/deepseek-ai-dsh-plugin-manager:
   en: e0143916bb634762
   zh: e0143916bb634762

@@ -231,6 +231,10 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-creation-recommendations': ['references/*.md', 'skills/*.md'],
   // Official-plugin recommendations ship the skill text their provider loads.
   '@deepseek-ai/dsh-plugin-recommendations': ['skills/*.md'],
+  // Leon's skills ship with the bundle that adds them to the leon preset's roots.
+  '@deepseek-ai/dsh-leon': ['skills'],
+  // The knowledge tool runs this helper as a subprocess; it is not a module entry.
+  '@deepseek-ai/dsh-tool-knowledge-base': ['helper/knowledge.mjs'],
   // The Web Host mounts the default-off settings owner independently of the
   // delegation-tool instances.
   '@deepseek-ai/dsh-tool-subagent': ['lib/model-selection-settings.js'],

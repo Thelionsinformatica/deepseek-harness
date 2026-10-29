@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-08-22-provider-neutral-workspace-memory.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-22-provider-neutral-workspace-memory.md
+/agent-note-provider-neutral-workspace-memory-with-a-local-first-provider:
+  en: 2fa00ebac7376624
+  zh: f9108e5d0cdbf2b0
+/agent-note-provider-neutral-workspace-memory-with-a-local-first-provider/problem:
+  en: 8fe5b0542b09d240
+  zh: 18eb82345034ccdf
+/agent-note-provider-neutral-workspace-memory-with-a-local-first-provider/decision:
+  en: 3a681b01321f1792
+  zh: 0602db9968702a11
+/agent-note-provider-neutral-workspace-memory-with-a-local-first-provider/verification:
+  en: 5e4e8052a40046ee
+  zh: ace9cfa1f052ff0c
+/agent-note-provider-neutral-workspace-memory-with-a-local-first-provider/alternatives-considered:
+  en: 9128c057d8947fd9
+  zh: 4658d8f8feb53b33
+/agent-note-provider-neutral-workspace-memory-with-a-local-first-provider/consequences:
+  en: d585723f948850a6
+  zh: 4021ffc5977709e6

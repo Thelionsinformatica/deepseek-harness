@@ -22,12 +22,16 @@ kind: "package-group"
 <a id="packages"></a>
 ## 包
 
-两个小插件分别覆盖两种模式；下文每个 README 都说明何时保留、调优或移除它。
+两个小插件分别覆盖两种模式，Leon 目标守卫负责直接人类指定路径的授权；下文每个 README 都说明何时保留、调优或移除它。
 
 | 包 | 提供什么 |
 |---|---|
 | [`repeat-tool-reminder/`](repeat-tool-reminder/README.zh.md) | 在模型重复完全相同的工具调用时提醒它，使其改变方法或结束任务 |
 | [`timeout-policy/`](timeout-policy/README.zh.md) | 为声明了限时的工具调用设置超时，让模型得到清晰错误而不是无限等待 |
+| [`explicit-target-policy/`](explicit-target-policy/README.zh.md) | 将根文件系统调用限制在最新直接人类消息指定的 Windows 目标内；由 Leon 预设挂载，不在基础组合包中 |
+| [`completion-claim-policy/`](completion-claim-policy/README.zh.md) | 依据开放轮次的证据检查强完成声明与精确任务验收；由 Leon 预设挂载 |
+| [`failure-recovery-policy/`](failure-recovery-policy/README.zh.md) | 阻止重复的等价工具失败并恢复空最终响应；由 Leon 预设挂载 |
+| [`web-egress-approval/`](web-egress-approval/README.zh.md) | 每次 `web_search` 或 `web_fetch` 调用在任何数据离开本机之前先询问用户一次；由 Leon 组合包挂载 |
 
 -----
 

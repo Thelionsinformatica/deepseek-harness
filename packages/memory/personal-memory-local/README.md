@@ -1,0 +1,66 @@
+---
+description: "Local provider for ctx.personalMemory in a domain separate from workspace memory, for maintainers configuring Leon personal memory."
+kind: "package-reference"
+---
+
+# @deepseek-ai/dsh-personal-memory-local
+
+English | [中文](README.zh.md)
+
+## Summary
+
+This package is the local provider for `ctx.personalMemory`. It opens the versioned `personal_memory_local` storage domain, physically separate from workspace memory's `memory_local` domain, and adapts the proven local revision engine without exposing its internal partition key.
+
+## Table of Contents
+
+- [Behavior](#behavior)
+- [Configuration](#configuration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="behavior"></a>
+## Behavior
+
+- Each local owner maps to one internal partition inside the dedicated personal-memory domain. Public records return only `PersonalMemoryScope`; synthetic workspace identifiers never cross the provider boundary.
+- Create, correct, and forget operations remain serialized. `temporal-v2` preserves prior revisions atomically and requires compare-and-set references.
+- Search and list never return another owner partition. Cross-owner correction and deletion become `PERSONAL_MEMORY_NOT_FOUND`, hiding whether the id exists elsewhere.
+- The provider uses deterministic case- and accent-insensitive lexical retrieval and survives process restart through the selected `ctx.storageDomain` backend.
+
+<a id="configuration"></a>
+## Configuration
+
+`historyMode` defaults to `temporal-v2`. `v1` is an emergency rollback to in-place correction; it does not merge the personal and workspace domains.
+
+Optional `linking` derives revision-pinned similarity edges with the same validated bounds, durable publication, temporal scheduling, and read-only snapshots as `memory-local`. `embeddings` selects its loopback transport; a deployment must verify that endpoint runs locally rather than proxies remotely. The live personal-memory enablement preference also gates background work: disabling cancels pending computation, suppresses publication, and drains submitted writes; re-enabling seeds known partitions without editing their facts. The domain closes only after graph work settles.
+
+The [bounded graph recovery contract](../memory-local/README.md) applies here too: `linking.retryAttempts`, `retryDelayMs`, and `retryMaxDelayMs` govern finite transient retries, including persisted failures after startup. Complete document segmentation uses `embeddings.graphInputCharacters`, `graphBatchInputs`, `graphInputSplitDepth`, and `graphTimeoutMs`, with the same defaults. Failed rebuilds retain the last snapshot's exact coverage and remain explicitly failed. Chunk-mean similarity is approximate and does not validate personal facts.
+
+<a id="model-experience"></a>
+## Model Experience
+
+Indirectly, through `@deepseek-ai/dsh-tool-memory`; this provider adds no schema or prompt text.
+
+#### KV Cache effect
+
+None.
+
+## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
+
+- Semantic retrieval is not enabled for personal memory in this increment; deterministic lexical retrieval is the baseline.
+- Encryption at rest depends on a future encrypted storage backend or operating-system volume protection.
+- Deleting the configured storage directory deletes personal memory; backup and restore must include the `personal_memory_local` domain.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+This Dev Note is working context for maintainers and is not authoritative. The package was ported from the Leon fork onto DeepSeek Harness 0.2.1; the [replatform Agent Note](../../../.agents/notes/implemented/architecture/2026-10-09-leon-replatform-onto-0-2-1.md) records the porting approach.
+
+</details>

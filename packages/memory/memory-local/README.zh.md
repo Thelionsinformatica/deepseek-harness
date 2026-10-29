@@ -1,0 +1,83 @@
+---
+description: "ctx.memory 的本地提供方，带修订历史、词法检索和可选的本机语义检索，供配置 Leon 记忆的维护者阅读。"
+kind: "package-reference"
+---
+
+# @deepseek-ai/dsh-memory-local
+
+[English](README.md) | 中文
+
+## 概述
+
+本包是 `ctx.memory` 的本地 Service Provider。它通过 `ctx.storageDomain` 打开版本化 `memory_local` domain，因此由部署选择的存储后端负责物理介质和持久性行为。
+
+## 目录
+
+- [行为](#behavior)
+- [配置](#configuration)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="behavior"></a>
+## 行为
+
+更改记录正文会清除未提供的确认与置信度字段；旧批准不能证明新文本。正文不变的更新保留未提供的字段。Host 更新可在自己的确认检查后显式提供新的 `validation` 和 `confidence`。这适用于 `v1` 和 `temporal-v2` 两种模式；在时间模式下，历史中的先前修订保留原始元数据。这是修订失效与元数据持久化机制，而不是对替换文本的事实核验或对已有记忆的追溯审计。
+
+- 记录以生成的 `MemoryId` 值作为键，并携带稳定的 `WorkspaceId` 所有权、会话来源、ISO 时间戳、用于比较并设置的 revision，以及创建时提供的可选 importance、confidence、确认与时间元数据。
+- 创建、纠正和遗忘操作会串行执行。在默认的 `temporal-v2` 模式下，一次纠正会在同一个谱系值中原子写入新的当前修订与不可变的先前修订。持久写入落地后，操作才会完成。
+- 活动搜索会先按 workspace 与评估时间过滤，之后才会排序或把候选文本发送给其他本地组件。默认不返回尚未生效、已过期或已被替代的修订。`includeHistory: true` 通过确定性词法搜索返回有效的审计修订；历史文本不会发送到语义索引。
+- 未来生效的纠正会让先前修订持续有效到新修订的 `validFrom`；立即纠正则会在转换时刻结束先前修订。
+- 可选的混合检索通过回环地址上的 Ollama `/api/embed` 端点使用 `nomic-embed-text:latest`。查询和文档分别使用模型要求的 `search_query:` 与 `search_document:` 任务前缀，再按有界配置合并语义分数和词法分数。
+- 语义文档向量仅保存在有界的进程内 LRU 缓存中。纠正或遗忘后会使对应缓存失效，重启后按需重建；持久记忆 schema 不发生变化。
+- 本地超时、传输错误、无效响应或过大响应都会回退到词法结果。`memory/semantic-search` 事件只报告模式、数量、耗时、模型和清洗后的失败代码，不包含查询或记忆正文。
+- 跨 workspace 的纠正和删除会返回与未知 id 相同的 `MEMORY_NOT_FOUND` 错误，因此不会在 workspace 之间泄露记录是否存在。
+
+<a id="configuration"></a>
+## 配置
+
+`historyMode` 默认为 `temporal-v2`。只有在紧急回滚时才将其设为 `v1`：新的纠正会恢复原位覆盖，并且不再添加历史。已有 V2 记录仍可读取，活动搜索的有效期与过期过滤也会继续执行。
+
+`semanticSearch.enabled` 默认为 `false`。启用后，`baseUrl` 只接受 `127.0.0.1` 或 `::1` 上不带认证信息的 HTTP origin，并拒绝重定向。`api` 选择 Ollama `/api/embed` 或 `openai-compatible` `/v1/embeddings`。模型必须已在该端点可用；提供方不会下载模型。部署必须独立确保本地端点不会把记忆文本代理到远程服务。
+
+Leon Web 的交付配置会保持该功能关闭，直到本地召回率和延迟通过验收。基线使用 256 维向量、最多 200 条经过 workspace 过滤的候选，以及最多 2,000 条缓存文档向量。
+
+### 派生相似图
+
+`linking.enabled` 要求启用语义搜索，且保持显式选择。已提交的写入、启动及有效期边界会安排有界后台重建；读取不会触发重建。成功通知必须等待持久化完成，dispose 在关闭 domain 前等待已提交工作完全停稳。重启后也会重建空分区。未来生效的纠正会保留当前有效的历史修订，直到生效日期。历史搜索不会沿当前图扩展。
+
+打开存储前会校验图限制和嵌入边界。OpenAI 兼容响应索引必须与输入一一对应。图算法版本 2 对完整文档分段，不截断存储的事实。`semanticSearch.graphInputCharacters` 默认为 1,024 个 UTF-16 代码单元，并保留代理对；`graphBatchInputs` 默认为 8。收到 `INPUT_TOO_LARGE` 后先拆分批次，再将被拒绝的单个分段二分，最多达到 `graphInputSplitDepth`（默认 8）层。每次请求的期限仍然适用，`graphTimeoutMs` 限制整个嵌入过程（默认 60,000 毫秒）。文档向量是其所有分段按长度加权的平均值。图与检索向量在同一个有界 LRU 预算中使用不同的缓存用途。
+
+传输错误、超时以及 HTTP 408、429、500、502、503 或 504 在每个生成代最多追加 `linking.retryAttempts` 次尝试（默认 3；0 禁用重试）。除常规防抖时间外，延迟从 `retryDelayMs`（默认 1,000 毫秒）开始翻倍，最高为 `retryMaxDelayMs`（默认 30,000 毫秒）。启动也会安排持久化的失败分区。已提交变更启动新一代并取消过时重试；禁用或 dispose（资源释放）会取消定时器和推理，然后等待已提交写入。读取不会补充重试预算。
+
+无法继续拆分的过长输入或已耗尽的拆分预算会保持显式 `INPUT_TOO_LARGE` 故障，不自动重试。重建失败会保留先前快照的准确修订覆盖范围、边、模型、算法版本和计算时间，同时报告 `failed`；不会声称已覆盖新修订。不会将部分嵌入过程发布为完整结果。后端 I/O 期间无法撤销已提交的陈旧写入，但不会将它通知或展示为当前结果，并会重建。
+
+<a id="model-experience"></a>
+## 模型体验
+
+通过 `@deepseek-ai/dsh-tool-memory` 间接影响；本提供方不注册工具或提示词段落。
+
+#### KV Cache 影响
+
+无。语义检索不会修改提示词或模型消息；只有选中的记忆记录之后可能影响 `@deepseek-ai/dsh-tool-memory` 组装的有界记忆上下文。
+
+## 已知限制与暂缓事项
+
+<a id="known-limitations-and-deferred-work"></a>
+
+- 分段平均向量是一种近似，并不等同于整篇文档的嵌入。长文档的相似度阈值需要单独进行召回率校准；边只表示相关，不表示已核实或有因果关系。查询时检索仍采用原有整篇文档嵌入与词法回退策略。
+- 语义缓存是有界的线性重排序器，并非持久向量数据库或近似最近邻索引。模型冷启动明显慢于预热后的检索，大型 workspace 仍受 `maxCandidates` 约束。
+- 本地测量取决于硬件。在 Leon 开发机上，一个包含 8 个输入、256 维的批次在模型冷启动时约耗时 7.7 秒，随后连续 4 次预热运行耗时 68.5–107.4 毫秒。这些数字是运维基线，不是可移植的性能承诺。
+- Schema V2 字段与嵌套历史均为可选，因此旧 V1 值无需物理迁移即可继续读取。该 domain 仍没有通用迁移 runner；未来不兼容的 schema 变更必须提供显式迁移路径。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者的工作上下文——点击展开</summary>
+
+本开发备注是维护者的工作上下文，不具权威性。本包从 Leon 分支移植到 DeepSeek Harness 0.2.1；[迁移 Agent Note](../../../.agents/notes/implemented/architecture/2026-10-09-leon-replatform-onto-0-2-1.zh.md) 记录了移植方式。
+
+</details>

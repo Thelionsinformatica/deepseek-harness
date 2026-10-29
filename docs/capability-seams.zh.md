@@ -18,6 +18,21 @@ flowchart LR
   pkg_client_ui_plugin_recommendations["client-ui-plugin-recommendations"]
   pkg_headless["headless"]
   svc_headlessStartup["ctx.headlessStartup<br/>Headless invocation options"]
+  pkg_memory["memory"]
+  svc_memory["ctx.memory<br/>Durable workspace memory seam"]
+  pkg_memory_local["memory-local"]
+  pkg_tool_memory["tool-memory"]
+  pkg_web_access["web-access"]
+  svc_webAccess["ctx.webAccess<br/>Session web access grant"]
+  pkg_web_egress_approval["web-egress-approval"]
+  pkg_client_ui_web_access["client-ui-web-access"]
+  pkg_personal_memory["personal-memory"]
+  svc_personalMemory["ctx.personalMemory<br/>Durable personal memory seam"]
+  pkg_personal_memory_local["personal-memory-local"]
+  pkg_memory_continuity["memory-continuity"]
+  svc_memoryContinuity["ctx.memoryContinuity<br/>Portable local memory restore"]
+  svc_memoryCandidateReview["ctx.memoryCandidateReview<br/>Workspace-isolated memory candidate review"]
+  svc_procedureLearning["ctx.procedureLearning<br/>Evidence-gated procedure learning"]
   pkg_experimental_client_ui_cot_translation["experimental-client-ui-cot-translation"]
   svc_cotTranslation["ctx.cotTranslation<br/>Reasoning translation Remote"]
   pkg_experimental_translator["experimental-translator"]
@@ -404,10 +419,15 @@ flowchart LR
   pkg_lsp_stdio --> svc_lsp
   pkg_mcp_client --> svc_mcpResources
   pkg_mcp_resources --> svc_mcpResources
+  pkg_memory --> svc_memory
+  pkg_memory_continuity --> svc_memoryContinuity
+  pkg_memory_local --> svc_memory
   pkg_message_feedback --> svc_messageFeedback
   pkg_office_to_pdf --> svc_officeToPdf
   pkg_otel --> svc_otel
   pkg_permission_presets --> svc_permissionPresets
+  pkg_personal_memory --> svc_personalMemory
+  pkg_personal_memory_local --> svc_personalMemory
   pkg_plan_mode --> svc_planMode
   pkg_plugin_manager --> svc_pluginManager
   pkg_plugin_market --> svc_pluginMarket
@@ -464,12 +484,15 @@ flowchart LR
   pkg_terminal --> svc_terminals
   pkg_terminal_bash --> svc_terminals
   pkg_token_meter --> svc_tokenMeter
+  pkg_tool_memory --> svc_memoryCandidateReview
+  pkg_tool_memory --> svc_procedureLearning
   pkg_tool_subagent --> svc_subagentModelSelection
   pkg_tools --> svc_tools
   pkg_typert_registry --> svc_typert
   pkg_user_approval --> svc_approval
   pkg_user_questions --> svc_userQuestions
   pkg_web --> svc_web
+  pkg_web_access --> svc_webAccess
   pkg_web_app --> svc_webApp
   pkg_web_deepseek_api --> svc_web
   pkg_web_fetch_http --> svc_web
@@ -538,15 +561,18 @@ flowchart LR
   svc_llm --> pkg_compaction_basic
   svc_lsp --> pkg_tool_lsp
   svc_mcpResources --> pkg_mcp_resources
+  svc_memory --> pkg_tool_memory
   svc_officeToPdf --> pkg_client_ui_sidebar_documentpreview
   svc_otel --> pkg_host_product_telemetry_otel
   svc_otel --> pkg_session_telemetry_otel
+  svc_personalMemory --> pkg_tool_memory
   svc_pluginManager --> pkg_plugin_manager
   svc_pluginManager --> pkg_ui_settings_plugin_inventory
   svc_pluginMarket --> pkg_client_ui_plugin_market
   svc_pluginMarket --> pkg_plugin_market
   svc_pluginRecommendations --> pkg_client_ui_plugin_recommendations
   svc_pluginRegistryProbe --> pkg_client_ui_plugin_manager
+  svc_procedureLearning --> pkg_tool_memory
   svc_profileContext --> pkg_plugin_manager
   svc_ptcRuntime --> pkg_tool_executor_ptc
   svc_ptcRuntime --> pkg_workflow_ptc
@@ -629,6 +655,8 @@ flowchart LR
   svc_typert --> pkg_typert_loader
   svc_userQuestions --> pkg_tool_ask_user
   svc_web --> pkg_tool_web
+  svc_webAccess --> pkg_client_ui_web_access
+  svc_webAccess --> pkg_web_egress_approval
   svc_webApp --> pkg_harness_dev_context
   svc_webServer --> pkg_client_connection
   svc_webServer --> pkg_client_hmr
@@ -653,6 +681,12 @@ flowchart LR
 | `ctx.actionCards` | `service` | [`action-cards`](../packages/experimental/action-cards) | - | [`creation-recommendations`](../packages/experimental/creation-recommendations), [`client-ui-action-cards`](../packages/experimental/client-ui-action-cards) | - | 负责卡片工具、卡片状态、用户操作和状态通知；各卡片种类注册自己的动作和处理器。 |
 | `ctx.pluginRecommendations` | `service` | [`plugin-recommendations`](../packages/experimental/plugin-recommendations) | - | [`client-ui-plugin-recommendations`](../packages/experimental/client-ui-plugin-recommendations) | - | 读取官方插件卡片的当前目录文本，并在用户点击后通过配置插件管理器启用该插件。 |
 | `ctx.headlessStartup` | `core` | [`headless`](../packages/bundle/headless) | - | [`headless`](../packages/bundle/headless) | - | 将解析后的任务和运行选项提供给无界面运行器及其 sandbox-policy 配置。 |
+| `ctx.memory` | `seam` | [`memory`](../packages/memory/memory) | [`memory-local`](../packages/memory/memory-local) | [`tool-memory`](../packages/memory/tool-memory) | - | 与提供方无关的创建、搜索、更正和遗忘操作始终限定在 WorkspaceId 范围内；本地后端通过 storage-domain 持久化，而 tool-memory 负责模型策略。 |
+| `ctx.webAccess` | `service` | [`web-access`](../packages/web/web-access) | - | [`web-egress-approval`](../packages/guard/web-egress-approval), [`client-ui-web-access`](../packages/client/ui-web-access) | - | 记录按会话的用户决定，允许原生 web 工具跳过每次调用的出网审批；/web on\|off 与输入框的 Web 按钮用于切换该决定。 |
+| `ctx.personalMemory` | `seam` | [`personal-memory`](../packages/memory/personal-memory) | [`personal-memory-local`](../packages/memory/personal-memory-local) | [`tool-memory`](../packages/memory/tool-memory) | - | 独立的所有者作用域提供方注册表与存储域，在不使用遥测身份的情况下跨工作区保留明确的非敏感个人事实。 |
+| `ctx.memoryContinuity` | `core` | [`memory-continuity`](../packages/memory/memory-continuity) | - | - | - | 导出血缘快照并把缺失记录恢复到调用方提供的表；journal 持久化仍归调用方所有。 |
+| `ctx.memoryCandidateReview` | `core` | [`tool-memory`](../packages/memory/tool-memory) | - | - | - | 拥有本地影子队列，从活动或持久化的 Session 推导工作区权威，并通过投影的 Remote 记录不可变的人工决定而不写入最终记忆。 |
+| `ctx.procedureLearning` | `core` | [`tool-memory`](../packages/memory/tool-memory) | - | [`tool-memory`](../packages/memory/tool-memory) | - | 把有界 Session 投影中的成功工具调用与独立的验证器证据，转化为可审阅、可重新验证、可撤销的工作区过程，同时不保留凭据或原始工具结果。 |
 | `ctx.cotTranslation` | `service` | [`experimental-client-ui-cot-translation`](../packages/experimental/client-ui-cot-translation) | - | - | - | 为展开的思考内容提供有界的 Session 翻译请求，不改变模型可见历史。 |
 | `ctx.translator` | `service` | [`experimental-translator`](../packages/experimental/translator) | - | [`experimental-client-ui-cot-translation`](../packages/experimental/client-ui-cot-translation) | - | 解析 Google 或 Bing 请求，并可选保留统一的实验性 Session 记录。 |
 | `ctx.hmr` | `core` | [`hmr`](../packages/boot/hmr) | - | [`app-boot`](../packages/boot/app-boot) | - | 负责模块和精确配置监听；应用修改共用其队列，自动重载等待应用文件锁。 |

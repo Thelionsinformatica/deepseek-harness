@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-08-24-tool-failure-recovery-policy.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-24-tool-failure-recovery-policy.md
+/agent-note-repeated-tool-failure-recovery-policy:
+  en: b513f08ad879c78a
+  zh: 678f691a39253da6
+/agent-note-repeated-tool-failure-recovery-policy/problem:
+  en: 3f433ec66f5ac9f1
+  zh: c2bbf0344d892847
+/agent-note-repeated-tool-failure-recovery-policy/decision:
+  en: b26d552169cf7c35
+  zh: 822fc45d934cef98
+/agent-note-repeated-tool-failure-recovery-policy/verification:
+  en: 73950a94489fe344
+  zh: fc2b5fd0bd2023fa
+/agent-note-repeated-tool-failure-recovery-policy/alternatives-considered:
+  en: 4cade99c25a8e65d
+  zh: bff62f387d3dbba6
+/agent-note-repeated-tool-failure-recovery-policy/consequences:
+  en: a07136ca52347670
+  zh: a92f1647cad9cc87

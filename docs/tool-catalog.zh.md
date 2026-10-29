@@ -54,6 +54,294 @@
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`、`ctx.workflowEngine`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents the script children)` | `tool/call`、`tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-workspace-dependencies` | `load_workspace_dependencies` | `ctx.tools` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`、`web_search` | `ctx.tools`、`ctx.web`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可见 schema 在更换后端时保持稳定。 |
+| `@deepseek-ai/dsh-tool-memory` | `memory_forget`, `memory_remember`, `memory_search`, `memory_update`, `personal_memory_forget`, `personal_memory_remember`, `personal_memory_search`, `personal_memory_update` | `ctx.tools`, `ctx.systemPrompt`, `ctx.sessionProjections`, `ctx.memory`, `ctx.personalMemory`, `ctx.workspaceRegistry`, `a calling Agent with a registered workspace` | `tool/call`, `provider-owned durable workspace or personal memory for mutations`, `tool/result` | - | 工作区操作把调用会话的 cwd 解析为稳定的工作区 id。个人操作使用独立于工作区身份的显式所有者分区。写入需要明确的保留策略指引；更正与删除需要搜索返回的精确 id 和 revision。 |
+| `@deepseek-ai/dsh-tool-knowledge-base` | `knowledge_search`, `knowledge_status` | `ctx.tools`, `ctx.systemPrompt`, `ctx.subprocess`, `an exact authorized .leon/knowledge root` | `tool/call`, `tool/result` | - | 两个工具都是对受信本地 JSON 助手的只读封装，使用固定 argv 与受限输出。外部根目录部署必须搭配授权守卫，例如 dsh-explicit-target-policy。 |
+
+<a id="deepseek-aidsh-tool-memory"></a>
+
+## `@deepseek-ai/dsh-tool-memory`
+
+### `memory_forget`
+
+使用 memory_search 返回的精确 id 和 revision，永久遗忘当前工作区中的一条记忆。仅在用户要求遗忘或确认必须删除该保留事实时使用。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "memory_id": {
+      "type": "string",
+      "description": "Exact memory id returned by search."
+    },
+    "revision": {
+      "type": "number",
+      "description": "Exact positive revision returned by search."
+    }
+  },
+  "required": [
+    "memory_id",
+    "revision"
+  ]
+}
+```
+
+Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `memory_remember`
+
+在当前工作区持久保存一条稳定的事实、偏好、决策或配置。仅在用户明确表达记住意图或已清晰确认持久事实时使用。绝不要存储凭据或认证密钥。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "content": {
+      "type": "string",
+      "description": "A self-contained fact to remember."
+    },
+    "valid_from": {
+      "type": "string",
+      "description": "Optional ISO timestamp that schedules activation."
+    },
+    "expires_at": {
+      "type": "string",
+      "description": "Optional ISO timestamp that expires active recall."
+    }
+  },
+  "required": [
+    "content"
+  ]
+}
+```
+
+Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `memory_search`
+
+仅搜索属于当前工作区的持久记忆。在表示不记得此前的项目事实、偏好、决策或配置之前，先使用本工具。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "What to recall."
+    },
+    "limit": {
+      "type": "number",
+      "description": "Maximum results; defaults to 8."
+    },
+    "include_history": {
+      "type": "boolean",
+      "description": "Include superseded, scheduled, and expired revisions for an explicit audit."
+    }
+  },
+  "required": [
+    "query"
+  ]
+}
+```
+
+Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `memory_update`
+
+使用 memory_search 返回的精确 id 和 revision 更正当前工作区中的一条记忆。过期的 revision 会安全失败。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "memory_id": {
+      "type": "string",
+      "description": "Exact memory id returned by search."
+    },
+    "revision": {
+      "type": "number",
+      "description": "Exact positive revision returned by search."
+    },
+    "content": {
+      "type": "string",
+      "description": "Complete corrected fact."
+    }
+  },
+  "required": [
+    "memory_id",
+    "revision",
+    "content"
+  ]
+}
+```
+
+Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `personal_memory_forget`
+
+在用户请求或确认删除后，永久遗忘一条个人记忆。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "memory_id": {
+      "type": "string",
+      "description": "Exact memory id returned by search."
+    },
+    "revision": {
+      "type": "number",
+      "description": "Exact positive revision returned by search."
+    }
+  },
+  "required": [
+    "memory_id",
+    "revision"
+  ]
+}
+```
+
+Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `personal_memory_remember`
+
+在用户明确表达记住意图后，提出一条跨项目工作区稳定且非敏感的个人事实。用户必须在个人记忆面板中确认后才会进入自动回忆。绝不要存储凭据。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "content": {
+      "type": "string",
+      "description": "Self-contained personal fact to remember."
+    }
+  },
+  "required": [
+    "content"
+  ]
+}
+```
+
+Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `personal_memory_search`
+
+搜索跨项目工作区共享、由用户控制的个人记忆。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "Personal preference or fact to recall."
+    },
+    "limit": {
+      "type": "number",
+      "description": "Maximum results; defaults to 8."
+    },
+    "include_history": {
+      "type": "boolean",
+      "description": "Include superseded, scheduled, and expired revisions."
+    }
+  },
+  "required": [
+    "query"
+  ]
+}
+```
+
+Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+### `personal_memory_update`
+
+使用搜索返回的精确 id 和 revision 更正一条个人记忆。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "memory_id": {
+      "type": "string",
+      "description": "Exact memory id returned by search."
+    },
+    "revision": {
+      "type": "number",
+      "description": "Exact positive revision returned by search."
+    },
+    "content": {
+      "type": "string",
+      "description": "Complete corrected personal fact."
+    }
+  },
+  "required": [
+    "memory_id",
+    "revision",
+    "content"
+  ]
+}
+```
+
+Source: [`packages/memory/tool-memory/src/index.ts`](../packages/memory/tool-memory/src/index.ts)
+
+工作区操作将调用会话的 cwd 解析为稳定的工作区 id。个人操作使用与工作区身份无关的显式所有者分区。写入需要明确的保留策略指引；更正与删除需要搜索返回的精确 id 和 revision。
+
+<a id="deepseek-aidsh-tool-knowledge-base"></a>
+
+## `@deepseek-ai/dsh-tool-knowledge-base`
+
+### `knowledge_search`
+
+搜索某个精确的本地 .leon/knowledge 根目录中已建立索引的 wiki。用它替代递归 glob／grep；绝不枚举或返回原始源目录。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "knowledge_root": {
+      "type": "string",
+      "description": "Exact absolute path ending in .leon/knowledge from the current direct user request."
+    },
+    "query": {
+      "type": "string",
+      "description": "Focused search phrase, 1-512 characters."
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Maximum results from 1-20. Defaults to 8."
+    }
+  },
+  "required": [
+    "knowledge_root",
+    "query"
+  ]
+}
+```
+
+Source: [`packages/knowledge/tool-knowledge-base/src/index.ts`](../packages/knowledge/tool-knowledge-base/src/index.ts)
+
+### `knowledge_status`
+
+以确定性方式检查某个精确的本地 .leon/knowledge 根目录。在枚举文件系统之前使用；返回经过校验的来源计数、状态与完整性问题，而不把原始来源读入模型上下文。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "knowledge_root": {
+      "type": "string",
+      "description": "Exact absolute path ending in .leon/knowledge from the current direct user request."
+    }
+  },
+  "required": [
+    "knowledge_root"
+  ]
+}
+```
+
+Source: [`packages/knowledge/tool-knowledge-base/src/index.ts`](../packages/knowledge/tool-knowledge-base/src/index.ts)
+
+两个工具都是对受信本地 JSON 助手的只读封装，使用固定 argv 与受限输出。外部根目录部署必须搭配授权守卫，例如 dsh-explicit-target-policy。
+
 
 <a id="deepseek-aidsh-plugin-manager"></a>
 

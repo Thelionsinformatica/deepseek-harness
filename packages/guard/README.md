@@ -22,12 +22,16 @@ The `guard/` group keeps the agent loop productive by watching for two common fa
 <a id="packages"></a>
 ## Packages
 
-Two small plugins cover the two patterns; each README below explains when to keep, tune, or remove it.
+Two small plugins cover the two patterns, and the Leon target guard enforces direct-human path authority; each README below explains when to keep, tune, or remove it.
 
 | Package | What it provides |
 |---|---|
 | [`repeat-tool-reminder/`](repeat-tool-reminder/README.md) | Reminds the model when it repeats the same tool call, so it changes approach or finishes |
 | [`timeout-policy/`](timeout-policy/README.md) | Times out tool calls that declare a limit, so the model gets a clear error instead of waiting forever |
+| [`explicit-target-policy/`](explicit-target-policy/README.md) | Keeps root filesystem calls inside the Windows target the latest direct human message named; mounted by Leon presets, not by the base bundle |
+| [`completion-claim-policy/`](completion-claim-policy/README.md) | Checks strong completion claims and exact task acceptance against the open turn's evidence; mounted by Leon presets |
+| [`failure-recovery-policy/`](failure-recovery-policy/README.md) | Stops repeated equivalent tool failures and recovers empty final responses; mounted by Leon presets |
+| [`web-egress-approval/`](web-egress-approval/README.md) | Asks the user once per `web_search` or `web_fetch` call before anything leaves the machine; mounted by the Leon bundle |
 
 -----
 

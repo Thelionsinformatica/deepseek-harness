@@ -6,6 +6,11 @@ import { join } from 'node:path'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { LocalCredentialProvider } from '../src/index.ts'
 
+vi.mock('../src/windows-protection.ts', async importOriginal => ({
+  ...await importOriginal<typeof import('../src/windows-protection.ts')>(),
+  credentialProtectorForPlatform: () => undefined,
+}))
+
 const fsHarness = vi.hoisted(() => ({
   nextReadError: undefined as NodeJS.ErrnoException | undefined,
 }))

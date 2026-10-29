@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-08-22-controlled-automatic-memory-recall.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-22-controlled-automatic-memory-recall.md
+/agent-note-controlled-automatic-recall-for-leon:
+  en: 571a34c8d8f0d4cc
+  zh: 8b769f90d981e394
+/agent-note-controlled-automatic-recall-for-leon/problem:
+  en: 19d48561a1359e43
+  zh: 7a49dd5b8d2e8287
+/agent-note-controlled-automatic-recall-for-leon/decision:
+  en: 2a914aff05cf5196
+  zh: 5158e38c85eac204
+/agent-note-controlled-automatic-recall-for-leon/verification:
+  en: 9e3e191123eb3768
+  zh: 234682b2d305f0dd
+/agent-note-controlled-automatic-recall-for-leon/alternatives-considered:
+  en: d34f1d90947658a5
+  zh: 4f2bee4805b4842d
+/agent-note-controlled-automatic-recall-for-leon/consequences:
+  en: a47921601135b28b
+  zh: be0a23cf7b31b286

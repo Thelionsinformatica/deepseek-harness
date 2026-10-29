@@ -1,0 +1,70 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/guard/failure-recovery-policy/README.md
+/:
+  en: ab666b8d9dc01344
+  zh: 554effdbd904bd2b
+/deepseek-ai-dsh-failure-recovery-policy:
+  en: 0ec1ff07556e5aea
+  zh: ffde232b149d293d
+/deepseek-ai-dsh-failure-recovery-policy/summary:
+  en: 1c8744bd79f51187
+  zh: 8cc60e536d6fcd6e
+/deepseek-ai-dsh-failure-recovery-policy/table-of-contents:
+  en: 3ddb1f7da1f6a069
+  zh: 664ab04cd3bd8b1e
+/deepseek-ai-dsh-failure-recovery-policy/config:
+  en: 1f67f84a3e8d17e6
+  zh: 864c0b7044d98add
+/deepseek-ai-dsh-failure-recovery-policy/failure-identity-and-lifecycle:
+  en: 69a9540d04a3b376
+  zh: 7fa54c9a35875406
+/deepseek-ai-dsh-failure-recovery-policy/adapter-and-atomic-store-contracts:
+  en: de408097c4f1e97b
+  zh: 6844cd516e8b233a
+/deepseek-ai-dsh-failure-recovery-policy/recovery-and-denial:
+  en: 00e4548cf55c7e41
+  zh: 917ecef455cb406c
+/deepseek-ai-dsh-failure-recovery-policy/missing-final-response:
+  en: a95dc2e225c313bc
+  zh: c8e5991c3133713c
+/deepseek-ai-dsh-failure-recovery-policy/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-failure-recovery-policy/model-experience/recovery-context-message:
+  en: 9f5a410500a5b26f
+  zh: 9eb5cd5f49f19df6
+/deepseek-ai-dsh-failure-recovery-policy/model-experience/recovery-context-message/what-the-model-sees:
+  en: 91022e1d94c9617a
+  zh: 45709b982b0872c2
+/deepseek-ai-dsh-failure-recovery-policy/model-experience/recovery-context-message/what-the-model-sees/recovery-notice:
+  en: a794a50d37206842
+  zh: b3a78e2d5efd4f07
+/deepseek-ai-dsh-failure-recovery-policy/model-experience/recovery-context-message/token-effect:
+  en: fb8a825f6341f549
+  zh: c92da1eac2a05d63
+/deepseek-ai-dsh-failure-recovery-policy/model-experience/recovery-context-message/kv-cache-effect:
+  en: c0a9b33f25ac19d7
+  zh: e2f287a953d1be07
+/deepseek-ai-dsh-failure-recovery-policy/model-experience/final-response-continuation:
+  en: 22f0aec2356ea29e
+  zh: 98bced54f597de00
+/deepseek-ai-dsh-failure-recovery-policy/model-experience/final-response-continuation/what-the-model-sees:
+  en: 6b339945527a63d0
+  zh: 3157f6dabd39e44e
+/deepseek-ai-dsh-failure-recovery-policy/model-experience/final-response-continuation/what-the-model-sees/continuation-notice:
+  en: 27471fb5db191e96
+  zh: f8a99abaa144d19d
+/deepseek-ai-dsh-failure-recovery-policy/model-experience/final-response-continuation/token-effect:
+  en: c89c53e965231b00
+  zh: cf88592cfd2c7e3e
+/deepseek-ai-dsh-failure-recovery-policy/model-experience/final-response-continuation/kv-cache-effect:
+  en: 123d571b632faa17
+  zh: 1ec02204d8d6cd69
+/deepseek-ai-dsh-failure-recovery-policy/known-limitations-and-deferred-work:
+  en: 7351e489356a799e
+  zh: 1f2bcca9391b7049
+/deepseek-ai-dsh-failure-recovery-policy/known-limitations-and-deferred-work/dev-note:
+  en: 37c08ca5d0c622b9
+  zh: 1f9eb2dc5fe84a13

@@ -30,6 +30,8 @@ export interface ToolBridgeOptions {
   registrationFailure: 'contain' | 'throw'
   serverName: string
   toolCallTimeoutMs: number
+  /** Exact raw MCP tool names admitted to the registry; omission admits all. */
+  allowedTools?: ReadonlySet<string>
 }
 
 /** State for one sync generation: the current set of disposers keyed by public name. */
@@ -121,13 +123,16 @@ export async function syncTools(
   const response = client.getServerCapabilities()?.tools === undefined
     ? { tools: [] }
     : await client.listTools(undefined, { cacheMode: 'refresh' })
+  const advertisedRawNames = new Set<string>()
   for (const tool of response.tools) {
-    const publicName = publicToolName(opts.serverName, tool.name)
-    if (definitions.has(publicName)) {
+    if (advertisedRawNames.has(tool.name)) {
       throw new Error(
         `mcp-client(${opts.serverName}): server listed tool "${tool.name}" more than once — invalid tool list`,
       )
     }
+    advertisedRawNames.add(tool.name)
+    if (opts.allowedTools !== undefined && !opts.allowedTools.has(tool.name)) continue
+    const publicName = publicToolName(opts.serverName, tool.name)
     definitions.set(publicName, createMcpToolDefinition(ctx, {
       name: publicName,
       rawName: tool.name,
@@ -140,6 +145,15 @@ export async function syncTools(
         { signal: execution.signal, timeout: opts.toolCallTimeoutMs, toolDefinition: tool },
       ),
     }))
+  }
+
+  if (opts.allowedTools !== undefined) {
+    const missing = [...opts.allowedTools].filter(name => !advertisedRawNames.has(name))
+    if (missing.length > 0) {
+      throw new Error(
+        `mcp-client(${opts.serverName}): allowedTools not advertised by the server: ${missing.join(', ')}`,
+      )
+    }
   }
 
   // Phase 2: swap generations.

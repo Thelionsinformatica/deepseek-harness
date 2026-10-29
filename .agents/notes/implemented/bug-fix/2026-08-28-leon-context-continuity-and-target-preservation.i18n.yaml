@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-08-28-leon-context-continuity-and-target-preservation.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-28-leon-context-continuity-and-target-preservation.md
+/agent-note-leon-separates-history-memory-knowledge-and-explicit-targets:
+  en: 50ed1510de9459fb
+  zh: 21c3ff0837ea2c70
+/agent-note-leon-separates-history-memory-knowledge-and-explicit-targets/problem:
+  en: 57ce66e02cb83292
+  zh: 41731fb1c7f8924d
+/agent-note-leon-separates-history-memory-knowledge-and-explicit-targets/decision:
+  en: 4d834aa76200bfe5
+  zh: 2a15ed654278c449
+/agent-note-leon-separates-history-memory-knowledge-and-explicit-targets/verification:
+  en: 68e797d9d04154cf
+  zh: 12c4388109fe4232
+/agent-note-leon-separates-history-memory-knowledge-and-explicit-targets/alternatives-considered:
+  en: 7ab812db7daf17d7
+  zh: af1892c81273417a
+/agent-note-leon-separates-history-memory-knowledge-and-explicit-targets/consequences:
+  en: b255e58f49efc881
+  zh: 4a2e5da3f839784a

@@ -68,6 +68,8 @@ export interface StdioConfig {
   cwd: string
   /** Timeout per tool call or resource request in milliseconds. */
   toolCallTimeoutMs: number
+  /** Exact raw MCP tool names to expose; omission exposes every advertised tool. */
+  allowedTools?: string[]
   /** Fail plugin activation when the initial connection or tool synchronization fails. */
   failOnStartupError: boolean
   /** Maximum UTF-8 bytes of attributed server instructions (default 32768). */
@@ -92,6 +94,8 @@ export interface StreamableHttpConfig {
   headers: Record<string, string>
   /** Timeout per tool call or resource request in milliseconds. */
   toolCallTimeoutMs: number
+  /** Exact raw MCP tool names to expose; omission exposes every advertised tool. */
+  allowedTools?: string[]
   /** Fail plugin activation when the initial connection or tool synchronization fails. */
   failOnStartupError: boolean
   /** Maximum UTF-8 bytes of attributed server instructions (default 32768). */
@@ -116,6 +120,8 @@ const Reconnect: z<ReconnectConfig> = z.object({
   maxAttempts: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(RECONNECT_DEFAULTS.maxAttempts),
 })
 
+const AllowedTools = z.array(z.string().min(1)).min(1).extra('default', undefined)
+
 export const Config = z.union([
   z.object({
     transport: z.const('stdio'),
@@ -125,6 +131,7 @@ export const Config = z.union([
     env: z.dict(String).default({}),
     cwd: z.string().default(''),
     toolCallTimeoutMs: z.number().default(DEFAULT_TOOL_CALL_TIMEOUT_MS),
+    allowedTools: AllowedTools,
     failOnStartupError: z.boolean().default(false),
     maxInstructionBytes: z.number().step(1).min(1).default(DEFAULT_MAX_INSTRUCTION_BYTES),
     reconnect: Reconnect,
@@ -135,6 +142,7 @@ export const Config = z.union([
     url: z.string().required(),
     headers: z.dict(String).default({}),
     toolCallTimeoutMs: z.number().default(DEFAULT_TOOL_CALL_TIMEOUT_MS),
+    allowedTools: AllowedTools,
     failOnStartupError: z.boolean().default(false),
     maxInstructionBytes: z.number().step(1).min(1).default(DEFAULT_MAX_INSTRUCTION_BYTES),
     reconnect: Reconnect,

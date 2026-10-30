@@ -52,7 +52,7 @@ Chat and Trajectory interpret the effective prompt through the pure `uiConversat
 
 ### Compaction
 
-`compaction-basic` is unchanged. `selectCompactableRange` still anchors at the first non-system node, so node 0 is never shadowed and later in-history nodes can be; `buildSummarizationInput` prepends the derived head to `messages`, followed by every shadowed node's derived message in surface order, so a mid-region system node is replayed in place and the summarization call remains a genuine prefix of the conversation.
+The default `compaction-basic` selection is unchanged: `selectCompactableRange` anchors at the first non-system node, so node 0 is never shadowed and later in-history nodes can be; the opt-in `incremental` strategy anchors after the newest retained checkpoint and still never selects node 0 ([incremental strategy](2026-10-30-incremental-compaction-strategy.md)). `buildSummarizationInput` prepends the derived head to `messages`, followed by every shadowed node's derived message in surface order, so a mid-region system node is replayed in place and the summarization call remains a genuine prefix of the conversation.
 
 ## Alternatives considered
 

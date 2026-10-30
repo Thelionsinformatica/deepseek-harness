@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-10-30-incremental-compaction-strategy.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-30-incremental-compaction-strategy.md
+/agent-note-incremental-compaction-that-preserves-the-cached-request-prefix:
+  en: 3ff210e793e5db82
+  zh: e0a9a27a15b1fe05
+/agent-note-incremental-compaction-that-preserves-the-cached-request-prefix/problem:
+  en: 3942dde4032a3e21
+  zh: ab555314c3ea7bdf
+/agent-note-incremental-compaction-that-preserves-the-cached-request-prefix/decision:
+  en: ae4ea01f486c7637
+  zh: 3a03fa6c153ddccd
+/agent-note-incremental-compaction-that-preserves-the-cached-request-prefix/alternatives-considered:
+  en: 5f1bc1ca196e7802
+  zh: d50f974fb4849f87
+/agent-note-incremental-compaction-that-preserves-the-cached-request-prefix/consequences:
+  en: 218a96a018778558
+  zh: d7b0335bb31cc37d
+/agent-note-incremental-compaction-that-preserves-the-cached-request-prefix/verification:
+  en: bc707a1bd285495b
+  zh: c19669fe3ed4d6c1

@@ -139,6 +139,11 @@ export class BasicCompactionEngine extends CompactionEngine {
     if (this.config.auto) this._registerAutomaticCompaction()
   }
 
+  /** Range-selection options shared by every automatic and manual entry point. */
+  private selectionOptions(): { strategy: 'cumulative' | 'incremental'; maxGenerations: number } {
+    return { strategy: this.config.strategy, maxGenerations: this.config.maxGenerations }
+  }
+
   /**
    * Register between-step pressure, model-switch pressure, and request-overflow
    * recovery. Pre-step and overflow listeners dispatch through `compactIfNeeded`;
@@ -302,7 +307,7 @@ export class BasicCompactionEngine extends CompactionEngine {
       case 'context-overflow': {
         this.ctx.get('toolResultPruner')?.pruneSession(agent.session)
         const measurement = this.ctx.tokenMeter.measure(agent.session)
-        const range = selectCompactableRange(agent.session, measurement, 0)
+        const range = selectCompactableRange(agent.session, measurement, 0, this.selectionOptions())
         if (range === null) return null
         return this.compactRegion(range.start, range.end, agent, signal)
       }
@@ -351,7 +356,7 @@ export class BasicCompactionEngine extends CompactionEngine {
 
     let result: CompactionResult | null = null
     for (let attempt = 0; attempt <= spec.compactionRetries; attempt += 1) {
-      const range = selectCompactableRange(agent.session, measurement, spec.retainTokens)
+      const range = selectCompactableRange(agent.session, measurement, spec.retainTokens, this.selectionOptions())
       if (range === null) {
         if (result === null && !requireBelowThreshold) return null
         throw new Error(
@@ -419,6 +424,7 @@ export class BasicCompactionEngine extends CompactionEngine {
             agent.session,
             this.ctx.tokenMeter.measure(agent.session),
             0,
+            this.selectionOptions(),
           )
           if (range === null) return null
           return await compactSurfaceRegion(

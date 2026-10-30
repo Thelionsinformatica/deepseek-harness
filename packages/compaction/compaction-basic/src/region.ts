@@ -11,6 +11,7 @@ import {
   CompactionId,
   ManualCompactionError,
   compactCheckpointSource,
+  isCompactCheckpointSource,
   toolPairingBalancedAfter,
   toolPairingBalancedBefore,
 } from '@deepseek-ai/dsh-compaction'
@@ -22,6 +23,7 @@ import type { TokenMeasurement, TokenMeter } from '@deepseek-ai/dsh-token-meter'
 import { SessionSeq, type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { frameSummary } from './summarizer.ts'
+import { DEFAULT_MAX_GENERATIONS } from './config.ts'
 import type { SummarizationInput, SummaryResult } from './summarizer.ts'
 interface RegionDependencies {
   readonly meter: TokenMeter
@@ -104,20 +106,62 @@ function systemHead(session: Session, headSeq: SessionSeq): SessionEvent<'system
   return head.type === 'system/message' ? head : undefined
 }
 
+/** Folding strategy for one range selection, mirroring the resolved plugin config. */
+export interface RangeSelectionOptions {
+  /**
+   * `cumulative` (default) folds the whole eligible span into one checkpoint;
+   * `incremental` folds only the messages after the newest retained checkpoint.
+   */
+  readonly strategy?: 'cumulative' | 'incremental'
+  /** Retained checkpoint cap before an incremental selection falls back to cumulative. */
+  readonly maxGenerations?: number
+}
+
+/**
+ * Count retained checkpoint messages on the surface and locate the newest one.
+ * @param session - session whose log backs the surface.
+ * @param surfaceNodes - current surface seqs in order.
+ * @returns the newest checkpoint's surface index, or `null` without one, plus the retained count.
+ */
+function retainedCheckpoints(
+  session: Session,
+  surfaceNodes: readonly SessionSeq[],
+): { readonly latest: number | null; readonly count: number } {
+  let latest: number | null = null
+  let count = 0
+  for (const [index, seq] of surfaceNodes.entries()) {
+    // Existing Session history read; a surface node's seq names a committed event.
+    // oxlint-disable-next-line typescript/no-deprecated
+    const event = session.eventAt(seq)
+    if (event?.type !== 'user/message' || !isCompactCheckpointSource(event.data.source)) continue
+    latest = index
+    count += 1
+  }
+  return { latest, count }
+}
+
 /**
  * Resolve the next range starting at the first non-system surface node while
  * retaining a priced recent tail and never splitting an assistant
  * tool-call/result pair. A `system/message` at surface node 0 is never inside
  * the range; without one the range starts at node 0.
+ *
+ * With `strategy: 'incremental'` the range instead starts after the newest
+ * retained checkpoint, so earlier checkpoints keep the request prefix stable
+ * and only newly arrived messages are folded. Once `maxGenerations` checkpoints
+ * are retained, selection falls back to the cumulative span so the generation
+ * chain is folded into one checkpoint.
  * @param session - session supplying authoritative current surface positions.
  * @param measurement - unified pressure and surface measurement from the conversation meter.
  * @param retainTokens - minimum recent tail budget retained verbatim.
+ * @param options - folding strategy and its retained-checkpoint cap.
  * @returns the inclusive positional seq range to compact, or `null`.
  */
 export function selectCompactableRange(
   session: Session,
   measurement: TokenMeasurement,
   retainTokens: number,
+  options: RangeSelectionOptions = {},
 ): { start: SessionSeq; end: SessionSeq } | null {
   const pricedNodes = measurement.nodes
   if (pricedNodes.length === 0) return null
@@ -147,11 +191,22 @@ export function selectCompactableRange(
   }
   if (keepFromIdx <= firstIdx) return null
 
+  let startIdx = firstIdx
+  if (options.strategy === 'incremental') {
+    const checkpoints = retainedCheckpoints(session, surfaceNodes)
+    if (checkpoints.count > 0
+      && checkpoints.count < (options.maxGenerations ?? DEFAULT_MAX_GENERATIONS)
+      && checkpoints.latest !== null) {
+      startIdx = Math.max(firstIdx, checkpoints.latest + 1)
+    }
+    if (startIdx >= keepFromIdx) return null
+  }
+
   // oxlint-disable-next-line typescript/no-non-null-assertion
-  const first = surfaceNodes[firstIdx]!
+  const start = surfaceNodes[startIdx]!
   // oxlint-disable-next-line typescript/no-non-null-assertion
   const cutoff = surfaceNodes[keepFromIdx - 1]!
-  return { start: first, end: cutoff }
+  return { start, end: cutoff }
 }
 
 /**

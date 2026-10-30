@@ -76,12 +76,29 @@ All settings are optional. With context window `W`, effective request output cap
 | `maxOverflowRetries` | `1` | Maximum retries after a confirmed context-window overflow; `0` disables recovery only. |
 | `modelPolicies` | `[]` | Exact `{ provider, model, ...partialPolicy }` overrides for individual model routes. |
 | `auto` | `true` | Enable automatic condensation and overflow recovery; set `false` for manual-only operation. |
+| `strategy` | `cumulative` | `cumulative` replaces the whole eligible span with one checkpoint, rewriting the request prefix. `incremental` keeps earlier checkpoints and folds only messages that arrived after the newest one, preserving the cached request prefix. |
+| `maxGenerations` | `8` | Retained checkpoint count before an `incremental` fold falls back to a cumulative fold and starts a new generation. Positive integer; valid only with `strategy: incremental`. |
 
 Misconfiguration fails fast: unknown settings, duplicate per-model overrides, invalid token counts, both retention forms together, or a retention ratio at least as large as the threshold ratio reject the plugin at load. When the model is first used, `W − O − B` must be positive and the resolved retained budget must be below the trigger. Zero headroom requires an explicit positive `maxTokens`, globally or in that model policy. Small-window deployments must configure headroom that fits their capacity; lower `thresholdRatio` to compact earlier.
 
 ### What happens when condensation runs
 
 The oldest balanced span is replaced by one summary message and the recent tail stays verbatim; the conversation continues from the summary. The operation reports how many history items were condensed and the estimated tokens freed. If nothing can be condensed safely — for example the whole conversation is one indivisible unit — nothing changes and nothing is written to the session log. If no model is available to write the summary (no configured target and no routed request yet), condensation fails with a clear error telling you to configure the summarization provider and model or route one request.
+
+### Folding incrementally to keep the cached request prefix
+
+Each cumulative condensation rewrites the earliest part of the request, so the provider re-reads that prefix and the prompt cache starts over. With `strategy: incremental`, a condensation leaves every earlier checkpoint untouched and folds only the messages that arrived after the newest one:
+
+```yaml
+- id: compaction-basic
+  config:
+    strategy: incremental
+    maxGenerations: 8
+```
+
+The request prefix then ends with the previous checkpoints and stays byte-identical across condensations, so only the newly folded span invalidates cache state. After `maxGenerations` checkpoints accumulate, the next condensation folds the whole span once and restarts the chain — the rare generation reset pays the prefix rewrite that every cumulative condensation used to pay.
+
+Because an incremental condensation folds less text than a cumulative one, a tight `thresholdRatio` may need a higher `compactionRetries` before pressure clears. Both automatic pressure condensation and `/compact` honour the strategy; explicit-range requests are unaffected. The default stays `cumulative` so existing profiles keep their history shape.
 
 ### Switching models
 

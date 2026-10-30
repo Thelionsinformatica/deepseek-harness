@@ -42,6 +42,21 @@ export interface BasicCompactionConfig extends CompactionPolicyConfig {
   modelPolicies?: ModelCompactPolicyConfig[]
   /** Enable automatic step-boundary pressure and overflow-recovery listeners. Defaults to `true`. */
   auto?: boolean
+  /**
+   * History-folding strategy. `cumulative` (default) replaces the whole eligible
+   * span with one new checkpoint, so each condensation rewrites the request
+   * prefix. `incremental` keeps earlier checkpoints in place and folds only the
+   * messages that arrived after the newest one, so the cached request prefix
+   * survives each condensation; once `maxGenerations` checkpoints are retained,
+   * the next condensation folds cumulatively again.
+   */
+  strategy?: 'cumulative' | 'incremental'
+  /**
+   * Retained checkpoint count before an `incremental` condensation folds
+   * cumulatively and starts a new generation. Positive integer; defaults to `8`.
+   * Valid only with `strategy: 'incremental'`.
+   */
+  maxGenerations?: number
 }
 
 /** Exactly one validated retention form. */
@@ -64,6 +79,8 @@ interface ResolvedPolicyFields {
 export type ResolvedConfig = ResolvedPolicyFields & ResolvedRetention & {
   readonly modelPolicies: readonly Readonly<ModelCompactPolicyConfig>[]
   readonly auto: boolean
+  readonly strategy: 'cumulative' | 'incremental'
+  readonly maxGenerations: number
 }
 
 /** Fully merged policy for one routed conversation target, before capacity scaling. */

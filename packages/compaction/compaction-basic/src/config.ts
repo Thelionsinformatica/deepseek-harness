@@ -19,6 +19,22 @@ import type {
 /** Default request-pressure fraction for every routed model. */
 const DEFAULT_THRESHOLD_RATIO = 0.8
 
+/** Default retained-checkpoint cap for the incremental folding strategy. */
+export const DEFAULT_MAX_GENERATIONS = 8
+
+/** Strategy values accepted from configuration. */
+const COMPACTION_STRATEGIES: ReadonlySet<string> = new Set(['cumulative', 'incremental'])
+
+/**
+ * Reject an unknown history-folding strategy at load.
+ * @param strategy - configured strategy value after normalization.
+ */
+function assertStrategy(strategy: string): void {
+  if (!COMPACTION_STRATEGIES.has(strategy)) {
+    throw new Error('BasicCompactionConfig: strategy must be "cumulative" or "incremental"')
+  }
+}
+
 /** Default verbatim-tail fraction for every routed model. */
 const DEFAULT_RETAIN_RATIO = 0.16
 
@@ -40,6 +56,8 @@ const BASIC_COMPACT_CONFIG_KEYS: ReadonlySet<string> = new Set([
   ...POLICY_CONFIG_KEYS,
   'modelPolicies',
   'auto',
+  'strategy',
+  'maxGenerations',
 ])
 
 /** Complete exact-target override key set. */
@@ -70,6 +88,13 @@ export function resolveConfig(config: BasicCompactionConfig = {}): ResolvedConfi
   validatePolicy(config, 'BasicCompactionConfig')
   if (config.auto !== undefined && typeof config.auto !== 'boolean') {
     throw new Error('BasicCompactionConfig: auto must be a boolean')
+  }
+  const strategy = config.strategy ?? 'cumulative'
+  assertStrategy(strategy)
+  const maxGenerations = config.maxGenerations ?? DEFAULT_MAX_GENERATIONS
+  assertPositiveInteger('BasicCompactionConfig.maxGenerations', maxGenerations)
+  if (config.maxGenerations !== undefined && strategy !== 'incremental') {
+    throw new Error('BasicCompactionConfig: maxGenerations requires strategy "incremental"')
   }
 
   const headroomTokens = config.headroomTokens ?? 65_536
@@ -106,6 +131,8 @@ export function resolveConfig(config: BasicCompactionConfig = {}): ResolvedConfi
     maxOverflowRetries: config.maxOverflowRetries ?? 1,
     modelPolicies,
     auto: config.auto ?? true,
+    strategy,
+    maxGenerations,
   })
 }
 

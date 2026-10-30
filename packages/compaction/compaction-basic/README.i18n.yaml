@@ -24,11 +24,14 @@
   en: 4cb73d7a57908948
   zh: 7ba2ddc4c76e4957
 /deepseek-ai-dsh-compaction-basic/use-this-package/tuning-when-condensation-starts:
-  en: 3446c54c062d7e34
-  zh: fb502c941e508ae0
+  en: 99b040e648654da7
+  zh: bc63f2d91ffc4e58
 /deepseek-ai-dsh-compaction-basic/use-this-package/what-happens-when-condensation-runs:
   en: c872a8ef069596f0
   zh: b3a48e309ae830d4
+/deepseek-ai-dsh-compaction-basic/use-this-package/folding-incrementally-to-keep-the-cached-request-prefix:
+  en: dab0a297a45088b0
+  zh: b49ae07c2225cf8b
 /deepseek-ai-dsh-compaction-basic/use-this-package/switching-models:
   en: 48978abc46da1afa
   zh: 11931af05db7b41f

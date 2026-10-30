@@ -322,6 +322,8 @@ describe('compact configuration and defaults', () => {
       maxOverflowRetries: 1,
       modelPolicies: [],
       auto: true,
+      strategy: 'cumulative',
+      maxGenerations: 8,
     })
     expect(Object.isFrozen(resolved)).toBe(true)
   })

@@ -52,7 +52,7 @@ Chat 与 Trajectory 通过纯操作 `uiConversation.inspectSystemPrompt` 解释�
 
 ### 压缩
 
-`compaction-basic` 不变。`selectCompactableRange` 仍锚定在第一个非系统节点，因此第 0 号节点永不被遮蔽，更后的历史内节点则可能被遮蔽；`buildSummarizationInput` 将派生的头节点前置到 `messages`，再按 surface 顺序加入每个被遮蔽节点的派生消息，因此区域中途的系统节点在原位被回放，摘要调用仍是对话的真实前缀。
+默认的 `compaction-basic` 选集不变：`selectCompactableRange` 锚定在第一个非系统节点，因此第 0 号节点永不被遮蔽，更后的历史内节点则可能被遮蔽；可选的 `incremental` 策略锚定在最新保留检查点之后，且仍永不选中第 0 号节点（[增量策略](2026-10-30-incremental-compaction-strategy.zh.md)）。`buildSummarizationInput` 将派生的头节点前置到 `messages`，再按 surface 顺序加入每个被遮蔽节点的派生消息，因此区域中途的系统节点在原位被回放，摘要调用仍是对话的真实前缀。
 
 ## Alternatives considered
 
